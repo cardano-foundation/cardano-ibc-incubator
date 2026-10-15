@@ -61,6 +61,34 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(
 	trustedCounters map[string]uint64,
 	trusted *trustedBlockState,
 ) (*authenticatedProbabilisticHeader, error) {
+	return cs.authenticateHeaderWitnesses(header, epochContexts, trustedCounters, trusted, nil, false)
+}
+
+// replayVerifiedHeaderBlocks rebuilds the authenticated header that
+// VerifyClientMessage accepted earlier in the same transaction. ibc-go calls
+// UpdateState only after VerifyClientMessage succeeds on the same message, so
+// this repeats the stateful checks but reads the results of the signature, KES,
+// VRF and body checks from the header instead of running them again.
+func (cs *ClientState) replayVerifiedHeaderBlocks(
+	header *ProbabilisticHeader,
+	epochContexts []*EpochContext,
+	trustedCounters map[string]uint64,
+	trusted *trustedBlockState,
+) (*authenticatedProbabilisticHeader, error) {
+	return cs.authenticateHeaderWitnesses(header, epochContexts, trustedCounters, trusted, nil, true)
+}
+
+// authenticateHeaderWitnesses decodes every witness before authenticating any
+// of them. checkLinkage, when set, sees only those decoded fields, so a
+// malformed or disconnected chain fails before any signature, KES or VRF work.
+func (cs *ClientState) authenticateHeaderWitnesses(
+	header *ProbabilisticHeader,
+	epochContexts []*EpochContext,
+	trustedCounters map[string]uint64,
+	trusted *trustedBlockState,
+	checkLinkage func(decoded *authenticatedProbabilisticHeader) error,
+	replay bool,
+) (*authenticatedProbabilisticHeader, error) {
 	if header == nil {
 		return nil, errorsmod.Wrap(ErrInvalidHeader, "probabilistic header missing")
 	}
@@ -83,24 +111,42 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(
 		counters[strings.ToLower(poolID)] = sequenceNumber
 	}
 
-	bridgeBlocks := make([]*authenticatedProbabilisticBlock, 0, len(header.BridgeBlocks))
+	bridgeWitnesses := make([]*decodedProbabilisticBlock, 0, len(header.BridgeBlocks))
 	for _, block := range header.BridgeBlocks {
-		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "bridge", epochContexts, counters, true, tracker, registry)
+		witness, decodeErr := cs.decodeProbabilisticBlock(block, "bridge", true)
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		bridgeWitnesses = append(bridgeWitnesses, witness)
+	}
+	anchorWitness, err := cs.decodeProbabilisticBlock(header.AnchorBlock, "anchor", true)
+	if err != nil {
+		return nil, err
+	}
+	descendantWitnesses := make([]*decodedProbabilisticBlock, 0, len(header.DescendantBlocks))
+	for _, block := range header.DescendantBlocks {
+		witness, decodeErr := cs.decodeProbabilisticBlock(block, "descendant", false)
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		descendantWitnesses = append(descendantWitnesses, witness)
+	}
+	if checkLinkage != nil {
+		if err := checkLinkage(decodedHeaderView(bridgeWitnesses, anchorWitness, descendantWitnesses)); err != nil {
+			return nil, err
+		}
+	}
+
+	bridgeBlocks := make([]*authenticatedProbabilisticBlock, 0, len(bridgeWitnesses))
+	for _, witness := range bridgeWitnesses {
+		authenticatedBlock, authErr := cs.authenticateDecodedBlock(witness, epochContexts, counters, tracker, registry, replay)
 		if authErr != nil {
 			return nil, authErr
 		}
 		bridgeBlocks = append(bridgeBlocks, authenticatedBlock)
 	}
 
-	anchorBlock, err := cs.authenticateProbabilisticBlock(
-		header.AnchorBlock,
-		"anchor",
-		epochContexts,
-		counters,
-		true,
-		tracker,
-		registry,
-	)
+	anchorBlock, err := cs.authenticateDecodedBlock(anchorWitness, epochContexts, counters, tracker, registry, replay)
 	if err != nil {
 		return nil, err
 	}
@@ -108,9 +154,9 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(
 	anchorNonceState := clonePraosNonceState(tracker.state)
 	anchorPoolRegistry := clonePoolRegistry(registry.state)
 
-	descendantBlocks := make([]*authenticatedProbabilisticBlock, 0, len(header.DescendantBlocks))
-	for _, block := range header.DescendantBlocks {
-		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "descendant", epochContexts, counters, false, tracker, registry)
+	descendantBlocks := make([]*authenticatedProbabilisticBlock, 0, len(descendantWitnesses))
+	for _, witness := range descendantWitnesses {
+		authenticatedBlock, authErr := cs.authenticateDecodedBlock(witness, epochContexts, counters, tracker, registry, replay)
 		if authErr != nil {
 			return nil, authErr
 		}
@@ -134,6 +180,27 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(
 	}, nil
 }
 
+// decodedHeaderView lets the linkage checks read decoded witnesses. They use
+// only hashes, heights, slots, timestamps and epochs.
+func decodedHeaderView(
+	bridge []*decodedProbabilisticBlock,
+	anchor *decodedProbabilisticBlock,
+	descendants []*decodedProbabilisticBlock,
+) *authenticatedProbabilisticHeader {
+	fields := func(witnesses []*decodedProbabilisticBlock) []*authenticatedProbabilisticBlock {
+		blocks := make([]*authenticatedProbabilisticBlock, len(witnesses))
+		for index, witness := range witnesses {
+			blocks[index] = &witness.fields
+		}
+		return blocks
+	}
+	return &authenticatedProbabilisticHeader{
+		bridgeBlocks:     fields(bridge),
+		anchorBlock:      &anchor.fields,
+		descendantBlocks: fields(descendants),
+	}
+}
+
 func (cs *ClientState) authenticateProbabilisticBlock(
 	block *ProbabilisticBlock,
 	label string,
@@ -143,6 +210,31 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 	tracker *nonceTracker,
 	registry *poolRegistryTracker,
 ) (*authenticatedProbabilisticBlock, error) {
+	witness, err := cs.decodeProbabilisticBlock(block, label, requireFullBlock)
+	if err != nil {
+		return nil, err
+	}
+	return cs.authenticateDecodedBlock(witness, epochContexts, operationalCertificateCounters, tracker, registry, false)
+}
+
+// decodedProbabilisticBlock is a witness whose bytes decoded and whose claimed
+// hash, height, slot, timestamp and epoch match its own header. No signature,
+// KES, VRF or body check has run on it yet.
+type decodedProbabilisticBlock struct {
+	label            string
+	requireFullBlock bool
+	block            ledger.Block               // set for a block_cbor witness
+	rawHeader        *ledger.BabbageBlockHeader // set for a header_cbor witness
+	header           ledger.BlockHeader
+	// The slot leader and certificate sequence stay unset until authentication.
+	fields authenticatedProbabilisticBlock
+}
+
+func (cs *ClientState) decodeProbabilisticBlock(
+	block *ProbabilisticBlock,
+	label string,
+	requireFullBlock bool,
+) (*decodedProbabilisticBlock, error) {
 	if block == nil || block.Height == nil {
 		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block missing height", label)
 	}
@@ -246,18 +338,50 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 			epoch,
 		)
 	}
+	return &decodedProbabilisticBlock{
+		label:            label,
+		requireFullBlock: requireFullBlock,
+		block:            decodedBlock,
+		rawHeader:        rawHeader,
+		header:           decodedHeader,
+		fields: authenticatedProbabilisticBlock{
+			height:    decodedHeader.BlockNumber(),
+			slot:      decodedHeader.SlotNumber(),
+			hash:      decodedHeader.Hash().String(),
+			prevHash:  decodedPrevHash,
+			bodyHash:  decodedBodyHash,
+			epoch:     epoch,
+			timestamp: expectedTimestamp,
+		},
+	}, nil
+}
+
+// authenticateDecodedBlock runs the stateful nonce, registry and certificate
+// checks on a decoded witness, and its native signature, KES, VRF and body
+// verification unless replay is set.
+func (cs *ClientState) authenticateDecodedBlock(
+	witness *decodedProbabilisticBlock,
+	epochContexts []*EpochContext,
+	operationalCertificateCounters map[string]uint64,
+	tracker *nonceTracker,
+	registry *poolRegistryTracker,
+	replay bool,
+) (*authenticatedProbabilisticBlock, error) {
+	label := witness.label
+	epoch := witness.fields.epoch
+	slot := witness.fields.slot
 	epochContext := epochContextByEpoch(epochContexts, epoch)
 	if epochContext == nil {
 		return nil, errorsmod.Wrapf(
 			ErrInvalidCurrentEpoch,
 			"%s block slot %d outside available epoch context bounds for derived epoch %d",
-			label, decodedHeader.SlotNumber(), epoch,
+			label, slot, epoch,
 		)
 	}
 	if err := cs.validateEpochContextParameters([]*EpochContext{epochContext}); err != nil {
 		return nil, err
 	}
-	if err := verifySlotWithinEpochContext(decodedHeader.SlotNumber(), epochContext, label); err != nil {
+	if err := verifySlotWithinEpochContext(slot, epochContext, label); err != nil {
 		return nil, err
 	}
 	if registry == nil {
@@ -275,13 +399,13 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 	}
 	// The checkpoint continuation determines the nonce used for verification.
 	// The supplied epoch-context nonce is only compared with that local value.
-	if err := tracker.tick(cs, decodedHeader.BlockNumber(), decodedHeader.SlotNumber(), epoch, decodedPrevHash); err != nil {
+	if err := tracker.tick(cs, witness.fields.height, slot, epoch, witness.fields.prevHash); err != nil {
 		return nil, err
 	}
 	if !bytes.Equal(epochContext.EpochNonce, tracker.state.EpochNonce) {
 		return nil, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d supplied nonce disagrees with nonce derived from verified history", epoch)
 	}
-	decodedPoolID := decodedHeader.IssuerVkey().PoolId()
+	decodedPoolID := witness.header.IssuerVkey().PoolId()
 	stakeEntry, err := findStakeDistributionEntryInContext(epochContext, decodedPoolID)
 	if err != nil {
 		return nil, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "%s block issuer %s is not trusted for epoch %d", label, decodedPoolID, epochContext.Epoch)
@@ -289,10 +413,13 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 	var decodedVrfKeyHash []byte
 	var sequenceNumber uint64
 	var verifiedVRFOutput []byte
-	if decodedBlock != nil {
-		decodedVrfKeyHash, sequenceNumber, verifiedVRFOutput, err = cs.verifyNativeProbabilisticBlock(decodedBlock, label, tracker.state.EpochNonce, stakeEntry)
-	} else {
-		decodedVrfKeyHash, sequenceNumber, verifiedVRFOutput, err = cs.verifyNativeProbabilisticHeader(rawHeader, label, tracker.state.EpochNonce, stakeEntry)
+	switch {
+	case replay:
+		decodedVrfKeyHash, sequenceNumber, verifiedVRFOutput, err = acceptedNativeVerification(witness)
+	case witness.block != nil:
+		decodedVrfKeyHash, sequenceNumber, verifiedVRFOutput, err = cs.verifyNativeProbabilisticBlock(witness.block, label, tracker.state.EpochNonce, stakeEntry)
+	default:
+		decodedVrfKeyHash, sequenceNumber, verifiedVRFOutput, err = cs.verifyNativeProbabilisticHeader(witness.rawHeader, label, tracker.state.EpochNonce, stakeEntry)
 	}
 	if err != nil {
 		return nil, err
@@ -314,38 +441,47 @@ func (cs *ClientState) authenticateProbabilisticBlock(
 			decodedPoolID,
 		)
 	}
-	if requireFullBlock {
-		certificates, err := probabilisticcore.AuthenticatedPoolCertificates(decodedBlock)
+	if witness.requireFullBlock {
+		certificates, err := probabilisticcore.AuthenticatedPoolCertificates(witness.block)
 		if err != nil {
 			return nil, errorsmod.Wrap(ErrInvalidAcceptedBlock, err.Error())
 		}
-		if err := registry.apply(decodedHeader.SlotNumber(), certificates); err != nil {
+		if err := registry.apply(slot, certificates); err != nil {
 			return nil, err
 		}
 	}
 	if err := advanceOperationalCertificateCounter(
 		operationalCertificateCounters,
-		decodedHeader.IssuerVkey().Hash().Bytes(),
+		witness.header.IssuerVkey().Hash().Bytes(),
 		sequenceNumber,
 	); err != nil {
 		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block: %v", label, err)
 	}
 
-	authenticated := &authenticatedProbabilisticBlock{
-		height:                               decodedHeader.BlockNumber(),
-		slot:                                 decodedHeader.SlotNumber(),
-		hash:                                 decodedHeader.Hash().String(),
-		prevHash:                             decodedPrevHash,
-		bodyHash:                             decodedBodyHash,
-		epoch:                                epoch,
-		timestamp:                            expectedTimestamp,
-		slotLeader:                           decodedPoolID,
-		operationalCertificateSequenceNumber: sequenceNumber,
-	}
-	if err := tracker.apply(cs, authenticated, verifiedVRFOutput); err != nil {
+	authenticated := witness.fields
+	authenticated.slotLeader = decodedPoolID
+	authenticated.operationalCertificateSequenceNumber = sequenceNumber
+	if err := tracker.apply(cs, &authenticated, verifiedVRFOutput); err != nil {
 		return nil, err
 	}
-	return authenticated, nil
+	return &authenticated, nil
+}
+
+// acceptedNativeVerification returns what native verification returned when it
+// accepted this witness earlier in the transaction.
+func acceptedNativeVerification(witness *decodedProbabilisticBlock) ([]byte, uint64, []byte, error) {
+	var result probabilisticcore.NativeBlockVerificationResult
+	if witness.block != nil {
+		var err error
+		result, err = probabilisticcore.AcceptedNativeBlockResult(witness.block)
+		if err != nil {
+			return nil, 0, nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block: %v", witness.label, err)
+		}
+	} else {
+		result = probabilisticcore.AcceptedNativeHeaderResult(witness.rawHeader)
+	}
+	vrfKeyHash := blake2b.Sum256(result.VrfKey)
+	return vrfKeyHash[:], result.OperationalCertificateSequenceNumber, result.VerifiedVrfOutput, nil
 }
 
 func advanceOperationalCertificateCounter(counters map[string]uint64, poolID []byte, sequenceNumber uint64) error {

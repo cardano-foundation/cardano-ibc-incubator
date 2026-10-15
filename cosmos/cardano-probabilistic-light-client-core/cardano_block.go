@@ -325,6 +325,27 @@ func VerifyNativeHeader(
 	return verifyNativeHeader(header, epochNonce, slotsPerKesPeriod, maxKesEvolutions, leaderParameters)
 }
 
+// AcceptedNativeHeaderResult returns the result VerifyNativeHeader produced when
+// it accepted this header, without repeating the signature, KES and VRF checks.
+// Use it only for a header that already passed native verification.
+func AcceptedNativeHeaderResult(header *ledger.BabbageBlockHeader) NativeBlockVerificationResult {
+	return NativeBlockVerificationResult{
+		VrfKey:                               append([]byte(nil), header.Body.VrfKey...),
+		VerifiedVrfOutput:                    bytes.Clone(header.Body.VrfResult.Output),
+		OperationalCertificateSequenceNumber: uint64(header.Body.OpCert.SequenceNumber),
+	}
+}
+
+// AcceptedNativeBlockResult is AcceptedNativeHeaderResult for a block that
+// VerifyNativeBlock already accepted.
+func AcceptedNativeBlockResult(decodedBlock ledger.Block) (NativeBlockVerificationResult, error) {
+	header, err := nativeBabbageHeader(decodedBlock)
+	if err != nil {
+		return NativeBlockVerificationResult{}, err
+	}
+	return AcceptedNativeHeaderResult(header), nil
+}
+
 func verifyNativeHeader(
 	header *ledger.BabbageBlockHeader,
 	epochNonce []byte,
