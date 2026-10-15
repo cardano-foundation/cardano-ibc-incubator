@@ -74,19 +74,15 @@ export type ChannelUpgradeRedeemer = {
   error_receipt_siblings: string[];
 };
 
-/** The `ChanUpgrade` step names, by constructor index. */
-export const CHANNEL_UPGRADE_STEPS = [
-  'InitUpgrade',
-  'TryUpgrade',
-  'AckUpgrade',
-  'ConfirmUpgrade',
-  'OpenUpgrade',
-  'TimeoutUpgrade',
-  'CancelUpgrade',
-  'FlushUpgrade',
-] as const;
-
-export type ChannelUpgradeStepName = (typeof CHANNEL_UPGRADE_STEPS)[number];
+export type ChannelUpgradeStepName =
+  | 'InitUpgrade'
+  | 'TryUpgrade'
+  | 'AckUpgrade'
+  | 'ConfirmUpgrade'
+  | 'OpenUpgrade'
+  | 'TimeoutUpgrade'
+  | 'CancelUpgrade'
+  | 'FlushUpgrade';
 
 export function channelUpgradeStepName(step: ChannelUpgradeStep): ChannelUpgradeStepName {
   return Object.keys(step)[0] as ChannelUpgradeStepName;

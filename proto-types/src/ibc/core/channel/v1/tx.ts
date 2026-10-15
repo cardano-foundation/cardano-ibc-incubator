@@ -341,6 +341,9 @@ export interface MsgChannelUpgradeInit {
    * out on the counterparty.
    */
   timeout_period_ms: bigint;
+  /**
+   * Cardano signing precondition captured before transaction construction.
+   */
   expected_upgrade_sequence?: bigint;
 }
 /**
@@ -482,6 +485,10 @@ export interface MsgChannelUpgradeCancel {
   proof_error_receipt: Uint8Array;
   proof_height: Height;
   signer: string;
+  /**
+   * Required for Cardano authority cancellation. Receipt-backed cancellation
+   * follows its authenticated receipt instead.
+   */
   expected_upgrade_sequence?: bigint;
 }
 /**
@@ -2487,8 +2494,9 @@ export const MsgChannelUpgradeInit = {
     message.signer !== undefined && (obj.signer = message.signer);
     message.timeout_period_ms !== undefined &&
       (obj.timeout_period_ms = (message.timeout_period_ms || BigInt(0)).toString());
-    if (message.expected_upgrade_sequence !== undefined)
+    if (message.expected_upgrade_sequence !== undefined) {
       obj.expected_upgrade_sequence = message.expected_upgrade_sequence.toString();
+    }
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgChannelUpgradeInit>, I>>(object: I): MsgChannelUpgradeInit {
@@ -3696,8 +3704,9 @@ export const MsgChannelUpgradeCancel = {
     message.proof_height !== undefined &&
       (obj.proof_height = message.proof_height ? Height.toJSON(message.proof_height) : undefined);
     message.signer !== undefined && (obj.signer = message.signer);
-    message.expected_upgrade_sequence !== undefined &&
-      (obj.expected_upgrade_sequence = message.expected_upgrade_sequence.toString());
+    if (message.expected_upgrade_sequence !== undefined) {
+      obj.expected_upgrade_sequence = message.expected_upgrade_sequence.toString();
+    }
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgChannelUpgradeCancel>, I>>(object: I): MsgChannelUpgradeCancel {
@@ -3712,10 +3721,9 @@ export const MsgChannelUpgradeCancel = {
       message.proof_height = Height.fromPartial(object.proof_height);
     }
     message.signer = object.signer ?? "";
-    message.expected_upgrade_sequence =
-      object.expected_upgrade_sequence !== undefined && object.expected_upgrade_sequence !== null
-        ? BigInt(object.expected_upgrade_sequence.toString())
-        : undefined;
+    if (object.expected_upgrade_sequence !== undefined && object.expected_upgrade_sequence !== null) {
+      message.expected_upgrade_sequence = BigInt(object.expected_upgrade_sequence.toString());
+    }
     return message;
   },
 };
