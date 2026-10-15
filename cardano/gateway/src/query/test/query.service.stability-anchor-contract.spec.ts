@@ -348,6 +348,93 @@ describe('QueryService stability anchor contract', () => {
     await expect(service.queryNewClient({ height: 100n } as any)).rejects.toThrow('Bootstrap node nonce disagrees');
   });
 
+  it('requires trusted registration data for a pool absent from the bootstrap evidence', async () => {
+    const table = await historyServiceMock.findEpochContextAtBlock();
+    table.stakeDistribution.push({
+      ...table.stakeDistribution[0],
+      poolId: 'pool-f',
+      firstRegistrationSlot: null,
+    });
+    for (const entry of table.stakeDistribution) entry.relativeStakeDenominator = 6n;
+    expect(stabilityDescendantBlocks.some((block) => block.slotLeader === 'pool-f')).toBe(false);
+
+    await expect(service.queryNewClient({ height: 100n } as any)).rejects.toThrow(
+      'Pool pool-f has no authenticated effective registration',
+    );
+  });
+
+  it('includes a later producer registration before that pool appears in the evidence window', async () => {
+    const table = await historyServiceMock.findEpochContextAtBlock();
+    table.stakeDistribution.push({
+      ...table.stakeDistribution[0],
+      poolId: 'pool-f',
+      firstRegistrationSlot: null,
+    });
+    for (const entry of table.stakeDistribution) entry.relativeStakeDenominator = 6n;
+    const loadRegistry = (loadTrustedPoolRegistryCheckpoint as jest.Mock).getMockImplementation()!;
+    (loadTrustedPoolRegistryCheckpoint as jest.Mock).mockImplementation((file, point) => {
+      const registry = loadRegistry(file, point);
+      const binding = { pool_id: 'pool-f', vrf_key_hash: Buffer.alloc(32, 6), first_registration_slot: 10n };
+      registry.pools.push({ registration: binding, registered: true,
+        pending_vrf_key_hash: new Uint8Array(), pending_effective_epoch: 0n, retirement_epoch: 0n });
+      registry.mark.push(binding);
+      registry.effective.push(binding);
+      return registry;
+    });
+
+    const response = await service.queryNewClient({ height: 100n } as any);
+    const client = ClientStateProbabilistic.decode(response.client_state!.value);
+    expect(stabilityDescendantBlocks.some((block) => block.slotLeader === 'pool-f')).toBe(false);
+    expect(client.epoch_contexts[0].stake_distribution.find((entry) => entry.pool_id === 'pool-f'))
+      .toMatchObject({ first_registration_slot: 10n, vrf_key_hash: Buffer.alloc(32, 6) });
+
+    table.stakeDistribution[5].firstRegistrationSlot = 10n;
+    const trusted = await historyServiceMock.findBlockByHeight(100n);
+    historyServiceMock.findBlockByHeight.mockImplementation(async (height: bigint) => ({
+      ...trusted, height: Number(height), hash: `hash-${height}`, slotNo: trusted.slotNo + height - 100n,
+    }));
+    historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
+    historyServiceMock.findDescendantBlocks.mockResolvedValue(
+      stabilityDescendantBlocks.map((block, index) => ({
+        ...block, height: block.height + 1, slotLeader: index === 0 ? 'pool-f' : block.slotLeader,
+      })),
+    );
+    const update = await service.queryIBCHeader({ height: 101n, trusted_height: 100n } as any);
+    const header = ProbabilisticHeader.decode(update.header!.value);
+    expect(header.new_epoch_context).toBeUndefined();
+    expect(header.anchor_block!.height!.revision_height).toBe(101n);
+  });
+
+  it.each([null, undefined])('rejects an epoch rollover with an unobserved pool whose registration slot is %s', async (missing) => {
+    const table = await historyServiceMock.findEpochContextAtBlock();
+    table.stakeDistribution.push({
+      ...table.stakeDistribution[0],
+      poolId: 'pool-f',
+      firstRegistrationSlot: missing,
+    });
+    for (const entry of table.stakeDistribution) entry.relativeStakeDenominator = 6n;
+    const anchor = await historyServiceMock.findBlockByHeight(100n);
+    historyServiceMock.findBlockByHeight.mockImplementation(async (height: bigint) =>
+      height === 99n
+        ? { ...anchor, height: 99, epochNo: 6, slotNo: MATURE_POOL_SLOT + 990n }
+        : anchor,
+    );
+    historyServiceMock.findEpochContextAtBlock.mockImplementation(async (block: { epochNo: number }) =>
+      block.epochNo === 6
+        ? { ...table, epoch: 6, verificationContext: {
+            ...table.verificationContext,
+            currentEpochStartSlot: MATURE_POOL_SLOT,
+            currentEpochEndSlotExclusive: MATURE_POOL_SLOT + 1000n,
+          } }
+        : table,
+    );
+    historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
+
+    await expect(service.queryIBCHeader({ height: 100n, trusted_height: 99n } as any)).rejects.toThrow(
+      'First registration slot unavailable for pool pool-f in epoch 7',
+    );
+  });
+
   it('represents an authenticated genesis parent as NeutralNonce', async () => {
     miniProtocalsServiceMock.extractBlockHeaderCbor.mockReturnValueOnce(
       Buffer.from(

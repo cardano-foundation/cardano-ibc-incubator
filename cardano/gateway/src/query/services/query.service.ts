@@ -2767,6 +2767,12 @@ export class QueryService {
       currentEpochEndSlotExclusive: bigint;
     },
   ): ProbabilisticEpochContext {
+    const missingRegistration = stakeDistribution.find((entry) => entry.firstRegistrationSlot == null);
+    if (missingRegistration) {
+      throw new GrpcFailedPreconditionException(
+        `First registration slot unavailable for pool ${missingRegistration.poolId} in epoch ${epoch}`,
+      );
+    }
     return {
       epoch: BigInt(epoch),
       stake_distribution: stakeDistribution.map(
@@ -2774,7 +2780,10 @@ export class QueryService {
           pool_id: entry.poolId,
           stake: this.toProtoUint64(entry.stake, `stake_distribution[${entry.poolId}].stake`),
           vrf_key_hash: Buffer.from(entry.vrfKeyHash, 'hex'),
-          first_registration_slot: entry.firstRegistrationSlot ?? 0n,
+          first_registration_slot: this.toProtoUint64(
+            entry.firstRegistrationSlot!,
+            `stake_distribution[${entry.poolId}].first_registration_slot`,
+          ),
           relative_stake_numerator: this.toProtoUint64(
             entry.relativeStakeNumerator,
             `stake_distribution[${entry.poolId}].relative_stake_numerator`,
