@@ -39,7 +39,7 @@ The implementation adheres to the [inter-blockchain communication protocol](http
 | ICS-20 transfer path | Local: `v8-classic` | Other local profiles need shared clock integration |
 | Historical query backend | Active | Uses `Yaci Store + Bridge Projection` rather than a generic `db-sync` query surface |
 | Public network integrations | Pre-production | Select paths exist for public testnets and external Cardano services, but the operating model is still evolving |
-| Mithril light client and local setup | Deprecated / disabled | Not maintained for new deployments; source is retained only for historical reference and type compatibility |
+| Local Mithril devnet | Disabled | Not maintained. The Mithril light client, `08-cardano-mithril`, has been removed |
 | Production deployment | Not recommended | This repository should be treated as pre-production software |
 
 ## Trust Model & Security Considerations
@@ -63,13 +63,13 @@ The light client itself never makes a network call. The Gateway gathers everythi
 
 ![Hermes, the Gateway, and the Cardano data services, showing the exact call made to each service and the header or transaction field it fills](docs/assets/mechanics/gateway-data-sources.gif)
 
-The older Mithril light client and local Mithril setup are deprecated, disabled, and not maintained. They remain in the repository only for historical design reference and protobuf/type compatibility.
+The older Mithril light client, `08-cardano-mithril`, has been removed. The local Mithril devnet is disabled and not maintained.
 
 ## Overview
 The repository is organized around these main areas:
 
 - `cardano`: Cardano on-chain validators, off-chain deployment code, and the Gateway.
-- `cosmos`: The [standalone async-ICQ host](cosmos/async-icq-v10/README.md), [dormant VesselOracle module](cosmos/vesseloracle-v10/README.md), shared Cardano light-client core, ibc-go v8 and v10 adapters, and preserved deprecated Mithril module. The v8 adapter targets Cosmos SDK 0.50; the async-ICQ host, VesselOracle, v10 adapters, and Mithril module target Cosmos SDK 0.53.
+- `cosmos`: The [standalone async-ICQ host](cosmos/async-icq-v10/README.md), [dormant VesselOracle module](cosmos/vesseloracle-v10/README.md), shared Cardano light-client core, and ibc-go v8 and v10 adapters. The v8 adapter targets Cosmos SDK 0.50; the async-ICQ host, VesselOracle, and v10 adapters target Cosmos SDK 0.53.
 - `proto-types`: Shared protobuf contracts and generated TypeScript bindings, including the [dormant VesselOracle integration contract](docs/vesseloracle.md).
 - `relayer`: A [Hermes](https://hermes.informal.systems/) fork with a native Cardano `ChainEndpoint` implementation.
 - `caribic`: The CLI for configuring, starting, stopping, and testing the local bridge stack.
@@ -99,7 +99,6 @@ Additional architecture diagrams:
 - Gateway escrow flow: `cardano/gateway/README.md#sendpacket-escrow-flow`
 - Denom trace lifecycle: `docs/denom-trace-mapping.md`
 - Probabilistic light client: `docs/probabilistic-light-client.md`
-- Deprecated Mithril proof flow: `docs/mithril-light-client.md#mithril-proof-flow-for-relaying`
 - Diagram index: `docs/architecture-overview.md`
 
 ### Relayer Implementation (Hermes)
@@ -218,7 +217,7 @@ Local Cardano images are pinned in `chains/cardano/devkit/Dockerfile` and `chain
 Local Cardano uses Yaci DevKit. See the [Caribic guide](caribic/README.md#local-cardano-network) for migration, startup timing and current limitations.
 
 > [!WARNING]
-> Mithril setup is deprecated, disabled, and not maintained. Do not use `caribic start --with-mithril` or `caribic start mithril` for new deployments. The Mithril sources and compose files remain only for historical reference and compatibility with old types.
+> The local Mithril devnet is disabled and not maintained. `caribic start --with-mithril` and `caribic start mithril` fail fast.
 
 Before using the CLI, build and install `caribic` locally:
 

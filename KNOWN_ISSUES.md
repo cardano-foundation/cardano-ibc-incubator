@@ -2,7 +2,7 @@
 
 Author: Julius Tranquilli, https://github.com/jtranq
 
-This document tracks engineering challenges caused by asymmetries between Cardano and Cosmos, including differences in transaction semantics and consensus algorithms. **Reviewed against [`main` at `107866a9`](https://github.com/cardano-foundation/cardano-ibc-incubator/commit/107866a998fb8a469c5b11379ee32f692815009b) on September 10, 2026.** The maintained Cardano light client is `08-cardano-probabilistic`. The older Mithril client is deprecated, disabled, and retained only as historical design reference and for type compatibility.
+This document tracks engineering challenges caused by asymmetries between Cardano and Cosmos, including differences in transaction semantics and consensus algorithms. **Reviewed against [`main` at `107866a9`](https://github.com/cardano-foundation/cardano-ibc-incubator/commit/107866a998fb8a469c5b11379ee32f692815009b) on September 10, 2026.** The maintained Cardano light client is `08-cardano-probabilistic`. The older Mithril client has been removed.
 
 ## Introduction
 
@@ -36,7 +36,7 @@ The maintained probabilistic client does not derive a Tendermint-equivalent quor
 
 These thresholds are constants in the light-client code. Operators cannot change them through Gateway or relayer configuration. The verifier applies them to a contiguous Cardano block-history witness. Its decision is deterministic but does not provide a portable finality certificate. Canonical history and epoch context come from configured observers, so the model has explicit assumptions about those data sources.
 
-The deprecated Mithril client explored a different tradeoff: it used stake-based certificates and transaction-snapshot proofs as a portable trust anchor, but checkpoint cadence and tip lag made it unsuitable for the latency expected from the maintained bridge path. Historical Mithril design and operating assumptions are documented in `docs/mithril-light-client.md`.
+The removed Mithril client explored a different tradeoff: it used stake-based certificates and transaction-snapshot proofs as a portable trust anchor, but checkpoint cadence and tip lag made it unsuitable for the latency expected from the maintained bridge path. Its design and operating assumptions are documented in [`docs/mithril-light-client.md` at `08bb4386`](https://github.com/cardano-foundation/cardano-ibc-incubator/blob/08bb438615cc9c0d6bbb06738aabb760a98df088/docs/mithril-light-client.md).
 
 Next **#2**, also significant problems arise here because even the **notion** of canonicity doesn't exist on the same paradigm. On Cardano canonicity is basically a **chain-level** property as opposed to a block/header-level property. In Ouroboros you can see multiple short-lived forks where multiple competing blocks are valid. That's why in the Cardano developer community you'll often hear this "k-deep/k-blocks" logic, as in "if you wait k blocks, you can consider the block to be **reasonably** final" (In fairness this is true, and a fine paradigm for dApp development). But that means that a header that you fetch "right now" is not inherently a final checkpoint the way that a Tendermint header+commit is.
 

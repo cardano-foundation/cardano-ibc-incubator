@@ -45,7 +45,7 @@ The [native Injective replay](../../tests/injective-probabilistic-lifecycle/READ
 
 Commitment values use the shared `commitmentcodec` package. It preserves the
 historical eight-field Tendermint client format and the release's nine-field
-format. The v8, v10 and historical Mithril adapters supply their protobuf fields
-and use the same decoding and comparison rules. See the
+format. The v8 and v10 adapters supply their protobuf fields and use the
+same decoding and comparison rules. See the
 [commitment codec specification](../../docs/cardano-commitment-codec.md) before
 changing a wire type.
