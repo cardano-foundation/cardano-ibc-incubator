@@ -175,8 +175,13 @@ function normalizeBridgeManifest(manifest) {
     if (manifest.consensus_history_format !== 'proof-backed-v1') {
         throw new Error('A fresh proof-backed deployment is required: missing or unsupported consensus-history format. Regenerate deployment artifacts; adding a marker does not migrate old contracts.');
     }
-    if (manifest.schema_version !== 4 && manifest.schema_version !== 5) {
-        throw new Error('Unsupported bridge manifest schema_version: expected 4 or 5');
+    if (manifest.schema_version !== 5) {
+        throw new Error('Unsupported bridge manifest schema_version: expected 5. A fresh channel-upgrade deployment is required');
+    }
+    for (const operation of ['chan_upgrade', 'chan_upgrade_handshake', 'chan_upgrade_finish']) {
+        if (!manifest.validators?.spend_channel?.ref_validator?.[operation]) {
+            throw new Error(`A fresh schema 5 deployment is required: missing ${operation} reference script`);
+        }
     }
     const ics20PacketCodec = manifest.ics20_packet_codec ?? 'legacy-cardano-json';
     if (ics20PacketCodec !== 'legacy-cardano-json' &&

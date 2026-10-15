@@ -86,6 +86,12 @@ function channelSchemas(Lucid) {
     return { Channel, Upgrade, ErrorReceipt, UpgradeState, Datum };
 }
 async function decodeChannelDatum(encoded, Lucid) {
+    const raw = Lucid.Data.from(encoded);
+    if (raw?.index !== 0 || raw?.fields?.length !== 3 ||
+        raw.fields[0]?.index !== 0 || raw.fields[0]?.fields?.length !== 10 ||
+        raw.fields[0].fields[0]?.index !== 0 || raw.fields[0].fields[0]?.fields?.length !== 6) {
+        throw new Error('Incompatible channel datum schema: this runtime requires a fresh schema 5 deployment with channel upgrade state');
+    }
     return Lucid.Data.from(encoded, channelSchemas(Lucid).Datum);
 }
 async function encodeChannelDatum(channelDatum, Lucid) {
