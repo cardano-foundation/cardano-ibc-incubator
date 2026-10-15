@@ -13,6 +13,9 @@ import (
 // At 900,000 signed bytes the captured SDK admission charge is at most 9M.
 const MaxVerificationWorkGas = MaxOperationGas - 10000000
 
+// Canonical table batches and bounded certificate continuations keep even
+// single-header block uploads below this limit. The capacity regression counts
+// BEGIN, completion, activation and freeze transactions against the host window.
 const MaxObservationSteps = uint32(4096)
 const SharedSnapshotChallengePeriod = 12 * time.Hour
 const SupportedInclusionTimePerStep = 10 * time.Second

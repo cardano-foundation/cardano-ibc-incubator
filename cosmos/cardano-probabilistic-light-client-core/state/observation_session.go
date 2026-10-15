@@ -268,8 +268,14 @@ func appendObservationStake(store storetypes.KVStore, session *observationSessio
 		return fmt.Errorf("stake rows are not expected in this session phase")
 	}
 	count := uint32(len(rows) / 36)
-	if count > maxObservationRowsPerStep || count > session.TableRows-session.RowsRead {
-		return fmt.Errorf("stake row batch exceeds its declared remaining count")
+	// Table boundaries are fixed by the committed row count. Authentic prefixes
+	// must not turn a 32-step table upload into 4,000 separate transactions.
+	expected := session.TableRows - session.RowsRead
+	if expected > maxObservationRowsPerStep {
+		expected = maxObservationRowsPerStep
+	}
+	if count != expected {
+		return fmt.Errorf("stake row batch must contain the next %d committed rows", expected)
 	}
 	var changes []SnapshotChange
 	previous := session.LastPool

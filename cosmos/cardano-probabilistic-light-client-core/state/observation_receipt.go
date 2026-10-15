@@ -83,7 +83,7 @@ func saveVerifiedObservation(store storetypes.KVStore, receipt *verifiedObservat
 
 func completeObservation(ctx Context, store storetypes.KVStore, cs *ClientState, session *observationSession) ([32]byte, error) {
 	if session.Complete {
-		return [32]byte(session.Receipt), nil
+		return [32]byte{}, fmt.Errorf("observation is already complete")
 	}
 	if session.PendingBlock != nil || session.ProcessedBlocks != session.BlockCount || session.Anchor == nil || !session.CreditReady || session.RowsRead != session.TableRows || session.InputDigest != observationTranscriptEnd(session.BaseReference) {
 		return [32]byte{}, fmt.Errorf("observation has not completely verified the committed evidence")
