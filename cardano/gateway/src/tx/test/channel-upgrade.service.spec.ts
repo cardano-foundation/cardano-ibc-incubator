@@ -1,3 +1,6 @@
+import { join, resolve } from 'node:path';
+import { loadSync, ServiceDefinition } from '@grpc/proto-loader';
+import { MsgChannelUpgradeInit } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import * as Lucid from '@lucid-evolution/lucid';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -293,6 +296,31 @@ describe('ChannelUpgradeService', () => {
     await expectRootWitnesses(lucidService, before, after, tree);
     expect(response.upgrade_sequence).toBe(1n);
     expect(response.upgrade.fields!.connection_hops).toEqual(['connection-1']);
+  });
+
+  it('checks INIT sequence presence and gRPC Long values before construction', async () => {
+    const root = resolve(__dirname, '../../../../..');
+    const protoRoot = join(root, 'proto-types/protos/ibc-go');
+    const definitions = loadSync(join(protoRoot, 'ibc/core/channel/v1/tx.proto'), {
+      keepCase: true, includeDirs: [protoRoot],
+    });
+    const wire = (definitions['ibc.core.channel.v1.Msg'] as ServiceDefinition).ChannelUpgradeInit;
+    for (const sequence of [undefined, 0n, 1n]) {
+      const { service, lucidService } = await setup(baseChannel());
+      const message = MsgChannelUpgradeInit.fromPartial({
+        port_id: 'transfer', channel_id: 'channel-0', signer: 'addr_test1authority',
+        fields: { ordering: ProtoOrder.ORDER_UNORDERED, connection_hops: ['connection-1'], version: 'ics20-1' },
+        timeout_period_ms: 3_600_000n, expected_upgrade_sequence: sequence,
+      });
+      // The gRPC boundary carries Long objects despite the generated TypeScript interface.
+      const decoded = wire.requestDeserialize(Buffer.from(MsgChannelUpgradeInit.encode(message).finish())) as MsgChannelUpgradeInit;
+      if (sequence === 0n) {
+        await expect(service.channelUpgradeInit(decoded)).resolves.toMatchObject({ upgrade_sequence: 1n });
+      } else {
+        await expect(service.channelUpgradeInit(decoded)).rejects.toThrow(/expected upgrade sequence/);
+        expect(lucidService.createUnsignedChannelUpgradeTransaction).not.toHaveBeenCalled();
+      }
+    }
   });
 
   it('builds a crossing TRY that proves the open counterparty and its proposal', async () => {
