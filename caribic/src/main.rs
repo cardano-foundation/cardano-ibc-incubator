@@ -55,8 +55,6 @@ enum StartTarget {
     Dapp,
     /// Starts only the Hermes relayer
     Relayer,
-    /// Deprecated and disabled; retained for historical reference only
-    Mithril,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
@@ -75,8 +73,6 @@ enum StopTarget {
     Gateway,
     /// Stops only the Hermes relayer
     Relayer,
-    /// Stops only the Mithril services
-    Mithril,
 }
 
 #[derive(Parser)]
@@ -160,9 +156,6 @@ enum Commands {
         /// Cleans up the local environment before starting the services
         #[arg(long, default_value_t = false)]
         clean: bool,
-        /// Disabled: the local Mithril devnet is not maintained
-        #[arg(long, default_value_t = false)]
-        with_mithril: bool,
         /// Optional network profile for the managed Cardano runtime (local, preprod, preview)
         #[arg(long)]
         network: Option<String>,
@@ -170,7 +163,7 @@ enum Commands {
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
     },
-    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, dapp, demo, gateway, relayer, mithril
+    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, dapp, demo, gateway, relayer
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
@@ -426,10 +419,9 @@ async fn main() {
         Commands::Start {
             target,
             clean,
-            with_mithril,
             network,
             chain_flag,
-        } => commands::run_start(target, clean, with_mithril, network, chain_flag).await,
+        } => commands::run_start(target, clean, network, chain_flag).await,
         Commands::Keys { command } => commands::run_keys(project_root_path, command),
         Commands::HealthCheck { service } => {
             commands::run_health_check(project_root_path, service.as_deref())
