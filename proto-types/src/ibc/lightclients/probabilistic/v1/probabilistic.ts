@@ -176,6 +176,20 @@ export interface ClientState {
    */
   bootstrap_objects: Uint8Array;
   bootstrap_pending: boolean;
+  /**
+   * Trusted Mithril signing state for certificates of mithril_epoch, set at
+   * bootstrap like the checkpoint. When present, a Mithril-certified stake
+   * distribution outranks a supplied epoch stake table.
+   */
+  mithril_epoch: bigint;
+  /**
+   * Hex-encoded JSON, exactly as Mithril publishes it.
+   */
+  mithril_aggregate_verification_key: string;
+  /**
+   * Mithril's hash of the epoch's protocol parameters.
+   */
+  mithril_protocol_parameters_hash: string;
 }
 /**
  * Production observed through the checkpoint. Bit 0 represents epoch-1 and
@@ -349,6 +363,17 @@ export interface Misbehaviour {
    */
   verified_observation1: Uint8Array;
   verified_observation2: Uint8Array;
+}
+/**
+ * Mithril aggregator certificates in JSON from consecutive epochs, starting at
+ * the client's mithril_epoch. Each certified Cardano stake distribution becomes
+ * the required stake table of the epoch whose leaders it elects.
+ * @name MithrilStakeCertificates
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.MithrilStakeCertificates
+ */
+export interface MithrilStakeCertificates {
+  certificates: string[];
 }
 /**
  * @name ProbabilisticBlock
@@ -853,6 +878,9 @@ function createBaseClientState(): ClientState {
     storage_namespace: new Uint8Array(),
     bootstrap_objects: new Uint8Array(),
     bootstrap_pending: false,
+    mithril_epoch: BigInt(0),
+    mithril_aggregate_verification_key: "",
+    mithril_protocol_parameters_hash: "",
   };
 }
 /**
@@ -992,6 +1020,15 @@ export const ClientState = {
     if (message.bootstrap_pending === true) {
       writer.uint32(336).bool(message.bootstrap_pending);
     }
+    if (message.mithril_epoch !== BigInt(0)) {
+      writer.uint32(344).uint64(message.mithril_epoch);
+    }
+    if (message.mithril_aggregate_verification_key !== "") {
+      writer.uint32(354).string(message.mithril_aggregate_verification_key);
+    }
+    if (message.mithril_protocol_parameters_hash !== "") {
+      writer.uint32(362).string(message.mithril_protocol_parameters_hash);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ClientState {
@@ -1126,6 +1163,15 @@ export const ClientState = {
         case 42:
           message.bootstrap_pending = reader.bool();
           break;
+        case 43:
+          message.mithril_epoch = reader.uint64();
+          break;
+        case 44:
+          message.mithril_aggregate_verification_key = reader.string();
+          break;
+        case 45:
+          message.mithril_protocol_parameters_hash = reader.string();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1220,6 +1266,11 @@ export const ClientState = {
     if (isSet(object.storage_namespace)) obj.storage_namespace = bytesFromBase64(object.storage_namespace);
     if (isSet(object.bootstrap_objects)) obj.bootstrap_objects = bytesFromBase64(object.bootstrap_objects);
     if (isSet(object.bootstrap_pending)) obj.bootstrap_pending = Boolean(object.bootstrap_pending);
+    if (isSet(object.mithril_epoch)) obj.mithril_epoch = BigInt(object.mithril_epoch.toString());
+    if (isSet(object.mithril_aggregate_verification_key))
+      obj.mithril_aggregate_verification_key = String(object.mithril_aggregate_verification_key);
+    if (isSet(object.mithril_protocol_parameters_hash))
+      obj.mithril_protocol_parameters_hash = String(object.mithril_protocol_parameters_hash);
     return obj;
   },
   toJSON(message: ClientState): unknown {
@@ -1360,6 +1411,12 @@ export const ClientState = {
         message.bootstrap_objects !== undefined ? message.bootstrap_objects : new Uint8Array(),
       ));
     message.bootstrap_pending !== undefined && (obj.bootstrap_pending = message.bootstrap_pending);
+    message.mithril_epoch !== undefined &&
+      (obj.mithril_epoch = (message.mithril_epoch || BigInt(0)).toString());
+    message.mithril_aggregate_verification_key !== undefined &&
+      (obj.mithril_aggregate_verification_key = message.mithril_aggregate_verification_key);
+    message.mithril_protocol_parameters_hash !== undefined &&
+      (obj.mithril_protocol_parameters_hash = message.mithril_protocol_parameters_hash);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -1495,6 +1552,11 @@ export const ClientState = {
     message.storage_namespace = object.storage_namespace ?? new Uint8Array();
     message.bootstrap_objects = object.bootstrap_objects ?? new Uint8Array();
     message.bootstrap_pending = object.bootstrap_pending ?? false;
+    if (object.mithril_epoch !== undefined && object.mithril_epoch !== null) {
+      message.mithril_epoch = BigInt(object.mithril_epoch.toString());
+    }
+    message.mithril_aggregate_verification_key = object.mithril_aggregate_verification_key ?? "";
+    message.mithril_protocol_parameters_hash = object.mithril_protocol_parameters_hash ?? "";
     return message;
   },
 };
@@ -2617,6 +2679,67 @@ export const Misbehaviour = {
     }
     message.verified_observation1 = object.verified_observation1 ?? new Uint8Array();
     message.verified_observation2 = object.verified_observation2 ?? new Uint8Array();
+    return message;
+  },
+};
+function createBaseMithrilStakeCertificates(): MithrilStakeCertificates {
+  return {
+    certificates: [],
+  };
+}
+/**
+ * Mithril aggregator certificates in JSON from consecutive epochs, starting at
+ * the client's mithril_epoch. Each certified Cardano stake distribution becomes
+ * the required stake table of the epoch whose leaders it elects.
+ * @name MithrilStakeCertificates
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.MithrilStakeCertificates
+ */
+export const MithrilStakeCertificates = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.MithrilStakeCertificates",
+  encode(message: MithrilStakeCertificates, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    for (const v of message.certificates) {
+      writer.uint32(10).string(v!);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): MithrilStakeCertificates {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMithrilStakeCertificates();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.certificates.push(reader.string());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): MithrilStakeCertificates {
+    const obj = createBaseMithrilStakeCertificates();
+    if (Array.isArray(object?.certificates))
+      obj.certificates = object.certificates.map((e: any) => String(e));
+    return obj;
+  },
+  toJSON(message: MithrilStakeCertificates): unknown {
+    const obj: any = {};
+    if (message.certificates) {
+      obj.certificates = message.certificates.map((e) => e);
+    } else {
+      obj.certificates = [];
+    }
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<MithrilStakeCertificates>, I>>(
+    object: I,
+  ): MithrilStakeCertificates {
+    const message = createBaseMithrilStakeCertificates();
+    message.certificates = object.certificates?.map((e) => e) || [];
     return message;
   },
 };

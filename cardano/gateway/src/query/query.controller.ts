@@ -65,6 +65,8 @@ import {
   QueryTransactionByHashResponse,
   QueryIBCHeaderRequest,
   QueryIBCHeaderResponse,
+  QueryMithrilStakeCertificatesRequest,
+  QueryMithrilStakeCertificatesResponse,
 } from '@cardano-ibc/proto-types/build/ibc/core/types/v1/query';
 import {
   QueryBridgeManifestRequest,
@@ -293,6 +295,13 @@ export class QueryController {
   async queryIBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse> {
     const response: QueryIBCHeaderResponse = await this.queryService.queryIBCHeader(request);
     return response as unknown as QueryIBCHeaderResponse;
+  }
+
+  @GrpcMethod('Query', 'MithrilStakeCertificates')
+  async queryMithrilStakeCertificates(
+    request: QueryMithrilStakeCertificatesRequest,
+  ): Promise<QueryMithrilStakeCertificatesResponse> {
+    return this.queryService.queryMithrilStakeCertificates(request);
   }
   @GrpcMethod('Query', 'NextSequenceReceive')
   async queryNextSequenceReceive(

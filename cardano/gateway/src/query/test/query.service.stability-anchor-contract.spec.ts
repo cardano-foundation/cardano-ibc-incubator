@@ -10,6 +10,7 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   ClientState as ClientStateProbabilistic,
+  MithrilStakeCertificates,
   ProbabilisticHeader,
   ProbabilisticBlock,
   EpochContext,
@@ -904,6 +905,57 @@ describe('historical Hermes challenge request', () => {
   });
 });
 
+describe('QueryService Mithril-certified stake', () => {
+  // The certificate sealed in `epoch` certifies epoch-1's stake. Epoch e is
+  // signed by key-e and names key-(e+1).
+  const certificate = (epoch: number) =>
+    JSON.stringify({
+      epoch,
+      aggregate_verification_key: `key-${epoch}`,
+      protocol_message: {
+        message_parts: {
+          current_epoch: `${epoch}`,
+          cardano_stake_distribution_epoch: `${epoch - 1}`,
+          cardano_stake_distribution_merkle_root: 'ab'.repeat(32),
+          next_aggregate_verification_key: `key-${epoch + 1}`,
+          next_protocol_parameters: 'cd'.repeat(32),
+        },
+      },
+    });
+  const stake = Object.fromEntries(['a', 'b', 'c', 'd', 'e'].map((pool) => [`pool-${pool}`, 200]));
+  const useMithril = (distributions: Record<number, Record<string, number>>) => {
+    const get = (service as any).configService.get as jest.Mock;
+    const implementation = get.getMockImplementation()!;
+    get.mockImplementation((key: string) =>
+      key === 'mithrilEndpoint' ? 'http://mithril-aggregator:8080/aggregator' : implementation(key),
+    );
+    (service as any).mithrilService = {
+      getCardanoStakeDistributionByEpoch: jest.fn(
+        async (epoch: number) =>
+          distributions[epoch] && {
+            epoch,
+            hash: '',
+            certificate_hash: `certificate-${epoch}`,
+            stake_distribution: distributions[epoch],
+            created_at: '',
+          },
+      ),
+      getCertificateJsonByHash: jest.fn(async (hash: string) => certificate(Number(hash.split('-')[1]) + 1)),
+    };
+  };
+
+  it('serves the certificates that extend a client anchor', async () => {
+    useMithril({ 6: stake, 7: stake });
+    const response = await service.queryMithrilStakeCertificates({ mithril_epoch: 7n });
+    expect(response.client_message?.type_url).toBe('/ibc.lightclients.probabilistic.v1.MithrilStakeCertificates');
+    const message = MithrilStakeCertificates.decode(response.client_message!.value);
+    expect(message.certificates.map((json) => JSON.parse(json).epoch)).toEqual([7, 8]);
+    // Epoch 8's stake is not certified yet.
+    await expect(service.queryMithrilStakeCertificates({ mithril_epoch: 9n })).resolves.toEqual({});
+    await expect(service.queryMithrilStakeCertificates({ mithril_epoch: 0n })).rejects.toThrow('positive epoch');
+  });
+});
+
 // These witnesses also run through native verification and both SDK keepers.
 describe('native epoch-boundary catch-up', () => {
   for (const name of ['size', 'count', 'control', 'combined']) {
@@ -958,6 +1010,24 @@ describe('native epoch-boundary catch-up', () => {
       else expect(response.header!.value.length).toBeGreaterThan(768 * 1024);
       if (name === 'count') expect(header.bridge_blocks.length).toBeGreaterThan(32);
       if (name === 'combined') { expect(header.anchor_block!.height!.revision_height).toBe(1007n); expect(header.new_epoch_context!.epoch).toBe(8n); }
+      if (name === 'combined') {
+        // An anchored client is never offered an epoch 8 table that Mithril's
+        // epoch 6 distribution contradicts.
+        const certified = Object.fromEntries(header.new_epoch_context!.stake_distribution.map((entry) => [entry.pool_id, Number(entry.stake)]));
+        const [first] = Object.keys(certified);
+        const mithril = { getCardanoStakeDistributionByEpoch: jest.fn() };
+        (service as any).mithrilService = mithril;
+        const get = (service as any).configService.get as jest.Mock;
+        const implementation = get.getMockImplementation()!;
+        get.mockImplementation((key) => key === 'mithrilEndpoint' ? 'http://mithril-aggregator:8080/aggregator' : implementation(key));
+        const anchored = { height: 1031n, trusted_height: trustedHeight, checkpoint_only: false,
+          probabilistic_client_state: ClientStateProbabilistic.encode({ ...client, mithril_epoch: 7n }).finish() };
+        mithril.getCardanoStakeDistributionByEpoch.mockImplementation(async (epoch) => epoch === 6 ? { epoch, stake_distribution: { ...certified, [first]: certified[first] + 1 } } : undefined);
+        await expect(service.queryStabilityIBCHeader(anchored)).rejects.toThrow("differs from Mithril's certified epoch 6 distribution");
+        mithril.getCardanoStakeDistributionByEpoch.mockImplementation(async (epoch) => epoch === 6 ? { epoch, stake_distribution: certified } : undefined);
+        expect((await service.queryStabilityIBCHeader(anchored)).header).toEqual(response.header);
+        get.mockImplementation(implementation);
+      }
       if (process.env.UPDATE_NATIVE_BOUNDARY_FIXTURE === '1') writeFileSync(`${path}/gateway-boundary-${name}.pb.gz`, gzipSync(response.header!.value));
       expect(Buffer.from(response.header!.value)).toEqual(gunzipSync(readFileSync(`${path}/gateway-boundary-${name}.pb.gz`)));
 
