@@ -177,6 +177,15 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 	if !bytes.Equal(session.BaseReference, cs.CheckpointReference) {
 		return nil, fmt.Errorf("forward observation base became stale during staging")
 	}
+	live, _, err := currentVerificationCheckpoint(ctx, cs)
+	if err != nil {
+		return nil, err
+	}
+	// A staged session cannot reserve trust across expiry. Its live base must
+	// still be current and fresh when either a proposal or anchor activates.
+	if cs.IsExpired(live.Timestamp, ctx.BlockTime()) {
+		return nil, ErrTrustingPeriodExpired
+	}
 	receipt, err := loadVerifiedObservation(store, cs, session.Receipt)
 	if err != nil {
 		return nil, err
@@ -193,8 +202,7 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 			if err != nil {
 				return nil, err
 			}
-			trusted, found := GetConsensusState(private, cdc, cs.LatestHeight)
-			if !found || cs.TrustingPeriod <= 0 || trusted.Timestamp > ^uint64(0)-uint64(cs.TrustingPeriod) || trusted.Timestamp+uint64(cs.TrustingPeriod) <= deadline {
+			if cs.TrustingPeriod <= 0 || live.Timestamp > ^uint64(0)-uint64(cs.TrustingPeriod) || live.Timestamp+uint64(cs.TrustingPeriod) <= deadline {
 				return nil, fmt.Errorf("proposal must leave its entire response window inside the client's trusting period")
 			}
 			receipt.ActivatedAt = uint64(ctx.BlockTime().UnixNano())
