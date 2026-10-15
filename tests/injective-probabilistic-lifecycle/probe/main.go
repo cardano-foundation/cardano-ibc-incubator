@@ -172,6 +172,10 @@ func main() {
 		checkpointPrepare(encoding, address)
 		return
 	}
+	if os.Args[1] == "initialization-run" || os.Args[1] == "initialization-info" {
+		initializationRun(encoding, key, address)
+		return
+	}
 	if os.Args[1] == "bounded-serve" {
 		boundedServe()
 		return

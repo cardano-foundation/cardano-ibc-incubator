@@ -143,6 +143,7 @@ type boundedDriver struct {
 	evidence        []map[string]any
 	discardAttacker *ethsecp256k1.PrivKey
 	discardAttempts uint32
+	fullAdmission   bool
 }
 
 func (d *boundedDriver) as(key *ethsecp256k1.PrivKey, action func()) {
@@ -245,10 +246,24 @@ func (d *boundedDriver) send(label string, message sdk.Msg) {
 	if len(raw) > 900000 {
 		panic(fmt.Sprintf("%s signed transaction is %d bytes", label, len(raw)))
 	}
-	check, err := d.client.CheckTx(context.Background(), &abci.CheckTxRequest{Tx: raw, Type: 2})
+	checkType := abci.CHECK_TX_TYPE_RECHECK
+	if d.fullAdmission {
+		checkType = abci.CHECK_TX_TYPE_CHECK
+	}
+	check, err := d.client.CheckTx(context.Background(), &abci.CheckTxRequest{Tx: raw, Type: checkType})
 	must(err)
 	record := map[string]any{"label": label, "signer": d.address, "signed_bytes": len(raw), "simulation_gas": simulation.GasInfo.GasUsed, "gas_wanted": gas, "check_tx": check}
 	if check.Code == 0 {
+		if d.fullAdmission {
+			// A committed empty block resets admission state before ReCheckTx.
+			d.block()
+			recheck, err := d.client.CheckTx(context.Background(), &abci.CheckTxRequest{Tx: raw, Type: abci.CHECK_TX_TYPE_RECHECK})
+			must(err)
+			record["recheck_tx"] = recheck
+			if recheck.Code != 0 {
+				panic(fmt.Sprintf("%s ReCheckTx failed: %s", label, recheck.Log))
+			}
+		}
 		result := d.block(raw).TxResults[0]
 		record["execution"] = result
 		record["height"] = d.height
