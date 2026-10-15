@@ -16,6 +16,9 @@ def argument_path(args, flag):
 
 
 def prepare_genesis(args, peer):
+    expected_security = int(os.environ.get("DEVKIT_SECURITY_PARAM", "48"))
+    if expected_security not in {48, 2160}:
+        raise ValueError("Unsupported DevKit security parameter")
     configuration = argument_path(args, "--config")
     source = configuration.read_text()
     fields = json.loads(source) if source.lstrip().startswith("{") else None
@@ -31,19 +34,19 @@ def prepare_genesis(args, peer):
     byron_path = genesis_path("ByronGenesisFile")
     byron = json.loads(byron_path.read_text())
     shelley = json.loads(genesis_path("ShelleyGenesisFile").read_text())
-    if shelley.get("securityParam") != 48:
-        raise ValueError("Expected DevKit Shelley securityParam 48")
-    if byron.get("protocolConsts", {}).get("k") == 48:
+    if shelley.get("securityParam") != expected_security:
+        raise ValueError(f"Expected DevKit Shelley securityParam {expected_security}")
+    if byron.get("protocolConsts", {}).get("k") == expected_security:
         return
     database = argument_path(args, "--database-path")
     if database.exists() and (not database.is_dir() or any(database.iterdir())):
         raise ValueError("Retained DevKit genesis has mismatched security parameters, reset the DevKit network")
     if peer or byron.get("protocolConsts", {}).get("k") != 10:
         raise ValueError("Unexpected DevKit Byron security parameter")
-    # DevKit's securityParam setting changes only Shelley. Its fixed
-    # Byron k=10 also limits retained ledger queries, below our proof depth 24.
+    # DevKit's securityParam setting changes only Shelley. Pin both eras to
+    # the selected fixture parameter before the first block is produced.
     # Native join downloads this corrected genesis from main for every peer.
-    byron["protocolConsts"]["k"] = 48
+    byron["protocolConsts"]["k"] = expected_security
     temporary = byron_path.with_suffix(".tmp")
     temporary.write_text(json.dumps(byron, indent=2) + "\n")
     temporary.replace(byron_path)

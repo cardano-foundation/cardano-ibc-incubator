@@ -147,6 +147,26 @@ class GenesisTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Shelley securityParam 48"):
                 prepare_genesis(args, peer=False)
 
+    def test_fresh_pool_aging_profile_pins_both_eras_to_2160(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"DEVKIT_SECURITY_PARAM": "2160"}):
+            args = native_files(folder, k=10)
+            (Path(folder) / "genesis/shelley-genesis.json").write_text('{"securityParam": 2160}')
+            prepare_genesis(args, peer=False)
+            byron = json.loads((Path(folder) / "genesis/byron-genesis.json").read_text())
+            self.assertEqual(byron["protocolConsts"]["k"], 2160)
+            prepare_genesis(args, peer=True)
+
+    def test_pool_aging_cannot_change_a_retained_genesis(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"DEVKIT_SECURITY_PARAM": "2160"}):
+            args = native_files(folder)
+            with self.assertRaisesRegex(ValueError, "Shelley securityParam 2160"):
+                prepare_genesis(args, peer=False)
+
+    def test_unsupported_fixture_security_parameter_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"DEVKIT_SECURITY_PARAM": "49"}):
+            with self.assertRaisesRegex(ValueError, "Unsupported DevKit security"):
+                prepare_genesis(native_files(folder), peer=False)
+
 
 if __name__ == "__main__":
     unittest.main()

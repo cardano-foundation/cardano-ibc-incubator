@@ -151,7 +151,7 @@ def main():
     genesis = json.loads(genesis_bytes)
     if genesis['networkMagic'] != 42 or genesis['epochLength'] != 432000 or genesis['slotLength'] != 1:
         parser.error('This rehearsal requires a fresh magic-42 five-day-epoch genesis')
-    _clock.require_qualified_genesis(genesis)
+    _clock.require_aging_headroom(genesis)
     if not -63072000 <= baseline['clockOffsetSeconds'] <= -259200:
         parser.error('The fresh fixture needs at least three days of isolated clock headroom')
     if STAGES.index(args.from_stage) > STAGES.index(args.through_stage):
@@ -316,9 +316,15 @@ def main():
                 else:
                     run('startup-diagnostics', compose + ['logs', '--no-color', '--tail', '400', 'history', 'history-db', 'devkit'])
                     raise RuntimeError('Yaci did not index the fresh canonical chain; inspect retained startup diagnostics')
-                run('genesis-history', ['node', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-genesis-history.cjs'), str(runtime)])
+                run('genesis-history', ['node', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-genesis-history.cjs'), str(runtime),
+                    *(['--check'] if (runtime / 'genesis-history-replay.json').exists() else [])])
                 run('stake', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/capture-migration-stake.py'),
                               '--runtime', str(runtime), '--project', project])
+                genesis_start = datetime.datetime.fromisoformat(genesis['systemStart'].replace('Z', '+00:00'))
+                mature_ms = int(genesis_start.timestamp() * 1000) + _clock.POOL_AGING_SECONDS * 1000
+                run('pool-aging', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/advance-migration-clock.py'),
+                    '--runtime', str(runtime), '--project', project, '--file-clock', '--pool-aging',
+                    '--step-seconds', '86400', '--until-ms', str(mature_ms)])
                 history(source)
                 gateway(source)
                 run('manifest-v1', runtime_command('export', source))
@@ -375,7 +381,8 @@ def main():
                 stop_operational()
                 ready = int(observed['registry']['phase']['Proposed']['ready_at']) + 120000
                 run('approval-delay', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/advance-migration-clock.py'),
-                    '--runtime', str(runtime), '--project', project, '--file-clock', '--until-ms', str(ready)])
+                    '--runtime', str(runtime), '--project', project, '--file-clock', '--until-ms', str(ready),
+                    '--step-seconds', '86400' if genesis['securityParam'] == 2160 else '300'])
             elif stage.startswith('handover-'):
                 generation = int(stage[-1])
                 handler = installed(generation - 1)
