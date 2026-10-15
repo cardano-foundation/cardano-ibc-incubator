@@ -272,6 +272,152 @@ Hermes expands the exact saved checkpoint through pinned snapshot queries. It st
 
 An independent observer still needs qualifying native evidence and transaction inclusion within the supported window. The delay does not authenticate the stake allocation. Censorship, missing evidence or a false allocation may prevent progress. See [the verification design](probabilistic-bounded-verification.md) for the workload calculation and authorized recovery limitation.
 
+## Mithril-Certified Stake
+
+The epoch nonce comes from verified block history, and pool identities and VRF
+keys come from the registration registry. Stake amounts are the remaining
+unsigned part of an epoch table. For a client created with a Mithril anchor,
+a Cardano stake distribution certified by Mithril outranks an uploaded stake
+table. Once one is recorded for an epoch, that epoch's table must equal it and
+needs no response window. Until then the uploaded table and its 12-hour
+response window apply, as for any client. Every existing check stays in place.
+
+The anchor is three client-state fields, trusted at bootstrap like the
+checkpoint: `mithril_epoch`, `mithril_aggregate_verification_key` and
+`mithril_protocol_parameters_hash`. They name the aggregate verification key
+that signs Mithril certificates in that epoch and the hash of its protocol
+parameters. A client without them keeps the response-window model.
+
+A relayer submits `MithrilStakeCertificates` through `MsgUpdateClient`. It
+carries Mithril aggregator certificates in JSON from consecutive epochs,
+starting at `mithril_epoch`. For each certificate the client:
+
+1. requires `current_epoch` to equal the anchor epoch and the certificate's
+   aggregate verification key to equal the anchor's;
+2. accepts the certificate's protocol parameters only if their hash equals the
+   anchor's, because certificate metadata, including the quorum parameters, is
+   not signed;
+3. checks that `signed_message` is the hash of the protocol message, with parts
+   in Mithril's enum order, and verifies the STM multi-signature over it;
+4. requires the certificate to certify a Cardano stake distribution, so the
+   anchor cannot pass an epoch without recording its stake;
+5. records the certified Merkle root for the epoch that distribution elects, and
+   moves the anchor to the next epoch's signed verification key and parameters.
+
+The multi-signature is verified as mithril-stm 0.12.0 verifies it. That is the
+version the Mithril mainnet aggregator 0.9.22 (`3f6cb73`) builds with.
+
+- **Lottery.** An index wins if `ev / 2^512 < 1 - (1 - phi_f)^(stake / total)`.
+  `ev` is the BLAKE2b-512 hash of `map`, the commitment-prefixed message, the
+  little-endian index and the signature, read as a little-endian integer. As in
+  mithril-stm's default backend, the client compares `2^512 / (2^512 - ev)`
+  with `exp(-w ln(1 - phi_f))` by an exact Taylor expansion with an early stop,
+  and `phi_f` within `f64::EPSILON` of 1 always wins. The logarithm is
+  correctly rounded with exact arithmetic, so every processor reaches the same
+  result.
+- **Indices.** Every claimed index must win and be at most `m`. Indices must be
+  unique, and at least `k` are needed.
+- **`phi_f`.** Mithril authenticates `phi_f` only through its U8F24 encoding in
+  the parameters hash, while the lottery uses the exact float. The client
+  requires the canonical value of the encoding: the binary64 nearest the
+  decimal with the fewest digits that encodes to it. A configured `phi_f` with
+  at most seven digits after the point always qualifies, and the lottery input
+  is then a function of authenticated data.
+- **Decoding.** Aggregate keys and signatures are decoded strictly:
+  - integers go into typed fields;
+  - byte strings must be JSON arrays of their exact length;
+  - unknown fields, duplicate keys and trailing data are rejected;
+  - signatures must be G1 subgroup points other than infinity.
+
+`tests/mithril-reference` regenerates reference vectors from the pinned
+mithril-stm and fixed crates. The tests check:
+- every lottery outcome of upstream-signed certificates, including stakes above
+  `2^63`;
+- upstream aggregates, and their rejection once an index that did not win is
+  claimed;
+- U8F24 conversions at and around half points.
+
+Fuzz targets cover certificate and multi-signature decoding and verification.
+
+Mithril certifies the distribution of epoch `N`, the snapshot taken at its end,
+during epoch `N+1`. That distribution elects the slot leaders of epoch `N+2`.
+On mainnet the certificate appears minutes into epoch `N+1`, about five days
+before it is needed, so relayers record it well before the rollover. Mithril's
+distribution holds every pool with nonzero stake in that snapshot, which is the
+table the client accepts.
+
+An observation session uploads a new epoch's stake rows in Mithril's pool ID
+order, the order of the canonical bech32 identifiers. As it seals the table,
+the client builds Mithril's Merkle root from the pool IDs and lovelace stakes,
+keeping only the mountain range's peaks. The receipt and the activated epoch
+table record that root. When a session first activates a new epoch's table:
+
+- If a certified root is recorded for that epoch, the table's root must equal
+  it. The table is then authenticated, so its deadline is the activation time
+  and it becomes usable after the next committed host block. The host
+  resumption guard still applies.
+- Otherwise the table gets the usual 12-hour response window.
+
+A certificate can arrive after a table was activated under the response window.
+If its distribution differs from that table, the table is proven wrong:
+`CheckForMisbehaviour` reports the certificates and the keeper freezes the
+client. If it agrees, the window stays, because installed proof deadlines are
+immutable within a generation.
+
+Certificates cost 2,000,000 gas each. A message carries up to eight, of at most
+512 KiB each and 880,000 bytes together, the transport budget of an observation
+step. Verifying a mainnet certificate takes about 40 ms, mostly in the exact
+lottery comparison for each claimed index.
+The client verifies them again in `UpdateState` because ibc-go's ReCheckTx path
+omits `VerifyClientMessage`.
+
+The bootstrap tool sets the anchor when given an aggregator, for example
+`go run ./cmd/bootstrap -input trusted-checkpoint.json -output bootstrap.json
+-mithril-aggregator https://aggregator.release-mainnet.api.mithril.network/aggregator`.
+For a client bootstrapped in epoch `C` it reads the certificate that sealed
+epoch `C-2`'s distribution. Its signed parts name the key and parameters that
+sign epoch `C`'s certificates. That distribution elects epoch `C`'s leaders, so
+the tool refuses the anchor unless it equals the trusted table. Without the
+flag the client is unanchored. The local devnet's aggregator does not sign
+Cardano stake distributions, so devnet clients stay unanchored.
+
+The Gateway's `MithrilStakeCertificates` query returns up to four certificates
+that extend a given `mithril_epoch`, ready to submit as a client message.
+Hermes asks for them from each anchored client's refresh task and before it
+stages a new epoch table, and submits any it receives. After an empty answer it
+waits ten minutes before asking again for the same epoch. The Gateway also
+refuses to propose a stake table that differs from a distribution Mithril has
+certified for its epoch, because the client would reject or freeze on it.
+
+Recovery adopts the substitute's Mithril state.
+- **What carries over.** The substitute's anchor, and the roots it certified for
+  epochs after its checkpoint, are pinned when the authority approves the
+  recovery. Activation installs them in the new verification generation. Those
+  are the roots the replacement's next rollovers need.
+- **What stays behind.** Certified roots are kept per generation. The subject's
+  roots stay with its old generation and are not trusted afterwards. A relayer
+  re-establishes any beyond the substitute's anchor by submitting those
+  certificates again.
+- **When recovery is refused:**
+  - subject and substitute certified different distributions for one epoch;
+  - they hold different anchors for one epoch;
+  - the substitute's anchor is more than eight epochs ahead of its checkpoint.
+- **Trust configuration.** Whether a client is anchored is a recovery
+  invariant, so recovery cannot add or remove Mithril-certified stake.
+
+The verifier links blst through cgo, so chain binaries must be built with
+`CGO_ENABLED=1`. On amd64, blst's Go binding uses ADX instructions unless it is
+built portable. Build distributed binaries with
+`CGO_CFLAGS="-O2 -D__BLST_PORTABLE__"`, which picks the instructions at run
+time, as mithril-stm's own blst build does. CI runs the verifier tests on amd64
+in both builds, on arm64 Linux and on macOS.
+
+This adds Mithril's assumptions for anchored clients: the genesis key behind the
+anchor and an honest majority of the stake that signs Mithril certificates. If
+Mithril never certifies some epoch's distribution, the anchor cannot advance
+past that epoch. The client keeps working, and every later epoch falls back to
+the response window.
+
 ## Host-Chain Software Upgrades
 
 A Cosmos binary replacement runs the selected verifier against existing

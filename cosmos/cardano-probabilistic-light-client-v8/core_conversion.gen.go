@@ -100,6 +100,9 @@ func toCoreClientState(value *ClientState) *state.ClientState {
 		StorageNamespace:                                bytes.Clone(value.StorageNamespace),
 		BootstrapObjects:                                bytes.Clone(value.BootstrapObjects),
 		BootstrapPending:                                value.BootstrapPending,
+		MithrilEpoch:                                    value.MithrilEpoch,
+		MithrilAggregateVerificationKey:                 value.MithrilAggregateVerificationKey,
+		MithrilProtocolParametersHash:                   value.MithrilProtocolParametersHash,
 	}
 }
 
@@ -237,6 +240,15 @@ func toCoreMisbehaviour(value *Misbehaviour) *state.Misbehaviour {
 		ProbabilisticHeader2:  toCoreProbabilisticHeader(value.ProbabilisticHeader2),
 		VerifiedObservation_1: bytes.Clone(value.VerifiedObservation_1),
 		VerifiedObservation_2: bytes.Clone(value.VerifiedObservation_2),
+	}
+}
+
+func toCoreMithrilStakeCertificates(value *MithrilStakeCertificates) *state.MithrilStakeCertificates {
+	if value == nil {
+		return nil
+	}
+	return &state.MithrilStakeCertificates{
+		Certificates: mapCoreSlice(value.Certificates, func(s string) string { return s }),
 	}
 }
 
@@ -435,6 +447,9 @@ func fromCoreClientState(value *state.ClientState) *ClientState {
 		StorageNamespace:                                bytes.Clone(value.StorageNamespace),
 		BootstrapObjects:                                bytes.Clone(value.BootstrapObjects),
 		BootstrapPending:                                value.BootstrapPending,
+		MithrilEpoch:                                    value.MithrilEpoch,
+		MithrilAggregateVerificationKey:                 value.MithrilAggregateVerificationKey,
+		MithrilProtocolParametersHash:                   value.MithrilProtocolParametersHash,
 	}
 }
 
@@ -572,6 +587,15 @@ func fromCoreMisbehaviour(value *state.Misbehaviour) *Misbehaviour {
 		ProbabilisticHeader2:  fromCoreProbabilisticHeader(value.ProbabilisticHeader2),
 		VerifiedObservation_1: bytes.Clone(value.VerifiedObservation_1),
 		VerifiedObservation_2: bytes.Clone(value.VerifiedObservation_2),
+	}
+}
+
+func fromCoreMithrilStakeCertificates(value *state.MithrilStakeCertificates) *MithrilStakeCertificates {
+	if value == nil {
+		return nil
+	}
+	return &MithrilStakeCertificates{
+		Certificates: mapCoreSlice(value.Certificates, func(s string) string { return s }),
 	}
 }
 

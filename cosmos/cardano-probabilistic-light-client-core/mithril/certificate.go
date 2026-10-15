@@ -133,6 +133,12 @@ func VerifyCertificate(anchor Anchor, raw []byte) (next Anchor, distribution *St
 	if paramsHash != anchor.ProtocolParametersHash {
 		return Anchor{}, nil, fmt.Errorf("%w: protocol parameters differ from the anchor", ErrInvalidCertificate)
 	}
+	// The hash authenticates phi_f only to U8F24 precision, but the lottery
+	// uses the exact float. Requiring the canonical value of its U8F24 class
+	// makes the lottery input a function of authenticated data.
+	if canonical, err := CanonicalPhiF(u8f24(params.PhiF)); err != nil || canonical != params.PhiF {
+		return Anchor{}, nil, fmt.Errorf("%w: phi_f %v is not the canonical value of its U8F24 encoding", ErrInvalidCertificate, params.PhiF)
+	}
 	digest, err := messageDigest(parts)
 	if err != nil {
 		return Anchor{}, nil, err
@@ -219,6 +225,51 @@ func ProtocolParametersHash(k, m uint64, phiF float64) (string, error) {
 	binary.BigEndian.PutUint32(word[:4], u8f24(phiF))
 	hasher.Write(word[:4])
 	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+// CanonicalPhiF returns the canonical phi_f for a U8F24 encoding: the binary64
+// nearest the decimal with the fewest digits whose value encodes to it, the
+// smallest such decimal if there are several. A U8F24 step is about 6e-8, so
+// a configured decimal with at most seven digits after the point is always
+// the canonical value of its own encoding.
+func CanonicalPhiF(code uint32) (float64, error) {
+	if code == 0 || code > 1<<24 {
+		return 0, fmt.Errorf("U8F24 phi_f encoding %d is outside (0, 1]", code)
+	}
+	scale := new(big.Rat).SetInt64(1 << 24)
+	low := new(big.Rat).Quo(new(big.Rat).SetFrac64(2*int64(code)-1, 2), scale)
+	high := new(big.Rat).Quo(new(big.Rat).SetFrac64(2*int64(code)+1, 2), scale)
+	for digits := 1; digits <= 17; digits++ {
+		power := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(digits)), nil)
+		first := ceilRat(new(big.Rat).Mul(low, new(big.Rat).SetInt(power)))
+		last := floorRat(new(big.Rat).Mul(high, new(big.Rat).SetInt(power)))
+		for candidate := first; candidate.Cmp(last) <= 0; candidate = new(big.Int).Add(candidate, big.NewInt(1)) {
+			value, _ := new(big.Rat).SetFrac(candidate, power).Float64()
+			if u8f24(value) == code {
+				return value, nil
+			}
+			if new(big.Int).Sub(candidate, first).Cmp(big.NewInt(2)) >= 0 {
+				break
+			}
+		}
+	}
+	return 0, fmt.Errorf("U8F24 phi_f encoding %d has no canonical decimal", code)
+}
+
+func ceilRat(value *big.Rat) *big.Int {
+	quotient, remainder := new(big.Int).QuoRem(value.Num(), value.Denom(), new(big.Int))
+	if remainder.Sign() > 0 {
+		quotient.Add(quotient, big.NewInt(1))
+	}
+	return quotient
+}
+
+func floorRat(value *big.Rat) *big.Int {
+	quotient, remainder := new(big.Int).QuoRem(value.Num(), value.Denom(), new(big.Int))
+	if remainder.Sign() < 0 {
+		quotient.Sub(quotient, big.NewInt(1))
+	}
+	return quotient
 }
 
 // u8f24 rounds to the nearest U8F24 value with ties to even, as the fixed

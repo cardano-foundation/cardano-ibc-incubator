@@ -79,6 +79,9 @@ func validateBootstrapInput(cs ClientState) error {
 	if err := cs.validateBootstrapCheckpoint(); err != nil {
 		return err
 	}
+	if err := cs.validateMithrilAnchor(); err != nil {
+		return err
+	}
 
 	contexts, err := cs.normalizedEpochContexts()
 	if err != nil {

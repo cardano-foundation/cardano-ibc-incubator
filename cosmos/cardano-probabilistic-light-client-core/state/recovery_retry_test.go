@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func recoveryRetryClient(t *testing.T, ctx Context, cdc StateCodec, heightOffset uint64, counter uint64, lastCounter uint64) (*ClientState, storetypes.KVStore) {
+func recoveryRetryClient(t *testing.T, ctx Context, cdc StateCodec, heightOffset uint64, counter uint64, lastCounter uint64, prepare ...func(*ClientState)) (*ClientState, storetypes.KVStore) {
 	t.Helper()
 	client, consensus := compactTrustedFixture(t, 65)
 	client.TrustingPeriod = 96 * time.Hour
@@ -39,6 +39,9 @@ func recoveryRetryClient(t *testing.T, ctx Context, cdc StateCodec, heightOffset
 		}
 		client.LatestCheckpointOperationalCertificateCounters = append(client.LatestCheckpointOperationalCertificateCounters,
 			&OperationalCertificateCounter{PoolId: key, SequenceNumber: value})
+	}
+	for _, apply := range prepare {
+		apply(client)
 	}
 	private := dbadapter.Store{DB: dbm.NewMemDB()}
 	compact, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, client, consensus)

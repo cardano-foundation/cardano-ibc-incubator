@@ -15,6 +15,8 @@ func (cs *ClientState) VerifyClientMessage(ctx Context, cdc StateCodec, clientSt
 		return cs.verifyObservationOperation(ctx, cdc, clientStore, msg)
 	case *Misbehaviour:
 		return cs.verifyMisbehaviour(ctx, clientStore, cdc, msg)
+	case *MithrilStakeCertificates:
+		return cs.verifyMithrilStakeCertificates(ctx, msg)
 	default:
 		return ErrIBCInvalidClientType
 	}
@@ -67,6 +69,9 @@ func (cs *ClientState) UpdateState(ctx Context, cdc StateCodec, clientStore stor
 	// The keeper's verified misbehaviour path performs the freeze.
 	if _, ok := clientMsg.(*Misbehaviour); ok {
 		return nil
+	}
+	if msg, ok := clientMsg.(*MithrilStakeCertificates); ok {
+		return cs.applyMithrilStakeCertificates(ctx, cdc, clientStore, msg)
 	}
 	header, ok := clientMsg.(*ProbabilisticHeader)
 	if !ok || header.ObservationChunk == nil {

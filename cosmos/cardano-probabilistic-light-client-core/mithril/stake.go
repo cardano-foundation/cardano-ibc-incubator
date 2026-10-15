@@ -20,31 +20,52 @@ type StakeEntry struct {
 // distribution: a Merkle mountain range over "{pool_id}{stake}" leaves in pool
 // ID order, merging nodes with BLAKE2s-256 and bagging peaks from the right.
 func StakeDistributionRoot(entries []StakeEntry) (string, error) {
-	if len(entries) == 0 {
-		return "", fmt.Errorf("stake distribution is empty")
-	}
 	sorted := append([]StakeEntry(nil), entries...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].PoolID < sorted[j].PoolID })
-	type peak struct {
-		height int
-		node   []byte
-	}
-	var peaks []peak
-	for index, entry := range sorted {
-		if entry.PoolID == "" || (index > 0 && entry.PoolID == sorted[index-1].PoolID) {
-			return "", fmt.Errorf("stake distribution has an empty or duplicate pool ID %q", entry.PoolID)
+	var builder StakeRootBuilder
+	for _, entry := range sorted {
+		if err := builder.Append(entry.PoolID, entry.Stake); err != nil {
+			return "", err
 		}
-		node, height := []byte(entry.PoolID+strconv.FormatUint(entry.Stake, 10)), 0
-		for len(peaks) > 0 && peaks[len(peaks)-1].height == height {
-			node = merge(peaks[len(peaks)-1].node, node)
-			peaks = peaks[:len(peaks)-1]
-			height++
-		}
-		peaks = append(peaks, peak{height, node})
 	}
-	root := peaks[len(peaks)-1].node
-	for index := len(peaks) - 2; index >= 0; index-- {
-		root = merge(root, peaks[index].node)
+	return builder.Root()
+}
+
+// StakeRootBuilder computes StakeDistributionRoot from entries supplied one at
+// a time in pool ID order. It keeps only the mountain range's peaks, at most
+// one per bit of the entry count.
+type StakeRootBuilder struct {
+	Peaks []StakePeak
+	Last  string
+}
+
+type StakePeak struct {
+	Height uint32
+	Node   []byte
+}
+
+func (b *StakeRootBuilder) Append(poolID string, stake uint64) error {
+	if poolID <= b.Last {
+		return fmt.Errorf("stake distribution pool IDs must be non-empty and strictly increasing, got %q after %q", poolID, b.Last)
+	}
+	node, height := []byte(poolID+strconv.FormatUint(stake, 10)), uint32(0)
+	for len(b.Peaks) > 0 && b.Peaks[len(b.Peaks)-1].Height == height {
+		node = merge(b.Peaks[len(b.Peaks)-1].Node, node)
+		b.Peaks = b.Peaks[:len(b.Peaks)-1]
+		height++
+	}
+	b.Peaks = append(b.Peaks, StakePeak{Height: height, Node: node})
+	b.Last = poolID
+	return nil
+}
+
+func (b *StakeRootBuilder) Root() (string, error) {
+	if len(b.Peaks) == 0 {
+		return "", fmt.Errorf("stake distribution is empty")
+	}
+	root := b.Peaks[len(b.Peaks)-1].Node
+	for index := len(b.Peaks) - 2; index >= 0; index-- {
+		root = merge(root, b.Peaks[index].Node)
 	}
 	return hex.EncodeToString(root), nil
 }
