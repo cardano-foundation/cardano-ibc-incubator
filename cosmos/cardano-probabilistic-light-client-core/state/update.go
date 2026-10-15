@@ -197,7 +197,7 @@ func (cs *ClientState) verifyHeaderWithMode(
 
 	authenticateHeader := mode.authenticateHeader
 	if authenticateHeader == nil {
-		authenticateHeader = cs.authenticateHeaderBlocksWithContexts
+		authenticateHeader = cs.linkageFirstAuthenticator(ctx)
 	}
 	authenticatedHeader, err := authenticateHeader(
 		header,
@@ -311,6 +311,28 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return errorsmod.Wrap(ErrInvalidHeader, "verification gas exceeds the challenge capacity bound")
 	}
 	return nil
+}
+
+// linkageFirstAuthenticator checks the decoded chain's epochs, links, slots and
+// timestamps before any signature, KES or VRF verification. verifyHeaderWithMode
+// repeats these checks on the authenticated header, which tests may supply.
+func (cs *ClientState) linkageFirstAuthenticator(ctx Context) headerAuthenticator {
+	return func(
+		header *ProbabilisticHeader,
+		epochContexts []*EpochContext,
+		trustedCounters map[string]uint64,
+		trusted *trustedBlockState,
+	) (*authenticatedProbabilisticHeader, error) {
+		return cs.authenticateHeaderWitnesses(header, epochContexts, trustedCounters, trusted, func(decoded *authenticatedProbabilisticHeader) error {
+			if err := verifyHeaderEpochTransition(header, trusted, decoded); err != nil {
+				return err
+			}
+			if err := verifyBridgeContinuity(decoded, trusted); err != nil {
+				return err
+			}
+			return cs.verifyHeaderTemporalContinuity(ctx, decoded, trusted)
+		}, false)
+	}
 }
 
 func verifyHeaderEpochTransition(
@@ -671,7 +693,6 @@ func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec,
 	if !ok {
 		panic(fmt.Errorf("expected type %T, got %T", &ProbabilisticHeader{}, clientMsg))
 	}
-	ctx.chargeNativeVerification(header)
 	currentEpochContexts, err := cs.normalizedEpochContexts()
 	if err != nil {
 		panic(fmt.Errorf("failed to normalize epoch contexts for verified ProbabilisticHeader: %w", err))
@@ -687,8 +708,9 @@ func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec,
 	if err != nil {
 		panic(fmt.Errorf("trusted block state missing for verified ProbabilisticHeader at height %s: %w", header.TrustedHeight.String(), err))
 	}
+	// VerifyClientMessage authenticated this header earlier in the transaction.
 	if authenticateHeader == nil {
-		authenticateHeader = cs.authenticateHeaderBlocksWithContexts
+		authenticateHeader = cs.replayVerifiedHeaderBlocks
 	}
 	authenticatedHeader, err := authenticateHeader(
 		header,
@@ -697,7 +719,7 @@ func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec,
 		trustedBlock,
 	)
 	if err != nil {
-		panic(fmt.Errorf("failed to authenticate verified ProbabilisticHeader blocks: %w", err))
+		panic(fmt.Errorf("failed to replay verified ProbabilisticHeader blocks: %w", err))
 	}
 	if err := verifyHeaderEpochTransition(header, trustedBlock, authenticatedHeader); err != nil {
 		panic(fmt.Errorf("verified ProbabilisticHeader violated epoch transition rules: %w", err))
