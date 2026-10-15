@@ -11,7 +11,6 @@ import { HistoryService } from '../services/history.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { DenomTraceService } from '../services/denom-trace.service';
 import type { ClientDatum } from '../../shared/types/client-datum';
 import { encodeClientDatum } from '../../shared/types/client-datum';
@@ -319,7 +318,6 @@ async function stagedHistoryFixture(
     {} as KupoService,
     historyService,
     miniProtocalsService,
-    {} as MithrilService,
     {} as DenomTraceService,
     {} as any,
     createTestTreeStore(),
@@ -489,7 +487,6 @@ describe('QueryService staged client event history', () => {
       {} as KupoService,
       historyService,
       {} as MiniProtocalsService,
-      {} as MithrilService,
       {} as DenomTraceService,
       {} as any,
       createTestTreeStore(),

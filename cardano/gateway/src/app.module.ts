@@ -9,7 +9,6 @@ import configuration from './config';
 import { LucidModule } from './shared/modules/lucid/lucid.module';
 import { KupoModule } from './shared/modules/kupo/kupo.module';
 import { ApiModule } from './api/api.module';
-import { MithrilModule } from './shared/modules/mithril/mithril.module';
 import { TreeInitService } from './shared/services/tree-init.service';
 import { IbcTreeModule } from './shared/modules/ibc-tree/ibc-tree.module';
 import { HealthModule } from './health/health.module';
@@ -39,7 +38,6 @@ const bridgeConfigFileReader = {
     LucidModule,
     KupoModule,
     ApiModule,
-    MithrilModule,
   ],
   providers: [Logger, TreeInitService],
 })

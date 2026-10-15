@@ -3,7 +3,6 @@ import { ClientState, ConsensusState } from '@cardano-ibc/proto-types/build/ibc/
 import { LOVELACE } from '../../constant';
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
-import { ClientState as ClientStateMithril } from '@cardano-ibc/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 
 export function normalizeDenomTokenTransfer(denom: string): string {
   const normalizedDenom = denom?.trim();
@@ -45,14 +44,6 @@ export function decodeClientState(value: Uint8Array): ClientState {
     return ClientState.decode(value);
   } catch (error) {
     throw new GrpcInvalidArgumentException(`Error decoding client state: ${error}`);
-  }
-}
-
-export function decodeClientStateMithril(value: Uint8Array): ClientStateMithril {
-  try {
-    return ClientStateMithril.decode(value);
-  } catch (error) {
-    throw new GrpcInvalidArgumentException(`Error decoding client state mithril: ${error}`);
   }
 }
 

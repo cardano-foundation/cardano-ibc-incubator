@@ -132,7 +132,6 @@ interface Config {
   // Logical identifier for the Cardano chain used by Hermes (e.g., "cardano-devnet").
   // Cardano itself does not have a Cosmos-style chain-id; we use this as the IBC identifier.
   cardanoChainId: string;
-  cardanoLightClientMode: 'mithril' | 'stake-weighted-stability';
   cardanoNetwork: Network;
   cardanoEpochLength: number;
   cardanoClientTrustingPeriodSeconds: number;
@@ -144,9 +143,6 @@ interface Config {
   cardanoLocalEpochContextEndpoint?: string;
   cardanoPoolRegistrationHistoryEndpoint?: string;
   cardanoBlockfrostProjectId?: string;
-
-  mithrilEndpoint: string;
-  mtithrilGenesisVerificationKey: string;
 }
 
 export default (): Partial<Config> => {
@@ -159,20 +155,15 @@ export default (): Partial<Config> => {
     cardanoNetwork = 'Mainnet';
   }
 
-  const cardanoLightClientMode =
-    process.env.CARDANO_LIGHT_CLIENT_MODE === 'mithril' ? 'mithril' : 'stake-weighted-stability';
   const cardanoEpochParamsEndpoint =
     (process.env.CARDANO_NETWORK_MAGIC === '42' ? process.env.CARDANO_EPOCH_PARAMS_ENDPOINT : undefined) ||
     process.env.CARDANO_BLOCKFROST_ENDPOINT || defaultBlockfrostEndpoint(process.env.CARDANO_NETWORK_MAGIC);
-  if (cardanoLightClientMode === 'stake-weighted-stability') {
-    validatePublicNetworkStabilityConfig(cardanoNetwork, cardanoEpochParamsEndpoint);
-  }
+  validatePublicNetworkStabilityConfig(cardanoNetwork, cardanoEpochParamsEndpoint);
 
   const cardanoClientTrustingPeriodSeconds = Number(process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS || 86_400);
   if (
-    cardanoLightClientMode === 'stake-weighted-stability' &&
-    (!Number.isSafeInteger(cardanoClientTrustingPeriodSeconds) ||
-      cardanoClientTrustingPeriodSeconds < MIN_CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS)
+    !Number.isSafeInteger(cardanoClientTrustingPeriodSeconds) ||
+    cardanoClientTrustingPeriodSeconds < MIN_CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS
   ) {
     throw new Error('CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS must be at least 86400 for six-hour HostState heartbeats');
   }
@@ -191,7 +182,6 @@ export default (): Partial<Config> => {
     cardanoChainPort: Number(process.env.CARDANO_CHAIN_PORT || 3001),
     cardanoChainNetworkMagic: Number(process.env.CARDANO_CHAIN_NETWORK_MAGIC || 42),
     cardanoChainId: process.env.CARDANO_CHAIN_ID || 'cardano-devnet',
-    cardanoLightClientMode,
     cardanoNetwork: cardanoNetwork,
     cardanoEpochLength: Number(
       process.env.CARDANO_EPOCH_LENGTH || defaultEpochLength(process.env.CARDANO_NETWORK_MAGIC),
@@ -214,8 +204,5 @@ export default (): Partial<Config> => {
       process.env.CARDANO_BLOCKFROST_ENDPOINT || defaultBlockfrostEndpoint(process.env.CARDANO_NETWORK_MAGIC),
     cardanoBlockfrostProjectId:
       process.env.CARDANO_BLOCKFROST_PROJECT_ID || process.env.BLOCKFROST_PROJECT_ID,
-
-    mithrilEndpoint: process.env.MITHRIL_ENDPOINT,
-    mtithrilGenesisVerificationKey: process.env.MITHRIL_GENESIS_VERIFICATION_KEY,
   };
 };

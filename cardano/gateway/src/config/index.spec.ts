@@ -77,7 +77,6 @@ describe('Public network stability configuration', () => {
     process.env = { ...originalEnv };
     for (const name of [
       'CARDANO_NETWORK_MAGIC',
-      'CARDANO_LIGHT_CLIENT_MODE',
       'CARDANO_BLOCKFROST_ENDPOINT',
       'CARDANO_EPOCH_PARAMS_ENDPOINT',
       'CARDANO_STABILITY_ASSUME_STATIC_STAKE',
@@ -149,17 +148,9 @@ describe('Public network stability configuration', () => {
 
       expect(loadConfig()).toMatchObject({
         cardanoNetwork: network,
-        cardanoLightClientMode: 'stake-weighted-stability',
         cardanoEpochParamsEndpoint: endpoint,
       });
     });
-  });
-
-  it('does not require a stake snapshot endpoint in Mithril mode', () => {
-    process.env.CARDANO_NETWORK_MAGIC = '764824073';
-    process.env.CARDANO_LIGHT_CLIENT_MODE = 'mithril';
-
-    expect(loadConfig().cardanoLightClientMode).toBe('mithril');
   });
 
   it('keeps the explicit local devnet assumptions available', () => {
@@ -170,7 +161,6 @@ describe('Public network stability configuration', () => {
 
     expect(loadConfig()).toMatchObject({
       cardanoNetwork: 'Custom',
-      cardanoLightClientMode: 'stake-weighted-stability',
       cardanoEpochParamsEndpoint: undefined,
     });
   });
@@ -193,7 +183,6 @@ describe('Permissionless heartbeat trusting period', () => {
     process.env = {
       ...originalEnv,
       CARDANO_NETWORK_MAGIC: '42',
-      CARDANO_LIGHT_CLIENT_MODE: 'stake-weighted-stability',
     };
     delete process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS;
   });
@@ -211,9 +200,4 @@ describe('Permissionless heartbeat trusting period', () => {
       expect(() => loadConfig()).toThrow('must be at least 86400');
     },
   );
-  it('does not impose the heartbeat policy on Mithril clients', () => {
-    process.env.CARDANO_LIGHT_CLIENT_MODE = 'mithril';
-    process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS = '3600';
-    expect(loadConfig().cardanoClientTrustingPeriodSeconds).toBe(3600);
-  });
 });

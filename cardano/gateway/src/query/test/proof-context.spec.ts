@@ -42,7 +42,10 @@ function makeDeps(tree: ICS23MerkleTree, cached?: { tree: ICS23MerkleTree; root:
   };
 
   const historyService = {
-    findBlockByHeight: jest.fn().mockResolvedValue({ height: 123, hash: 'anchor-123' }),
+    findBlockByHeight: jest.fn().mockImplementation(async (height: bigint) => ({
+      height: Number(height),
+      hash: `anchor-${height}`,
+    })),
     rebuildIbcStateTreeAtBlock: jest.fn(async () => ({
       tree: tree.clone(),
       root,
@@ -54,10 +57,6 @@ function makeDeps(tree: ICS23MerkleTree, cached?: { tree: ICS23MerkleTree; root:
       blockNo: Number(height),
       datum: height === 200n ? 'live-datum' : 'historical-datum',
     })),
-  };
-
-  const mithrilService = {
-    getCardanoTransactionsSetSnapshot: jest.fn().mockResolvedValue([{ block_number: '200' }]),
   };
 
   const ibcTreeCacheService = {
@@ -78,13 +77,11 @@ function makeDeps(tree: ICS23MerkleTree, cached?: { tree: ICS23MerkleTree; root:
   return {
     logger,
     lucidService: lucidService as any,
-    mithrilService: mithrilService as any,
     historyService: historyService as any,
     ibcTreeCacheService: ibcTreeCacheService as any,
     ibcTreeStore: ibcTreeStore as unknown as IbcTreeStateStore,
     mocks: {
       lucidService,
-      mithrilService,
       ibcTreeStore,
       historyService,
       ibcTreeCacheService,
@@ -109,7 +106,6 @@ describe('proof-context stability acceptance', () => {
         lucidService: {
           findUtxoAtHostStateNFT,
         } as any,
-        mithrilService: {} as any,
         historyService: {
           findTransactionEvidenceByHash: jest.fn().mockResolvedValue({
             txHash: 'live-host-state-tx',
@@ -140,7 +136,6 @@ describe('proof-context stability acceptance', () => {
           }),
         } as any,
         context: 'queryChannel',
-        lightClientMode: 'stake-weighted-stability',
         maxAttempts: 1,
         delayMs: 0,
       }),
@@ -150,6 +145,16 @@ describe('proof-context stability acceptance', () => {
 });
 
 describe('resolveProofContextForQuery', () => {
+  beforeEach(() => {
+    jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(200n);
+    jest
+      .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
+      .mockImplementation(
+        async ({ height }) => ({ anchorHeight: height, anchorBlock: { hash: `anchor-${height}` } }) as never,
+      );
+  });
+  afterEach(() => jest.restoreAllMocks());
+
   it('reports the current migration pause as an actionable RPC precondition failure', async () => {
     const deps = makeDeps(makeTree('moving'));
     deps.mocks.ibcTreeStore.getAlignedSnapshot.mockRejectedValue(new BridgeMigrationInProgressError());
@@ -163,7 +168,6 @@ describe('resolveProofContextForQuery', () => {
       ...deps,
       context: 'test',
       requestedHeight: 123n,
-      lightClientMode: 'mithril',
       maxAttempts: 1,
       delayMs: 0,
     });
@@ -183,7 +187,6 @@ describe('resolveProofContextForQuery', () => {
           ...deps,
           context: 'historical-settlement',
           requestedHeight: 123n,
-          lightClientMode: 'stake-weighted-stability',
           maxAttempts: 1,
           delayMs: 0,
         });
@@ -211,7 +214,6 @@ describe('resolveProofContextForQuery', () => {
           ...deps,
           context: 'historical-settlement',
           requestedHeight: 123n,
-          lightClientMode: 'stake-weighted-stability',
           maxAttempts: 1,
           delayMs: 0,
         }),
@@ -241,7 +243,6 @@ describe('resolveProofContextForQuery', () => {
           ...deps,
           context: 'historical-settlement',
           requestedHeight: 123n,
-          lightClientMode: 'stake-weighted-stability',
           maxAttempts: 1,
           delayMs: 0,
         }),
@@ -265,7 +266,6 @@ describe('resolveProofContextForQuery', () => {
           ...deps,
           context: 'historical-settlement',
           requestedHeight: 123n,
-          lightClientMode: 'stake-weighted-stability',
           maxAttempts: 1,
           delayMs: 0,
         }),
@@ -345,7 +345,6 @@ describe('resolveProofContextForQuery', () => {
       ...deps,
       context: 'test',
       requestedHeight: 123n,
-      lightClientMode: 'mithril',
       maxAttempts: 1,
       delayMs: 0,
     });
@@ -372,7 +371,6 @@ describe('resolveProofContextForQuery', () => {
       ...deps,
       context: 'test',
       requestedHeight: 123n,
-      lightClientMode: 'mithril',
       maxAttempts: 1,
       delayMs: 0,
     });
@@ -380,23 +378,7 @@ describe('resolveProofContextForQuery', () => {
     expect(deps.mocks.historyService.rebuildIbcStateTreeAtBlock).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects requested proof heights newer than the latest accepted proof height', async () => {
-    const tree = makeTree('client-0');
-    const deps = makeDeps(tree, { tree, root: tree.getRoot() });
-
-    await expect(
-      resolveProofContextForQuery({
-        ...deps,
-        context: 'test',
-        requestedHeight: 201n,
-        lightClientMode: 'mithril',
-        maxAttempts: 1,
-        delayMs: 0,
-      }),
-    ).rejects.toThrow('is newer than latest accepted proof height 200');
-  });
-
-  it('keeps the captured tree and height together when a newer snapshot is published while certification waits', async () => {
+  it('keeps the captured tree and height together when a newer snapshot is published while stability acceptance waits', async () => {
     const firstTree = makeTree('first');
     const laterTree = makeTree('later');
     const deps = makeDeps(firstTree);
@@ -408,30 +390,29 @@ describe('resolveProofContextForQuery', () => {
       ...firstRef,
       datum: 'first-datum',
     });
-    let releaseCertification!: () => void;
+    let releaseAcceptance!: () => void;
     let markWaiting!: () => void;
     const waiting = new Promise<void>((resolve) => {
       markWaiting = resolve;
     });
-    deps.mocks.mithrilService.getCardanoTransactionsSetSnapshot.mockImplementationOnce(async () => {
+    jest.spyOn(settledHeight, 'latestPacketProofHeight').mockImplementationOnce(async () => {
       markWaiting();
       await new Promise<void>((resolve) => {
-        releaseCertification = resolve;
+        releaseAcceptance = resolve;
       });
-      return [{ block_number: '200' }];
+      return 200n;
     });
 
     const pending = resolveProofContextForQuery({
       ...deps,
       ibcTreeStore: treeContext.store,
       context: 'test',
-      lightClientMode: 'mithril',
       maxAttempts: 1,
       delayMs: 0,
     });
     await waiting;
     await treeContext.restore(laterTree, { txHash: 'bb'.repeat(32), outputIndex: 1 });
-    releaseCertification();
+    releaseAcceptance();
 
     const context = await pending;
     expect(context.proofHeight).toBe(200n);
@@ -455,7 +436,6 @@ describe('resolveProofContextForQuery', () => {
       resolveProofContextForQuery({
         ...deps,
         context: 'test',
-        lightClientMode: 'mithril',
         maxAttempts: 1,
         delayMs: 0,
       }),
@@ -474,7 +454,6 @@ describe('resolveProofContextForQuery', () => {
       const context = await resolveProofContextForQuery({
         ...deps,
         context: 'test',
-        lightClientMode: 'stake-weighted-stability',
         maxAttempts: 1,
         delayMs: 0,
       });
@@ -496,7 +475,6 @@ describe('resolveProofContextForQuery', () => {
       resolveProofContextForQuery({
         ...deps,
         context: 'test',
-        lightClientMode: 'mithril',
         maxAttempts: 1,
         delayMs: 0,
       }),
