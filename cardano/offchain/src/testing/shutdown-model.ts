@@ -495,13 +495,24 @@ export async function deploymentScenario() {
       },
       async topUp(lovelace: bigint) {
         const input = await host();
+        const old = await hostDatum();
+        // A heartbeat stamps both clocks with hostTx's upper validity bound.
+        const validTo = BigInt(emulator.now() + 60_000);
         await api.submit(
           hostTx(
             input,
-            await successor(await hostDatum()),
+            {
+              ...old,
+              state: {
+                ...old.state,
+                version: old.state.version + 1n,
+                last_update_time: validTo,
+              },
+              control: { ...old.control, last_heartbeat_time: validTo },
+            },
             "Heartbeat",
             lovelace,
-          ).addSignerKey((await hostDatum()).deployer),
+          ).addSignerKey(old.deployer),
           "top up HostState",
         );
       },
