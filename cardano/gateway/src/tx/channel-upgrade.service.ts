@@ -122,6 +122,9 @@ export class ChannelUpgradeService {
 
   async channelUpgradeInit(msg: MsgChannelUpgradeInit): Promise<MsgChannelUpgradeInitResponse> {
     return this.handle('channelUpgradeInit', msg, async (context) => {
+      if (msg.expected_upgrade_sequence === undefined || msg.expected_upgrade_sequence !== context.channelDatum.state.channel.upgrade_sequence) {
+        throw new GrpcInvalidArgumentException('channel upgrade: INIT requires the current expected upgrade sequence');
+      }
       const fields = upgradeFieldsFromProto(msg.fields);
       const replacement = await this.connection(fields.connection_hops[0], true);
       const [version] = replacement.datum.state.versions;

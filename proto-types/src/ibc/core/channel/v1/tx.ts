@@ -341,6 +341,7 @@ export interface MsgChannelUpgradeInit {
    * out on the counterparty.
    */
   timeout_period_ms: bigint;
+  expected_upgrade_sequence?: bigint;
 }
 /**
  * @name MsgChannelUpgradeInitResponse
@@ -2401,6 +2402,7 @@ function createBaseMsgChannelUpgradeInit(): MsgChannelUpgradeInit {
     fields: UpgradeFields.fromPartial({}),
     signer: "",
     timeout_period_ms: BigInt(0),
+    expected_upgrade_sequence: undefined,
   };
 }
 /**
@@ -2427,6 +2429,9 @@ export const MsgChannelUpgradeInit = {
     if (message.timeout_period_ms !== BigInt(0)) {
       writer.uint32(40).uint64(message.timeout_period_ms);
     }
+    if (message.expected_upgrade_sequence !== undefined) {
+      writer.uint32(48).uint64(message.expected_upgrade_sequence);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): MsgChannelUpgradeInit {
@@ -2451,6 +2456,9 @@ export const MsgChannelUpgradeInit = {
         case 5:
           message.timeout_period_ms = reader.uint64();
           break;
+        case 6:
+          message.expected_upgrade_sequence = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -2465,6 +2473,7 @@ export const MsgChannelUpgradeInit = {
     if (isSet(object.fields)) obj.fields = UpgradeFields.fromJSON(object.fields);
     if (isSet(object.signer)) obj.signer = String(object.signer);
     if (isSet(object.timeout_period_ms)) obj.timeout_period_ms = BigInt(object.timeout_period_ms.toString());
+    if (isSet(object.expected_upgrade_sequence)) obj.expected_upgrade_sequence = BigInt(object.expected_upgrade_sequence.toString());
     return obj;
   },
   toJSON(message: MsgChannelUpgradeInit): unknown {
@@ -2476,6 +2485,7 @@ export const MsgChannelUpgradeInit = {
     message.signer !== undefined && (obj.signer = message.signer);
     message.timeout_period_ms !== undefined &&
       (obj.timeout_period_ms = (message.timeout_period_ms || BigInt(0)).toString());
+    if (message.expected_upgrade_sequence !== undefined) obj.expected_upgrade_sequence = message.expected_upgrade_sequence.toString();
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgChannelUpgradeInit>, I>>(object: I): MsgChannelUpgradeInit {
@@ -2488,6 +2498,9 @@ export const MsgChannelUpgradeInit = {
     message.signer = object.signer ?? "";
     if (object.timeout_period_ms !== undefined && object.timeout_period_ms !== null) {
       message.timeout_period_ms = BigInt(object.timeout_period_ms.toString());
+    }
+    if (object.expected_upgrade_sequence !== undefined && object.expected_upgrade_sequence !== null) {
+      message.expected_upgrade_sequence = BigInt(object.expected_upgrade_sequence.toString());
     }
     return message;
   },
