@@ -1,3 +1,4 @@
+import { packetLaneTokenName, sendSequencerTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
@@ -33,6 +34,8 @@ import { validQueryChannelParam, validQueryConnectionChannelsParam } from '../he
 import { validPagination } from '../helpers/helper';
 import { MithrilService } from '~@/shared/modules/mithril/mithril.service';
 import {
+  GATEWAY_GRPC_ERROR_CODE,
+  gatewayGrpcError,
   GrpcInternalException,
   GrpcInvalidArgumentException,
   GrpcNotFoundException,
@@ -62,6 +65,20 @@ type CardanoChannelHealthResponse = {
   earliest_pending_packet_sequence: string | null;
   pending_packet_commitment_sequences: string[];
   next_sequence_send: string;
+  sending_available: boolean;
+  flushing: null | {
+    certified_lane_count: string;
+    lane_count: string;
+    remaining_lane_count: string;
+    awaiting_counterparty_upgrade: boolean;
+    awaiting_counterparty_open: boolean;
+  };
+  packet_lanes: Array<{
+    lane: number;
+    pending_packet_commitment_sequences: string[];
+    retained_acknowledgement_count: string;
+    certified_empty: boolean;
+  }>;
 };
 
 @Injectable()
@@ -156,11 +173,53 @@ export class ChannelService {
       );
     }
 
-    const pendingSequences = Array.from(channelDatumDecoded.state.packet_commitment.keys()).sort((left, right) =>
-      left === right ? 0 : left < right ? -1 : 1,
-    );
+    const pending = channelDatumDecoded.state.upgrade.pending;
+    const state = channelDatumDecoded.state.channel.state;
+    const packetState = this.configService.get('deployment').packetState;
+    const packetLanes: CardanoChannelHealthResponse['packet_lanes'] = [];
+    const sequences = new Set(channelDatumDecoded.state.packet_commitment.keys());
+    let nextSequenceSend = channelDatumDecoded.state.next_sequence_send;
+    if (packetState) {
+      const data = (datum: string) => this.lucidService.LucidImporter.Data.from(datum) as any;
+      const lanes = await Promise.all(Array.from({ length: packetState.laneCount }, async (_, lane) => {
+        const unit = packetState.state.scriptHash + packetLaneTokenName(portId, `channel-${normalizedChannelId}`, lane, packetState.laneCount);
+        const input = await this.lucidService.findUtxoByUnit(unit);
+        const fields = data(input.datum!).fields;
+        if (input.assets[unit] !== 1n || convertHex2String(fields[0]) !== portId ||
+            convertHex2String(fields[1]) !== `channel-${normalizedChannelId}` ||
+            fields[2] !== BigInt(lane) || fields[3] !== BigInt(packetState.laneCount) ||
+            !(fields[6] instanceof Map) || !(fields[8] instanceof Map)) {
+          throw new GrpcInternalException('Malformed or mismatched packet lane in channel health');
+        }
+        return { lane, commitments: fields[6] as Map<bigint, string>, acknowledgements: fields[8] as Map<bigint, string> };
+      }));
+      for (const lane of lanes) {
+        const commitments = Array.from(lane.commitments.keys()).sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
+        commitments.forEach((sequence) => sequences.add(sequence));
+        packetLanes.push({
+          lane: lane.lane,
+          pending_packet_commitment_sequences: commitments.map(String),
+          retained_acknowledgement_count: lane.acknowledgements.size.toString(),
+          certified_empty: pending !== null && BigInt(lane.lane) < pending.flushed_lanes,
+        });
+      }
+      const unit = packetState.state.scriptHash + sendSequencerTokenName(portId, `channel-${normalizedChannelId}`);
+      const sequencer = await this.lucidService.findUtxoByUnit(unit);
+      const fields = data(sequencer.datum!).fields;
+      if (sequencer.assets[unit] !== 1n || convertHex2String(fields[0]) !== portId ||
+          convertHex2String(fields[1]) !== `channel-${normalizedChannelId}` || typeof fields[3] !== 'bigint') {
+        throw new GrpcInternalException('Malformed or mismatched send sequencer in channel health');
+      }
+      nextSequenceSend = fields[3];
+      const current = await this.findChannelUtxo(channelTokenUnit);
+      if (current.txHash !== utxo.txHash || current.outputIndex !== utxo.outputIndex) {
+        throw new GrpcInternalException('Channel changed during health query, retry');
+      }
+    }
+    const pendingSequences = Array.from(sequences).sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
     const isOrdered = channelDatumDecoded.state.channel.ordering === 'Ordered';
-    const status = isOrdered && pendingSequences.length > 0 ? 'blocked' : 'available';
+    const sendingAvailable = state === 'Open' && !(isOrdered && pendingSequences.length > 0);
+    const status = sendingAvailable ? 'available' : 'blocked';
     const earliestPendingPacketSequence = pendingSequences[0]?.toString() ?? null;
 
     return {
@@ -169,14 +228,24 @@ export class ChannelService {
       state: channelDatumDecoded.state.channel.state,
       ordering: channelDatumDecoded.state.channel.ordering,
       status,
-      reason:
-        status === 'blocked'
-          ? `Ordered Cardano channel ${portId}/${CHANNEL_ID_PREFIX}-${normalizedChannelId} has ${pendingSequences.length} pending packet commitment(s); earliest sequence ${earliestPendingPacketSequence} must be received, acknowledged, or timed out before later packets can progress.`
+      reason: state !== 'Open'
+        ? `Channel ${portId}/channel-${normalizedChannelId} is ${state}; sending is disabled.`
+        : status === 'blocked'
+          ? `Ordered Cardano channel ${portId}/channel-${normalizedChannelId} has ${pendingSequences.length} pending packet commitment(s); earliest sequence ${earliestPendingPacketSequence} must settle.`
           : null,
+      sending_available: sendingAvailable,
+      flushing: state === 'Flushing' || state === 'FlushComplete' ? {
+        certified_lane_count: pending!.flushed_lanes.toString(),
+        lane_count: packetState.laneCount.toString(),
+        remaining_lane_count: (BigInt(packetState.laneCount) - pending!.flushed_lanes).toString(),
+        awaiting_counterparty_upgrade: pending!.counterparty_upgrade === null,
+        awaiting_counterparty_open: state === 'FlushComplete',
+      } : null,
+      packet_lanes: packetLanes,
       pending_packet_commitment_count: pendingSequences.length.toString(),
       earliest_pending_packet_sequence: earliestPendingPacketSequence,
       pending_packet_commitment_sequences: pendingSequences.map((sequence) => sequence.toString()),
-      next_sequence_send: channelDatumDecoded.state.next_sequence_send.toString(),
+      next_sequence_send: nextSequenceSend.toString(),
     };
   }
 
@@ -414,12 +483,17 @@ export class ChannelService {
     if (portId !== request.port_id) {
       throw new GrpcNotFoundException(`${channelId} is not bound to port ${request.port_id}`);
     }
-    if (!present(datum.state)) {
-      throw new GrpcNotFoundException(
-        `no ${context === 'queryUpgrade' ? 'upgrade' : 'upgrade error'} for ${portId}/${channelId}`,
-      );
-    }
     await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+    if (!present(datum.state)) {
+      if (context === 'queryUpgrade') {
+        throw new GrpcNotFoundException(gatewayGrpcError(
+          GATEWAY_GRPC_ERROR_CODE.CHANNEL_UPGRADE_NOT_FOUND,
+          `no upgrade for ${portId}/${channelId}`,
+          { port_id: portId, channel_id: channelId, proof_height: proofContext.proofHeight.toString() },
+        ));
+      }
+      throw new GrpcNotFoundException(`no upgrade error for ${portId}/${channelId}`);
+    }
     const proof = serializeExistenceProof(proofContext.tree.generateProof(path(portId, channelId)));
     return {
       datum,
