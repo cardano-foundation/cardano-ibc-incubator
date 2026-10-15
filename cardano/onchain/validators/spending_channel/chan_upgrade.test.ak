@@ -1142,6 +1142,32 @@ test flush_completes_when_every_lane_is_empty() {
   )
 }
 
+fn flush_at_deadline(offset: Int) -> Bool {
+  let counterparty =
+    Upgrade {
+      ..counterparty_upgrade(),
+      timeout: UpgradeTimeout {
+        height: height_mod.zero_height(),
+        timestamp: ( valid_to() + offset ) * 1_000_000,
+      },
+    }
+  operation_accepts(
+    flush_step(2, [lane(0, []), lane(1, [])], Some(counterparty), FlushComplete),
+  )
+}
+
+test flush_completes_immediately_before_counterparty_deadline() {
+  flush_at_deadline(1)
+}
+
+test flush_rejects_exact_counterparty_deadline() fail {
+  flush_at_deadline(0)
+}
+
+test flush_rejects_after_counterparty_deadline() fail {
+  flush_at_deadline(-1)
+}
+
 test flush_records_progress_one_lane_at_a_time() {
   accepted(flush_step(1, [lane(0, [])], Some(counterparty_upgrade()), Flushing))
 }
