@@ -4,6 +4,7 @@
  * and the exact state NFT identify the accepted channel transition.
  */
 const fs = require('node:fs');
+const { ownedRuntimeProviders } = require('./owned-runtime-providers.cjs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { createRequire } = require('node:module');
@@ -35,8 +36,8 @@ async function json(url) {
   if (!response.ok) throw new Error(`Canonical query failed ${response.status}: ${url}`);
   return response.json();
 }
-async function datum(output, lucid) {
-  const raw = await json(`http://127.0.0.1:2742/datums/${output.datum_hash}`);
+async function datum(output, lucid, kupo) {
+  const raw = await json(`http://${kupo}/datums/${output.datum_hash}`);
   requireThat(typeof raw.datum === 'string', 'Missing channel datum');
   return decodeChannelDatum(raw.datum, lucid);
 }
@@ -116,14 +117,17 @@ async function main() {
     } finally { client.close(); types.close(); }
     return;
   }
+  const result = JSON.parse(fs.readFileSync(path.join(path.dirname(manifestPath), 'result.json'), 'utf8'));
+  const providers = ownedRuntimeProviders(result.networkRuntime);
+  const kupo = providers.kupo;
   const lucid = await import(req.resolve('@lucid-evolution/lucid'));
   const unit = channelUnit(manifest, request.channel);
   if (request.mode === 'route') {
-    const outputs = await json(`http://127.0.0.1:2742/matches/${unit.slice(0, 56)}.${unit.slice(56)}?unspent`);
+    const outputs = await json(`http://${kupo}/matches/${unit.slice(0, 56)}.${unit.slice(56)}?unspent`);
     requireThat(outputs.length === 1 && outputs[0].value.assets[unit.slice(0, 56) + '.' + unit.slice(56)] === 1,
       'Unique live channel NFT required');
     requireThat(outputs[0].address === manifest.validators.spend_channel.address, 'Current channel implementation mismatch');
-    const decoded = await datum(outputs[0], lucid);
+    const decoded = await datum(outputs[0], lucid, kupo);
     requireThat(decoded.token.policyId + decoded.token.name === unit && decoded.port === Buffer.from('transfer').toString('hex'), 'Authenticated channel identity');
     requireThat(decoded.state.channel.state === 'Open' && decoded.state.channel.ordering === 'Unordered', 'Only open unordered routes supported');
     console.log(JSON.stringify({ unit, channel: request.channel, counterparty: decoded.state.channel.counterparty,
@@ -131,7 +135,7 @@ async function main() {
     return;
   }
   requireThat(request.mode === 'packet' && /^[0-9a-f]{64}$/.test(request.transaction), 'Packet transaction identity');
-  const db = new Client({ host: '127.0.0.1', port: 27432, database: 'yaci_store', user: 'yaci', password: 'devkit' });
+  const db = new Client({ host: '127.0.0.1', port: Number(providers.historyDb.split(':')[1]), database: 'yaci_store', user: 'yaci', password: 'devkit' });
   await db.connect();
   try {
     const query = 'SELECT t.tx_index,t.block,t.block_hash,b.slot FROM transaction t JOIN block b ON b.number=t.block AND b.hash=t.block_hash WHERE t.tx_hash=$1 AND t.invalid=false';
@@ -140,7 +144,7 @@ async function main() {
       requireThat(rows.length === 1, 'Unique canonical valid transaction required');
       const inclusion = rows[0];
       const logger = { log() {}, warn() {}, error() {}, debug() {} };
-      const fetcher = new MiniProtocalsService({}, { get: k => k === 'yaciStoreEndpoint' ? 'http://127.0.0.1:29083' : undefined }, logger);
+      const fetcher = new MiniProtocalsService({}, { get: k => k === 'yaciStoreEndpoint' ? `http://${providers.history}` : undefined }, logger);
       const bytes = await fetcher.fetchBlockCbor({ hash: inclusion.block_hash, slotNo: BigInt(inclusion.slot) });
       const block = require('./authenticate-migration-block.cjs').authenticateBlock(bytes, inclusion.block_hash);
       const index = Number(inclusion.tx_index);
@@ -162,7 +166,7 @@ async function main() {
     const inputs = [];
     for (let i = 0; i < tx.inputs().len(); i++) {
       const input = tx.inputs().get(i), hash = input.transaction_id().to_hex();
-      const candidates = await json(`http://127.0.0.1:2742/matches/${input.index()}@${hash}`);
+      const candidates = await json(`http://${kupo}/matches/${input.index()}@${hash}`);
       if (candidates.some(o => o.value.assets[unit.slice(0, 56) + '.' + unit.slice(56)])) {
         const source = (await body(hash)).tx.outputs().get(Number(input.index()));
         requireThat(tokenQuantity(source, unit) === 1n, 'Forged channel input');
