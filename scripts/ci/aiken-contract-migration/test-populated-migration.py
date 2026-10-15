@@ -215,7 +215,7 @@ def main():
         stop('history')
 
     def wait_http(ready):
-        deadline = time.monotonic() + 600
+        deadline = time.monotonic() + (_clock.proof_readiness_timeout(genesis) if ready else 600)
         evidence = run_dir / ('gateway-readiness-' + uuid.uuid4().hex + '.log')
         last = None
         with evidence.open('x') as log:
