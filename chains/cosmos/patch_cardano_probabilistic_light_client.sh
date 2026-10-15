@@ -224,6 +224,11 @@ from pathlib import Path
 path = Path(sys.argv[1])
 kind, major = sys.argv[2:]
 source = path.read_text()
+if kind == "injective" and "cardanoprobabilistic.InstallHostLiveness(app)" not in source:
+    ante = "app.SetAnteHandler(anteHandler)"
+    if ante not in source:
+        raise SystemExit("Cannot identify the Injective host continuity hook")
+    source = source.replace(ante, ante + "\n\t\tcardanoprobabilistic.InstallHostLiveness(app)", 1)
 if kind in ("injective", "ibc-go-simapp"):
     mounted = re.search(r"\bapp\.MountKVStores\((app\.keys|keys)\)", source)
     if mounted is None:
