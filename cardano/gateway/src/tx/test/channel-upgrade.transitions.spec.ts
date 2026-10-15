@@ -119,18 +119,31 @@ describe('channel upgrade transitions', () => {
 
   it('FLUSH completes once every lane is certified and the counterparty upgrade is known', () => {
     const acked = ackUpgrade(initUpgrade(channel(), fields, PERIOD), counterpartyUpgrade(), LANES, VALID_TO, 4n);
-    const half = flushUpgrade(acked, 8n, LANES);
-    const done = flushUpgrade(half, 8n, LANES);
+    const half = flushUpgrade(acked, 8n, LANES, VALID_TO);
+    const done = flushUpgrade(half, 8n, LANES, VALID_TO);
 
     expect(half.state.channel.state).toBe(ChannelState.Flushing);
     expect(done.state.channel.state).toBe(ChannelState.FlushComplete);
-    expect(() => flushUpgrade(done, 1n, LANES)).toThrow(/not Flushing/);
-    expect(() => flushUpgrade(half, 9n, LANES)).toThrow(/cannot flush/);
+    expect(() => flushUpgrade(done, 1n, LANES, VALID_TO)).toThrow(/not Flushing/);
+    expect(() => flushUpgrade(half, 9n, LANES, VALID_TO)).toThrow(/cannot flush/);
+  });
+
+  it.each([-1n, 0n, 1n])('checks the counterparty deadline on the last FLUSH at offset %s ms', (offset) => {
+    const acked = ackUpgrade(initUpgrade(channel(), fields, PERIOD), counterpartyUpgrade(), LANES, VALID_TO, 4n);
+    const half = flushUpgrade(acked, 8n, LANES, VALID_TO);
+    const finish = () => flushUpgrade(half, 8n, LANES, VALID_TO + PERIOD + offset);
+    if (offset < 0n) {
+      expect(finish().state.channel.state).toBe(ChannelState.FlushComplete);
+    } else {
+      expect(finish).toThrow(/timed out/);
+      expect(cancelUpgrade(half, null).state.channel.state).toBe(ChannelState.Open);
+      expect(cancelUpgrade(half, { sequence: 1n, message: '' }).state.channel.state).toBe(ChannelState.Open);
+    }
   });
 
   it('a crossing TRY flushes before the counterparty upgrade is known', () => {
     const tried = tryUpgrade(initUpgrade(channel(), fields, PERIOD), 3n, VALID_TO, 4n);
-    const flushed = flushUpgrade(tried, LANES, LANES);
+    const flushed = flushUpgrade(tried, LANES, LANES, VALID_TO);
     const confirmed = confirmUpgrade(flushed, ChannelState.FlushComplete, counterpartyUpgrade(), LANES, VALID_TO);
 
     expect(tried.state.channel.upgrade_sequence).toBe(3n);
@@ -144,6 +157,7 @@ describe('channel upgrade transitions', () => {
       ackUpgrade(initUpgrade(channel(), fields, PERIOD), counterpartyUpgrade(9n), LANES, VALID_TO, 4n),
       LANES,
       LANES,
+      VALID_TO,
     );
     const opened = openUpgrade(complete, 1n);
 
@@ -183,7 +197,7 @@ describe('channel upgrade transitions', () => {
     expect(cancelUpgrade(init, null).state.channel.upgrade_sequence).toBe(1n);
     expect(() => cancelUpgrade(init, { sequence: 0n, message: '' })).toThrow(/older upgrade/);
 
-    const complete = flushUpgrade(ackUpgrade(init, counterpartyUpgrade(), LANES, VALID_TO, 4n), LANES, LANES);
+    const complete = flushUpgrade(ackUpgrade(init, counterpartyUpgrade(), LANES, VALID_TO, 4n), LANES, LANES, VALID_TO);
     expect(() => cancelUpgrade(complete, null)).toThrow(/finished flushing/);
     expect(() => cancelUpgrade(complete, { sequence: 2n, message: '' })).toThrow(/its own upgrade/);
     expect(cancelUpgrade(complete, { sequence: 1n, message: '' }).state.channel.state).toBe(ChannelState.Open);

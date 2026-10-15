@@ -211,7 +211,7 @@ export function confirmUpgrade(
 }
 
 /** FLUSH certifies that the next `lanes` packet lanes hold no commitments. */
-export function flushUpgrade(datum: ChannelDatum, lanes: bigint, laneCount: bigint): ChannelDatum {
+export function flushUpgrade(datum: ChannelDatum, lanes: bigint, laneCount: bigint, validToMs: bigint): ChannelDatum {
   if (datum.state.channel.state !== ChannelState.Flushing) {
     reject(`the channel is ${datum.state.channel.state}, not Flushing`);
   }
@@ -219,6 +219,11 @@ export function flushUpgrade(datum: ChannelDatum, lanes: bigint, laneCount: bigi
   const flushed = pending.flushed_lanes + lanes;
   if (lanes <= 0n || flushed > laneCount) reject(`cannot flush ${lanes} more of ${laneCount} lanes`);
   const next = { ...pending, flushed_lanes: flushed };
+  if (flushed === laneCount && next.counterparty_upgrade) {
+    if (next.counterparty_upgrade.timeout.timestamp <= validToMs * 1_000_000n) {
+      reject("the counterparty's upgrade has timed out, cancel this attempt");
+    }
+  }
   return successor(
     datum,
     {

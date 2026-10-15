@@ -504,7 +504,7 @@ export class ChannelUpgradeService {
       const lanesFlushed = BigInt(drained.length);
       return {
         step: { FlushUpgrade: { lanes: lanesFlushed } },
-        updated: upgrade.flushUpgrade(datum, lanesFlushed, laneCount),
+        updated: upgrade.flushUpgrade(datum, lanesFlushed, laneCount, BigInt(context.validToTime)),
         operation: 'channelUpgrade',
         referenceInputs: [lanes.config, ...drained],
       };

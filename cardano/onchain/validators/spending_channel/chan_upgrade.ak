@@ -119,6 +119,8 @@ fn transition(
       let pending = PendingUpgrade { ..pending, flushed_lanes }
       let state =
         if flushed_lanes == config.lane_count && pending.counterparty_upgrade != None {
+          expect Some(counterparty) = pending.counterparty_upgrade
+          expect counterparty.timeout.timestamp > rules.valid_to(context) * 1_000_000
           FlushComplete
         } else {
           Flushing
