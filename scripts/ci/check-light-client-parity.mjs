@@ -17,8 +17,10 @@ const sharedSourceFiles = [
   "challenge_capacity_test.go",
   "checkpoint_lifecycle_fixture_test.go",
   "client_state.go",
+  "client_initialization_test.go",
   "client_state_path_test.go",
   "cmd/bootstrap/main.go",
+  "cmd/prepare-client/main.go",
   "codec.go",
   "collision_buckets_test.go",
   "consensus_state.go",
@@ -515,6 +517,7 @@ function assertSharedCoreExtraction() {
 // transition logic belongs in core/state. Raise a budget only for host API work.
 const adapterLineBudgets = {
   "cmd/bootstrap/main.go": 100,
+  "cmd/prepare-client/main.go": 100,
   "storage_server.go": 130,
   "preparation.go": 55,
   "client_state.go": 190,

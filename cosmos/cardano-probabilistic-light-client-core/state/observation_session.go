@@ -87,7 +87,7 @@ func (h ProbabilisticHeader) validateObservationChunk() error {
 		(chunk.Operation != ObservationBootstrapImport && len(chunk.Objects) != 0) {
 		return fmt.Errorf("observation operation contains unexpected evidence")
 	}
-	if chunk.Operation == ObservationAppendStake || chunk.Operation == ObservationAppendBlocks {
+	if chunk.Operation == ObservationAppendStake || chunk.Operation == ObservationAppendBlocks || chunk.Operation == ObservationBootstrapImport || chunk.Operation == ObservationBootstrapComplete {
 		if len(chunk.EvidenceDigest) != 32 {
 			return fmt.Errorf("appended evidence requires its committed transcript suffix")
 		}

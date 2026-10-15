@@ -37,7 +37,7 @@ and external tests alone do not require publishing a new light-client module.
 
 Only snapshot storage version `2` is supported. The `storage_version` field is a format marker and is not a mode selector. Version `0` records are rejected. There is no automatic migration path from inline records. Such deployments need a separately audited host migration or new clients and routes.
 
-Create a trusted bootstrap bundle with `go run ./cmd/bootstrap`. Configure Hermes with `probabilistic_bootstrap_file`. The bundle supplies small creation records and bounded imports. Full stake tables and historical verification collections are preparation inputs only. They cannot be installed in `ClientState` or `ConsensusState`.
+Use ordinary Hermes creation. Gateway obtains operator-trusted initial context from the configured Cardano node and history providers at or after creation of the instance's HostState UTxO. Its bundled `prepare-client` executable produces the small creation records and bounded imports. Hermes submits and resumes those imports automatically. No operator bootstrap file is required. Keep the Gateway initialization cache volume across restarts. Full collections remain preparation inputs and cannot be installed in runtime `ClientState` or `ConsensusState` records.
 
 Clients must set a positive `max_clock_drift` and authenticate `latest_checkpoint_slot` and `latest_checkpoint_timestamp` at their checkpoint. There is no consensus-timestamp fallback for a missing cursor. The host must mount `SharedStoreKey` and register the module's genesis export/import handlers. These preserve the authenticated snapshot objects as well as the IBC client metadata.
 

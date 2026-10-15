@@ -12,7 +12,7 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 )
 
-// Full collections are accepted only by the offline trusted bootstrap builder.
+// Full collections are accepted only by the trusted initialization planner.
 // They are never valid public IBC client or consensus records.
 func validateBootstrapInput(cs ClientState) error {
 	if _, err := productionRecordMap(cs.LatestCheckpointPoolProduction, cs.CurrentEpoch); err != nil {

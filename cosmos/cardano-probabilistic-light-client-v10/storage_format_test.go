@@ -2,6 +2,7 @@ package probabilistic
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	storetypes "cosmossdk.io/store/types"
 
 	"cosmossdk.io/store/dbadapter"
+	"github.com/blinklabs-io/gouroboros/ledger/common"
 	state "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/state"
 	dbm "github.com/cosmos/cosmos-db"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -106,3 +108,17 @@ func (h *formatTestHost) BeginBlocker(sdk.Context) (sdk.BeginBlock, error) {
 func (h *formatTestHost) SetBeginBlocker(begin sdk.BeginBlocker) { h.begin = begin }
 func (h *formatTestHost) AnteHandler() sdk.AnteHandler           { return h.ante }
 func (h *formatTestHost) SetAnteHandler(ante sdk.AnteHandler)    { h.ante = ante }
+
+func TestInitialRegistryCanRetainZeroStakePoolsBeyondElectionCapacity(t *testing.T) {
+	fixture := capacityEvidence(t, "control")
+	hash := sha256.Sum256([]byte("registered-zero-stake-pool"))
+	binding := &PoolRegistrationBinding{PoolId: common.PoolId(hash[:28]).String(), VrfKeyHash: hash[:], FirstRegistrationSlot: 1}
+	for _, registry := range []*PoolRegistryState{fixture.Client.LatestCheckpointPoolRegistry, fixture.Consensus.PoolRegistry} {
+		registry.Pools = append(registry.Pools, &PoolRegistrationRecord{Registration: binding, Registered: true})
+		registry.Mark = append(registry.Mark, binding)
+		registry.Effective = append(registry.Effective, binding)
+	}
+	require.Len(t, fixture.Client.EpochStakeDistribution, state.MaxStakeEntries)
+	_, _, _, err := BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, fixture.Client, fixture.Consensus)
+	require.NoError(t, err)
+}

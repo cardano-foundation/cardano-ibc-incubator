@@ -88,7 +88,6 @@ beforeEach(() => {
   const configServiceMock = {
     get: jest.fn().mockImplementation((key: string) => {
       if (key === 'ogmiosEndpoint') return 'ws://bootstrap-node';
-      if (key === 'cardanoPoolRegistryCheckpointFile') return '/trusted/pool-registry.json';
       if (key === 'cardanoRandomnessStabilisationWindowSlots') return '100';
       if (key === 'cardanoChainId') return 'cardano-devnet';
       if (key === 'cardanoNetwork') return 'Preview';
@@ -279,8 +278,9 @@ beforeEach(() => {
 });
 
 describe('QueryService stability anchor contract', () => {
-  it('requires a trusted bootstrap bundle instead of returning an inline client', async () => {
-    await expect(service.queryNewClient({ height: 100n } as any)).rejects.toThrow('trusted bootstrap bundle');
+  it('rejects a starting height before this instance has a HostState UTxO', async () => {
+    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValueOnce(undefined);
+    await expect(service.queryNewClient({ height: 100n } as any)).rejects.toThrow('HostState UTxO does not exist');
     expect(historyServiceMock.findOperationalCertificateCountersAtBlock).not.toHaveBeenCalled();
   });
 
