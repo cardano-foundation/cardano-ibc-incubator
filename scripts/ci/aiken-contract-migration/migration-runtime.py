@@ -13,16 +13,13 @@ import math
 import os
 from pathlib import Path
 import subprocess
+from migration_endpoints import loopback_address
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
 def require_migration_witness(node):
-    ports = node.get('ports', [])
-    if not any(isinstance(port, dict) and port.get('host_ip') == '127.0.0.1'
-               and int(port.get('published', 0)) == 23001 and int(port.get('target', 0)) == 3001
-               for port in ports):
-        raise ValueError('Node witness port 23001 must be configured before deployment')
+    loopback_address({'services': {'devkit': node}}, 'devkit', 3001)
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
@@ -142,7 +139,7 @@ const { Client } = require('pg');
     for key in ['KUPO_API_KEY', 'OGMIOS_API_KEY', 'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', 'CARDANO_EPOCH_PARAMS_ENDPOINT', 'CARDANO_STABILITY_ASSUME_STATIC_STAKE', 'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT', 'BRIDGE_MANIFEST_PATH']:
         env.pop(key, None)
     env.update({'PORT': '8800', 'GRPC_HOST': '127.0.0.1', 'GRPC_PORT': '5501', 'CARDANO_NETWORK_MAGIC': '42',
-        'CARDANO_CHAIN_HOST': '127.0.0.1', 'CARDANO_CHAIN_PORT': '23001',
+        'CARDANO_CHAIN_HOST': '127.0.0.1', 'CARDANO_CHAIN_PORT': loopback_address(config, 'devkit', 3001).rsplit(':', 1)[1],
         'CARDANO_CHAIN_NETWORK_MAGIC': '42', 'CARDANO_CHAIN_ID': 'cardano-devnet', 'CARDANO_LIGHT_CLIENT_MODE': 'stake-weighted-stability',
         'CARDANO_EPOCH_LENGTH': str(genesis['epochLength']), 'CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS': '604800',
         'CARDANO_CLIENT_MAX_CLOCK_DRIFT_SECONDS': '10',
@@ -150,7 +147,9 @@ const { Client } = require('pg');
         'CARDANO_LOCAL_EPOCH_SNAPSHOT_DIR': str(runtime / 'epoch-stake'),
         'CARDANO_EPOCH_NONCE_GENESIS': hashlib.blake2b((runtime / 'runtime/genesis-shelley.json').read_bytes(), digest_size=32).hexdigest(),
         'CARDANO_EPOCH_PARAMS_ENDPOINT': f'http://127.0.0.1:{nonce_port}',
-        'OGMIOS_ENDPOINT': 'http://127.0.0.1:2637', 'KUPO_ENDPOINT': 'http://127.0.0.1:2742', 'YACI_STORE_ENDPOINT': 'http://127.0.0.1:29083',
+        'OGMIOS_ENDPOINT': 'http://' + loopback_address(config, 'devkit', 1337),
+        'KUPO_ENDPOINT': 'http://' + loopback_address(config, 'devkit', 1442),
+        'YACI_STORE_ENDPOINT': 'http://' + loopback_address(config, 'history', 8080),
         'GATEWAY_DB_HOST': '127.0.0.1', 'GATEWAY_DB_PORT': str(gateway_port), 'GATEWAY_DB_NAME': args.gateway_database, 'GATEWAY_DB_USERNAME': 'postgres', 'GATEWAY_DB_PASSWORD': 'postgres', 'GATEWAY_DB_SYNCHRONIZE': 'true',
         'HANDLER_JSON_PATH': str(handler), 'CONSENSUS_HISTORY_CACHE_DIR': str(handler.parent / 'consensus-history'),
         'FAKETIME_DONT_FAKE_MONOTONIC': '1'})
