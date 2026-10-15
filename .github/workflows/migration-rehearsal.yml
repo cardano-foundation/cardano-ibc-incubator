@@ -63,6 +63,7 @@ jobs:
           python3 scripts/ci/aiken-contract-migration/test-migration-evidence.py
           node --test scripts/ci/aiken-contract-migration/test-migration-packet-evidence.cjs
           node --test scripts/ci/aiken-contract-migration/test-migration-lanes.cjs scripts/ci/aiken-contract-migration/test-uninitialized-rehearsal.cjs
+          node --test scripts/ci/aiken-contract-migration/test-channel-migration-observation.cjs scripts/ci/aiken-contract-migration/test-channel-upgrade-budget.cjs
           node --test scripts/ci/aiken-contract-migration/test-owned-sdk-rehearsal.cjs
           python3 scripts/ci/aiken-contract-migration/test-deployment-references.py
 
