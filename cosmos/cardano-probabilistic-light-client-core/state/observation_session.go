@@ -78,6 +78,22 @@ func (h ProbabilisticHeader) validateObservationChunk() error {
 	if len(chunk.Blocks) > maxObservationBlocksPerStep || len(chunk.StakeRows) > maxObservationRowsPerStep*36 || len(chunk.Objects) > MaxOperationSignedBytes-20000 {
 		return fmt.Errorf("observation chunk exceeds its operation bound")
 	}
+	if len(chunk.OtherReceipt) != 0 || (chunk.Operation != ObservationBegin &&
+		(len(chunk.BaseCheckpointReference) != 0 || len(chunk.OriginalReceipt) != 0 || chunk.AnchorHeight != 0 || chunk.BlockCount != 0 || chunk.TableContext != nil || chunk.IsCheckpoint || chunk.Isolated || chunk.HostStateTxHash != "" || chunk.TableRows != 0 || chunk.TableTotal != 0 || len(chunk.TableDigest) != 0)) {
+		return fmt.Errorf("observation operation contains fields for a different phase")
+	}
+	if (chunk.Operation != ObservationAppendStake && len(chunk.StakeRows) != 0) ||
+		(chunk.Operation != ObservationAppendBlocks && len(chunk.Blocks) != 0) ||
+		(chunk.Operation != ObservationBootstrapImport && len(chunk.Objects) != 0) {
+		return fmt.Errorf("observation operation contains unexpected evidence")
+	}
+	if chunk.Operation == ObservationAppendStake || chunk.Operation == ObservationAppendBlocks {
+		if len(chunk.EvidenceDigest) != 32 {
+			return fmt.Errorf("appended evidence requires its committed transcript suffix")
+		}
+	} else if chunk.Operation != ObservationBegin && len(chunk.EvidenceDigest) != 0 {
+		return fmt.Errorf("observation operation contains an unexpected transcript suffix")
+	}
 	if chunk.Operation == ObservationBegin {
 		if len(chunk.BaseCheckpointReference) != 32 || len(chunk.EvidenceDigest) != 32 || chunk.AnchorHeight == 0 || chunk.BlockCount == 0 || chunk.BlockCount > MaxHeaderBlocks || chunk.Sequence != 0 {
 			return fmt.Errorf("begin observation requires a checkpoint, digest and bounded logical window")
@@ -217,7 +233,7 @@ func beginObservation(ctx Context, store storetypes.KVStore, private storetypes.
 	session := &observationSession{Version: VerificationPolicyVersion, Namespace: bytes.Clone(cs.StorageNamespace), Generation: cs.VerificationGeneration, BaseReference: bytes.Clone(chunk.BaseCheckpointReference), OriginalReceipt: bytes.Clone(chunk.OriginalReceipt), AnchorHeight: chunk.AnchorHeight, BlockCount: chunk.BlockCount, Working: *base, IsCheckpoint: chunk.IsCheckpoint, Isolated: chunk.Isolated, HostTxHash: chunk.HostStateTxHash, CreatedAt: uint64(now), ExpiresAt: uint64(now + int64(observationSessionLifetime)), QualifiedDenominator: []byte{1}}
 	session.Working.Nonce = clonePraosNonceState(base.Nonce)
 	copy(session.ExpectedDigest[:], chunk.EvidenceDigest)
-	session.InputDigest = sha256.Sum256(append([]byte("cardano-ibc.observation/v2\x00"), chunk.BaseCheckpointReference...))
+	session.InputDigest = session.ExpectedDigest
 	if chunk.TableContext != nil {
 		if base.Epoch == ^uint64(0) || chunk.TableContext.Epoch != base.Epoch+1 || chunk.TableRows == 0 || chunk.TableRows > MaxStakeEntries || chunk.TableTotal == 0 || len(chunk.TableDigest) != 32 || len(chunk.TableContext.StakeDistribution) > 0 {
 			return zero, fmt.Errorf("new table requires adjacent epoch and compact complete-table commitments")
@@ -277,7 +293,6 @@ func appendObservationStake(store storetypes.KVStore, session *observationSessio
 		}
 		changes = append(changes, SnapshotChange{bytes.Clone(key), bytes.Clone(rows[cursor+28 : cursor+36])})
 		session.TableDigest = sha256.Sum256(append(session.TableDigest[:], rows[cursor:cursor+36]...))
-		session.InputDigest = sha256.Sum256(append(session.InputDigest[:], rows[cursor:cursor+36]...))
 		previous = key
 	}
 	root, err := NewSnapshotMap(store, session.Working.Scope, snapshotStake).PutBatch(session.Table.Root, changes)

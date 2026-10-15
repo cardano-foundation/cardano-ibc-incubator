@@ -55,13 +55,13 @@ jobs:
           export STARTUP_MONITOR_PROBE="$GITHUB_WORKSPACE/tests/challenge-capacity-relayer/target/debug/startup-watcher"
           export CHALLENGE_RELAYER_PROBE="$GITHUB_WORKSPACE/tests/challenge-capacity-relayer/target/debug/challenge-capacity-relayer"
           cd cosmos/cardano-probabilistic-light-client-v${{ matrix.major }}
-          go test -run 'TestAppCheckpointProgressRefreshesExpiry|TestSignedIdleCheckpointLifecycle|TestDestinationChallengeCapacity|TestChallengeCapacityAdmission|TestEpochChallenge' -count=1 -v | tee "$RUNNER_TEMP/challenge-v${{ matrix.major }}.log"
+          go test -run 'TestAppCheckpointProgressRefreshesExpiry|TestSignedIdleCheckpointLifecycle|TestSignedPartialStakeUpload|TestAppFailedStagedRecovery|TestDestinationChallengeCapacity|TestChallengeCapacityAdmission|TestEpochChallenge' -count=1 -v | tee "$RUNNER_TEMP/challenge-v${{ matrix.major }}.log"
       - name: Verify compact checkpoint expiry during staged activation
         if: matrix.major == '8'
         working-directory: cosmos/cardano-probabilistic-light-client-core
         env:
           GOWORK: off
-        run: go test ./state -run 'TestCompactCheckpoint|TestCompactStaging|TestCompactProposal' -count=1 -v
+        run: go test ./state -run 'TestCompactCheckpoint|TestCompactStaging|TestCompactProposal|TestFailedCompactRecovery|TestCompactRecoveryRechecks|TestCrossLanguageObservation' -count=1 -v
       - name: Build the destination image with the measured dependencies
         run: >-
           docker compose -f chains/cosmos/docker-compose.yml

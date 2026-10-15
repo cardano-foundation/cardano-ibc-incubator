@@ -23,7 +23,6 @@ func BuildObservationPlan(cs *ClientState, header *ProbabilisticHeader, original
 		return nil, fmt.Errorf("invalid staged observation plan inputs")
 	}
 	begin := &ObservationChunk{Operation: ObservationBegin, BaseCheckpointReference: bytes.Clone(cs.CheckpointReference), OriginalReceipt: bytes.Clone(originalReceipt), AnchorHeight: header.AnchorBlock.Height.RevisionHeight, BlockCount: uint32(len(header.BridgeBlocks) + 1 + len(header.DescendantBlocks)), IsCheckpoint: header.IsCheckpoint, HostStateTxHash: header.HostStateTxHash}
-	digest := sha256.Sum256(append([]byte("cardano-ibc.observation/v2\x00"), cs.CheckpointReference...))
 	tableDigest := sha256.Sum256([]byte("cardano-ibc.stake-table/v2\x00"))
 	var rows []byte
 	if header.NewEpochContext != nil && header.NewEpochContext.Epoch > cs.CurrentEpoch {
@@ -48,7 +47,6 @@ func BuildObservationPlan(cs *ClientState, header *ProbabilisticHeader, original
 				return nil, fmt.Errorf("table total overflow")
 			}
 			rows = append(rows, row...)
-			digest = sha256.Sum256(append(digest[:], row...))
 			tableDigest = sha256.Sum256(append(tableDigest[:], row...))
 		}
 		begin.TableRows = uint32(len(entries))
@@ -68,13 +66,21 @@ func BuildObservationPlan(cs *ClientState, header *ProbabilisticHeader, original
 		}
 		blocks = append(blocks, &normalized)
 	}
-	for _, block := range blocks {
+	blockSuffixes := make([][32]byte, len(blocks)+1)
+	blockSuffixes[len(blocks)] = observationTranscriptEnd(cs.CheckpointReference)
+	for i := len(blocks) - 1; i >= 0; i-- {
 		var err error
-		digest, err = observationBlockDigest(digest, block, begin.AnchorHeight)
+		blockSuffixes[i], err = observationBlockDigest(blockSuffixes[i+1], blocks[i], begin.AnchorHeight)
 		if err != nil {
 			return nil, err
 		}
 	}
+	rowSuffixes := make([][32]byte, len(rows)/36+1)
+	rowSuffixes[len(rowSuffixes)-1] = blockSuffixes[0]
+	for i := len(rowSuffixes) - 2; i >= 0; i-- {
+		rowSuffixes[i] = sha256.Sum256(append(rowSuffixes[i+1][:], rows[i*36:(i+1)*36]...))
+	}
+	digest := rowSuffixes[0]
 	begin.EvidenceDigest = bytes.Clone(digest[:])
 	id, err := observationSessionID(cs, begin)
 	if err != nil {
@@ -88,9 +94,11 @@ func BuildObservationPlan(cs *ClientState, header *ProbabilisticHeader, original
 		chunk.SessionId = bytes.Clone(id[:])
 		plan.Steps = append(plan.Steps, &ProbabilisticHeader{ObservationChunk: chunk})
 	}
+	rowsRead := 0
 	for len(rows) > 0 {
 		n := minimumInt(len(rows), maxObservationRowsPerStep*36)
-		appendStep(&ObservationChunk{Operation: ObservationAppendStake, StakeRows: bytes.Clone(rows[:n])})
+		rowsRead += n / 36
+		appendStep(&ObservationChunk{Operation: ObservationAppendStake, StakeRows: bytes.Clone(rows[:n]), EvidenceDigest: bytes.Clone(rowSuffixes[rowsRead][:])})
 		rows = rows[n:]
 	}
 	if begin.TableRows > 0 {
@@ -98,6 +106,7 @@ func BuildObservationPlan(cs *ClientState, header *ProbabilisticHeader, original
 			appendStep(&ObservationChunk{Operation: ObservationAdvanceCredit})
 		}
 	}
+	blocksRead := 0
 	for len(blocks) > 0 {
 		count := minimumInt(len(blocks), blocksPerStep)
 		for i := 0; i < count; i++ {
@@ -116,7 +125,8 @@ func BuildObservationPlan(cs *ClientState, header *ProbabilisticHeader, original
 						count = i
 						break
 					}
-					appendStep(&ObservationChunk{Operation: ObservationAppendBlocks, Blocks: []*ProbabilisticBlock{block}})
+					blocksRead++
+					appendStep(&ObservationChunk{Operation: ObservationAppendBlocks, Blocks: []*ProbabilisticBlock{block}, EvidenceDigest: bytes.Clone(blockSuffixes[blocksRead][:])})
 					for done := maxCertificatesPerStep; done < len(certs); done += maxCertificatesPerStep {
 						appendStep(&ObservationChunk{Operation: ObservationContinueBody})
 					}
@@ -127,7 +137,8 @@ func BuildObservationPlan(cs *ClientState, header *ProbabilisticHeader, original
 			}
 		}
 		if count > 0 {
-			appendStep(&ObservationChunk{Operation: ObservationAppendBlocks, Blocks: blocks[:count]})
+			blocksRead += count
+			appendStep(&ObservationChunk{Operation: ObservationAppendBlocks, Blocks: blocks[:count], EvidenceDigest: bytes.Clone(blockSuffixes[blocksRead][:])})
 			blocks = blocks[count:]
 		}
 	}

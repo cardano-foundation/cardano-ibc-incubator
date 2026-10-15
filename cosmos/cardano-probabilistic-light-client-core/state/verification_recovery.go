@@ -53,9 +53,9 @@ func (cs *ClientState) beginCompactRecovery(ctx Context, cdc StateCodec, private
 	if cs.VerificationGeneration == ^uint64(0) {
 		return fmt.Errorf("verification generation overflow")
 	}
-	if shared.Has(compactRecoveryKey(cs)) {
-		return fmt.Errorf("an authorized recovery is already being prepared")
-	}
+	// This entry point is reached only through authorized client recovery. A
+	// new approval replaces the old preparation, including its counter cursor.
+	// Continuation alone can neither choose a replacement nor unfreeze a client.
 	consensus, found := GetConsensusState(substitutePrivate, cdc, substitute.LatestHeight)
 	if !found || consensus.VerificationGeneration != substitute.VerificationGeneration {
 		return fmt.Errorf("substitute proof state is missing or quarantined")
@@ -143,6 +143,9 @@ func (cs *ClientState) activateCompactRecovery(ctx Context, cdc StateCodec, priv
 	if recovery.Checked != recovery.Subject.Counters.Rows || recovery.Generation != cs.VerificationGeneration {
 		return fmt.Errorf("authorized recovery has unfinished checks")
 	}
+	if recovery.Replacement.IsExpired(recovery.Checkpoint.Timestamp, ctx.BlockTime()) {
+		return ErrTrustingPeriodExpired
+	}
 	replacement := *recovery.Replacement
 	replacement.StorageNamespace = bytes.Clone(cs.StorageNamespace)
 	replacement.VerificationGeneration = cs.VerificationGeneration + 1
@@ -150,6 +153,10 @@ func (cs *ClientState) activateCompactRecovery(ctx Context, cdc StateCodec, priv
 	replacement.BootstrapObjects = nil
 	if err := replacement.resetThinEpochDeadline(ctx, replacement.CurrentEpoch); err != nil {
 		return err
+	}
+	deadline := replacement.EpochContextChallenges[0].UsableAfterUnixNs
+	if replacement.TrustingPeriod <= 0 || recovery.Checkpoint.Timestamp > ^uint64(0)-uint64(replacement.TrustingPeriod) || recovery.Checkpoint.Timestamp+uint64(replacement.TrustingPeriod) <= deadline {
+		return fmt.Errorf("recovery must leave its entire response window inside the replacement's trusting period")
 	}
 	if recovery.Consensus.AcceptedEpoch != replacement.CurrentEpoch {
 		replacement.EpochContextChallenges = append(replacement.EpochContextChallenges, &EpochContextChallenge{Epoch: recovery.Consensus.AcceptedEpoch, UsableAfterUnixNs: replacement.EpochContextChallenges[0].UsableAfterUnixNs})
