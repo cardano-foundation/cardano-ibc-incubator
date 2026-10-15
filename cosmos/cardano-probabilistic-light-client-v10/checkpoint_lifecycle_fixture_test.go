@@ -121,7 +121,7 @@ func idleCheckpointLaneValuesForReceiver(t *testing.T, count uint64, receiver st
 	t.Helper()
 	values := map[string][]byte{}
 	for n := uint64(1); n <= count; n++ {
-		values[idleCheckpointCommitmentKey(n)] = channeltypes.CommitPacket(nil, idleCheckpointPacketForReceiver(n, receiver))
+		values[idleCheckpointCommitmentKey(n)] = channeltypes.CommitPacket(idleCheckpointPacketForReceiver(n, receiver))
 	}
 	return values
 }
