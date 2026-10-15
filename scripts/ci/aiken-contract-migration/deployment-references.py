@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
+import time
 import urllib.request
 
 
@@ -84,7 +85,29 @@ def inspect_references(handler, plan, compose, kupo, output):
     def cli(*args):
         return json.loads(subprocess.check_output(compose + ['exec', '-T', 'devkit', 'cardano-cli', 'conway', 'query', *args, '--testnet-magic', '42'], timeout=45))
     try:
-        report['tipBefore'] = cli('tip')
+        # A cold node replays its retained ledger before creating its socket.
+        # Wait only for transport startup. Reference mismatches below still
+        # fail immediately and are never treated as an indexing delay.
+        deadline = time.monotonic() + 180
+        while True:
+            try:
+                node = subprocess.run(compose + ['exec', '-T', 'devkit', 'cardano-cli', 'conway',
+                    'query', 'tip', '--testnet-magic', '42'], capture_output=True, text=True, timeout=45)
+                if node.returncode:
+                    raise RuntimeError(node.stderr.strip())
+                point = json.loads(node.stdout)
+                if not isinstance(point.get('block'), int) or point['block'] <= 0:
+                    raise RuntimeError('Node has not replayed its retained chain')
+                with urllib.request.urlopen(kupo + '/health', timeout=10) as response:
+                    health = json.load(response)
+                if health.get('connection_status') != 'connected':
+                    raise RuntimeError('Kupo has not connected to the restored node')
+                report['tipBefore'] = point
+                break
+            except Exception as error:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f'Reference providers did not start: {error}') from error
+                time.sleep(1)
         indexed = []
         for address in sorted({v['address'] for v in expected.values()}):
             with urllib.request.urlopen(kupo + '/matches/' + address + '?unspent', timeout=20) as response:
