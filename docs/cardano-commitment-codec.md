@@ -17,13 +17,13 @@ explicit codec transition. The cross-language vectors pin their encodings.
 
 ## Existing formats
 
-`Legacy8` names the eight-field Tendermint client commitment on the release
-branch's main ancestor. `UpgradePath9` names the nine-field commitment written
-by the light-client release branch. They are codec identifiers. They are separate
+`Legacy8`, codec 0, names the eight-field Tendermint client commitment on the
+release branch's main ancestor. `UpgradePath9`, codec 1, names the nine-field
+commitment written by the light-client release branch. They are codec identifiers. They are separate
 from the monotonically increasing `HostState.version`, contract generations,
 software releases and deployment identities.
 
-Neither existing format has a version envelope. Both use Plutus Data records
+Neither existing format has a codec envelope (see below). Both use Plutus Data records
 with constructor zero, encoded using CBOR tag 121. The authenticated client
 record's exact field count distinguishes these two existing formats. The reader
 rejects other field counts and a malformed nine-field record cannot fall back
@@ -131,56 +131,85 @@ a new Cosmos membership API. Non-membership remains available for absent keys.
 Semantic checks also run when the caller supplies bytes equal to the proof's
 value. Equality cannot bypass the supported codec contract.
 
-## Future activation and retirement
+## Codec versions and activation
 
-The historical readers preserve existing bytes. The six-field channel writer
-requires a fresh schema-6 Cardano deployment. It does not authorize a migration
-of existing state or assets into that deployment. This release does not introduce
-an active-codec field or authorize a codec migration. A mixed
-root containing eight-field and nine-field client leaves remains verifiable
-because each leaf's shape is authenticated by its original bytes.
+Codec numbers identify commitment formats. Codec 0 is `Legacy8`, the layouts on
+the release branch's main ancestor. Codec 1 is this release's layouts: the
+nine-field `UpgradePath9` client, the five-field channel end of earlier
+deployments, and the six-field channel end and channel-upgrade records of the
+fresh channel-upgrade deployment (see `tests/ibc-state-commitment/channel-upgrade.json`).
+A record's authenticated field count tells the channel and client layouts apart.
+Neither codec has an envelope. A later codec N, with N > 1, writes every leaf as
+the Plutus Data value `Constr 1 [N, payload]`: CBOR tag 122 around a two-element
+array. `CodecEnvelope` in `commitment_codec.ak` defines it. No codec 0 or 1 leaf
+is a top-level constructor 1, so an enveloped leaf cannot be read as an earlier
+codec, and an envelope cannot name codec 0 or 1. Codec numbers are never reused.
 
-A future byte-changing codec needs a distinct authenticated envelope and a
-deployment-approved codec policy. HostState must authenticate the write codec
-and permitted historical formats. Each accepted consensus root must retain the
-policy from its own proof height. Initialization and upgrades must authenticate
-that policy against the deployment. Unknown codecs fail closed. An operator
-setting cannot reinterpret an accepted historical commitment.
+Each leaf therefore names the codec that wrote it, and the proof authenticates
+that name with the rest of the leaf. The light clients check it before decoding.
+A reader rejects every codec it does not implement with `ErrUnsupportedCodec`,
+including a malformed envelope. No operator setting or client parameter selects
+a codec, so no setting can reinterpret an accepted historical commitment. A root
+may hold leaves from several codecs, and each leaf is verified under its own.
 
-Activation must use a bounded migration under
-[issue 462](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/462).
-The approved transition must freeze the source inventory and authenticate each
-old leaf before checking its replacement and applying its root update. New
-leaves carry the new envelope. Unmoved leaves retain their old format under the
-transition policy. Completion requires authenticated progress covering the
-entire inventory. An interruption must leave old settlement proofs usable.
+The six-field channel writer requires a fresh schema-6 Cardano deployment. It
+does not authorize a migration of existing state or assets into that deployment.
+
+Activating a codec takes three steps:
+
+1. Release readers for it to every supported light-client variant and
+   counterparty through
+   [issue 629](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/629).
+   Earlier readers keep rejecting it, so a counterparty that has not upgraded
+   fails closed.
+2. Deploy a HostState that writes it. That deployment, authorized under
+   [issue 462](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/462),
+   is the activation. The deployment's identity authenticates which codec its
+   HostState writes.
+3. Existing leaves keep their codec until a later write replaces them, so no
+   re-encoding is required. Re-encoding a whole inventory must be a bounded
+   migration under issue 462. The approved transition freezes the source
+   inventory and authenticates each old leaf before checking its replacement and
+   applying its root update. Completion requires authenticated progress covering
+   the entire inventory. An interruption must leave old settlement proofs usable.
 
 The existing registry's redeployment path requires unchanged datums and an
-unchanged compatibility profile. It cannot authorize this schema migration.
-Legacy immutable deployments retain their existing settlement paths. A new
-codec does not migrate escrow, vouchers, packet obligations or asset identities.
+unchanged compatibility profile. It cannot authorize a codec change. Legacy
+immutable deployments retain their existing settlement paths.
 
-Deploy the compatible Cosmos readers through
-[issue 629](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/629)
-before activating a different codec on Cardano. Retain historical readers while
-packets, refunds, redemption claims or recovery and retirement proofs depend on
-them. Removing a reader requires authenticated evidence that those dependencies
-are settled under issues 611 and 737. A grace period alone is insufficient.
+Retain a reader while packets, refunds, redemption claims or recovery and
+retirement proofs depend on leaves in its codec. Removing a reader requires
+authenticated evidence under issues 611 and 737 that those dependencies are
+settled. A grace period alone is insufficient.
 
-These rules cover the byte contract and proof continuity in invariants I1 and I3
-of issue 462. Accounting and claim availability remain the I2 and I4 conditions
-that gate migration completion and retirement. This first change advances
-[issue 614](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/614).
-Its authenticated activation and lifecycle acceptance criteria remain open.
+These rules map onto issue 462's shared invariants:
+
+- I1, identity and authority: codec numbers are never reused, and the deployment
+  that writes a codec is authenticated with the rest of the deployment.
+- I2, accounting and backing: a codec changes encoding only. It moves no escrow,
+  vouchers or packet obligations, and a re-encoding migration must preserve each
+  leaf's decoded value.
+- I3, migration and proof continuity: earlier leaves stay verifiable under their
+  own codec, including in roots written after an upgrade.
+- I4, retirement and redemption availability: a reader retires only with the
+  authenticated evidence above.
+
+Canonical IBC protobuf bytes were not adopted. Encoding protobuf in Aiken would
+put an encoder for every committed type into the HostState script, which is at
+its reference-script size limit, and every existing root already commits these
+CBOR values. A protobuf format could still be introduced later as an enveloped
+codec.
 
 ## Compatibility vectors
 
 `tests/ibc-state-commitment/codec.json` pins both client formats, all supported
 connection states and channel state/order combinations, integer encoding
-boundaries, byte-string chunk boundaries and port registrations. It also contains
-membership proofs for both client formats under one root. Aiken tests check the
+boundaries, byte-string chunk boundaries, port registrations and codec 2 and 3
+envelopes. It also contains membership proofs for both client formats under one
+root, and for a codec 1 and a codec 2 packet commitment under another. Aiken tests check the
 frozen encoders against these bytes. Go tests check decoding, semantic mismatch
-rejection and historical membership through every light-client variant.
+rejection, envelope rejection and historical membership through every
+light-client variant.
 
 Regenerate with the repository's pinned Aiken compiler and runtime dependencies:
 
@@ -190,4 +219,4 @@ node tests/ibc-state-commitment/generate-codec.mjs --check
 ```
 
 `fixtureVersion` identifies the fixture file format. Each vector's `version`
-identifies the commitment format. Neither substitutes for deployment authority.
+identifies its commitment codec. Neither substitutes for deployment authority.

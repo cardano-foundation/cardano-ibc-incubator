@@ -210,3 +210,18 @@ pub fn encode_sequence(value: Int) -> ByteArray {
 pub fn encode_bytes(value: ByteArray) -> ByteArray {
   cbor.serialise(value)
 }
+
+// Codec 0 (Legacy8) and codec 1 (UpgradePath9), written by the encoders above,
+// have no envelope. A later codec N > 1 must wrap every leaf it writes in
+// `Enveloped`, the Plutus Data value Constr 1 [N, payload], so each leaf names
+// the codec that wrote it. Codec numbers are never reused.
+pub type CodecEnvelope {
+  // Constructor 0 never wraps a leaf: codec 0 and 1 records already use it.
+  Unenveloped
+  Enveloped { codec: Int, payload: Data }
+}
+
+pub fn encode_enveloped(codec: Int, payload: Data) -> ByteArray {
+  expect codec > 1
+  cbor.serialise(Enveloped { codec, payload })
+}
