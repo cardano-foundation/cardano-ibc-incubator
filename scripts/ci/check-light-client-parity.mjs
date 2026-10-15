@@ -84,6 +84,7 @@ function mustExist(filePath) {
 
 function normalizeCommon(content) {
   return content
+    .replaceAll("channeltypes.CommitPacket(nil, ", "channeltypes.CommitPacket(")
     .replaceAll(
       "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8",
       "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-<IBC_GO_MAJOR>",
