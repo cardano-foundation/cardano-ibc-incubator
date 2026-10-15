@@ -70,6 +70,10 @@ Upgrade discovery uses the same proof height as the channel query. Only the Gate
 
 `report:tx-budget-models` measures isolated validators and excludes the verify-proof mint. Those figures do not establish capacity for complete signed upgrade transactions. A release still needs measurements of the exact Gateway transactions with all scripts and witnesses. This includes paired TRY/ACK/CONFIRM proofs, TIMEOUT/CANCEL and an eight-lane FLUSH. The supported historical proof size and lane count must come from those measurements and the intended destination application's limits.
 
+`scripts/ci/aiken-contract-migration/measure-channel-upgrade.cjs` records a signed envelope from an authenticated canonical block. It counts all declared execution units and records the proof envelope, historical witness and reference inputs. Ledger acceptance establishes that the actual scripts stayed within those declared bounds. The reported size retains the encoded transaction members and reconstructs their outer envelope. Measurements are still required for every release case above.
+
 ## Before release
 
 Release remains blocked until a composed migration passes on local v8 and the exact intended Injective application. The gate must exercise both initiation directions, multiple packet lanes, pending acknowledgements and timeouts, an unsent funded intent, circulating vouchers, cancellation, timeout, restarts during flushing and after counterparty OPEN, and C0→C1→C2. It must demonstrate original backing and asset identities, routing through the replacement clients and connections, replay rejection and route adoption by existing workers. The v8 simulated-state application tests and Gateway construction tests do not replace this gate.
+
+The owned-runtime helpers `capture-channel-migration.cjs` and `channel-migration-intent.ts` retain observations of the actual lanes, backing and an unsent funded intent. Their unit tests establish the evidence checks. They do not establish that the complete migration has passed.
