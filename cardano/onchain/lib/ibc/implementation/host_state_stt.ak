@@ -530,7 +530,8 @@ pub fn validate_create_channel_root(
   //
   // We commit the frozen wire encoding. The Gateway must
   // use the same encoding when it computes the update witnesses.
-  let channel_value = codec.encode_channel(channel_datum.state.channel)
+  let channel_value =
+    codec.encode_upgradable_channel(channel_datum.state.channel)
   let next_sequence_send_value =
     codec.encode_sequence(channel_datum.state.next_sequence_send)
   let next_sequence_recv_value =
@@ -752,9 +753,9 @@ pub fn validate_update_channel_root(
   // We commit the CBOR serialization of the on-chain `Channel`.
   // The Gateway must use the same encoding when it computes the update witness.
   let old_channel_value =
-    codec.encode_channel(channel_input_datum.state.channel)
+    codec.encode_upgradable_channel(channel_input_datum.state.channel)
   let new_channel_value =
-    codec.encode_channel(channel_output_datum.state.channel)
+    codec.encode_upgradable_channel(channel_output_datum.state.channel)
 
   let root_after_channel =
     ibc_state_commitment.apply_update(
@@ -897,8 +898,8 @@ pub fn validate_handle_packet_root(
           ibc_state_commitment.apply_update(
             old_root,
             host_channel_keys.channel_path(port_id, channel_id),
-            codec.encode_channel(channel_input_datum.state.channel),
-            codec.encode_channel(channel_output_datum.state.channel),
+            codec.encode_upgradable_channel(channel_input_datum.state.channel),
+            codec.encode_upgradable_channel(channel_output_datum.state.channel),
             channel_siblings,
           )
         } else {

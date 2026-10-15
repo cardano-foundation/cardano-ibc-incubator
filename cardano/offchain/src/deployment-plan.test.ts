@@ -269,7 +269,7 @@ Deno.test("channel upgrade deployment fixture pins its applied validators", asyn
     plan.hostState,
     plan.verifyProof,
   ];
-  assertEquals(pins.schema_version, 5);
+  assertEquals(pins.schema_version, 6);
   assertEquals(
     Object.fromEntries(validators.map(({ title, hash }) => [title, hash])),
     pins.validators,

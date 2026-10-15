@@ -174,6 +174,7 @@ test channel_0_0() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87980d87980d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }
@@ -189,6 +190,7 @@ test channel_0_1() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87980d87a80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }
@@ -204,6 +206,7 @@ test channel_0_2() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87980d87b80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }
@@ -219,6 +222,7 @@ test channel_1_0() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87a80d87980d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }
@@ -234,6 +238,7 @@ test channel_1_1() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87a80d87a80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }
@@ -249,6 +254,7 @@ test channel_1_2() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87a80d87b80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }
@@ -264,6 +270,7 @@ test channel_2_0() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87b80d87980d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }
@@ -279,6 +286,7 @@ test channel_2_1() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87b80d87a80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }
@@ -294,6 +302,7 @@ test channel_2_2() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87b80d87b80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }
@@ -309,6 +318,7 @@ test channel_3_0() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87c80d87980d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }
@@ -324,6 +334,7 @@ test channel_3_1() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87c80d87a80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }
@@ -339,6 +350,7 @@ test channel_3_2() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87c80d87b80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }
@@ -354,6 +366,7 @@ test channel_4_0() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87d80d87980d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }
@@ -369,6 +382,7 @@ test channel_4_1() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87d80d87a80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }
@@ -384,6 +398,7 @@ test channel_4_2() {
       },
       connection_hops: ["connection-0"],
       version: "ics20-1",
+      upgrade_sequence: 0,
     },
   ) == #"d8799fd87d80d87b80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff"
 }

@@ -479,12 +479,12 @@ export function normalizeBridgeManifest(manifest: BridgeManifest): {
   if (manifest.consensus_history_format !== 'proof-backed-v1') {
     throw new Error('A fresh proof-backed deployment is required: missing or unsupported consensus-history format. Regenerate deployment artifacts; adding a marker does not migrate old contracts.');
   }
-  if (manifest.schema_version !== 5) {
-    throw new Error('Unsupported bridge manifest schema_version: expected 5. A fresh channel-upgrade deployment is required');
+  if (manifest.schema_version !== 6) {
+    throw new Error('Unsupported bridge manifest schema_version: expected 6. A fresh channel-upgrade deployment is required');
   }
   for (const operation of ['chan_upgrade', 'chan_upgrade_handshake', 'chan_upgrade_finish'] as const) {
     if (!manifest.validators?.spend_channel?.ref_validator?.[operation]) {
-      throw new Error(`A fresh schema 5 deployment is required: missing ${operation} reference script`);
+      throw new Error(`A fresh schema 6 deployment is required: missing ${operation} reference script`);
     }
   }
   const ics20PacketCodec = manifest.ics20_packet_codec ?? 'legacy-cardano-json';

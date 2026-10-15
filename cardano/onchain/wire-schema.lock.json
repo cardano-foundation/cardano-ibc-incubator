@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "wireSchemaVersion": 5,
+  "wireSchemaVersion": 6,
   "source": "cardano/onchain/plutus.json",
-  "schemaFingerprint": "sha256:4446fa69937ca100dc2813f9d3a21494336bbb5370e27d2c473470804f43d958",
+  "schemaFingerprint": "sha256:31087e117c78d219b3ac372a94b6c36c97a82ba161dc4d718cad5f0fcd890bb2",
   "roots": [
     "ibc/core/ics_025_handler_interface/host_state/HostStateDatum",
     "ibc/client/ics_007_tendermint_client/client_state/ClientState",
@@ -391,6 +391,12 @@
               "type": {
                 "ref": "ByteArray"
               }
+            },
+            {
+              "name": "upgrade_sequence",
+              "type": {
+                "ref": "Int"
+              }
             }
           ]
         }
@@ -465,6 +471,16 @@
         {
           "name": "Closed",
           "index": 4,
+          "fields": []
+        },
+        {
+          "name": "Flushing",
+          "index": 5,
+          "fields": []
+        },
+        {
+          "name": "FlushComplete",
+          "index": 6,
           "fields": []
         }
       ]
