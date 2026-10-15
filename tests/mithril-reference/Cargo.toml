@@ -1,0 +1,13 @@
+[package]
+name = "mithril-reference"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+mithril-stm = "=0.12.0"
+fixed = "=1.31.0"
+rand_chacha = "=0.3.1"
+rand_core = "=0.6.4"
+serde_json = "1"
+hex = "0.4"

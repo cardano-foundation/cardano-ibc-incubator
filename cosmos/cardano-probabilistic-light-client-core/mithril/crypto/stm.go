@@ -114,78 +114,6 @@ type StmAggrSig struct {
 	BatchProof *BatchPath       `json:"batch_proof,omitempty"`
 }
 
-func (s *StmAggrSig) UnmarshalJSON(data []byte) error {
-	var response struct {
-		Signatures [][]interface{} `json:"signatures"`
-		BatchProof *BatchPath      `json:"batch_proof"`
-	}
-	if err := json.Unmarshal(data, &response); err != nil {
-		return err
-	}
-	for _, sig := range response.Signatures {
-		if len(sig) != 2 {
-			return fmt.Errorf("invalid signature format")
-		}
-
-		sigMap, ok := sig[0].(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("invalid signature object")
-		}
-
-		sigData, err := json.Marshal(sigMap)
-		if err != nil {
-			return err
-		}
-
-		var stmSig StmSig
-		var stmSigResponse struct {
-			Sigma       []byte  `json:"sigma,omitempty"`
-			Indexes     []Index `json:"indexes,omitempty"`
-			SignerIndex Index   `json:"signer_index,omitempty"`
-		}
-
-		err = json.Unmarshal(sigData, &stmSigResponse)
-		if err != nil {
-			return err
-		}
-		stmSig.Sigma, err = new(Signature).FromBytes(stmSigResponse.Sigma)
-		if err != nil {
-			return err
-		}
-		stmSig.Indexes = stmSigResponse.Indexes
-		stmSig.SignerIndex = stmSigResponse.SignerIndex
-
-		regPartyData, ok := sig[1].([]interface{})
-		if !ok || len(regPartyData) != 2 {
-			return fmt.Errorf("invalid reg_party format")
-		}
-
-		lenVk := len(regPartyData[0].([]interface{}))
-		vkBytes := make([]byte, lenVk)
-		for i := 0; i < lenVk; i++ {
-			vkBytes[i] = uint8(regPartyData[0].([]interface{})[i].(float64))
-		}
-
-		verficationKey, err := new(VerificationKey).FromBytes(vkBytes)
-		if err != nil {
-			return err
-		}
-
-		stake := uint64(regPartyData[1].(float64))
-
-		s.Signatures = append(s.Signatures, StmSigRegParty{
-			Sig: &stmSig,
-			RegParty: &RegParty{
-				VerificationKey: verficationKey,
-				Stake:           Stake(stake),
-			},
-		})
-	}
-
-	s.BatchProof = response.BatchProof
-	return nil
-}
-
 type CoreVerifier struct {
 	EligibleParties []RegParty
 	TotalStake      Stake
@@ -567,9 +495,7 @@ func (sig *StmSig) CheckIndices(params *StmParameters, stake Stake, msg []byte, 
 			return err
 		}
 		if !EvLtPhi(params.PhiF, ev, stake, totalStake) {
-			// TO-DO: check this function later
-			return nil
-			// return fmt.Errorf("lottery check failed")
+			return fmt.Errorf("lottery check failed for index %d", index)
 		}
 	}
 	return nil

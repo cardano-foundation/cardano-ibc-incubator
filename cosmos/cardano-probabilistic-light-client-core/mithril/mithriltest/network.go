@@ -47,11 +47,12 @@ func NewNetwork(stakes ...uint64) (*Network, error) {
 		}
 		network.signers = append(network.signers, signer)
 	}
-	avk := *network.clerk.ComputeAVK()
-	commitment := *avk.MTCommitment
-	commitment.Hasher = nil
-	avk.MTCommitment = &commitment
-	encoded, err := json.Marshal(avk)
+	// mithril-stm's serde layout: byte strings as number arrays, null hashers.
+	avk := network.clerk.ComputeAVK()
+	encoded, err := json.Marshal(map[string]any{
+		"mt_commitment": map[string]any{"root": numbers(avk.MTCommitment.Root), "nr_leaves": avk.MTCommitment.NrLeaves, "hasher": nil},
+		"total_stake":   avk.TotalStake,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -131,8 +132,11 @@ func encodeAggregate(aggregate *crypto.StmAggrSig) (string, error) {
 			[]any{numbers(party.RegParty.VerificationKey.ToBytes()), party.RegParty.Stake},
 		})
 	}
-	proof := *aggregate.BatchProof
-	proof.Hasher = nil
+	values := make([][]int, 0, len(aggregate.BatchProof.Values))
+	for _, value := range aggregate.BatchProof.Values {
+		values = append(values, numbers(value))
+	}
+	proof := map[string]any{"values": values, "indices": aggregate.BatchProof.Indices, "hasher": nil}
 	encoded, err := json.Marshal(map[string]any{"signatures": entries, "batch_proof": proof})
 	return hex.EncodeToString(encoded), err
 }
