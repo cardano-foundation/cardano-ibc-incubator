@@ -29,7 +29,7 @@ use ibc/core/ics_004/types/channel.{Channel} as channel_type
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/keys as channel_keys
 use ibc/core/ics_004/types/order.{Order}
-use ibc/core/ics_004/types/state.{ChannelState, Open}
+use ibc/core/ics_004/types/state.{ChannelState, FlushComplete, Flushing, Open}
 use ibc/core/ics_004/types/upgrade.{
   ErrorReceipt, Upgrade, UpgradeFields, UpgradeTimeout,
 }
@@ -591,6 +591,9 @@ pub fn restore(
   sequence: Int,
   message: ByteArray,
 ) -> ChannelDatum {
+  // CLOSED is terminal even when close-confirm retained a pending proposal.
+  let state = context.datum.state.channel.state
+  expect state == Open || state == Flushing || state == FlushComplete
   successor(
     context,
     Channel {

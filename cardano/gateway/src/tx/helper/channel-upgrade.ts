@@ -310,6 +310,9 @@ export function timeoutUpgrade(
  */
 export function cancelUpgrade(datum: ChannelDatum, errorReceipt: ErrorReceiptValue | null): ChannelDatum {
   const channel = datum.state.channel;
+  if (![ChannelState.Open, ChannelState.Flushing, ChannelState.FlushComplete].includes(channel.state)) {
+    reject('only an open or flushing channel can cancel an upgrade');
+  }
   requirePending(datum);
   if (!errorReceipt) {
     if (channel.state === ChannelState.FlushComplete) {

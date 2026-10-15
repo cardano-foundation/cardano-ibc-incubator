@@ -42,6 +42,8 @@ OPEN sets the channel's receive start to the counterparty's `next_sequence_send`
 
 Upgrade transactions may spend only the channel, HostState and key-locked inputs, and mint only their markers. They cannot move escrow, vouchers or other IBC state.
 
+`CLOSED` is terminal. Close-confirm preserves any pending upgrade and its `HostState` commitment as inert history. Cancellation and every restoration path accept only `OPEN`, `FLUSHING` or `FLUSHCOMPLETE`. They cannot reopen a closed channel.
+
 ## Planned migration
 
 1. Create replacement clients and open a replacement connection between the two chains with the usual handshake. Its Cardano end must support unordered channels. Both clients must be active. Hermes checks both replacement endpoints before TRY and again before the first OPEN. Cardano authenticates its replacement client at INIT and before completing flushing.
