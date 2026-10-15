@@ -143,6 +143,30 @@ func (cs *ClientState) activateCompactRecovery(ctx Context, cdc StateCodec, priv
 	if recovery.Checked != recovery.Subject.Counters.Rows || recovery.Generation != cs.VerificationGeneration {
 		return fmt.Errorf("authorized recovery has unfinished checks")
 	}
+	// The pinned objects are immutable, but their source generation can be
+	// invalidated while counter batches commit. Every compact freeze/recovery
+	// updates this authenticated namespace record alongside the private client.
+	// A newer checkpoint in the same healthy generation keeps the pin valid.
+	raw := shared.Get(namespaceKey(recovery.Replacement.StorageNamespace))
+	if len(raw) == 0 || len(raw) > MaxCompactClientBytes {
+		return fmt.Errorf("recovery substitute record is missing or oversized")
+	}
+	live := cdc.DecodeClient(raw)
+	if live == nil || !bytes.Equal(live.StorageNamespace, recovery.Replacement.StorageNamespace) {
+		return fmt.Errorf("recovery substitute namespace changed")
+	}
+	if live.VerificationGeneration != recovery.Replacement.VerificationGeneration {
+		return fmt.Errorf("recovery substitute generation was invalidated")
+	}
+	if live.FrozenHeight != nil && !live.FrozenHeight.IsZero() {
+		return fmt.Errorf("recovery substitute is frozen")
+	}
+	if err := live.Validate(); err != nil {
+		return fmt.Errorf("recovery substitute is invalid: %w", err)
+	}
+	if live.BootstrapPending || !IsMatchingClientState(*recovery.Replacement, *live) {
+		return fmt.Errorf("recovery substitute rules changed or bootstrap is incomplete")
+	}
 	if recovery.Replacement.IsExpired(recovery.Checkpoint.Timestamp, ctx.BlockTime()) {
 		return ErrTrustingPeriodExpired
 	}
