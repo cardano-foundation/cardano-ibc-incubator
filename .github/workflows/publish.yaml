@@ -2,7 +2,9 @@ name: Build and publish Docker images
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - fix/preview-deployment-test
     tags:
       - 'v*.*.*'
   pull_request:
