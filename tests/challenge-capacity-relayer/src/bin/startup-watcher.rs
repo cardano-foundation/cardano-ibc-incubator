@@ -92,6 +92,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 client_id: update_event.common.client_id,
                                 header1: submitted,
                                 header2: witness.clone(),
+                                verified_observation_1: vec![],
+                                verified_observation_2: vec![],
                             }),
                             supporting_headers: vec![],
                         })))
