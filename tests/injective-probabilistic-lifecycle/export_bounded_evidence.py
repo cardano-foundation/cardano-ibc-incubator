@@ -27,7 +27,7 @@ for root in args.runs:
                'max_execution_gas': max(int(row['execution']['gas_used']) for row in completed),
                'max_requested_gas': max(row.get('gas_wanted', 0) for row in completed),
                'expected_rejections': [row['label'] for row in transactions if 'expected_rejection' in row]}
-    for name in ['bounded-lifecycle-result.json', 'bounded-restart-result.json']:
+    for name in ['bounded-lifecycle-result.json', 'bounded-restart-result.json', 'bounded-session-discard-result.json']:
         if (root / name).exists():
             summary[name.removesuffix('.json')] = json.loads((root / name).read_text())
     summary['steps'] = [{key: row[key] for key in ['label', 'signed_bytes', 'simulation_gas', 'gas_wanted'] if key in row}

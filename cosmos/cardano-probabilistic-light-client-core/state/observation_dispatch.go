@@ -96,6 +96,8 @@ func (cs *ClientState) verifyObservationOperation(ctx Context, cdc StateCodec, p
 				return fmt.Errorf("observation session has expired")
 			}
 			if chunk.Operation == ObservationDiscard && uint64(now) < session.ExpiresAt {
+				// Public sessions have no signer owner. Cancellation must not
+				// erase another relayer's progress before the fixed expiry.
 				return fmt.Errorf("a live observation cannot be discarded by another submitter")
 			}
 			if (chunk.Operation == ObservationAppendStake || chunk.Operation == ObservationAppendBlocks) && stepDigest != session.InputDigest {

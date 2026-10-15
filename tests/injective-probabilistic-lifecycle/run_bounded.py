@@ -12,6 +12,7 @@ parser.add_argument('output', type=Path)
 parser.add_argument('--fixture', choices=['size', 'limit', 'combined', 'lifecycle'], default='size')
 parser.add_argument('--small-proposal', action='store_true')
 parser.add_argument('--resume', action='store_true')
+parser.add_argument('--discard-attacks', action='store_true', help='interleave a second account\'s discard attempts with an honest challenge')
 parser.add_argument('--image', default='local/injective-bounded-verification')
 parser.add_argument('--helper', default='local/injective-bounded-verification-probe')
 args = parser.parse_args()
@@ -19,6 +20,8 @@ root = args.output.resolve()
 if root.exists() and not args.resume:
     raise RuntimeError('Use a fresh output directory or --resume')
 root.mkdir(parents=True, exist_ok=True)
+if args.discard_attacks:
+    (root / 'test-session-discard').touch()
 repo = Path(__file__).resolve().parents[2]
 def helper(*command):
     return subprocess.check_output(['docker', 'run', '--rm', '-v', f'{root}:/out', args.helper, *command], text=True)
