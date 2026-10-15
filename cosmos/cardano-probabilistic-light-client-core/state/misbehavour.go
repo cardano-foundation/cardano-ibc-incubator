@@ -1,60 +1,25 @@
 package state
 
 import (
+	"bytes"
 	"time"
-
-	errorsmod "cosmossdk.io/errors"
 )
 
 var FrozenHeight = NewHeight(0, 1)
-
-func NewMisbehaviour(clientID string, header1, header2 *ProbabilisticHeader) *Misbehaviour {
-	return &Misbehaviour{
-		ClientId:             clientID,
-		ProbabilisticHeader1: header1,
-		ProbabilisticHeader2: header2,
-	}
-}
 
 func (Misbehaviour) ClientType() string {
 	return ModuleName
 }
 
-func (misbehaviour Misbehaviour) GetTime() time.Time {
-	if misbehaviour.ProbabilisticHeader1 == nil || misbehaviour.ProbabilisticHeader2 == nil {
-		return time.Time{}
+func (Misbehaviour) GetTime() time.Time { return time.Time{} }
+
+func (m Misbehaviour) ValidateBasic(validateClientID func(string) error) error {
+	if len(m.VerifiedObservation_1) != 32 || len(m.VerifiedObservation_2) != 32 || m.ProbabilisticHeader1 != nil || m.ProbabilisticHeader2 != nil {
+		return ErrIBCInvalidMisbehaviour
 	}
-	t1, t2 := misbehaviour.ProbabilisticHeader1.GetTime(), misbehaviour.ProbabilisticHeader2.GetTime()
-	if t1.After(t2) {
-		return t1
-	}
-	return t2
+	return validateClientID(m.ClientId)
 }
 
-func (misbehaviour Misbehaviour) ValidateBasic(validateClientID func(string) error) error {
-	if len(misbehaviour.VerifiedObservation_1) > 0 || len(misbehaviour.VerifiedObservation_2) > 0 {
-		if len(misbehaviour.VerifiedObservation_1) != 32 || len(misbehaviour.VerifiedObservation_2) != 32 || misbehaviour.ProbabilisticHeader1 != nil || misbehaviour.ProbabilisticHeader2 != nil {
-			return ErrIBCInvalidMisbehaviour
-		}
-		return validateClientID(misbehaviour.ClientId)
-	}
-	if misbehaviour.ProbabilisticHeader1 == nil {
-		return errorsmod.Wrap(ErrInvalidHeader, "misbehaviour ProbabilisticHeader1 cannot be nil")
-	}
-	if misbehaviour.ProbabilisticHeader2 == nil {
-		return errorsmod.Wrap(ErrInvalidHeader, "misbehaviour ProbabilisticHeader2 cannot be nil")
-	}
-	if err := validateClientID(misbehaviour.ClientId); err != nil {
-		return errorsmod.Wrap(err, "misbehaviour client ID is invalid")
-	}
-	if err := misbehaviour.ProbabilisticHeader1.ValidateBasic(); err != nil {
-		return errorsmod.Wrap(ErrIBCInvalidMisbehaviour, errorsmod.Wrap(err, "probabilistic header 1 failed validation").Error())
-	}
-	if err := misbehaviour.ProbabilisticHeader2.ValidateBasic(); err != nil {
-		return errorsmod.Wrap(ErrIBCInvalidMisbehaviour, errorsmod.Wrap(err, "probabilistic header 2 failed validation").Error())
-	}
-	if misbehaviour.ProbabilisticHeader1.GetHeight().LT(misbehaviour.ProbabilisticHeader2.GetHeight()) {
-		return errorsmod.Wrapf(ErrIBCInvalidMisbehaviour, "probabilistic header 1 height is less than probabilistic header 2 height (%s < %s)", misbehaviour.ProbabilisticHeader1.GetHeight(), misbehaviour.ProbabilisticHeader2.GetHeight())
-	}
-	return nil
+func NewMisbehaviour(clientID string, first, second []byte) *Misbehaviour {
+	return &Misbehaviour{ClientId: clientID, VerifiedObservation_1: bytes.Clone(first), VerifiedObservation_2: bytes.Clone(second)}
 }

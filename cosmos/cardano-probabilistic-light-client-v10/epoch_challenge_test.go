@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
-	"github.com/fxamacker/cbor/v2"
 	"testing"
 	"time"
+
+	state "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/state"
+
+	"github.com/fxamacker/cbor/v2"
 
 	probabilisticcore "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
@@ -31,10 +34,10 @@ func TestEpochChallengeBlocksValidProofsUntilHostDeadline(t *testing.T) {
 				{Epoch: cs.CurrentEpoch, UsableAfterUnixNs: 1},
 				{Epoch: cs.CurrentEpoch, UsableAfterUnixNs: 2},
 			}
-			require.NoError(t, cs.Initialize(ctx, cdc, store, consensus))
+			cs, consensus = installTestCheckpoint(t, ctx, cdc, store, cs, consensus)
 			cs, _ = getClientState(store, cdc)
 			require.Len(t, cs.EpochContextChallenges, 1)
-			require.Equal(t, uint64(ctx.BlockTime().Add(3*time.Minute).UnixNano()), cs.epochChallenge(7).UsableAfterUnixNs)
+			require.Equal(t, uint64(ctx.BlockTime().Add(state.SharedSnapshotChallengePeriod).UnixNano()), cs.epochChallenge(7).UsableAfterUnixNs)
 
 			path := commitmenttypesv2.NewMerklePath([]byte("ibc"), key)
 			verify := func(offset time.Duration, blockHeight int64) error {
@@ -45,10 +48,10 @@ func TestEpochChallengeBlocksValidProofsUntilHostDeadline(t *testing.T) {
 				return cs.VerifyNonMembership(host, store, cdc, cs.LatestHeight, 0, 0, proof, path)
 			}
 			require.ErrorIs(t, verify(0, 100), ErrEpochContextPending)
-			require.ErrorIs(t, verify(3*time.Minute-time.Nanosecond, 1_000_000), ErrEpochContextPending)
-			require.ErrorIs(t, verify(3*time.Minute, 101), ErrEpochContextPending)
-			require.ErrorIs(t, verify(3*time.Minute+time.Nanosecond, 101), ErrEpochContextPending)
-			require.NoError(t, verify(3*time.Minute+2*time.Nanosecond, 101))
+			require.ErrorIs(t, verify(state.SharedSnapshotChallengePeriod-time.Nanosecond, 1_000_000), ErrEpochContextPending)
+			require.ErrorIs(t, verify(state.SharedSnapshotChallengePeriod, 101), ErrEpochContextPending)
+			require.ErrorIs(t, verify(state.SharedSnapshotChallengePeriod+time.Nanosecond, 101), ErrEpochContextPending)
+			require.NoError(t, verify(state.SharedSnapshotChallengePeriod+2*time.Nanosecond, 101))
 			// Registering the client without the host hooks must fail closed.
 			unwired := ctx.WithContext(context.Background()).WithBlockTime(ctx.BlockTime().Add(time.Hour))
 			if membership {
@@ -57,17 +60,18 @@ func TestEpochChallengeBlocksValidProofsUntilHostDeadline(t *testing.T) {
 				require.ErrorIs(t, cs.VerifyNonMembership(unwired, store, cdc, cs.LatestHeight, 0, 0, proof, path), ErrEpochContextPending)
 			}
 			// The IBC delay is an additional requirement, not a replacement.
-			host := ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Minute)).WithBlockHeight(101)
+			host := ctx.WithBlockTime(ctx.BlockTime().Add(state.SharedSnapshotChallengePeriod)).WithBlockHeight(101)
 			if membership {
-				require.ErrorIs(t, cs.VerifyMembership(host, store, cdc, cs.LatestHeight, uint64(4*time.Minute), 0, proof, path, value), ErrDelayPeriodNotPassed)
+				require.ErrorIs(t, cs.VerifyMembership(host, store, cdc, cs.LatestHeight, uint64(state.SharedSnapshotChallengePeriod+time.Minute), 0, proof, path, value), ErrDelayPeriodNotPassed)
 			} else {
-				require.ErrorIs(t, cs.VerifyNonMembership(host, store, cdc, cs.LatestHeight, uint64(4*time.Minute), 0, proof, path), ErrDelayPeriodNotPassed)
+				require.ErrorIs(t, cs.VerifyNonMembership(host, store, cdc, cs.LatestHeight, uint64(state.SharedSnapshotChallengePeriod+time.Minute), 0, proof, path), ErrDelayPeriodNotPassed)
 			}
 			cs.FrozenHeight = FrozenHeight
-			require.ErrorIs(t, verify(time.Hour, 102), clienttypes.ErrClientFrozen)
+			require.ErrorIs(t, verify(state.SharedSnapshotChallengePeriod+time.Hour, 102), clienttypes.ErrClientFrozen)
 			cs.FrozenHeight = ZeroHeight()
-			cs.EpochContextChallenges = nil // Legacy state fails closed.
-			require.ErrorIs(t, verify(time.Hour, 102), ErrEpochContextPending)
+			cs.EpochContextChallenges = nil
+			require.NoError(t, verify(state.SharedSnapshotChallengePeriod+time.Hour, 102))
+			require.ErrorIs(t, cs.verifyEpochUsable(ctx, 999), ErrEpochContextPending)
 		})
 	}
 }

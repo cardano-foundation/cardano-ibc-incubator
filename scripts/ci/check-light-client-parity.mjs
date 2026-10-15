@@ -15,12 +15,10 @@ const sharedSourceFiles = [
   "adapter_test.go",
   "admission_challenge_test.go",
   "challenge_capacity_test.go",
-  "checkpoint_expiry_test.go",
-  "checkpoint_lifecycle_test.go",
   "checkpoint_lifecycle_fixture_test.go",
   "client_state.go",
   "client_state_path_test.go",
-  "cmd/compact-bootstrap/main.go",
+  "cmd/bootstrap/main.go",
   "codec.go",
   "collision_buckets_test.go",
   "consensus_state.go",
@@ -47,7 +45,6 @@ const sharedSourceFiles = [
   "misbehavour.go",
   "packet_state.go",
   "packet_state_test.go",
-  "payload_size_test.go",
   "probabilistic.pb.go",
   "preparation.go",
   "query.pb.go",
@@ -62,8 +59,8 @@ const sharedSourceFiles = [
   "state_machine.go",
   "storage_server.go",
   "store.go",
-  "store_compat_test.go",
   "store_revision_test.go",
+  "storage_format_test.go",
   "upgrade.go"
 ];
 
@@ -273,15 +270,8 @@ function assertFileInventory() {
   const expectedV8 = [
     ...sharedSourceFiles,
     // Persistent live acceptance currently targets only the local v8 profile.
-    "acceptance_consensus_test.go",
-    "acceptance_deadline_test.go",
-    "acceptance_driver_test.go",
     "acceptance_host_test.go",
     "acceptance_source_test.go",
-    "acceptance_upgrade_after_test.go",
-    "acceptance_upgrade_before_test.go",
-    "acceptance_upgrade_test.go",
-    "acceptance_watcher_test.go",
     "internal/cardanodatum/channel_upgrade_sequence.go",
     // Channel upgrades exist only in ibc-go v8. v10 must still verify
     // upgradable Cardano channel ends.
@@ -524,7 +514,7 @@ function assertSharedCoreExtraction() {
 // These are review budgets, not a reason to compress code. New validation or
 // transition logic belongs in core/state. Raise a budget only for host API work.
 const adapterLineBudgets = {
-  "cmd/compact-bootstrap/main.go": 100,
+  "cmd/bootstrap/main.go": 100,
   "storage_server.go": 130,
   "preparation.go": 55,
   "client_state.go": 190,

@@ -77,9 +77,9 @@ func allocateStorageNamespace(store storetypes.KVStore, scope [32]byte) ([]byte,
 	store.Set([]byte("snapshots/v2/nextNamespace"), binary.BigEndian.AppendUint64(nil, seq))
 	return namespace[:], nil
 }
-func (cs *ClientState) initializeCompact(ctx Context, cdc StateCodec, private storetypes.KVStore, consensus *ConsensusState) error {
-	if !cs.BootstrapPending || cs.VerificationGeneration != 1 || len(cs.BootstrapObjects) == 0 || len(cs.BootstrapObjects) > MaxCompactClientBytes {
-		return fmt.Errorf("compact initialization requires an explicit trusted bootstrap manifest")
+func (cs *ClientState) initializeClientState(ctx Context, cdc StateCodec, private storetypes.KVStore, consensus *ConsensusState) error {
+	if !cs.BootstrapPending || cs.VerificationGeneration != 1 || len(cs.BootstrapObjects) == 0 || len(cs.BootstrapObjects) > MaxClientBytes {
+		return fmt.Errorf("initialization requires an explicit trusted bootstrap manifest")
 	}
 	var manifest bootstrapManifest
 	if _, err := cbor.Decode(cs.BootstrapObjects, &manifest); err != nil {
@@ -146,14 +146,14 @@ func (cs *ClientState) initializeCompact(ctx Context, cdc StateCodec, private st
 	if err := NewSnapshotMap(shared, scope, snapshotBootstrapFrontier).Pin(namespaceOwner(cs.StorageNamespace, 1, 7, nil), progress.Frontier); err != nil {
 		return err
 	}
-	if err := writeThinClient(ctx, cdc, private, cs); err != nil {
+	if err := writeClientState(ctx, cdc, private, cs); err != nil {
 		return err
 	}
 	SetConsensusState(private, cdc, consensus, cs.LatestHeight)
 	setConsensusMetadata(ctx, private, cs.LatestHeight)
 	return nil
 }
-func (cs *ClientState) continueCompactBootstrap(ctx Context, cdc StateCodec, private, shared storetypes.KVStore, chunk *ObservationChunk, digest [32]byte) error {
+func (cs *ClientState) continueBootstrap(ctx Context, cdc StateCodec, private, shared storetypes.KVStore, chunk *ObservationChunk, digest [32]byte) error {
 	if !cs.BootstrapPending {
 		return fmt.Errorf("bootstrap already completed")
 	}
@@ -290,10 +290,10 @@ func (cs *ClientState) continueCompactBootstrap(ctx Context, cdc StateCodec, pri
 			}
 		}
 		cs.BootstrapPending = false
-		if err := cs.resetThinEpochDeadline(ctx, cs.CurrentEpoch); err != nil {
+		if err := cs.resetEpochDeadline(ctx, cs.CurrentEpoch); err != nil {
 			return err
 		}
-		if err := writeThinClient(ctx, cdc, private, cs); err != nil {
+		if err := writeClientState(ctx, cdc, private, cs); err != nil {
 			return err
 		}
 	}
@@ -310,11 +310,11 @@ func packetObjectDigest(scope [32]byte, raw []byte) [32]byte {
 	return sha256.Sum256(append(append([]byte("cardano-ibc.packet-snapshot/v2\x00"), scope[:]...), raw...))
 }
 
-// BuildCompactBootstrap runs in a preparation tool. The creator explicitly
+// BuildBootstrap runs in a preparation tool. The creator explicitly
 // trusts the resulting checkpoint. Imports prove only that the uploaded bytes
 // match that starting commitment, not that a relayer-selected checkpoint is true.
-func BuildCompactBootstrap(store storetypes.KVStore, client *ClientState, consensus *ConsensusState) (*ClientState, *ConsensusState, []*ProbabilisticHeader, error) {
-	cp, err := legacyVerificationCheckpoint(store, client, consensus)
+func BuildBootstrap(store storetypes.KVStore, client *ClientState, consensus *ConsensusState) (*ClientState, *ConsensusState, []*ProbabilisticHeader, error) {
+	cp, err := buildTrustedCheckpoint(store, client, consensus)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -326,13 +326,13 @@ func BuildCompactBootstrap(store storetypes.KVStore, client *ClientState, consen
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	thin := thinClientState(client, make([]byte, 32), cp, ref)
+	thin := referenceClientState(client, make([]byte, 32), cp, ref)
 	thin.BootstrapPending = true
 	thin.BootstrapObjects, err = cbor.Encode(bootstrapManifest{cp, packet})
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	compact := thinConsensusState(consensus, cp, ref, 1)
+	compact := referenceConsensusState(consensus, cp, ref, 1)
 	var pages []bootstrapPage
 	seen := map[string]bool{}
 	var visit func(byte, SnapshotRoot, int) error

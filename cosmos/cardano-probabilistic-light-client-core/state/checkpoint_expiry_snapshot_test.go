@@ -20,7 +20,7 @@ type compactExpiryFixture struct {
 	start           time.Time
 }
 
-func newCompactExpiryFixture(t *testing.T) *compactExpiryFixture {
+func newSnapshotExpiryFixture(t *testing.T) *compactExpiryFixture {
 	t.Helper()
 	evidence := savedNativeBoundary(t, "control")
 	evidence.Client.TrustingPeriod = 48 * time.Hour
@@ -29,7 +29,7 @@ func newCompactExpiryFixture(t *testing.T) *compactExpiryFixture {
 	start := time.Unix(0, int64(evidence.Consensus.Timestamp))
 	ctx := Context{Time: start, Height: 100, SelfHeight: NewHostHeight(0, 100), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 	cdc := jsonTestCodec{}
-	client, _, err := EnableSharedSnapshots(ctx, cdc, private, evidence.Client, evidence.Consensus)
+	client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, evidence.Client, evidence.Consensus)
 	require.NoError(t, err)
 	ctx.VerifyHostUsability = stagedTestHostWindow
 	return &compactExpiryFixture{ctx, cdc, private, shared, client, evidence, start}
@@ -63,8 +63,8 @@ func (f *compactExpiryFixture) activation(t *testing.T, plan *ObservationPlan) *
 	return &ProbabilisticHeader{ObservationChunk: &ObservationChunk{Operation: ObservationActivate, SessionId: plan.SessionID[:], Sequence: session.Sequence + 1}}
 }
 
-func TestCompactCheckpointProgressAndHistoricalChallengeAfterOldRootExpiry(t *testing.T) {
-	f := newCompactExpiryFixture(t)
+func TestSnapshotCheckpointProgressAndHistoricalChallengeAfterOldRootExpiry(t *testing.T) {
+	f := newSnapshotExpiryFixture(t)
 	root, found := GetConsensusState(f.private, f.cdc, f.client.LatestHeight)
 	require.True(t, found)
 	oldHeight := f.client.LatestHeight
@@ -122,8 +122,8 @@ func TestCompactCheckpointProgressAndHistoricalChallengeAfterOldRootExpiry(t *te
 	require.ErrorIs(t, f.client.VerifyClientMessage(f.ctx, f.cdc, f.private, f.activation(t, plan)), ErrIBCClientFrozen)
 }
 
-func TestCompactStagingCannotReservePermissionPastCheckpointExpiry(t *testing.T) {
-	f := newCompactExpiryFixture(t)
+func TestSnapshotStagingCannotReservePermissionPastCheckpointExpiry(t *testing.T) {
+	f := newSnapshotExpiryFixture(t)
 	f.ctx.Time = f.start.Add(47 * time.Hour)
 	header := boundaryHeaderAtAnchor(t, f.evidence.Header, 966, 976)
 	header.NewEpochContext = nil
@@ -136,8 +136,8 @@ func TestCompactStagingCannotReservePermissionPastCheckpointExpiry(t *testing.T)
 	require.Equal(t, uint64(966), f.client.LatestCheckpointHeight.RevisionHeight)
 }
 
-func TestCompactProposalResponseWindowMustFitRemainingCheckpointLifetime(t *testing.T) {
-	f := newCompactExpiryFixture(t)
+func TestSnapshotProposalResponseWindowMustFitRemainingCheckpointLifetime(t *testing.T) {
+	f := newSnapshotExpiryFixture(t)
 	f.ctx.Time = f.start.Add(37 * time.Hour)
 	plan := f.stage(t, f.evidence.Header, nil)
 	require.Equal(t, Active, f.client.Status(f.ctx, f.private, f.cdc))

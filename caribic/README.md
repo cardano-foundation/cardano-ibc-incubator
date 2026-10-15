@@ -279,75 +279,11 @@ local value is `315360000`), recreate the Gateway app with
 `docker compose -f cardano/gateway/docker-compose.yml up -d --force-recreate app`,
 and run `caribic start relayer --network local` before continuing.
 
-### Local v8 challenge and recovery acceptance
+### Local v8 staged verification checks
 
-```sh
-caribic test --light-client challenge-recovery --chain cosmos --network v8-classic
-```
+Run `caribic test --light-client challenge-recovery --chain cosmos --network v8-classic` for signed receipt-backed challenges, two-account upload interference and authorized recovery. Run `caribic test --light-client deadline-ordering --chain cosmos --network v8-classic` for committed activation/challenge ordering and host interruption.
 
-This command starts an isolated native ibc-go v8 application and a separate
-watcher process. Go 1.26.9 is required. It uses the local profile's transaction,
-RPC and gas limits. It takes about 10 minutes because it waits for the real
-three-minute host challenge windows. It does not require running Docker services
-and it does not take over the existing Hermes daemon.
-
-The initial Cardano checkpoint and open connection are explicit trusted genesis
-fixtures. The historical genesis starts with an elapsed bootstrap window. A signed channel handshake opens the ICS-20 channel. The Cardano source
-is deterministic signed Praos history with complete block bodies, packet lane
-continuations and escrow outputs. This makes incompatible settled histories
-reproducible without making a live devnet fork. It does not exercise Cardano
-script execution, the Gateway, or the production Hermes watcher.
-
-The test receives a baseline packet and keeps an outgoing transfer unreceived.
-It commits an epoch proposal and starts a watcher that recovers the actual
-transaction and historical context over RPC. Ordinary signed misbehaviour freezes
-the client before its stored deadline. Membership and non-membership transactions
-remain blocked before and after that deadline. Invalid evidence, unsigned table
-disagreement and temporary-tail forks leave a control client healthy.
-
-Signed governance proposals reject an incompatible replacement and recover from
-a valid newer one. Recovery preserves packet accounting and the original route.
-It deletes discarded proof history and starts a fresh response window even when
-the substitute's window has elapsed. Later native updates cross another epoch
-and resume transfers and an exact timeout refund. The host then restarts from
-disk and the watcher reloads its cursor before another update and packet proof.
-
-Logs, signed source history, host databases, watcher cursor and before/after
-accounting are retained under `.caribic/test-artifacts/`. A failed assertion makes
-Caribic exit with an error. These artifacts certify this local fixture scenario.
-They do not approve public network profiles or the availability of challenge
-evidence for arbitrary admitted source histories.
-
-### Local v8 software upgrade acceptance
-
-```sh
-caribic test --light-client software-upgrade --chain cosmos --network v8-classic
-```
-
-This command builds and runs two native ibc-go v8 applications. Only the
-successor contains the upgrade handler and the new application store. The
-scenario uses signed governance transactions to approve an upgrade height.
-The old application halts there because it cannot execute that upgrade.
-Caribic then starts the successor against the same database and validator keys.
-The SDK adds the store and records the completed upgrade at the approved height.
-
-The original probabilistic client, private proof history, route, balances and
-pending packet must survive unchanged. An existing epoch response deadline
-must remain enforced. After it elapses the test receives another packet and
-refunds the pending transfer through its valid timeout proof. Native updates
-cross another epoch and packet processing continues after a successor restart.
-
-Go 1.26.9 is required. Allow about seven minutes for the real three-minute
-response windows. No Docker services are required. This uses the same local
-profile limits and signed Cardano fixture source as `challenge-recovery`.
-The Cardano devnet, Gateway and production Hermes are outside this scenario.
-Both applications retain the current checkout's verifier. This certifies the
-host application upgrade and does not certify migration from an older verifier
-release that lacks required authenticated checkpoint state.
-
-Caribic retains the actual executables, database, process logs and accounting
-evidence under `.caribic/test-artifacts/software-upgrade-*/`. CI invokes this
-same command. Failed assertions make the command exit with an error.
+These tests use isolated SDK applications with a controlled host clock. They exercise the only supported snapshot format. The former inline-format process and software-upgrade fixtures have been removed. These checks do not certify host software upgrades or public-chain inclusion timing.
 
 ### What the numbered suite tests
 
@@ -588,24 +524,4 @@ What survives a spin-down: the contract deployment (`manifests/preprod/`), all k
 - Hermes errors like `unknown header type: /ibc.lightclients.probabilistic.v1.ProbabilisticHeader` mean the compiled relayer binary is older than the `relayer/` submodule checkout — rebuild it with `cd relayer && cargo build --release --bin hermes`. (Hermes reports errors on stdout, so caribic may show such failures with an empty message.)
 - If client creation on Injective fails with an unsupported client type, re-check the `allowed_clients` query at the top of this section.
 
-`caribic test --light-client deadline-ordering --chain cosmos --network v8-classic`
-runs five isolated native v8 hosts through signed RPC/gRPC transactions. It tests
-both challenge-first and proof-first ordering after a real `SIGSTOP`/`SIGCONT`
-halt spanning the three-minute deadline. It repeats both orderings exactly at
-the deadline without a halt. A persistent validator signs a controlled vote
-timestamp for the equality cases. Ordinary CometBFT validation derives the next
-block time from that commit. The application clock and client deadlines are not
-replaced.
-
-The proof transaction batches a normal self-send with the packet receipt. This legal batch reaches committed execution without the IBC
-ante redundancy shortcut deciding packet usability first. The disputed root must already be stored. Both transactions must
-be in the mempool before release. The test asserts their committed height, order,
-timestamp and result and verifies that no packet receipt, acknowledgement or
-balance change escaped. The halt cases also assert a fresh host deadline. Exact
-deadline cases assert that no halt window was accidentally triggered. The hosts
-start from an explicitly trusted historical checkpoint. Later proposals and
-interruption windows use the real three-minute duration. Artifacts include the
-persistent databases, host logs and `ordering.json` results. A healthy fifth
-host restarts during quarantine and then waits for the full window to expire.
-It receives a packet, completes another native update and refunds a pending
-packet through its authenticated timeout path on the same channel.
+`caribic test --light-client deadline-ordering --chain cosmos --network v8-classic` checks activation and challenge ordering against committed blocks in isolated SDK applications. The host clock is controlled so the full twelve-hour window and interruption rules are exercised without a twelve-hour wall-clock run. The old inline-format process fixture has been removed.

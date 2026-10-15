@@ -1,9 +1,10 @@
 package state
 
 import (
-	"fmt"
 	"math"
 	"time"
+
+	errorsmod "cosmossdk.io/errors"
 )
 
 // The production envelope is per transaction. The logical observation keeps the
@@ -24,7 +25,7 @@ const SupportedDetectionAndPreparationTime = 30 * time.Minute
 func sharedSnapshotChallengeDeadline(ctx Context) (uint64, error) {
 	now := ctx.BlockTime().UnixNano()
 	if now <= 0 || now > math.MaxInt64-int64(SharedSnapshotChallengePeriod) {
-		return 0, fmt.Errorf("host time cannot represent the bounded challenge deadline")
+		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "host time cannot represent the bounded challenge deadline")
 	}
 	return uint64(now + int64(SharedSnapshotChallengePeriod)), nil
 }

@@ -2,9 +2,10 @@ package probabilistic
 
 import (
 	"fmt"
+	"time"
+
 	state "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/state"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
-	"time"
 
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 )
@@ -28,16 +29,11 @@ func (h ProbabilisticHeader) GetTime() time.Time {
 	return time.Unix(int64(h.GetTimestamp()/uint64(time.Second)), int64(h.GetTimestamp()%uint64(time.Second)))
 }
 
-func (h ProbabilisticHeader) ConsensusState() *ConsensusState {
-	return fromCoreConsensusState(toCoreProbabilisticHeader(&h).ConsensusState())
-}
+
 
 func (h ProbabilisticHeader) ValidateBasic() error {
-	if h.ObservationChunk != nil && h.Size() > state.MaxOperationSignedBytes-20000 {
+	if h.Size() > state.MaxOperationSignedBytes-20000 {
 		return fmt.Errorf("bounded client message exceeds the transport budget")
-	}
-	if err := state.ValidateHeaderBytes(h.Size()); err != nil {
-		return adapterError(err)
 	}
 	return adapterError(toCoreProbabilisticHeader(&h).ValidateBasic())
 }

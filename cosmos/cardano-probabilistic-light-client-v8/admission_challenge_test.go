@@ -31,9 +31,9 @@ import (
 
 // The redundant-relay ante handler calls UpdateState for this client's
 // misbehaviour after verifying it, and again on ReCheckTx without verifying it.
-// A compact client's receipt-backed challenge must pass both admissions
+// A client's receipt-backed challenge must pass both admissions
 // unchanged and freeze the client only when the committed block executes it.
-func TestAppAdmitsCompactChallengeThroughCheckTx(t *testing.T) {
+func TestAppAdmitsSnapshotChallengeThroughCheckTx(t *testing.T) {
 	const chainID = "compact-challenge-1"
 	clientID := ModuleName + "-0"
 	history := idleCheckpointHistory(t)
@@ -54,7 +54,7 @@ func TestAppAdmitsCompactChallengeThroughCheckTx(t *testing.T) {
 		params := app.IBCKeeper.ClientKeeper.GetParams(ctx)
 		params.AllowedClients = append(params.AllowedClients, ModuleName)
 		app.IBCKeeper.ClientKeeper.SetParams(ctx, params)
-		challenge, staged = stageCompactChallenge(t, ctx, app.AppCodec(), app.IBCKeeper.ClientKeeper.ClientStore(ctx, clientID), clientID, history)
+		challenge, staged = stageSnapshotChallenge(t, ctx, app.AppCodec(), app.IBCKeeper.ClientKeeper.ClientStore(ctx, clientID), clientID, history)
 		// The first block follows the staged history without a host gap.
 		seedAcceptanceHostProgress(ctx.WithBlockTime(staged.Add(time.Second)), app.GetKey(exported.StoreKey))
 		return response, nil
@@ -116,13 +116,13 @@ func TestAppAdmitsCompactChallengeThroughCheckTx(t *testing.T) {
 	require.Equal(t, exported.Frozen, status())
 }
 
-// stageCompactChallenge runs the signed idle history through a compact client
+// stageSnapshotChallenge runs the signed idle history through a snapshot client
 // in genesis and returns a receipt-backed challenge between the original epoch
 // proposal and a conflicting history, with the last staged block time.
-func stageCompactChallenge(t *testing.T, ctx sdk.Context, cdc codec.BinaryCodec, private storetypes.KVStore, clientID string, history idleCheckpointHistoryData) (*Misbehaviour, time.Time) {
+func stageSnapshotChallenge(t *testing.T, ctx sdk.Context, cdc codec.BinaryCodec, private storetypes.KVStore, clientID string, history idleCheckpointHistoryData) (*Misbehaviour, time.Time) {
 	t.Helper()
 	ctx = withTestHostProgress(ctx.WithBlockTime(time.Unix(0, int64(history.Consensus.Timestamp))))
-	client, _, err := EnableSharedSnapshots(ctx, cdc, private, history.Client, history.Consensus)
+	client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, history.Client, history.Consensus)
 	require.NoError(t, err)
 	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(12*time.Hour + time.Second))
 	reload := func() {

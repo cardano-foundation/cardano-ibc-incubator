@@ -72,7 +72,7 @@ func testSignedStagedUpload(t *testing.T, initial *ClientState, consensus *Conse
 		params.AllowedClients = append(params.AllowedClients, ModuleName)
 		app.IBCKeeper.ClientKeeper.SetParams(ctx, params)
 		seedAcceptanceHostProgress(ctx, app.GetKey("ibc"))
-		_, _, err = EnableSharedSnapshots(ctx.WithBlockTime(now.Add(-13*time.Hour)), app.AppCodec(),
+		_, _, err = InitializeFromTrustedCheckpoint(ctx.WithBlockTime(now.Add(-13*time.Hour)), app.AppCodec(),
 			app.IBCKeeper.ClientKeeper.ClientStore(ctx, clientID), initial, consensus)
 		return response, err
 	})
@@ -319,7 +319,7 @@ func TestAppFailedStagedRecoveryAllowsAuthorizedRetry(t *testing.T) {
 		consensus.AcceptedBlockHash = client.LatestCheckpointBlockHash
 		consensus.Timestamp = client.LatestCheckpointTimestamp
 		setTestPacketSnapshot(t, consensus, client.LatestHeight.RevisionHeight)
-		_, _, err := EnableSharedSnapshots(ctx, cdc, private(id), client, consensus)
+		_, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private(id), client, consensus)
 		require.NoError(t, err)
 	}
 	subjectID, badID, goodID := ModuleName+"-0", ModuleName+"-1", ModuleName+"-2"

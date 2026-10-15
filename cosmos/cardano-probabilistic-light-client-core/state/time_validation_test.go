@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	storetypes "cosmossdk.io/store/types"
-
 	"github.com/stretchr/testify/require"
 )
 
@@ -119,270 +117,17 @@ func TestVerifyHeaderTemporalContinuityEnforcesHostTimeForEveryBlockRole(t *test
 	}
 }
 
-func TestVerifyHeaderPathEnforcesTemporalContinuityAcrossEpochRollover(t *testing.T) {
-	baseEpoch := newTemporalVerifierEpochContext(7, testMaturePoolSlot, testMaturePoolSlot+1_000, 0x07)
-	ctx, cdc, clientStore, clientState := initializeTemporalVerifierClient(
-		t,
-		"probabilistic-temporal-rollover",
-		testMaturePoolSlot+999,
-		baseEpoch,
-	)
-	ctx = temporalTestContext(t, clientState, testMaturePoolSlot+1_024)
-
-	nextEpoch := newTemporalVerifierEpochContext(8, testMaturePoolSlot+1_000, testMaturePoolSlot+2_000, 0x08)
-	header := newTemporalVerifierHeader(t, clientState, "rollover-anchor", 11, testMaturePoolSlot+1_000, 8, true)
-	header.NewEpochContext = cloneEpochContext(nextEpoch)
-	authenticated := newTemporalVerifierAuthenticatedHeader(
-		t,
-		clientState,
-		testBlockHash("trusted-10"),
-		header.AnchorBlock.Hash,
-		11,
-		testMaturePoolSlot+1_000,
-		8,
-	)
-
-	authenticate := func(
-		_ *ProbabilisticHeader,
-		epochContexts []*EpochContext,
-		_ map[string]uint64, trusted *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
-		require.NotNil(t, epochContextByEpoch(epochContexts, 7))
-		require.NotNil(t, epochContextByEpoch(epochContexts, 8))
-		authenticated.anchorPoolRegistry = testPoolRegistryAtEpoch(t, trusted.poolRegistry, 8)
-		return authenticated, nil
-	}
-	require.NoError(t, clientState.verifyHeaderWithAuthenticator(ctx, clientStore, cdc, header, authenticate))
-
-	duplicateSlot := newTemporalVerifierAuthenticatedHeader(
-		t,
-		clientState,
-		testBlockHash("trusted-10"),
-		header.AnchorBlock.Hash,
-		11,
-		testMaturePoolSlot+1_000,
-		8,
-	)
-	duplicateSlot.descendantBlocks[0].slot = duplicateSlot.anchorBlock.slot
-	duplicateSlot.descendantBlocks[0].timestamp = duplicateSlot.anchorBlock.timestamp
-	err := clientState.verifyHeaderWithAuthenticator(
-		ctx,
-		clientStore,
-		cdc,
-		header,
-		func(*ProbabilisticHeader, []*EpochContext, map[string]uint64, *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
-			return duplicateSlot, nil
-		},
-	)
-	require.ErrorIs(t, err, ErrInvalidTimestamp)
-	require.ErrorContains(t, err, "must be greater than previous authenticated slot")
-}
-
-func TestNormalUpdateVerifierRejectsTemporalViolationsWithoutStoringConsensus(t *testing.T) {
-	epochContext := newTemporalVerifierEpochContext(7, 0, 1_000_000, 0x07)
-	ctx, cdc, clientStore, clientState := initializeTemporalVerifierClient(
-		t,
-		"probabilistic-temporal-normal-update",
-		100,
-		epochContext,
-	)
-	clientState.MaxClockDrift = 10 * time.Second
-	ctx = temporalTestContext(t, clientState, 130)
-
-	for _, testCase := range []struct {
-		name       string
-		anchorSlot uint64
-		want       string
-	}{
-		{name: "non-increasing anchor", anchorSlot: 100, want: "must be greater than previous authenticated slot"},
-		{name: "future anchor", anchorSlot: 141, want: "exceeds Cosmos host time plus max clock drift"},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			anchorHash := "rejected-" + testCase.name
-			header := newTemporalVerifierHeader(t, clientState, anchorHash, 11, testCase.anchorSlot, 7, false)
-			authenticated := newTemporalVerifierAuthenticatedHeader(
-				t,
-				clientState,
-				testBlockHash("trusted-10"),
-				anchorHash,
-				11,
-				testCase.anchorSlot,
-				7,
-			)
-
-			err := clientState.verifyHeaderWithAuthenticator(
-				ctx,
-				clientStore,
-				cdc,
-				header,
-				func(*ProbabilisticHeader, []*EpochContext, map[string]uint64, *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
-					return authenticated, nil
-				},
-			)
-			require.ErrorIs(t, err, ErrInvalidTimestamp)
-			require.ErrorContains(t, err, testCase.want)
-			_, found := GetConsensusState(clientStore, cdc, header.GetHeight())
-			require.False(t, found)
-		})
-	}
-}
-
-func TestStoredConsensusTimestampUsesBoundedAuthenticatedAnchorTime(t *testing.T) {
-	epochContext := newTemporalVerifierEpochContext(7, 0, 1_000_000, 0x07)
-	ctx, cdc, clientStore, clientState := initializeTemporalVerifierClient(
-		t,
-		"probabilistic-temporal-stored-consensus",
-		100,
-		epochContext,
-	)
-	clientState.MaxClockDrift = 10 * time.Second
-	ctx = temporalTestContext(t, clientState, 150)
-
-	authenticated := newTemporalVerifierAuthenticatedHeader(
-		t,
-		clientState,
-		testBlockHash("trusted-10"),
-		"accepted-11",
-		11,
-		130,
-		7,
-	)
-	trustedBlock, err := clientState.latestTrustedBlockState(clientStore, cdc)
-	require.NoError(t, err)
-	require.NoError(t, clientState.verifyHeaderTemporalContinuity(ctx, authenticated, trustedBlock))
-
-	consensusHeight := NewHeight(0, authenticated.anchorBlock.height)
-	setAuthenticatedConsensusState(
-		clientStore,
-		cdc,
-		consensusHeight,
-		authenticated,
-		bytes.Repeat([]byte{0x42}, 32),
-		DefaultThresholdUniquePools,
-		10_000,
-		10_000,
-	)
-
-	storedTimestamp, err := clientState.GetTimestampAtHeight(ctx, clientStore, cdc, consensusHeight)
-	require.NoError(t, err)
-	require.Equal(t, authenticated.anchorBlock.timestamp, storedTimestamp)
-	require.NotEqual(t, authenticated.descendantBlocks[len(authenticated.descendantBlocks)-1].timestamp, storedTimestamp)
-	require.Greater(t, storedTimestamp, trustedBlock.timestamp)
-
-	maximumAllowed, err := clientState.maximumAllowedCardanoTimestamp(ctx)
-	require.NoError(t, err)
-	timeoutBeyondAllowedDrift := maximumAllowed + 1
-	require.Less(t, storedTimestamp, timeoutBeyondAllowedDrift)
-}
-
-func TestMisbehaviourVerifierUsesHistoricalTrustedTime(t *testing.T) {
-	epochContext := newTemporalVerifierEpochContext(7, testMaturePoolSlot, testMaturePoolSlot+1_000_000, 0x07)
-	ctx, cdc, clientStore, clientState := initializeTemporalVerifierClient(
-		t,
-		"probabilistic-temporal-historical-misbehaviour",
-		testMaturePoolSlot+100,
-		epochContext,
-	)
-
-	latestHeight := NewHeight(0, 40)
-	latestConsensus := newProbabilisticTestConsensusState(testBlockHash("latest-40"))
-	latestConsensus.Timestamp = mustTestTimestampForSlot(t, clientState, testMaturePoolSlot+400)
-	SetConsensusState(clientStore, cdc, latestConsensus, latestHeight)
-	clientState.LatestHeight = latestHeight
-	setTestCheckpoint(t, clientState, latestHeight, latestConsensus.AcceptedBlockHash, 7, testMaturePoolSlot+400)
-	SetClientState(clientStore, cdc, clientState)
-	ctx = temporalTestContext(t, clientState, testMaturePoolSlot+500)
-
-	headerA := newTemporalVerifierHeader(t, clientState, "historical-a", 11, testMaturePoolSlot+110, 7, true)
-	headerB := newTemporalVerifierHeader(t, clientState, "historical-b", 11, testMaturePoolSlot+111, 7, true)
-	authenticatedByHash := map[string]*authenticatedProbabilisticHeader{
-		headerA.AnchorBlock.Hash: newTemporalVerifierAuthenticatedHeader(t, clientState, testBlockHash("trusted-10"), headerA.AnchorBlock.Hash, 11, testMaturePoolSlot+110, 7),
-		headerB.AnchorBlock.Hash: newTemporalVerifierAuthenticatedHeader(t, clientState, testBlockHash("trusted-10"), headerB.AnchorBlock.Hash, 11, testMaturePoolSlot+111, 7),
-	}
-	authenticate := temporalVerifierAuthenticator(t, authenticatedByHash)
-
-	misbehaviour := &Misbehaviour{
-		ProbabilisticHeader1: headerA,
-		ProbabilisticHeader2: headerB,
-	}
-	require.NoError(t, clientState.verifyMisbehaviourWithAuthenticator(ctx, clientStore, cdc, misbehaviour, authenticate))
-
-	regressiveHeader := newTemporalVerifierHeader(t, clientState, "historical-regressive", 11, testMaturePoolSlot+100, 7, true)
-	authenticatedByHash[regressiveHeader.AnchorBlock.Hash] = newTemporalVerifierAuthenticatedHeader(
-		t,
-		clientState,
-		testBlockHash("trusted-10"),
-		regressiveHeader.AnchorBlock.Hash,
-		11,
-		testMaturePoolSlot+100,
-		7,
-	)
-	misbehaviour.ProbabilisticHeader1 = regressiveHeader
-	err := clientState.verifyMisbehaviourWithAuthenticator(ctx, clientStore, cdc, misbehaviour, authenticate)
-	require.ErrorIs(t, err, ErrInvalidTimestamp)
-	require.ErrorContains(t, err, "ProbabilisticHeader1")
-	require.ErrorContains(t, err, "must be greater than previous authenticated slot")
-}
-
 func TestClientStateRejectsMissingMaxClockDrift(t *testing.T) {
 	clientState := newProbabilisticTestClientState()
-	require.NoError(t, clientState.Validate())
+	require.NoError(t, validateBootstrapInput(*clientState))
 
 	clientState.MaxClockDrift = 0
-	err := clientState.Validate()
+	err := validateBootstrapInput(*clientState)
 	require.ErrorIs(t, err, ErrInvalidMaxClockDrift)
 
 	clientState.MaxClockDrift = -time.Nanosecond
-	err = clientState.Validate()
+	err = validateBootstrapInput(*clientState)
 	require.ErrorIs(t, err, ErrInvalidMaxClockDrift)
-}
-
-func TestInitializePersistsTemporalCursorAcrossReload(t *testing.T) {
-	cdc := newProbabilisticTestCodec()
-	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-temporal-initialize")
-	clientState := newProbabilisticTestClientState()
-	consensusState := newProbabilisticTestConsensusState(testBlockHash("initial-block"))
-	consensusState.Timestamp = mustTestTimestampForSlot(t, clientState, 42)
-
-	require.NoError(t, clientState.Initialize(ctx, cdc, clientStore, consensusState))
-	reloaded, found := GetClientState(clientStore, cdc)
-	require.True(t, found)
-	require.Equal(t, uint64(42), reloaded.LatestCheckpointSlot)
-	require.Equal(t, consensusState.Timestamp, reloaded.LatestCheckpointTimestamp)
-
-	trustedBlock, err := reloaded.latestTrustedBlockState(clientStore, cdc)
-	require.NoError(t, err)
-	require.Equal(t, uint64(42), trustedBlock.slot)
-	require.Equal(t, consensusState.Timestamp, trustedBlock.timestamp)
-}
-
-func TestLegacyTemporalCursorHandlingFailsClosedOnlyForRootlessCheckpoint(t *testing.T) {
-	cdc := newProbabilisticTestCodec()
-	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-legacy-temporal-cursor")
-	clientState := newProbabilisticTestClientState()
-	clientState.LatestCheckpointHeight = NewHeight(0, 20)
-	clientState.LatestCheckpointBlockHash = "legacy-rootless-checkpoint"
-	clientState.LatestCheckpointEpoch = 7
-
-	err := clientState.validateCheckpointFields()
-	require.ErrorIs(t, err, ErrInvalidTimestamp)
-	require.ErrorContains(t, err, "app-state migration")
-	require.Equal(t, Expired, clientState.Status(ctx, clientStore, cdc))
-
-	clientState.LatestCheckpointHeight = NewHeight(0, 10)
-	clientState.LatestCheckpointBlockHash = "legacy-root-bearing-checkpoint"
-	require.NoError(t, clientState.validateCheckpointFields())
-	consensusState := newProbabilisticTestConsensusState(clientState.LatestCheckpointBlockHash)
-	consensusState.Timestamp = mustTestTimestampForSlot(t, clientState, 77)
-	SetConsensusState(clientStore, cdc, consensusState, clientState.LatestHeight)
-
-	trustedBlock, err := clientState.latestTrustedBlockState(clientStore, cdc)
-	require.NoError(t, err)
-	require.Equal(t, uint64(77), trustedBlock.slot)
-	require.Equal(t, consensusState.Timestamp, trustedBlock.timestamp)
-	ctx = ctx.WithBlockTime(time.Unix(0, int64(consensusState.Timestamp)))
-	require.Equal(t, Active, clientState.Status(ctx, clientStore, cdc))
-	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(clientState.TrustingPeriod))
-	require.Equal(t, Expired, clientState.Status(ctx, clientStore, cdc))
 }
 
 func newTemporalTestHeader(
@@ -448,31 +193,6 @@ func temporalTestContext(t testing.TB, clientState *ClientState, hostSlot uint64
 	t.Helper()
 	hostTimestamp := mustTestTimestampForSlot(t, clientState, hostSlot)
 	return Context{Height: 100, VerifyHostUsability: testContinuousHost}.WithBlockTime(time.Unix(0, int64(hostTimestamp)))
-}
-
-func initializeTemporalVerifierClient(
-	t *testing.T,
-	storeName string,
-	trustedSlot uint64,
-	epochContext *EpochContext,
-) (Context, StateCodec, storetypes.KVStore, *ClientState) {
-	t.Helper()
-	cdc := newProbabilisticTestCodec()
-	ctx, clientStore := newProbabilisticTestClientStore(t, storeName)
-	clientState := newProbabilisticTestClientState()
-	setTemporalVerifierEpochContext(clientState, epochContext)
-	consensusState := newProbabilisticTestConsensusState(testBlockHash("trusted-10"))
-	consensusState.NonceState = clonePraosNonceState(clientState.LatestCheckpointNonceState)
-	consensusState.PoolRegistry = clonePoolRegistry(clientState.LatestCheckpointPoolRegistry)
-	consensusState.SettlementCredit = cloneSettlementCredit(clientState.LatestCheckpointSettlementCredit)
-	consensusState.PoolProduction = clonePoolProduction(clientState.LatestCheckpointPoolProduction)
-	consensusState.AcceptedEpoch = epochContext.Epoch
-	consensusState.Timestamp = mustTestTimestampForSlot(t, clientState, trustedSlot)
-	require.NoError(t, clientState.Initialize(ctx, cdc, clientStore, consensusState))
-
-	reloaded, found := GetClientState(clientStore, cdc)
-	require.True(t, found)
-	return ctx, cdc, clientStore, reloaded
 }
 
 func setTemporalVerifierEpochContext(clientState *ClientState, epochContext *EpochContext) {

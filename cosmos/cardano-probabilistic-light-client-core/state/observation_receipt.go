@@ -42,7 +42,7 @@ func loadVerifiedObservation(store storetypes.KVStore, cs *ClientState, id []byt
 		return nil, fmt.Errorf("verified observation id must be 32 bytes")
 	}
 	raw := store.Get(verifiedObservationKey(cs.StorageNamespace, cs.VerificationGeneration, id))
-	if len(raw) == 0 || len(raw) > MaxCompactClientBytes || receiptDigest(raw) != [32]byte(id) {
+	if len(raw) == 0 || len(raw) > MaxClientBytes || receiptDigest(raw) != [32]byte(id) {
 		return nil, fmt.Errorf("verified observation is missing or has an invalid digest")
 	}
 	var receipt verifiedObservation
@@ -63,7 +63,7 @@ func saveVerifiedObservation(store storetypes.KVStore, receipt *verifiedObservat
 	if err != nil {
 		return [32]byte{}, err
 	}
-	if len(raw) > MaxCompactClientBytes {
+	if len(raw) > MaxClientBytes {
 		return [32]byte{}, fmt.Errorf("receipt exceeds its metadata bound")
 	}
 	id := receiptDigest(raw)
@@ -225,7 +225,7 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 			}
 			cs.EpochContextChallenges = append(cs.EpochContextChallenges, &EpochContextChallenge{Epoch: receipt.Table.Epoch, UsableAfterUnixNs: deadline})
 			ctx.emitEvent("probabilistic_epoch_context_pending", newEventAttribute("epoch", fmt.Sprint(receipt.Table.Epoch)), newEventAttribute("usable_after_unix_ns", fmt.Sprint(deadline)), newEventAttribute("trusted_height", fmt.Sprintf("0-%d", session.Working.Height-uint64(session.BlockCount))), newEventAttribute("receipt_id", hex.EncodeToString(accepted[:])))
-			if err := writeThinClient(ctx, cdc, private, cs); err != nil {
+			if err := writeClientState(ctx, cdc, private, cs); err != nil {
 				return nil, err
 			}
 			// A proposal does not publish the root or advance the base checkpoint.
@@ -276,14 +276,14 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 	if !receipt.IsCheckpoint {
 		cs.LatestHeight = NewHeight(0, anchor.Height)
 		consensus := &ConsensusState{Timestamp: anchor.Timestamp, IbcStateRoot: bytes.Clone(anchor.HostRoot[:]), AcceptedBlockHash: hex.EncodeToString(anchor.BlockHash[:]), AcceptedEpoch: anchor.Epoch, UniquePoolsCount: receipt.QualifiedPools, UniqueStakeBps: receipt.QualifiedStakeBps, SecurityScoreBps: cs.computeSecurityScore(uint64(receipt.Descendants), receipt.QualifiedPools, receipt.QualifiedStakeBps), VerificationGeneration: cs.VerificationGeneration, CheckpointReference: bytes.Clone(receipt.AnchorReference[:]), PacketStateReference: bytes.Clone(anchor.PacketReference[:])}
-		if len(cdc.EncodeConsensus(consensus)) > MaxCompactConsensusBytes {
-			return nil, fmt.Errorf("compact consensus exceeds its bounded record size")
+		if len(cdc.EncodeConsensus(consensus)) > MaxConsensusBytes {
+			return nil, fmt.Errorf("consensus exceeds its bounded record size")
 		}
 		SetConsensusState(private, cdc, consensus, cs.LatestHeight)
 		setConsensusMetadata(ctx, private, cs.LatestHeight)
 		heights = []HeightValue{NewHeight(0, anchor.Height)}
 	}
-	if err := writeThinClient(ctx, cdc, private, cs); err != nil {
+	if err := writeClientState(ctx, cdc, private, cs); err != nil {
 		return nil, err
 	}
 	ctx.emitEvent("probabilistic_observation_activated", newEventAttribute("receipt_id", hex.EncodeToString(session.Receipt)), newEventAttribute("anchor_height", fmt.Sprint(anchor.Height)))

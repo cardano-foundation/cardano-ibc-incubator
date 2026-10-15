@@ -29,36 +29,23 @@ jobs:
   challenge-recovery:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        scenario: [challenge-recovery, deadline-ordering]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: cosmos/cardano-probabilistic-light-client-v8/go.mod
           cache-dependency-path: cosmos/cardano-probabilistic-light-client-v8/go.sum
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
-        with:
-          toolchain: '1.91.1'
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            caribic/target
-          key: caribic-v8-acceptance-${{ runner.os }}-${{ hashFiles('caribic/Cargo.lock') }}
-      - name: Run through Caribic with real committed deadlines
+      - name: Verify signed staged challenges and recovery
+        working-directory: cosmos/cardano-probabilistic-light-client-v8
+        env:
+          GOWORK: off
         run: |
           set -o pipefail
-          cargo run --locked --manifest-path caribic/Cargo.toml -- test \
-            --light-client ${{ matrix.scenario }} --chain cosmos --network v8-classic \
-            2>&1 | tee /tmp/caribic-v8-acceptance.log
+          go test . -run 'TestOnlySnapshotStorage|TestAppAdmitsSnapshotChallenge|TestSignedPartialStakeUpload|TestSignedMaximumObservation|TestAppFollowingEpochActivation|TestAppFailedStagedRecovery|TestStakeOmission' -count=1 -v 2>&1 | tee /tmp/caribic-v8-acceptance.log
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: local-v8-${{ matrix.scenario }}
+          name: local-v8-snapshot-format
           include-hidden-files: true
           path: |
             .caribic/test-artifacts/

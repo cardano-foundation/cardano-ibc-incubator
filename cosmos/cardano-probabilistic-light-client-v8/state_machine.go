@@ -36,7 +36,7 @@ func (cs *ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, store
 	// IBC's recheck decorator omits VerifyClientMessage. The speculative
 	// CheckTx cache is never authoritative. DeliverTx always verifies the
 	// operation again before consuming its result in the transaction cache.
-	if ctx.IsReCheckTx() && cs.StorageVersion == state.StorageVersionSharedSnapshots {
+	if ctx.IsReCheckTx() && cs.StorageVersion == state.StorageVersion {
 		if header, ok := msg.(*ProbabilisticHeader); ok && header.ObservationChunk != nil {
 			return nil
 		}

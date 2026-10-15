@@ -31,9 +31,8 @@ func TestOrderedTimeoutWithCardanoNextSequenceRecv(t *testing.T) {
 	for name, claimedSequence := range map[string]uint64{"wrong sequence": 0, "unreceived packet": 1} {
 		t.Run(name, func(t *testing.T) {
 			key := storetypes.NewKVStoreKey("ibc")
-			testContext := testutil.DefaultContextWithDB(t, key, storetypes.NewTransientStoreKey("transient"))
-			t.Cleanup(func() { require.NoError(t, testContext.DB.Close()) })
-			ctx := withTestHostProgress(testContext.Ctx).WithChainID("cosmos-1").WithBlockHeight(100).WithBlockTime(time.Unix(1_700_000_000, 0))
+			baseContext := testutil.DefaultContextWithKeys(map[string]*storetypes.KVStoreKey{"ibc": key, ModuleName: SharedStoreKey}, nil, nil)
+			ctx := withTestHostProgress(baseContext).WithChainID("cosmos-1").WithBlockHeight(100).WithBlockTime(time.Unix(1_700_000_000, 0))
 			cdc := newProbabilisticTestCodec()
 			storeService := runtime.NewKVStoreService(key)
 
@@ -45,7 +44,7 @@ func TestOrderedTimeoutWithCardanoNextSequenceRecv(t *testing.T) {
 			consensus := newProbabilisticTestConsensusState(testBlockHash("authenticated-cardano-block"))
 			consensus.IbcStateRoot = nextSequenceRecvHex(t, vector.Root)
 			setTestPacketSnapshot(t, consensus, 10)
-			require.NoError(t, client.Initialize(ctx, cdc, clients.ClientStore(ctx, clientID), consensus))
+			client, _ = installTestCheckpoint(t, ctx, cdc, clients.ClientStore(ctx, clientID), client, consensus)
 			ctx = ctx.WithBlockTime(ctx.BlockTime().Add(EpochContextChallengePeriod + 2*time.Nanosecond))
 
 			connections := connectionkeeper.NewKeeper(cdc, storeService, nil, clients)

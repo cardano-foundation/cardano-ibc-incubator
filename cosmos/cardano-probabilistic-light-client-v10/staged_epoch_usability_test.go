@@ -48,7 +48,7 @@ func TestAppFollowingEpochActivationRequiresCommittedCutoffBlock(t *testing.T) {
 	ctx := withTestHostProgress(sdk.NewContext(ms, cmtproto.Header{ChainID: chainID, Height: 100, Time: start}, false, log.NewNopLogger()))
 	cdc := newProbabilisticTestCodec()
 	private := ctx.KVStore(privateKey)
-	client, _, err := EnableSharedSnapshots(ctx, cdc, private, history.Client, history.Consensus)
+	client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, history.Client, history.Consensus)
 	require.NoError(t, err)
 	ctx = ctx.WithBlockTime(start.Add(12*time.Hour + time.Second))
 	base := append([]byte(nil), client.CheckpointReference...)
@@ -190,7 +190,7 @@ func TestAppFollowingEpochActivationRequiresCommittedCutoffBlock(t *testing.T) {
 				progress := decodeHostProgress(current.KVStore(app.GetKey(exported.StoreKey)).Get(hostProgressKey))
 				require.NotNil(t, progress)
 				if scenario.name == "host interruption" {
-					require.Equal(t, uint64(now.Add(3*time.Minute).UnixNano()), progress.ResumeUsableAfterUnixNs)
+					require.Equal(t, uint64(now.Add(state.SharedSnapshotChallengePeriod).UnixNano()), progress.ResumeUsableAfterUnixNs)
 				} else {
 					require.Equal(t, uint64(1), progress.ResumeUsableAfterUnixNs)
 				}

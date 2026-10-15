@@ -34,7 +34,7 @@ func AdvanceHostProgress(ctx Context, previous *HostProgress) (*HostProgress, er
 			uint64(now)-previous.TimeUnixNs > uint64(HostBlockGapTolerance)
 	}
 	if interrupted {
-		deadline, err := epochChallengeDeadline(ctx)
+		deadline, err := sharedSnapshotChallengeDeadline(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -51,8 +51,8 @@ func VerifyHostWindow(ctx Context, epochDeadline uint64, progress *HostProgress)
 		return errorsmod.Wrapf(ErrEpochContextPending, "host continuity record is missing or stale at height %d time %d (record %+v)", ctx.Height, now, progress)
 	}
 	resumeDeadline := progress.ResumeUsableAfterUnixNs
-	if ctx.RequiredResponseWindow > EpochContextChallengePeriod {
-		extra := uint64(ctx.RequiredResponseWindow - EpochContextChallengePeriod)
+	if ctx.RequiredResponseWindow > SharedSnapshotChallengePeriod {
+		extra := uint64(ctx.RequiredResponseWindow - SharedSnapshotChallengePeriod)
 		if resumeDeadline > math.MaxInt64-extra {
 			return errorsmod.Wrap(ErrEpochContextPending, "host resumption deadline cannot represent the staged response window")
 		}

@@ -73,7 +73,7 @@ func (h ProbabilisticHeader) validateObservationChunk() error {
 		return fmt.Errorf("unknown observation operation")
 	}
 	if h.AnchorBlock != nil || len(h.BridgeBlocks) > 0 || len(h.DescendantBlocks) > 0 || h.NewEpochContext != nil {
-		return fmt.Errorf("bounded operations cannot carry legacy observation fields")
+		return fmt.Errorf("bounded operations cannot carry logical observation fields")
 	}
 	if len(chunk.Blocks) > maxObservationBlocksPerStep || len(chunk.StakeRows) > maxObservationRowsPerStep*36 || len(chunk.Objects) > MaxOperationSignedBytes-20000 {
 		return fmt.Errorf("observation chunk exceeds its operation bound")
@@ -218,7 +218,7 @@ func beginObservation(ctx Context, store storetypes.KVStore, private storetypes.
 		return zero, fmt.Errorf("observation height overflow")
 	}
 	// Complete bridge and anchor bodies authenticate the packet snapshot.
-	// Gateway may omit a HostState transaction hint, as it does in legacy mode.
+	// Gateway may omit a HostState transaction hint for unchanged roots.
 	now := ctx.BlockTime().UnixNano()
 	if now <= 0 || now > int64(^uint64(0)>>1)-int64(observationSessionLifetime) {
 		return zero, fmt.Errorf("observation expiry cannot be represented")
@@ -236,7 +236,7 @@ func beginObservation(ctx Context, store storetypes.KVStore, private storetypes.
 	session.InputDigest = session.ExpectedDigest
 	if chunk.TableContext != nil {
 		if base.Epoch == ^uint64(0) || chunk.TableContext.Epoch != base.Epoch+1 || chunk.TableRows == 0 || chunk.TableRows > MaxStakeEntries || chunk.TableTotal == 0 || len(chunk.TableDigest) != 32 || len(chunk.TableContext.StakeDistribution) > 0 {
-			return zero, fmt.Errorf("new table requires adjacent epoch and compact complete-table commitments")
+			return zero, fmt.Errorf("new table requires adjacent epoch and bounded complete-table commitments")
 		}
 		if err := cs.validateEpochContextParameters([]*EpochContext{chunk.TableContext}); err != nil {
 			return zero, err

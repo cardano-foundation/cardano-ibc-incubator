@@ -1,12 +1,13 @@
 package state
 
 import (
-	storetypes "cosmossdk.io/store/types"
 	"encoding/binary"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	storetypes "cosmossdk.io/store/types"
 )
 
 // Context contains only the host values used by the state machine. SelfHeight
@@ -39,8 +40,6 @@ func (c Context) WithBlockHeight(h int64) Context {
 type StateCodec interface {
 	EncodeClient(*ClientState) []byte
 	DecodeClient([]byte) *ClientState
-	EncodeClientSnapshot(*ClientState) []byte
-	DecodeClientSnapshot([]byte) (*ClientState, error)
 	EncodeConsensus(*ConsensusState) []byte
 	DecodeConsensus([]byte) (*ConsensusState, error)
 }

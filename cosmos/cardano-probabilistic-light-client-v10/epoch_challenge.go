@@ -5,7 +5,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-const EpochContextChallengePeriod = state.EpochContextChallengePeriod
+const EpochContextChallengePeriod = state.SharedSnapshotChallengePeriod
 
 func (cs ClientState) epochChallenge(epoch uint64) *EpochContextChallenge {
 	for _, challenge := range cs.EpochContextChallenges {

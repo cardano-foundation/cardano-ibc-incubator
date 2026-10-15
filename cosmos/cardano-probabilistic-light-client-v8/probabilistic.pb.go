@@ -257,12 +257,12 @@ type ClientState struct {
 	LatestCheckpointSettlementCredit *SettlementCreditState `protobuf:"bytes,35,opt,name=latest_checkpoint_settlement_credit,json=latestCheckpointSettlementCredit,proto3" json:"latest_checkpoint_settlement_credit,omitempty"`
 	// Verified production history positioned at this committed checkpoint.
 	LatestCheckpointPoolProduction *PoolProductionHistory `protobuf:"bytes,36,opt,name=latest_checkpoint_pool_production,json=latestCheckpointPoolProduction,proto3" json:"latest_checkpoint_pool_production,omitempty"`
-	// Version 2 keeps verification collections in authenticated destination storage.
+	// Must be 2. This is the only supported storage format.
 	StorageVersion         uint32 `protobuf:"varint,37,opt,name=storage_version,json=storageVersion,proto3" json:"storage_version,omitempty"`
 	VerificationGeneration uint64 `protobuf:"varint,38,opt,name=verification_generation,json=verificationGeneration,proto3" json:"verification_generation,omitempty"`
 	CheckpointReference    []byte `protobuf:"bytes,39,opt,name=checkpoint_reference,json=checkpointReference,proto3" json:"checkpoint_reference,omitempty"`
 	StorageNamespace       []byte `protobuf:"bytes,40,opt,name=storage_namespace,json=storageNamespace,proto3" json:"storage_namespace,omitempty"`
-	// Explicitly trusted compact bootstrap objects. Removed from stored ClientState.
+	// Explicitly trusted bootstrap objects. Removed from stored ClientState.
 	BootstrapObjects []byte `protobuf:"bytes,41,opt,name=bootstrap_objects,json=bootstrapObjects,proto3" json:"bootstrap_objects,omitempty"`
 	BootstrapPending bool   `protobuf:"varint,42,opt,name=bootstrap_pending,json=bootstrapPending,proto3" json:"bootstrap_pending,omitempty"`
 }

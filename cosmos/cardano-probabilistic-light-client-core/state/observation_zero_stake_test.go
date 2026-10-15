@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCompactCrossEpochZeroStakeProducer(t *testing.T) {
+func TestSnapshotCrossEpochZeroStakeProducer(t *testing.T) {
 	// Producer 11 is registered and recently productive, but sits out epoch 7.
 	// It regains stake and produces a genuinely signed epoch-8 descendant.
 	fixture := makeNativeBoundaryFixtureWithProducers(t, false, 0, 966, 0, map[uint64]int{1002: 11})
@@ -40,7 +40,7 @@ func TestCompactCrossEpochZeroStakeProducer(t *testing.T) {
 			private := dbadapter.Store{DB: dbm.NewMemDB()}
 			ctx := Context{Time: time.Unix(0, int64(header.DescendantBlocks[len(header.DescendantBlocks)-1].Timestamp)), Height: 1, SelfHeight: NewHostHeight(0, 1), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 			cdc := jsonTestCodec{}
-			client, _, err := EnableSharedSnapshots(ctx, cdc, private, fixture.Client, fixture.Consensus)
+			client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, fixture.Client, fixture.Consensus)
 			require.NoError(t, err)
 			ctx.VerifyHostUsability = stagedTestHostWindow
 			ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod + time.Second)
@@ -85,11 +85,11 @@ func TestCompactCrossEpochZeroStakeProducer(t *testing.T) {
 			require.Equal(t, uint64(11), receipt.QualifiedPools, "the returning producer has no anchor-epoch qualification")
 			require.Equal(t, uint64(550), receipt.QualifiedStakeBps, "only the other eleven producers contribute credit")
 
-			// Compare qualification with the one-shot verifier on the same
+			// Compare qualification with the independent batch oracle on the same
 			// native evidence and its independently authenticated anchor state.
-			legacy := dbadapter.Store{DB: dbm.NewMemDB()}
-			SetConsensusState(legacy, cdc, fixture.Consensus, fixture.Client.LatestHeight)
-			trusted, err := fixture.Client.latestTrustedBlockState(legacy, cdc)
+			oracleStore := dbadapter.Store{DB: dbm.NewMemDB()}
+
+			trusted, err := fixture.Client.latestTrustedBlockState(oracleStore, cdc)
 			require.NoError(t, err)
 			contexts := append(fixture.Client.EpochContexts, header.NewEpochContext)
 			auth, err := fixture.Client.authenticateHeaderBlocksWithContexts(header, contexts, trusted.operationalCertificateCounters, trusted)

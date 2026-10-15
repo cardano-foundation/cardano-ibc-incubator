@@ -42,13 +42,11 @@ func orderedSnapshotChanges(changes []SnapshotChange) ([]SnapshotChange, error) 
 	}
 	return changes, nil
 }
-func legacyVerificationCheckpoint(store storetypes.KVStore, cs *ClientState, consensus *ConsensusState) (*verificationCheckpoint, error) {
-	legacy := *cs
-	legacy.StorageVersion = 0
-	if err := legacy.Validate(); err != nil {
+func buildTrustedCheckpoint(store storetypes.KVStore, cs *ClientState, consensus *ConsensusState) (*verificationCheckpoint, error) {
+	if err := validateBootstrapInput(*cs); err != nil {
 		return nil, err
 	}
-	if err := consensus.ValidateBasic(); err != nil {
+	if err := validateBootstrapConsensus(*consensus); err != nil {
 		return nil, err
 	}
 	if err := validateConsensusPacketSnapshot(consensus, cs.LatestHeight.RevisionHeight); err != nil {
@@ -69,7 +67,7 @@ func legacyVerificationCheckpoint(store storetypes.KVStore, cs *ClientState, con
 		return nil, err
 	}
 	if checkpoint.Height != cs.LatestHeight.RevisionHeight {
-		return nil, fmt.Errorf("new compact bootstrap requires a proof-bearing checkpoint")
+		return nil, fmt.Errorf("new bootstrap requires a proof-bearing checkpoint")
 	}
 	build := func(kind byte, changes []SnapshotChange) (SnapshotRoot, error) {
 		changes, err = orderedSnapshotChanges(changes)
@@ -221,9 +219,9 @@ func loadPacketObject(store storetypes.KVStore, scope, hash [32]byte) ([]byte, e
 	return raw, nil
 }
 
-func thinClientState(cs *ClientState, namespace []byte, checkpoint *verificationCheckpoint, reference [32]byte) *ClientState {
+func referenceClientState(cs *ClientState, namespace []byte, checkpoint *verificationCheckpoint, reference [32]byte) *ClientState {
 	thin := *cs
-	thin.StorageVersion = StorageVersionSharedSnapshots
+	thin.StorageVersion = StorageVersion
 	thin.VerificationGeneration = 1
 	thin.StorageNamespace = bytes.Clone(namespace)
 	thin.CheckpointReference = bytes.Clone(reference[:])
@@ -238,7 +236,7 @@ func thinClientState(cs *ClientState, namespace []byte, checkpoint *verification
 	thin.LatestCheckpointNonceState = clonePraosNonceState(checkpoint.Nonce)
 	return &thin
 }
-func thinConsensusState(consensus *ConsensusState, checkpoint *verificationCheckpoint, reference [32]byte, generation uint64) *ConsensusState {
+func referenceConsensusState(consensus *ConsensusState, checkpoint *verificationCheckpoint, reference [32]byte, generation uint64) *ConsensusState {
 	thin := *consensus
 	thin.VerificationGeneration = generation
 	thin.CheckpointReference = bytes.Clone(reference[:])

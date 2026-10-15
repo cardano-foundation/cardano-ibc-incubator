@@ -53,17 +53,17 @@ func compactTrustedFixture(t *testing.T, count int) (*ClientState, *ConsensusSta
 	return cs, fixture.Consensus
 }
 
-func TestCompactPublicStateAndFreezeWith4000Pools(t *testing.T) {
+func TestSnapshotPublicStateAndFreezeWith4000Pools(t *testing.T) {
 	client, consensus := compactTrustedFixture(t, 4000)
 	meter := storetypes.NewInfiniteGasMeter()
 	shared := gaskv.NewStore(dbadapter.Store{DB: dbm.NewMemDB()}, meter, storetypes.KVGasConfig())
 	private := gaskv.NewStore(dbadapter.Store{DB: dbm.NewMemDB()}, meter, storetypes.KVGasConfig())
 	ctx := Context{Time: time.Unix(0, int64(consensus.Timestamp)), Height: 1, SelfHeight: NewHostHeight(0, 1), GasConsumed: meter.GasConsumed, ConsumeGas: meter.ConsumeGas, Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 	cdc := jsonTestCodec{}
-	thin, compact, err := EnableSharedSnapshots(ctx, cdc, private, client, consensus)
+	thin, compact, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, client, consensus)
 	require.NoError(t, err)
-	require.LessOrEqual(t, len(cdc.EncodeClient(thin)), MaxCompactClientBytes)
-	require.LessOrEqual(t, len(cdc.EncodeConsensus(compact)), MaxCompactConsensusBytes)
+	require.LessOrEqual(t, len(cdc.EncodeClient(thin)), MaxClientBytes)
+	require.LessOrEqual(t, len(cdc.EncodeConsensus(compact)), MaxConsensusBytes)
 	require.NoError(t, thin.Validate())
 	require.NoError(t, compact.ValidateBasic())
 	checkpoint, _, err := currentVerificationCheckpoint(ctx, thin)
@@ -90,9 +90,9 @@ func TestSharedSnapshotOwnershipAcrossClients(t *testing.T) {
 	first := dbadapter.Store{DB: dbm.NewMemDB()}
 	second := dbadapter.Store{DB: dbm.NewMemDB()}
 	cdc := jsonTestCodec{}
-	a, _, err := EnableSharedSnapshots(ctx, cdc, first, client, consensus)
+	a, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, first, client, consensus)
 	require.NoError(t, err)
-	b, _, err := EnableSharedSnapshots(ctx, cdc, second, client, consensus)
+	b, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, second, client, consensus)
 	require.NoError(t, err)
 	require.NotEqual(t, a.StorageNamespace, b.StorageNamespace)
 	require.Equal(t, a.CheckpointReference, b.CheckpointReference)
@@ -137,7 +137,7 @@ func TestLazyProductionProjectionMatchesLegacyRules(t *testing.T) {
 func TestBoundedTrustedBootstrapImport4000Pools(t *testing.T) {
 	client, consensus := compactTrustedFixture(t, 4000)
 	temporary := dbadapter.Store{DB: dbm.NewMemDB()}
-	compact, initial, steps, err := BuildCompactBootstrap(temporary, client, consensus)
+	compact, initial, steps, err := BuildBootstrap(temporary, client, consensus)
 	require.NoError(t, err)
 	require.Greater(t, len(steps), 20)
 	meter := storetypes.NewInfiniteGasMeter()

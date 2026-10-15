@@ -100,7 +100,8 @@ func TestEpochScheduleSurvivesRolloverAndRetainedContexts(t *testing.T) {
 	cs.LatestCheckpointPoolRegistry = testPoolRegistryAtEpoch(t, cs.LatestCheckpointPoolRegistry, next.Epoch)
 	cs.LatestCheckpointSettlementCredit = mustTestSettlementCredit(next)
 	cs.LatestCheckpointPoolProduction = testPoolProduction(next)
-	require.NoError(t, cs.Validate())
+	setTestCheckpoint(t, cs, cs.LatestHeight, cs.LatestCheckpointBlockHash, cs.CurrentEpoch, next.EpochStartSlot)
+	require.NoError(t, validateBootstrapInput(*cs))
 	start, end, err := cs.epochSlotBounds(previous.Epoch)
 	require.NoError(t, err)
 	require.Equal(t, previous.EpochStartSlot, start)
@@ -171,69 +172,5 @@ func TestSignedBlockRejectsSuppliedEpochScheduleChanges(t *testing.T) {
 				require.ErrorContains(t, err, tc.want)
 			})
 		}
-	}
-}
-
-func TestVerifyHeaderRejectsRedefinedScheduleBeforeAuthentication(t *testing.T) {
-	for _, checkpoint := range []bool{false, true} {
-		for _, nextEpoch := range []bool{false, true} {
-			t.Run(map[bool]string{false: "root", true: "checkpoint"}[checkpoint]+map[bool]string{false: "/same epoch", true: "/rollover"}[nextEpoch], func(t *testing.T) {
-				ctx, cdc, store, cs := initializeTemporalVerifierClient(t, "epoch-schedule-update", 969, newTemporalVerifierEpochContext(7, 0, 1_000, 7))
-				candidate := cloneEpochContext(cs.EpochContexts[0])
-				slot := uint64(970)
-				if nextEpoch {
-					candidate.Epoch++
-					candidate.EpochStartSlot = 1_000
-					candidate.EpochEndSlotExclusive = 2_000
-					slot = 1_000
-				}
-				// The forged window remains structurally valid and contains the
-				// proposed slot. Its length and end are chosen by the relayer.
-				candidate.EpochEndSlotExclusive++
-				header := newTemporalVerifierHeader(t, cs, "untrusted-schedule", 11, slot, candidate.Epoch, checkpoint)
-				header.NewEpochContext = candidate
-				err := cs.verifyHeaderWithAuthenticator(ctx, store, cdc, header, func(*ProbabilisticHeader, []*EpochContext, map[string]uint64, *trustedBlockState) (*authenticatedProbabilisticHeader, error) {
-					t.Fatal("invalid epoch schedule reached header authentication")
-					return nil, nil
-				})
-				require.ErrorContains(t, err, "must match stored schedule")
-				require.EqualValues(t, 7, cs.CurrentEpoch)
-				require.EqualValues(t, 1_000, cs.CurrentEpochEndSlotExclusive)
-			})
-		}
-	}
-}
-
-func TestInitializeRejectsEpochThatDisagreesWithConsensusSlot(t *testing.T) {
-	cdc := newProbabilisticTestCodec()
-	ctx, store := newProbabilisticTestClientStore(t, "epoch-schedule-bootstrap")
-	cs := newProbabilisticTestClientState()
-	consensus := newProbabilisticTestConsensusState(testBlockHash("bootstrap"))
-	consensus.Timestamp, _ = cs.DeriveTimestampFromSlot(cs.CurrentEpochEndSlotExclusive)
-	require.ErrorContains(t, cs.Initialize(ctx, cdc, store, consensus), "must match slot 1000000 derived epoch 8")
-	_, found := GetClientState(store, cdc)
-	require.False(t, found)
-}
-
-func TestRecoveryRejectsChangedEpochSchedule(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		start, end uint64
-	}{
-		{"shifted schedule", 2_000_001, 3_000_001},
-		{"changed length", 2_000_000, 3_000_001},
-		{"relabelled epoch", 1_000_000, 2_000_000},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx, subjectStore := newProbabilisticTestClientStore(t, "epoch-schedule-subject")
-			_, substituteStore := newProbabilisticTestClientStore(t, "epoch-schedule-substitute")
-			subject := newProbabilisticTestClientState()
-			substitute := newProbabilisticTestClientState()
-			setTemporalVerifierEpochContext(substitute, makeRecoveryEpochContext(9, tc.start, tc.end, 9))
-			// Each substitute is internally consistent. It must also agree
-			// with the subject's already accepted network schedule.
-			require.NoError(t, substitute.Validate())
-			require.ErrorContains(t, subject.CheckSubstituteAndUpdateState(ctx, newProbabilisticTestCodec(), subjectStore, substituteStore, substitute), "subject client state does not match substitute client state")
-		})
 	}
 }

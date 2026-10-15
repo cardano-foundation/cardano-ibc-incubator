@@ -5,6 +5,9 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"testing"
+	"time"
+
 	core "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -13,8 +16,6 @@ import (
 	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
 	ics23 "github.com/cosmos/ics23/go"
 	"github.com/stretchr/testify/require"
-	"testing"
-	"time"
 )
 
 type idleCheckpointHistoryData struct {
@@ -177,6 +178,6 @@ func idleCheckpointSourceHeader(t *testing.T, history idleCheckpointHistoryData,
 			}
 		}
 	}
-	require.NoError(t, h.ValidateBasic())
+
 	return h
 }

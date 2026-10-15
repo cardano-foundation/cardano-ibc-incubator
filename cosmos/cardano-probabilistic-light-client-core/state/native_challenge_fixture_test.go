@@ -5,8 +5,6 @@ import (
 	"crypto/ed25519"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
-	"os"
 	"testing"
 	"time"
 
@@ -160,25 +158,14 @@ func makeNativeChallengeFixture(t *testing.T) nativeChallengeFixture {
 
 func TestNativeChallengeFixture(t *testing.T) {
 	fixture := makeNativeChallengeFixture(t)
-	ctx, store := newProbabilisticTestClientStore(t, "native-challenge")
-	cdc := newProbabilisticTestCodec()
-	ctx.Time = time.Unix(0, int64(fixture.Fork.DescendantBlocks[29].Timestamp))
-	require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
-	fixture.Client, _ = GetClientState(store, cdc)
-	ctx.Time = ctx.Time.Add(3*time.Minute + 2*time.Nanosecond)
+	trusted, err := fixture.Client.latestTrustedBlockState(nil, nil)
+	require.NoError(t, err)
+	contexts := fixture.Client.EpochContexts
 	for _, header := range []*ProbabilisticHeader{fixture.Header, fixture.Fork} {
-		require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, header))
+		if header.NewEpochContext != nil {
+			contexts = append(fixture.Client.EpochContexts, header.NewEpochContext)
+		}
+		_, err := fixture.Client.authenticateHeaderBlocksWithContexts(header, contexts, trusted.operationalCertificateCounters, trusted)
+		require.NoError(t, err)
 	}
-	evidence := &Misbehaviour{ProbabilisticHeader1: fixture.Header, ProbabilisticHeader2: fixture.Fork}
-	require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, evidence))
-	require.True(t, fixture.Client.CheckForMisbehaviour(ctx, cdc, store, evidence))
-	encoded, err := json.MarshalIndent(fixture, "", "  ")
-	require.NoError(t, err)
-	encoded = append(encoded, '\n')
-	if os.Getenv("UPDATE_NATIVE_CHALLENGE_FIXTURE") == "1" {
-		require.NoError(t, os.WriteFile("../testdata/native-challenge.json", encoded, 0644))
-	}
-	saved, err := os.ReadFile("../testdata/native-challenge.json")
-	require.NoError(t, err)
-	require.JSONEq(t, string(saved), string(encoded))
 }

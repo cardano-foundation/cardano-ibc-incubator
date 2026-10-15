@@ -2,15 +2,11 @@ package state
 
 import (
 	"bytes"
-	"fmt"
 	"math"
-	"strings"
 	"time"
 
 	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
-
-	cmttypes "github.com/cometbft/cometbft/types"
 )
 
 const maxSupportedKesEvolutions = uint64(1 << 6)
@@ -25,6 +21,7 @@ func NewClientState(
 ) *ClientState {
 	zeroHeight := ZeroHeight()
 	return &ClientState{
+		StorageVersion: StorageVersion,
 		ChainId:        chainID,
 		LatestHeight:   latestHeight,
 		FrozenHeight:   zeroHeight,
@@ -52,67 +49,17 @@ func (ClientState) GetTimestampAtHeight(
 }
 
 func (cs ClientState) Status(ctx Context, clientStore storetypes.KVStore, cdc StateCodec) Status {
+	if err := cs.Validate(); err != nil {
+		return Expired
+	}
 	if cs.FrozenHeight != nil && !cs.FrozenHeight.IsZero() {
 		return Frozen
 	}
-	if cs.StorageVersion == StorageVersionSharedSnapshots {
-		if err := validateThinClient(&cs); err != nil {
-			return Expired
-		}
-		consensus, found := GetConsensusState(clientStore, cdc, cs.LatestHeight)
-		if !found || consensus.VerificationGeneration != cs.VerificationGeneration || cs.IsExpired(cs.latestTrustedTimestamp(consensus.Timestamp), ctx.BlockTime()) {
-			return Expired
-		}
-		return Active
-	}
-	if _, err := productionRecordMap(cs.LatestCheckpointPoolProduction, cs.CurrentEpoch); err != nil {
-		return Expired
-	}
-	if cs.MaxClockDrift <= 0 {
-		return Expired
-	}
-	if err := validateSettlementCredit(cs.LatestCheckpointSettlementCredit, cs.CurrentEpoch); err != nil {
-		return Expired
-	}
-	if err := cs.validateNonceConfiguration(); err != nil {
-		return Expired
-	}
-	if err := validatePoolRegistry(cs.LatestCheckpointPoolRegistry, cs.CurrentEpoch, math.MaxUint64); err != nil {
-		return Expired
-	}
-	if err := cs.validateCheckpointFields(); err != nil {
-		return Expired
-	}
-	effectiveCheckpointHeight := cs.effectiveCheckpointHeight()
-	if cs.MaxKesEvolutions == 0 ||
-		cs.MaxKesEvolutions > maxSupportedKesEvolutions ||
-		cs.OperationalCertificateCounterHistoryStartHeight == nil ||
-		cs.OperationalCertificateCounterHistoryStartHeight.IsZero() ||
-		effectiveCheckpointHeight == nil ||
-		effectiveCheckpointHeight.IsZero() ||
-		cs.OperationalCertificateCounterHistoryStartHeight.GT(effectiveCheckpointHeight) {
-		return Expired
-	}
-	if cs.LatestHeight == nil {
-		return Expired
-	}
-	consState, found := GetConsensusState(clientStore, cdc, cs.LatestHeight)
-	if !found {
-		return Expired
-	}
-	if cs.IsExpired(cs.latestTrustedTimestamp(consState.Timestamp), ctx.BlockTime()) {
+	consensus, found := GetConsensusState(clientStore, cdc, cs.LatestHeight)
+	if !found || consensus.VerificationGeneration != cs.VerificationGeneration || cs.IsExpired(cs.LatestCheckpointTimestamp, ctx.BlockTime()) {
 		return Expired
 	}
 	return Active
-}
-
-// latestTrustedTimestamp selects client liveness without changing proof timestamps.
-// Callers validate the storage-mode cursor before using the legacy root fallback.
-func (cs ClientState) latestTrustedTimestamp(consensusTimestamp uint64) uint64 {
-	if cs.LatestCheckpointTimestamp != 0 {
-		return cs.LatestCheckpointTimestamp
-	}
-	return consensusTimestamp
 }
 
 func (cs ClientState) IsExpired(latestTimestamp uint64, now time.Time) bool {
@@ -121,92 +68,15 @@ func (cs ClientState) IsExpired(latestTimestamp uint64, now time.Time) bool {
 }
 
 func (cs ClientState) Validate() error {
-	if cs.StorageVersion != 0 {
-		return validateThinClient(&cs)
-	}
-	if _, err := productionRecordMap(cs.LatestCheckpointPoolProduction, cs.CurrentEpoch); err != nil {
-		return err
-	}
-	if err := validateSettlementCredit(cs.LatestCheckpointSettlementCredit, cs.CurrentEpoch); err != nil {
-		return err
-	}
-	if err := cs.validateNonceConfiguration(); err != nil {
-		return err
-	}
-	if err := validatePoolRegistry(cs.LatestCheckpointPoolRegistry, cs.CurrentEpoch, math.MaxUint64); err != nil {
-		return err
-	}
-	if len(cs.PacketLanePolicyId) != 28 {
-		return fmt.Errorf("packet lane policy must be configured for this deployment")
-	}
-	if strings.TrimSpace(cs.ChainId) == "" {
-		return errorsmod.Wrap(ErrInvalidChainID, "chain id cannot be empty string")
-	}
-	if len(cs.ChainId) > cmttypes.MaxChainIDLen {
-		return errorsmod.Wrapf(ErrInvalidChainID, "chainID is too long; got: %d, max: %d", len(cs.ChainId), cmttypes.MaxChainIDLen)
-	}
-	if cs.LatestHeight == nil || cs.LatestHeight.RevisionHeight == 0 {
-		return errorsmod.Wrapf(ErrInvalidHeaderHeight, "probabilistic client's latest height revision height cannot be zero")
-	}
-	if cs.TrustingPeriod <= 0 {
-		return errorsmod.Wrap(ErrInvalidTrustingPeriod, "trusting period must be greater than zero")
-	}
-	if cs.MaxClockDrift <= 0 {
-		return errorsmod.Wrap(ErrInvalidMaxClockDrift, "max clock drift must be greater than zero")
-	}
-	if len(cs.HostStateNftPolicyId) != 28 {
-		return errorsmod.Wrapf(ErrIBCInvalidClient, "host_state_nft_policy_id must be 28 bytes")
-	}
-	if len(cs.HostStateNftTokenName) == 0 {
-		return errorsmod.Wrapf(ErrIBCInvalidClient, "host_state_nft_token_name must not be empty")
-	}
-	if cs.SystemStartUnixNs == 0 {
-		return errorsmod.Wrapf(ErrInvalidTimestamp, "system_start_unix_ns must be greater than zero")
-	}
-	if cs.SlotLengthNs == 0 {
-		return errorsmod.Wrapf(ErrInvalidTimestamp, "slot_length_ns must be greater than zero")
-	}
-	if cs.SlotsPerKesPeriod == 0 {
-		return errorsmod.Wrapf(ErrIBCInvalidClient, "slots_per_kes_period must be greater than zero")
-	}
-	if cs.MaxKesEvolutions == 0 || cs.MaxKesEvolutions > maxSupportedKesEvolutions {
-		return errorsmod.Wrapf(
-			ErrIBCInvalidClient,
-			"max_kes_evolutions must be between 1 and %d",
-			maxSupportedKesEvolutions,
-		)
-	}
-	if cs.ActiveSlotCoefficientNumerator == 0 {
-		return errorsmod.Wrapf(ErrIBCInvalidClient, "active_slot_coefficient_numerator must be greater than zero")
-	}
-	if cs.ActiveSlotCoefficientDenominator == 0 {
-		return errorsmod.Wrapf(ErrIBCInvalidClient, "active_slot_coefficient_denominator must be greater than zero")
-	}
-	if cs.ActiveSlotCoefficientNumerator > cs.ActiveSlotCoefficientDenominator {
-		return errorsmod.Wrapf(ErrIBCInvalidClient, "active slot coefficient must not exceed one")
-	}
-	if err := cs.validateCheckpointFields(); err != nil {
-		return err
-	}
-
-	contexts, err := cs.normalizedEpochContexts()
-	if err != nil {
-		return err
-	}
-	if len(contexts) == 0 {
-		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "at least one epoch context must be present")
-	}
-	if epochContextByEpoch(contexts, cs.CurrentEpoch) == nil {
-		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "missing epoch context for current epoch %d", cs.CurrentEpoch)
-	}
-	if err := verifyStakeTablePoolBindings(epochContextByEpoch(contexts, cs.CurrentEpoch), cs.LatestCheckpointPoolRegistry); err != nil {
-		return err
+	if err := validateClientState(&cs); err != nil {
+		return errorsmod.Wrap(ErrIBCInvalidClient, err.Error())
 	}
 	return nil
 }
 
 func (cs ClientState) ZeroCustomFields() *ClientState {
 	return &ClientState{
+		StorageVersion:                     StorageVersion,
 		ChainId:                            cs.ChainId,
 		LatestHeight:                       cs.LatestHeight,
 		UpgradePath:                        append([]string(nil), cs.UpgradePath...),
@@ -262,61 +132,17 @@ func (cs ClientState) DeriveSlotFromTimestamp(timestamp uint64) (uint64, error) 
 }
 
 func (cs ClientState) Initialize(ctx Context, cdc StateCodec, clientStore storetypes.KVStore, consState any) error {
-	consensusState, ok := consState.(*ConsensusState)
+	if err := cs.Validate(); err != nil {
+		return err
+	}
+	consensus, ok := consState.(*ConsensusState)
 	if !ok {
-		return errorsmod.Wrapf(ErrIBCInvalidConsensus, "invalid initial consensus state. expected type: %T, got: %T", &ConsensusState{}, consState)
+		return errorsmod.Wrap(ErrIBCInvalidConsensus, "initial consensus state has the wrong type")
 	}
-	if cs.StorageVersion == StorageVersionSharedSnapshots {
-		return cs.initializeCompact(ctx, cdc, clientStore, consensusState)
-	}
-	if err := cs.validateNonceConfiguration(); err != nil {
+	if err := consensus.ValidateBasic(); err != nil {
 		return err
 	}
-	if consensusState.NonceState != nil && !praosNonceStatesEqual(consensusState.NonceState, cs.LatestCheckpointNonceState) {
-		return errorsmod.Wrap(ErrIBCInvalidConsensus, "initial consensus nonce state disagrees with client checkpoint")
-	}
-	consensusState.NonceState = clonePraosNonceState(cs.LatestCheckpointNonceState)
-	if consensusState.PoolRegistry != nil && !poolRegistriesEqual(consensusState.PoolRegistry, cs.LatestCheckpointPoolRegistry) {
-		return errorsmod.Wrap(ErrIBCInvalidConsensus, "initial consensus pool registry disagrees with client checkpoint")
-	}
-	consensusState.PoolRegistry = clonePoolRegistry(cs.LatestCheckpointPoolRegistry)
-	if err := validateSettlementCredit(cs.LatestCheckpointSettlementCredit, cs.CurrentEpoch); err != nil {
-		return err
-	}
-	if consensusState.SettlementCredit != nil && !settlementCreditsEqual(consensusState.SettlementCredit, cs.LatestCheckpointSettlementCredit) {
-		return errorsmod.Wrap(ErrIBCInvalidConsensus, "initial settlement credit disagrees with client checkpoint")
-	}
-	consensusState.SettlementCredit = cloneSettlementCredit(cs.LatestCheckpointSettlementCredit)
-	if _, err := productionRecordMap(cs.LatestCheckpointPoolProduction, cs.CurrentEpoch); err != nil {
-		return err
-	}
-	if consensusState.PoolProduction != nil && !poolProductionsEqual(consensusState.PoolProduction, cs.LatestCheckpointPoolProduction) {
-		return errorsmod.Wrap(ErrIBCInvalidConsensus, "initial pool production history disagrees with client checkpoint")
-	}
-	consensusState.PoolProduction = clonePoolProduction(cs.LatestCheckpointPoolProduction)
-	if _, err := cs.normalizedEpochContexts(); err != nil {
-		return err
-	}
-	if err := validateConsensusPacketSnapshot(consensusState, cs.LatestHeight.RevisionHeight); err != nil {
-		return err
-	}
-	if err := cs.resetEpochChallenges(ctx); err != nil {
-		return err
-	}
-	if err := cs.initializeCheckpoint(consensusState); err != nil {
-		return err
-	}
-	if err := validateClientBytes(len(cdc.EncodeClient(&cs))); err != nil {
-		return err
-	}
-	SetClientState(clientStore, cdc, &cs)
-	SetConsensusState(clientStore, cdc, consensusState, cs.LatestHeight)
-	setConsensusMetadata(ctx, clientStore, cs.LatestHeight)
-	clientStore.Set(ProbabilisticScoreKey(cs.LatestHeight.RevisionHeight), uint64ToBigEndian(consensusState.SecurityScoreBps))
-	clientStore.Set(UniquePoolsKey(cs.LatestHeight.RevisionHeight), uint64ToBigEndian(consensusState.UniquePoolsCount))
-	clientStore.Set(UniqueStakeKey(cs.LatestHeight.RevisionHeight), uint64ToBigEndian(consensusState.UniqueStakeBps))
-	clientStore.Set(AcceptedBlockHashKey(cs.LatestHeight.RevisionHeight), []byte(consensusState.AcceptedBlockHash))
-	return nil
+	return cs.initializeClientState(ctx, cdc, clientStore, consensus)
 }
 
 func (ClientState) ExportMetadata(store storetypes.KVStore) []Metadata {

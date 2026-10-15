@@ -6,10 +6,11 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	core "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	"os"
 	"testing"
 	"time"
+
+	core "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 
 	"cosmossdk.io/store/dbadapter"
 	"cosmossdk.io/store/gaskv"
@@ -34,7 +35,7 @@ func TestStagedNativeBoundaryDifferential(t *testing.T) {
 	private := gaskv.NewStore(dbadapter.Store{DB: dbm.NewMemDB()}, meter, storetypes.KVGasConfig())
 	ctx := Context{Time: time.Unix(0, int64(fixture.Header.DescendantBlocks[len(fixture.Header.DescendantBlocks)-1].Timestamp)).Add(time.Hour), Height: 1, SelfHeight: NewHostHeight(0, 1), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }, ConsumeGas: meter.ConsumeGas, GasConsumed: meter.GasConsumed}
 	cdc := jsonTestCodec{}
-	client, _, err := EnableSharedSnapshots(ctx, cdc, private, fixture.Client, fixture.Consensus)
+	client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
 	ctx.VerifyHostUsability = stagedTestHostWindow
 	ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod + 2*time.Second)
@@ -65,9 +66,9 @@ func TestStagedNativeBoundaryDifferential(t *testing.T) {
 	require.NotEqual(t, base, client.CheckpointReference)
 	cp, _, err := currentVerificationCheckpoint(ctx, client)
 	require.NoError(t, err)
-	legacyStore := dbadapter.Store{DB: dbm.NewMemDB()}
-	SetConsensusState(legacyStore, cdc, fixture.Consensus, fixture.Client.LatestHeight)
-	trusted, err := fixture.Client.latestTrustedBlockState(legacyStore, cdc)
+	oracleStore := dbadapter.Store{DB: dbm.NewMemDB()}
+
+	trusted, err := fixture.Client.latestTrustedBlockState(oracleStore, cdc)
 	require.NoError(t, err)
 	auth, err := fixture.Client.authenticateHeaderBlocksWithContexts(fixture.Header, append(fixture.Client.EpochContexts, fixture.Header.NewEpochContext), trusted.operationalCertificateCounters, trusted)
 	require.NoError(t, err)
@@ -157,9 +158,9 @@ func TestReceiptChallengeAndRecoveryUsePinnedHistory(t *testing.T) {
 	substitutePrivate := dbadapter.Store{DB: dbm.NewMemDB()}
 	ctx := Context{Time: time.Unix(0, int64(fixture.Header.DescendantBlocks[len(fixture.Header.DescendantBlocks)-1].Timestamp)).Add(time.Hour), Height: 1, SelfHeight: NewHostHeight(0, 1), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 	cdc := jsonTestCodec{}
-	subject, _, err := EnableSharedSnapshots(ctx, cdc, subjectPrivate, fixture.Client, fixture.Consensus)
+	subject, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, subjectPrivate, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
-	substitute, _, err := EnableSharedSnapshots(ctx, cdc, substitutePrivate, fixture.Client, fixture.Consensus)
+	substitute, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, substitutePrivate, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
 	ctx.VerifyHostUsability = stagedTestHostWindow
 	ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod + 2*time.Second)
@@ -225,7 +226,7 @@ func TestStagingRetriesAndOrderingDoNotChangeDeadlines(t *testing.T) {
 	private := dbadapter.Store{DB: dbm.NewMemDB()}
 	ctx := Context{Time: time.Unix(0, int64(fixture.Consensus.Timestamp)), Height: 1, SelfHeight: NewHostHeight(0, 1), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 	cdc := jsonTestCodec{}
-	client, _, err := EnableSharedSnapshots(ctx, cdc, private, fixture.Client, fixture.Consensus)
+	client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
 	plan, err := BuildObservationPlan(client, fixture.Header, nil, 13, 4)
 	require.NoError(t, err)
@@ -252,7 +253,7 @@ func TestObservationDiscardRequiresExpiry(t *testing.T) {
 		{"after expiry", time.Nanosecond},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newCompactExpiryFixture(t)
+			f := newSnapshotExpiryFixture(t)
 			plan, err := BuildObservationPlan(f.client, f.evidence.Header, nil, 13, 4)
 			require.NoError(t, err)
 			for _, step := range plan.Steps[:2] {
@@ -279,7 +280,7 @@ func TestObservationDiscardRequiresExpiry(t *testing.T) {
 }
 
 func TestObservationCleanupPreservesActiveSessions(t *testing.T) {
-	f := newCompactExpiryFixture(t)
+	f := newSnapshotExpiryFixture(t)
 	plan, err := BuildObservationPlan(f.client, f.evidence.Header, nil, 13, 4)
 	require.NoError(t, err)
 	for _, step := range plan.Steps[:2] {
@@ -325,7 +326,7 @@ func TestNativeReceiptsIgnoreDifferentTemporaryTails(t *testing.T) {
 	private := dbadapter.Store{DB: dbm.NewMemDB()}
 	ctx := Context{Time: time.Unix(0, int64(fixture.Fork.DescendantBlocks[len(fixture.Fork.DescendantBlocks)-1].Timestamp)).Add(time.Hour), Height: 1, SelfHeight: NewHostHeight(0, 1), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 	cdc := jsonTestCodec{}
-	client, _, err := EnableSharedSnapshots(ctx, cdc, private, fixture.Client, fixture.Consensus)
+	client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
 	receipts := [][]byte{}
 	for _, header := range []*ProbabilisticHeader{&earlier, fixture.Fork} {

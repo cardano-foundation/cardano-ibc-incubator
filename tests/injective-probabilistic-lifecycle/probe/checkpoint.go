@@ -5,10 +5,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/InjectiveLabs/injective-core/injective-chain/crypto/ethsecp256k1"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/InjectiveLabs/injective-core/injective-chain/crypto/ethsecp256k1"
 
 	"cosmossdk.io/log"
 	store "cosmossdk.io/store"
@@ -50,16 +51,8 @@ func checkpointPrepare(encoding injcodec.EncodingConfig, address string) {
 	ctx := sdk.Context{}.WithMultiStore(ms).WithBlockTime(time.Unix(0, int64(f.Consensus.Timestamp))).WithBlockHeight(1).WithChainID("injective-777").WithGasMeter(storetypes.NewInfiniteGasMeter()).WithEventManager(sdk.NewEventManager())
 	clients, consensuses, metadatas := []any{}, []any{}, []any{}
 	for i, key := range keys {
-		var cs *lc.ClientState
-		var consensus *lc.ConsensusState
-		if os.Args[3] == "compact" {
-			cs, consensus, err = lc.EnableSharedSnapshots(ctx, encoding.Codec, ctx.KVStore(key), f.Client, f.Consensus)
-			must(err)
-		} else {
-			cs, consensus = f.Client, f.Consensus
-			must(cs.Initialize(ctx, encoding.Codec, ctx.KVStore(key), consensus))
-			cs = clienttypes.MustUnmarshalClientState(encoding.Codec, ctx.KVStore(key).Get([]byte("clientState"))).(*lc.ClientState)
-		}
+		cs, consensus, err := lc.InitializeFromTrustedCheckpoint(ctx, encoding.Codec, ctx.KVStore(key), f.Client, f.Consensus)
+		must(err)
 		id := lc.ModuleName + "-" + string(rune('0'+i))
 		clients = append(clients, map[string]any{"client_id": id, "client_state": anyJSON(encoding.Codec, cs)})
 		consensuses = append(consensuses, map[string]any{"client_id": id, "consensus_states": []any{map[string]any{"height": cs.LatestHeight, "consensus_state": anyJSON(encoding.Codec, consensus)}}})
@@ -157,11 +150,8 @@ func checkpointAddMaintainer(encoding injcodec.EncodingConfig, address string) {
 	must(json.Unmarshal(raw, &f))
 	f.Client.TrustingPeriod = 96 * time.Hour
 	client, consensus := f.Client, f.Consensus
-	var steps []*lc.ProbabilisticHeader
-	if os.Args[3] == "compact" {
-		client, consensus, steps, err = lc.BuildCompactBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, client, consensus)
-		must(err)
-	}
+	client, consensus, steps, err := lc.BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, client, consensus)
+	must(err)
 	message, err := clienttypes.NewMsgCreateClient(client, consensus, address)
 	must(err)
 	writeTx(encoding.Codec, dir, "create-maintainer", message)

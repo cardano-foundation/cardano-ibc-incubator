@@ -117,12 +117,12 @@ message ClientState {
   SettlementCreditState latest_checkpoint_settlement_credit = 35;
   // Verified production history positioned at this committed checkpoint.
   PoolProductionHistory latest_checkpoint_pool_production = 36;
-  // Version 2 keeps verification collections in authenticated destination storage.
+  // Must be 2. This is the only supported storage format.
   uint32 storage_version = 37;
   uint64 verification_generation = 38;
   bytes checkpoint_reference = 39;
   bytes storage_namespace = 40;
-  // Explicitly trusted compact bootstrap objects. Removed from stored ClientState.
+  // Explicitly trusted bootstrap objects. Removed from stored ClientState.
   bytes bootstrap_objects = 41;
   bool bootstrap_pending = 42;
 }

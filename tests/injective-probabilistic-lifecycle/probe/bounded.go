@@ -9,6 +9,12 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
 	"github.com/InjectiveLabs/injective-core/injective-chain/app"
 	"github.com/blinklabs-io/gouroboros/cbor"
 	abciserver "github.com/cometbft/cometbft/abci/server"
@@ -20,11 +26,6 @@ import (
 	channeltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
 	"github.com/spf13/viper"
-	"math"
-	"os"
-	"path/filepath"
-	"strings"
-	"time"
 
 	"cosmossdk.io/log"
 	sdkmath "cosmossdk.io/math"
@@ -106,7 +107,7 @@ func boundedPrepare(encoding injcodec.EncodingConfig, address string) {
 	ctx := sdk.Context{}.WithMultiStore(ms).WithBlockTime(time.Now().Add(-5 * time.Minute)).WithBlockHeight(1).WithChainID("injective-777").WithGasMeter(storetypes.NewInfiniteGasMeter()).WithEventManager(sdk.NewEventManager())
 	clients, consensuses, metadatas := []any{}, []any{}, []any{}
 	for i, key := range keys {
-		cs, cons, err := lc.EnableSharedSnapshots(ctx, encoding.Codec, ctx.KVStore(key), f.Client, f.Consensus)
+		cs, cons, err := lc.InitializeFromTrustedCheckpoint(ctx, encoding.Codec, ctx.KVStore(key), f.Client, f.Consensus)
 		must(err)
 		id := fmt.Sprintf("%s-%d", lc.ModuleName, i)
 		clients = append(clients, map[string]any{"client_id": id, "client_state": anyJSON(encoding.Codec, cs)})

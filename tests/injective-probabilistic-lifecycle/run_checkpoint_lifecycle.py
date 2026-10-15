@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from run import Node, read, write, write_text
+from harness import Node, read, write, write_text
 
 
 def ns(value):
@@ -20,14 +20,14 @@ def ns(value):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('output', type=Path)
-    p.add_argument('--mode', choices=['legacy', 'compact'], default='legacy')
+
     p.add_argument('--rpc-port', type=int, default=18957)
     p.add_argument('--grpc-port', type=int, default=19090)
     p.add_argument('--worker', type=Path, required=True)
     args = p.parse_args()
     root = args.output.resolve()
     assert read(root/'maintenance-result.json')['normal_refresh_worker']
-    node = Node(root, 'local/injective-checkpoint-expiry', 'testnet', args.rpc_port, scenario='checkpoint-'+args.mode+'-auto')
+    node = Node(root, 'local/injective-checkpoint-expiry', 'testnet', args.rpc_port, scenario='checkpoint-snapshots'+'-auto')
     node.helper_image = 'local/injective-checkpoint-probe'
     clock = root/'clock-offset-auto-ns'
     pause = Path(str(clock)+'.pause')
@@ -156,7 +156,7 @@ def main():
             exported=read(root/'checkpoint-export.json')
             old_home=node.home
             old_genesis=read(old_home/'config/genesis.json')
-            node=Node(root,node.image,'testnet',args.rpc_port,scenario='checkpoint-'+args.mode+'-imported')
+            node=Node(root,node.image,'testnet',args.rpc_port,scenario='checkpoint-snapshots'+'-imported')
             node.helper_image='local/injective-checkpoint-probe'
             node.data_volume=data_volume+'-imported' if data_volume else None
             assert not (node.home/'data').exists(),'Use a fresh import directory'
@@ -230,23 +230,16 @@ def main():
             cutoff=checkpoint+96*3600*10**9
             advance(cutoff-3600*10**9)
             before=node.state()
-            if args.mode=='compact':
-                (root/'live-for-stage.pb').write_bytes(before)
-                node.helper('checkpoint-plan','/out/live-for-stage.pb','/out/late-checkpoint-header.json','/out/late-stage')
-                for i,filename in enumerate(read(root/'late-stage/plan.json')['files']):
-                    send('late-'+Path(filename).stem,source=root/'late-stage'/filename)
-                    assert int(state()['latest_checkpoint_timestamp'])==checkpoint
-                mark('staged_before_expiry',{'checkpoint_unchanged':True,'active':agree('Active')})
+            (root/'live-for-stage.pb').write_bytes(before)
+            node.helper('checkpoint-plan','/out/live-for-stage.pb','/out/late-checkpoint-header.json','/out/late-stage')
+            for i,filename in enumerate(read(root/'late-stage/plan.json')['files']):
+                send('late-'+Path(filename).stem,source=root/'late-stage'/filename)
+                assert int(state()['latest_checkpoint_timestamp'])==checkpoint
+            mark('staged_before_expiry',{'checkpoint_unchanged':True,'active':agree('Active')})
             mark('before_cutoff',agree('Active'))
             advance(cutoff)
             mark('at_cutoff',{'status':agree('Expired'),'cutoff_ns':cutoff,'committed_ns':now()})
-            if args.mode=='compact':
-                send('activate-after-expiry','not active',root/'late-stage/activate.json')
-            else:
-                raw=read(root/'frozen-checkpoint.json')
-                raw['body']['messages'][0]['client_message']={'@type':'/ibc.lightclients.probabilistic.v1.ProbabilisticHeader',**read(root/'late-checkpoint-header.json')}
-                write(root/'late-update.json',raw)
-                send('late-update','not active')
+            send('activate-after-expiry','not active',root/'late-stage/activate.json')
             assert int(state()['latest_checkpoint_timestamp'])==checkpoint
             mark('expiry',{'ordinary_updates_rejected':True,'checkpoint_timestamp':checkpoint,'cutoff_ns':cutoff})
         mark('complete',True)

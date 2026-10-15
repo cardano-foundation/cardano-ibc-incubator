@@ -27,10 +27,3 @@ func mustJSON(value any) []byte {
 	}
 	return data
 }
-
-func (jsonTestCodec) EncodeClientSnapshot(value *ClientState) []byte { return mustJSON(value) }
-func (jsonTestCodec) DecodeClientSnapshot(data []byte) (*ClientState, error) {
-	value := new(ClientState)
-	err := json.Unmarshal(data, value)
-	return value, err
-}

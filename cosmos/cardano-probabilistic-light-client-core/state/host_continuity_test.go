@@ -25,7 +25,7 @@ func TestHostInterruptionStartsFreshWindow(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			p, err := AdvanceHostProgress(ctx, test.previous)
 			require.NoError(t, err)
-			require.Equal(t, uint64(start.Add(EpochContextChallengePeriod).UnixNano()), p.ResumeUsableAfterUnixNs)
+			require.Equal(t, uint64(start.Add(SharedSnapshotChallengePeriod).UnixNano()), p.ResumeUsableAfterUnixNs)
 			require.ErrorIs(t, VerifyHostWindow(ctx, 1, p), ErrEpochContextPending)
 		})
 	}
@@ -40,7 +40,7 @@ func TestHostInterruptionStartsFreshWindow(t *testing.T) {
 	ctx.Time = start.Add(HostBlockGapTolerance + time.Nanosecond)
 	next, err := AdvanceHostProgress(ctx, p)
 	require.NoError(t, err)
-	require.Equal(t, uint64(ctx.Time.Add(EpochContextChallengePeriod).UnixNano()), next.ResumeUsableAfterUnixNs)
+	require.Equal(t, uint64(ctx.Time.Add(SharedSnapshotChallengePeriod).UnixNano()), next.ResumeUsableAfterUnixNs)
 }
 
 func TestHostWindowRequiresCommittedInclusionBlock(t *testing.T) {

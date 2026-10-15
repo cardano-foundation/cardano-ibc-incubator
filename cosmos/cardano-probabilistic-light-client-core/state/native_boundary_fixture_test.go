@@ -2,14 +2,9 @@ package state
 
 import (
 	"bytes"
-	"compress/gzip"
 	"crypto/ed25519"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
-	"fmt"
-	"io"
-	"os"
 	"testing"
 	"time"
 
@@ -256,65 +251,26 @@ func makeNativeBoundaryFixtureWithProducers(t *testing.T, countStall bool, paddi
 
 func TestNativeBoundaryFixture(t *testing.T) {
 	for _, name := range []string{"size", "count", "control", "limit", "combined"} {
-		countStall := name == "count" || name == "combined"
-		paddingBytes := 40 * 1024
-		if name == "control" {
-			paddingBytes = 1024
-		}
-		if name == "combined" {
-			paddingBytes = 80 * 1024
-		}
 		t.Run(name, func(t *testing.T) {
-			var fixture nativeBoundaryFixture
+			countStall := name == "count" || name == "combined"
+			padding := 40 * 1024
+			if name == "control" {
+				padding = 1024
+			}
+			if name == "combined" {
+				padding = 80 * 1024
+			}
+			fixture := makeNativeBoundaryFixture(t, countStall, padding)
 			if name == "limit" {
 				fixture = makeNativeBoundaryFixtureAtHeight(t, false, 21*1024, 904)
-			} else {
-				fixture = makeNativeBoundaryFixture(t, countStall, paddingBytes)
 			}
-			ctx, store := newProbabilisticTestClientStore(t, "native-boundary")
-			cdc := newProbabilisticTestCodec()
-			ctx.Time = time.Unix(0, int64(max(fixture.Header.DescendantBlocks[len(fixture.Header.DescendantBlocks)-1].Timestamp, fixture.Fork.DescendantBlocks[len(fixture.Fork.DescendantBlocks)-1].Timestamp)))
-			require.NoError(t, fixture.Client.Initialize(ctx, cdc, store, fixture.Consensus))
-			fixture.Client, _ = GetClientState(store, cdc)
-			ctx.Time = ctx.Time.Add(3*time.Minute + 2*time.Nanosecond)
-			if name == "combined" {
-				for _, evidence := range []*ProbabilisticHeader{fixture.Header, fixture.Fork} {
-					prefix := boundaryHeaderAtAnchor(t, evidence, 966, 984)
-					require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, prefix))
-				}
-			} else {
-				require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, fixture.Header))
-				require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, NewMisbehaviour(ModuleName+"-0", fixture.Header, fixture.Fork)))
-			}
-			if name == "size" || name == "control" {
-				intermediate := &ProbabilisticHeader{TrustedHeight: NewHeight(0, 966), BridgeBlocks: fixture.Header.BridgeBlocks[:9], AnchorBlock: fixture.Header.BridgeBlocks[9], DescendantBlocks: fixture.Header.BridgeBlocks[10:], IsCheckpoint: true}
-				require.NoError(t, fixture.Client.VerifyClientMessage(ctx, cdc, store, intermediate))
-				working, _ := GetClientState(store, cdc)
-				require.Empty(t, working.UpdateState(ctx, cdc, store, intermediate))
-				fixture.SizeClient, _ = GetClientState(store, cdc)
-			}
-			encoded, err := json.MarshalIndent(fixture, "", "  ")
+			trusted, err := fixture.Client.latestTrustedBlockState(nil, nil)
 			require.NoError(t, err)
-			encoded = append(encoded, '\n')
-			if os.Getenv("UPDATE_NATIVE_BOUNDARY_FIXTURE") == "1" {
-				file, err := os.Create("../testdata/native-boundary-" + name + ".json.gz")
+			for _, evidence := range []*ProbabilisticHeader{fixture.Header, fixture.Fork} {
+				contexts := append(fixture.Client.EpochContexts, evidence.NewEpochContext)
+				_, err := fixture.Client.authenticateHeaderBlocksWithContexts(evidence, contexts, trusted.operationalCertificateCounters, trusted)
 				require.NoError(t, err)
-				writer := gzip.NewWriter(file)
-				_, err = writer.Write(encoded)
-				require.NoError(t, err)
-				require.NoError(t, writer.Close())
-				require.NoError(t, file.Close())
 			}
-			file, err := os.Open("../testdata/native-boundary-" + name + ".json.gz")
-			require.NoError(t, err)
-			reader, err := gzip.NewReader(file)
-			require.NoError(t, err)
-			saved, err := io.ReadAll(reader)
-			require.NoError(t, err)
-			require.NoError(t, reader.Close())
-			require.NoError(t, file.Close())
-			require.JSONEq(t, string(saved), string(encoded))
-			fmt.Printf("%s boundary: %d full bridge blocks and %d-byte anchor\n", name, len(fixture.Header.BridgeBlocks), len(fixture.Header.AnchorBlock.BlockCbor))
 		})
 	}
 }

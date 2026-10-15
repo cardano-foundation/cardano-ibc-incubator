@@ -5,7 +5,7 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
-from run import Node, read, write
+from harness import Node, read, write
 
 parser = argparse.ArgumentParser()
 parser.add_argument('output', type=Path)
