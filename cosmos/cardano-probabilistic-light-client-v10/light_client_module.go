@@ -178,5 +178,8 @@ func (l LightClientModule) VerifyUpgradeAndUpdateState(
 	upgradeClientProof []byte,
 	upgradeConsensusStateProof []byte,
 ) error {
-	return errorsmod.Wrap(clienttypes.ErrInvalidUpgradeClient, "cannot upgrade probabilistic-scored client")
+	return errorsmod.Wrap(
+		clienttypes.ErrInvalidUpgradeClient,
+		"MsgUpgradeClient is intentionally unsupported for the Cardano probabilistic light client: Cardano does not use Cosmos-style chain revisions or block-height resets across hard forks, and this client does not define an authenticated on-chain upgrade commitment authorizing client-state replacement",
+	)
 }
