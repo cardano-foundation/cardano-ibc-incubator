@@ -78,7 +78,7 @@ max_gas = 600000000
 gas_price = {{ price = 0.0025, denom = 'stake' }}
 gas_multiplier = 1.8
 max_msg_num = 20
-max_tx_size = 12582912
+max_tx_size = 8388608
 clock_drift = '10s'
 max_block_time = '10s'
 trusting_period = '10days'
