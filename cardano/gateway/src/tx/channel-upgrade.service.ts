@@ -439,6 +439,10 @@ export class ChannelUpgradeService {
       if (proofBytes.length && !errorReceipt) {
         throw new GrpcInvalidArgumentException('channel upgrade: the proven error receipt is empty');
       }
+      if (!errorReceipt && (msg.expected_upgrade_sequence == null
+        || BigInt(msg.expected_upgrade_sequence.toString()) !== datum.state.channel.upgrade_sequence)) {
+        throw new GrpcInvalidArgumentException('channel upgrade: authority CANCEL requires the expected upgrade sequence to match the current proposal');
+      }
       const updated = upgrade.cancelUpgrade(datum, errorReceipt);
       const proofHeight = this.height(msg.proof_height);
       const emptyProof = { proofs: [] } as MerkleProof;

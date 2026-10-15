@@ -1,6 +1,6 @@
 import { join, resolve } from 'node:path';
 import { loadSync, ServiceDefinition } from '@grpc/proto-loader';
-import { MsgChannelUpgradeInit } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
+import { MsgChannelUpgradeInit, MsgChannelUpgradeCancel } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import * as Lucid from '@lucid-evolution/lucid';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -495,6 +495,69 @@ describe('ChannelUpgradeService', () => {
         signer: 'addr',
       }),
     ).rejects.toThrow(/only after the counterparty is Open/);
+  });
+
+  it('binds authority CANCEL to the observed proposal across the gRPC boundary', async () => {
+    const root = resolve(__dirname, '../../../../..');
+    const protoRoot = join(root, 'proto-types/protos/ibc-go');
+    const definitions = loadSync(join(protoRoot, 'ibc/core/channel/v1/tx.proto'), {
+      keepCase: true, includeDirs: [protoRoot],
+    });
+    const wire = (definitions['ibc.core.channel.v1.Msg'] as ServiceDefinition).ChannelUpgradeCancel;
+    const pending = initUpgrade(baseChannel(), UPGRADE_FIELDS, 3_600_000n);
+    for (const sequence of [undefined, 0n, 1n, 2n]) {
+      const { service, lucidService } = await setup(pending);
+      const message = MsgChannelUpgradeCancel.fromPartial({
+        port_id: 'transfer', channel_id: 'channel-0', signer: 'addr_test1authority',
+        expected_upgrade_sequence: sequence,
+      });
+      const decoded = wire.requestDeserialize(Buffer.from(MsgChannelUpgradeCancel.encode(message).finish())) as MsgChannelUpgradeCancel;
+      if (sequence === 1n) {
+        await expect(service.channelUpgradeCancel(decoded)).resolves.toHaveProperty('unsigned_tx');
+      } else {
+        await expect(service.channelUpgradeCancel(decoded)).rejects.toThrow(/expected upgrade sequence/);
+        expect(lucidService.createUnsignedChannelUpgradeTransaction).not.toHaveBeenCalled();
+      }
+    }
+  });
+
+  it('keeps receipt-backed CANCEL governed by the proven receipt sequence', async () => {
+    const before = initUpgrade(baseChannel(), UPGRADE_FIELDS, 3_600_000n);
+    const { service, lucidService, tree } = await setup(before);
+    await expect(service.channelUpgradeCancel(MsgChannelUpgradeCancel.fromPartial({
+      port_id: 'transfer', channel_id: 'channel-0', signer: 'addr_test1relayer',
+      error_receipt: { sequence: 3n, message: 'counterparty cancelled' },
+      proof_error_receipt: proofBytes,
+      proof_height: { revision_number: 1n, revision_height: 40n },
+    }))).resolves.toHaveProperty('unsigned_tx');
+    const after = {
+      ...before,
+      state: {
+        ...before.state,
+        channel: { ...before.state.channel, upgrade_sequence: 3n },
+        upgrade: {
+          ...before.state.upgrade, pending: null,
+          error_receipt: { sequence: 3n, message: hex('ABCI code: 28: restored channel to pre-upgrade state') },
+        },
+      },
+    };
+    await expectRootWitnesses(lucidService, before, after, tree);
+  });
+
+  it.each([false, true])('rejects CANCEL construction after close-confirm, receipt-backed=%s', async (proven) => {
+    const pending = initUpgrade(baseChannel(), UPGRADE_FIELDS, 3_600_000n);
+    const closed = {
+      ...pending, state: { ...pending.state, channel: { ...pending.state.channel, state: ChannelState.Close } },
+    };
+    const { service, lucidService } = await setup(closed);
+    await expect(service.channelUpgradeCancel(MsgChannelUpgradeCancel.fromPartial({
+      port_id: 'transfer', channel_id: 'channel-0', signer: 'addr_test1authority',
+      expected_upgrade_sequence: 1n,
+      error_receipt: proven ? { sequence: 1n, message: 'counterparty cancelled' } : undefined,
+      proof_error_receipt: proven ? proofBytes : new Uint8Array(),
+      proof_height: { revision_number: 1n, revision_height: 40n },
+    }))).rejects.toThrow(/only an open or flushing channel/);
+    expect(lucidService.createUnsignedChannelUpgradeTransaction).not.toHaveBeenCalled();
   });
 
   it('rejects a TRY that this end did not initialize', async () => {
