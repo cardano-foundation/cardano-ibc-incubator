@@ -29,3 +29,21 @@ The size and near-limit observations now admit their proposals and commit honest
 The lifecycle opens a channel and receives a packet. It then commits the proposal and challenge, rejects frozen proof use and rejects unauthorized recovery. Expedited governance approves the replacement. The bounded recovery continuation installs generation `2`. Early proof use fails. Proofs at a genuinely accepted height from the discarded generation still fail after the fresh window. Subsequent packets produce 300 voucher units and three successful acknowledgements. Restart checks the persisted client and those acknowledgements.
 
 The [single-format regression](evidence/single-format-results.json) reran the two-account scenario after removing inline storage. The honest challenge completed and froze the client 40,530 seconds before its deadline. All 131 active-session discard attempts were rejected. Expired discard and cleanup remained permissionless.
+
+Client creation has a separate native replay that consumes the actual protobuf responses from Gateway's 4,000-row initialization test. It starts with no IBC client in genesis. Every signed `MsgCreateClient` and bounded `MsgUpdateClient` passes simulation, CheckTx, ReCheckTx and committed execution. The application restarts after sixteen imports and resumes the same client from its saved cursor. The replay uses the captured destination gas limits and a controlled ABCI clock. It does not exercise a live Hermes connection or CometBFT inclusion.
+
+The [recorded creation replay](evidence/client-initialization-results.json) committed creation and all 992 imports. The signed creation transaction was 2,562 bytes. The largest transaction was 8,012 bytes and peak execution was 1,129,587 gas. The client finished with `bootstrap_pending = false` and status `Active`.
+
+After building the Gateway dependencies and preparing the native builder above, run:
+
+```sh
+CLIENT_INITIALIZATION_FIXTURE=/tmp/cardano-client-initialization.pb.json \
+  npm --prefix cardano/gateway test -- --runTestsByPath src/query/test/client-initialization.spec.ts
+docker build --build-context probe_src=tests/injective-probabilistic-lifecycle/probe \
+  -f tests/injective-probabilistic-lifecycle/Dockerfile.initialization \
+  -t local/injective-client-initialization .
+python3 tests/injective-probabilistic-lifecycle/run_initialization.py \
+  /tmp/cardano-client-initialization.pb.json /tmp/cardano-client-creation-results
+```
+
+The runner creates its own Docker volume and containers. It copies the evidence to the requested fresh output directory and removes those Docker resources when it finishes.

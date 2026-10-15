@@ -1,0 +1,52 @@
+{
+  "application_restarted": true,
+  "bootstrap_pending": false,
+  "checkpoint_matches_gateway": true,
+  "client_bytes": 514,
+  "client_id": "08-cardano-probabilistic-0",
+  "committed_transactions": 993,
+  "host_height": 1988,
+  "imports": 992,
+  "status": "Active",
+  "gateway_responses_sha256": "f23e4e72d5923b69e247ca7e2136091ce444140f101d822fb809f338a1bdbc61",
+  "native_probe_sha256": "c1a86fa77ed171415a4e4142efd46e63772d9cc56806165111316f7dd0c7bf53",
+  "initial_client_bytes": 1934,
+  "initial_consensus_bytes": 182,
+  "largest_signed_transaction": 8012,
+  "peak_execution_gas": 1129587,
+  "peak_requested_gas": 2024257,
+  "source_commit": "1af002520893eba5f1d476c7fbcd7b4051f964bb",
+  "scope": "Native InjectiveApp over socket ABCI with controlled host time. This is not a live Hermes or CometBFT inclusion test.",
+  "source_fixture": "Gateway client-initialization.spec.ts 4000-row initialization",
+  "restart_after_imports": 16,
+  "creation": {
+    "signed_bytes": 2562,
+    "simulation_gas": 287979,
+    "gas_wanted": 518363,
+    "execution_gas": 292935
+  },
+  "capacity_parameters": {
+    "block": {
+      "max_bytes": "4194304",
+      "max_gas": "150000000"
+    },
+    "txfees": {
+      "max_gas_wanted_per_tx": "75000000",
+      "high_gas_tx_threshold": "30000000",
+      "min_gas_price_for_high_gas_tx": "0.000000000000000000",
+      "mempool1559_enabled": true,
+      "min_gas_price": "160000000.000000000000000000",
+      "default_base_fee_multiplier": "1.500000000000000000",
+      "max_base_fee_multiplier": "1000.000000000000000000",
+      "reset_interval": "42000",
+      "max_block_change_rate": "0.100000000000000000",
+      "target_block_space_percent_rate": "0.625000000000000000",
+      "recheck_fee_low_base_fee": "3.000000000000000000",
+      "recheck_fee_high_base_fee": "2.300000000000000000",
+      "recheck_fee_base_fee_threshold_multiplier": "4.000000000000000000"
+    }
+  },
+  "all_check_tx_passed": true,
+  "all_recheck_tx_passed": true,
+  "all_committed_execution_passed": true
+}
