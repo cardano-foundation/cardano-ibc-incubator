@@ -108,6 +108,15 @@ add('registration', 'registration', 1, await encodeModuleRegistration(registrati
   port_token: AuthToken { policy_id: #"${registration.port_token.policy_id}", name: "port" },
   module_token: AuthToken { policy_id: #"${registration.module_token.policy_id}", name: "module" },
 })`)
+// A later codec wraps each leaf as Constr 1 [codec, payload]. Readers of codecs 0
+// and 1 must reject these instead of reading the payload.
+const envelope = (codec, payload) => serialisePlutusData(Lucid.Data.to(new Lucid.Constr(1, [codec, payload])))
+const packetCommitment = 'ab'.repeat(32)
+add('envelope_codec_2_bytes', 'envelope', 2, envelope(2n, packetCommitment), `codec.encode_enveloped(2, #"${packetCommitment}")`)
+add('envelope_codec_3_consensus', 'envelope', 3, envelope(3n, Lucid.Data.from(consensus)), `codec.encode_enveloped(3, ConsensusState {
+  timestamp: 1700000000000000000, next_validators_hash: #"${'11'.repeat(32)}",
+  root: MerkleRoot { hash: #"${'22'.repeat(32)}" },
+})`)
 const generated = execFileSync(process.env.AIKEN_BIN ?? 'aiken', ['fmt', '--stdin'], { input: tests.join('\n'), encoding: 'utf8' })
 const tree = new ICS23MerkleTree()
 const members = [
@@ -122,8 +131,23 @@ const mixedProofs = members.map((member) => {
     path: proof.path.map((op) => ({ hash: op.hash, prefix: op.prefix.toString('hex'), suffix: op.suffix.toString('hex') })),
   } }] } }
 })
+// After a codec upgrade one root holds leaves from both codecs. The earlier leaf
+// still settles, and readers of the earlier codec reject the later one.
+const upgradeTree = new ICS23MerkleTree()
+const upgradeMembers = [
+  { key: 'commitments/ports/transfer/channels/channel-0/sequences/1', codec: 1, committed: vectors.find((v) => v.name === 'bytes_32').committed },
+  { key: 'commitments/ports/transfer/channels/channel-0/sequences/2', codec: 2, committed: vectors.find((v) => v.name === 'envelope_codec_2_bytes').committed },
+]
+for (const member of upgradeMembers) upgradeTree.set(member.key, member.committed)
+const codecUpgradeProofs = upgradeMembers.map((member) => {
+  const proof = upgradeTree.generateProof(member.key)
+  return { ...member, root: upgradeTree.getRoot(), proof: { proofs: [{ exist: {
+    key: proof.key.toString('hex'), value: proof.value.toString('hex'),
+    path: proof.path.map((op) => ({ hash: op.hash, prefix: op.prefix.toString('hex'), suffix: op.suffix.toString('hex') })),
+  } }] } }
+})
 const outputs = [
-  [resolve(directory, 'codec.json'), `${JSON.stringify({ fixtureVersion: 1, vectors, mixedProofs }, null, 2)}\n`],
+  [resolve(directory, 'codec.json'), `${JSON.stringify({ fixtureVersion: 2, vectors, mixedProofs, codecUpgradeProofs }, null, 2)}\n`],
   [resolve(root, 'cardano/onchain/lib/ibc/implementation/commitment_codec_vectors.test.ak'), generated],
 ]
 const mode = process.argv[2] ?? '--check'

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	codec "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/commitmentcodec"
 	gogotypes "github.com/cosmos/gogoproto/types"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	tm "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
@@ -73,5 +74,33 @@ func TestMembershipPreservesBothCommittedClientFormats(t *testing.T) {
 		forgedRoot := bytes.Clone(root)
 		forgedRoot[0] ^= 1
 		require.Error(t, VerifyIbcStateMembership(forgedRoot, []byte(vector.Key), expected(), vector.Proof))
+	}
+}
+
+// After a codec upgrade one root holds leaves from both codecs. A commitment
+// written before the upgrade still settles, and this release rejects the later
+// codec's leaf instead of misreading it.
+func TestMembershipAcrossCodecUpgrade(t *testing.T) {
+	data, err := os.ReadFile("../../tests/ibc-state-commitment/codec.json")
+	require.NoError(t, err)
+	var fixture struct {
+		CodecUpgradeProofs []struct {
+			Key, Root string
+			Codec     uint64
+			Proof     json.RawMessage
+		}
+	}
+	require.NoError(t, json.Unmarshal(data, &fixture))
+	require.Len(t, fixture.CodecUpgradeProofs, 2)
+	commitment := bytes.Repeat([]byte{0xab}, 32)
+	for _, vector := range fixture.CodecUpgradeProofs {
+		root, err := hex.DecodeString(vector.Root)
+		require.NoError(t, err)
+		err = VerifyIbcStateMembership(root, []byte(vector.Key), commitment, vector.Proof)
+		if vector.Codec == 1 {
+			require.NoError(t, err)
+		} else {
+			require.ErrorIs(t, err, codec.ErrUnsupportedCodec)
+		}
 	}
 }

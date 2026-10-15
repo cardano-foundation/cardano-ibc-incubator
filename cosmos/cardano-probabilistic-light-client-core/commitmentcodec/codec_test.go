@@ -32,7 +32,7 @@ func loadCodecVectors(t *testing.T) []codecVector {
 		Vectors        []codecVector
 	}
 	require.NoError(t, json.Unmarshal(data, &fixture))
-	require.Equal(t, 1, fixture.FixtureVersion)
+	require.Equal(t, 2, fixture.FixtureVersion)
 	return fixture.Vectors
 }
 
@@ -51,6 +51,9 @@ func TestAikenGatewayCodecVectors(t *testing.T) {
 		t.Run(vector.Name, func(t *testing.T) {
 			data, err := hex.DecodeString(vector.Committed)
 			require.NoError(t, err)
+			if vector.Kind != "envelope" {
+				require.NoError(t, RequireSupportedCodec(data))
+			}
 			switch vector.Kind {
 			case "client":
 				value, version, err := DecodeClientState(data)
@@ -109,6 +112,21 @@ func TestAikenGatewayCodecVectors(t *testing.T) {
 				require.Equal(t, bytes.Repeat([]byte{0x33}, 28), value.ModuleScriptHash)
 				require.Equal(t, []byte("port"), value.PortToken.Name)
 				require.Equal(t, []byte("module"), value.ModuleToken.Name)
+			case "envelope":
+				// A later codec's leaf is rejected by name and by every reader.
+				require.ErrorIs(t, RequireSupportedCodec(data), ErrUnsupportedCodec)
+				_, _, err := DecodeClientState(data)
+				require.Error(t, err)
+				_, err = DecodeConsensusState(data)
+				require.Error(t, err)
+				_, err = DecodeConnectionEnd(data)
+				require.Error(t, err)
+				_, err = DecodeChannel(data)
+				require.Error(t, err)
+				_, err = DecodeRegistration(data)
+				require.Error(t, err)
+				require.Error(t, ComparePacketBytes(data, bytes.Repeat([]byte{0xab}, 32)))
+				require.Error(t, CompareNextSequenceRecv(data, make([]byte, 8)))
 			default:
 				t.Fatalf("unsupported vector kind %q", vector.Kind)
 			}
@@ -168,4 +186,21 @@ func TestExpectedAnyPreservesConcreteClientValues(t *testing.T) {
 	require.Equal(t, concrete, decoded)
 	_, err = ExpectedTendermintValue(wrapped, "/wrong.ClientState")
 	require.Error(t, err)
+}
+
+func TestEnvelopesCannotNameUnenvelopedCodecs(t *testing.T) {
+	for name, committed := range map[string]string{
+		"legacy8":         "d87a9f0040ff",
+		"upgrade path 9":  "d87a9f0140ff",
+		"missing payload": "d87a9f02ff",
+		"empty":           "d87a80",
+		"bytes codec":     "d87a9f410240ff",
+		"extra field":     "d87a9f024040ff",
+	} {
+		t.Run(name, func(t *testing.T) {
+			data, err := hex.DecodeString(committed)
+			require.NoError(t, err)
+			require.ErrorIs(t, RequireSupportedCodec(data), ErrUnsupportedCodec)
+		})
+	}
 }
