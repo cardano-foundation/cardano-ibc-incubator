@@ -71,7 +71,7 @@ type CardanoChannelHealthResponse = {
     lane_count: string;
     remaining_lane_count: string;
     awaiting_counterparty_upgrade: boolean;
-    awaiting_counterparty_open: boolean;
+    awaiting_counterparty_open_proof: boolean;
   };
   packet_lanes: Array<{
     lane: number;
@@ -239,7 +239,7 @@ export class ChannelService {
         lane_count: packetState.laneCount.toString(),
         remaining_lane_count: (BigInt(packetState.laneCount) - pending!.flushed_lanes).toString(),
         awaiting_counterparty_upgrade: pending!.counterparty_upgrade === null,
-        awaiting_counterparty_open: state === 'FlushComplete',
+        awaiting_counterparty_open_proof: state === 'FlushComplete',
       } : null,
       packet_lanes: packetLanes,
       pending_packet_commitment_count: pendingSequences.length.toString(),
