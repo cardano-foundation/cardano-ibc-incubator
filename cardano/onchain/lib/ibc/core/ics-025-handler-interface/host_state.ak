@@ -357,10 +357,11 @@ pub fn validate_heartbeat(
   expect Finite(valid_from) = validity_range.lower_bound.bound_type
   expect Finite(valid_to) = validity_range.upper_bound.bound_type
   let previous = old.control.last_heartbeat_time
-  let timed_old = HostStateDatum {
-    ..old,
-    control: HostStateControl { ..old.control, last_heartbeat_time: valid_to },
-  }
+  let timed_old =
+    HostStateDatum {
+      ..old,
+      control: HostStateControl { ..old.control, last_heartbeat_time: valid_to },
+    }
   and {
     old.control.shutdown |> is_active,
     previous >= 0,
@@ -486,11 +487,11 @@ pub fn validate_finalize_shutdown(
     !pairs.has_key(datum.control.port_registry, "transfer"),
   }
 }
+
 /// Permissionless heartbeats may spend the shared HostState at most every six hours.
 pub const heartbeat_interval_ms = 21_600_000
 
 pub const heartbeat_max_validity_ms = 120_000
-
 /// Order byte-string map keys for `pairs.insert_by_ascending_key` using the
 /// order required by canonical CBOR.
 ///
