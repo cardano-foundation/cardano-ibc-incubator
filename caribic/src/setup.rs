@@ -117,12 +117,6 @@ pub async fn download_repository(
     }
 }
 
-#[allow(dead_code)]
-pub async fn download_mithril(mithril_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let url = "https://github.com/input-output-hk/mithril/archive/refs/tags/2437.1.zip";
-    download_repository(url, mithril_path, "mithril").await
-}
-
 pub fn copy_cardano_env_file(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let source = cardano_dir.join(".env.example");
     let destination = cardano_dir.join(".env");
@@ -1368,6 +1362,7 @@ fn write_gateway_env_for_network(
                 "CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT",
                 "CARDANO_DOCKER_NETWORK",
                 "GATEWAY_COMPOSE_PROJECT",
+                "MITHRIL_ENDPOINT",
             ] {
                 if endpoints.get(key).is_none_or(|value| value.is_empty()) {
                     return Err(format!("DevKit container endpoint {key} is missing").into());
@@ -1402,6 +1397,11 @@ fn write_gateway_env_for_network(
         }
         config::CoreCardanoNetwork::Preprod | config::CoreCardanoNetwork::Preview => {
             remove_env_var(&gateway_env, "CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT")?;
+            // Public networks use the public Mithril aggregator.
+            match &profile.mithril_aggregator_url {
+                Some(url) => set_or_append_env_var(&gateway_env, "MITHRIL_ENDPOINT", url)?,
+                None => remove_env_var(&gateway_env, "MITHRIL_ENDPOINT")?,
+            }
             // These flags permit deliberately approximate local-dev fallbacks. They must
             // never survive a switch to a public testnet, where historical epoch
             // evidence is reconstructed from the configured public data provider.

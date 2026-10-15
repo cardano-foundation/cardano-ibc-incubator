@@ -110,45 +110,6 @@ pub fn get_cardano_tip_state(
     }
 }
 
-pub enum CardanoQuery {
-    #[allow(dead_code)]
-    Epoch,
-}
-
-impl CardanoQuery {
-    fn as_str(&self) -> &'static str {
-        match self {
-            CardanoQuery::Epoch => "epoch",
-        }
-    }
-}
-
-pub fn get_cardano_state(
-    project_root_dir: &Path,
-    query: CardanoQuery,
-) -> Result<u64, Box<dyn std::error::Error>> {
-    let cardano_tip_state = get_cardano_tip_state(project_root_dir)?;
-    let cardano_tip_json: Value = serde_json::from_str(&cardano_tip_state)?;
-    let epoch_json = cardano_tip_json.get(query.as_str());
-    if let Some(epoch) = epoch_json {
-        epoch.as_u64().ok_or_else(|| {
-            format!(
-                "Failed to parse {} from cardano-node: {}",
-                query.as_str(),
-                cardano_tip_state
-            )
-            .into()
-        })
-    } else {
-        Err(format!(
-            "Failed to extract {} from cardano-node: {}",
-            query.as_str(),
-            cardano_tip_state
-        )
-        .into())
-    }
-}
-
 pub fn replace_text_in_file(path: &Path, pattern: &str, replacement: &str) -> io::Result<()> {
     let content = fs::read_to_string(path)?;
     let re = Regex::new(pattern).map_err(io::Error::other)?;

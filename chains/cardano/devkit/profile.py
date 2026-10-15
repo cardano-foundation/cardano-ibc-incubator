@@ -29,9 +29,11 @@ PORTS = {
     "DEVKIT_HISTORY_DB_PORT": "15432",
     "DEVKIT_GATEWAY_DB_PORT": "15433",
     "DEVKIT_NONCE_PORT": "18082",
+    "DEVKIT_MITHRIL_PORT": "18083",
 }
 DEFAULTS = {**PORTS, "DEVKIT_HOST": "127.0.0.1"}
 PRODUCERS = tuple(f"producer-{index}" for index in range(2, 6))
+MITHRIL_SIGNERS = ("mithril-signer-2", "mithril-signer-3")
 
 
 def read_settings(path):
@@ -159,6 +161,9 @@ class Runtime:
     def endpoint(self, port):
         return f'http://{self.settings["DEVKIT_HOST"]}:{self.settings[port]}'
 
+    def mithril_endpoint(self):
+        return self.endpoint("DEVKIT_MITHRIL_PORT") + "/aggregator"
+
     def ogmios(self, method, params=None, follow_up=None):
         response = subprocess.run(
             ["node", str(PROFILE / "ogmios.mjs"), self.endpoint("DEVKIT_OGMIOS_PORT"), method,
@@ -209,6 +214,7 @@ class Runtime:
             "GATEWAY_DB_PASSWORD": "postgres",
             "CARDANO_EPOCH_PARAMS_ENDPOINT": self.endpoint("DEVKIT_NONCE_PORT"),
             "CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT": self.endpoint("DEVKIT_NONCE_PORT"),
+            "MITHRIL_ENDPOINT": self.mithril_endpoint(),
         }
         write_env(self.state / "endpoints.env", values)
         container = {**values, "OGMIOS_ENDPOINT": "http://devkit:1337",
@@ -219,6 +225,7 @@ class Runtime:
                      "GATEWAY_DB_HOST": "gateway-db", "GATEWAY_DB_PORT": "5432",
                      "CARDANO_EPOCH_PARAMS_ENDPOINT": "http://nonce:8080",
                      "CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT": "http://nonce:8080",
+                     "MITHRIL_ENDPOINT": "http://mithril-aggregator:8080/aggregator",
                      "CARDANO_DOCKER_NETWORK": self.project + "_default",
                      "GATEWAY_COMPOSE_PROJECT": self.project + "-gateway",
                      "GATEWAY_CONTAINER_NAME": self.project + "-gateway-app",
@@ -354,6 +361,7 @@ class Runtime:
                  timeout=getattr(self, "producer_readiness_timeout", 300))
         wait_for("Yaci history", lambda:
                  http(self.endpoint("DEVKIT_HISTORY_PORT") + "/api/v1/blocks/latest").get("height", 0) > 0, timeout=600)
+        self.start_mithril()
         genesis = {era: http(admin + "/genesis/" + era) for era in ("byron", "shelley", "alonzo", "conway")}
         write_json(self.state / "genesis.json", genesis)
         report = {
@@ -367,6 +375,13 @@ class Runtime:
         write_json(self.state / "startup.json", report)
         print(f"DevKit is ready. Endpoints: {self.state / 'endpoints.env'}")
         print("Five active producers, Ogmios, Kupo, chain history and epoch nonces are ready.")
+
+    def start_mithril(self):
+        # Mithril needs hours of a fresh network: its aggregator and signers
+        # start in epoch 1, the genesis certificate follows in epoch 2, and
+        # signing starts in epoch 3. The containers do this themselves, so
+        # startup does not wait for them.
+        self.compose("up", "-d", "mithril-aggregator", *MITHRIL_SIGNERS)
 
     def resources(self):
         ids = self.compose("ps", "-q", capture=True).split()

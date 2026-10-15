@@ -39,7 +39,7 @@ The implementation adheres to the [inter-blockchain communication protocol](http
 | ICS-20 transfer path | Local: `v8-classic` | Other local profiles need shared clock integration |
 | Historical query backend | Active | Uses `Yaci Store + Bridge Projection` rather than a generic `db-sync` query surface |
 | Public network integrations | Pre-production | Select paths exist for public testnets and external Cardano services, but the operating model is still evolving |
-| Local Mithril devnet | Disabled | Not maintained. The Mithril light client, `08-cardano-mithril`, has been removed |
+| Local Mithril | Active | The local network runs a Mithril aggregator and two signers, which certify the stake that local clients bootstrap from |
 | Production deployment | Not recommended | This repository should be treated as pre-production software |
 
 ## Trust Model & Security Considerations
@@ -63,7 +63,7 @@ The light client itself never makes a network call. The Gateway gathers everythi
 
 ![Hermes, the Gateway, and the Cardano data services, showing the exact call made to each service and the header or transaction field it fills](docs/assets/mechanics/gateway-data-sources.gif)
 
-The older Mithril light client, `08-cardano-mithril`, has been removed. The local Mithril devnet is disabled and not maintained.
+The older Mithril light client, `08-cardano-mithril`, has been removed. Mithril now certifies the stake distributions of the probabilistic client.
 
 ## Overview
 The repository is organized around these main areas:
@@ -216,8 +216,7 @@ Local Cardano images are pinned in `chains/cardano/devkit/Dockerfile` and `chain
 
 Local Cardano uses Yaci DevKit. See the [Caribic guide](caribic/README.md#local-cardano-network) for migration, startup timing and current limitations.
 
-> [!WARNING]
-> The local Mithril devnet is disabled and not maintained. `caribic start --with-mithril` and `caribic start mithril` fail fast.
+The local network includes a Mithril aggregator and two signers, which certify the Cardano stake distributions that probabilistic clients bootstrap from. Public networks use the public Mithril aggregators instead.
 
 Before using the CLI, build and install `caribic` locally:
 

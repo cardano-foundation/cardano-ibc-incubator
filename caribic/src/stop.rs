@@ -3,7 +3,6 @@ use std::thread;
 use std::time::Duration;
 
 use crate::{
-    config,
     logger::{error, log},
     process::{docker::DockerCli, system::SystemChecks},
     start,
@@ -311,66 +310,6 @@ fn parse_pid_and_command(line: &str) -> Option<(u32, String)> {
     let pid = pid_str.parse::<u32>().ok()?;
 
     Some((pid, command))
-}
-
-pub fn stop_mithril(mithril_path: &Path) {
-    let mithril_script_path = mithril_path.join("scripts");
-
-    if !mithril_script_path.exists() {
-        log("Mithril was not configured");
-        return;
-    }
-
-    let mithril_data_dir = mithril_path.join("data");
-    let mithril_data_dir = mithril_data_dir.to_string_lossy().to_string();
-    let mithril_config = config::get_config().mithril;
-    let mithril_result = execute_script(
-        &mithril_script_path,
-        "docker",
-        Vec::from([
-            "compose",
-            "-f",
-            "docker-compose.yaml",
-            "--profile",
-            "mithril",
-            "down",
-        ]),
-        Some(vec![
-            (
-                "MITHRIL_AGGREGATOR_IMAGE",
-                mithril_config.aggregator_image.as_str(),
-            ),
-            ("MITHRIL_CLIENT_IMAGE", mithril_config.client_image.as_str()),
-            ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
-            (
-                "CARDANO_NODE_VERSION",
-                mithril_config.cardano_node_version.as_str(),
-            ),
-            (
-                "CHAIN_OBSERVER_TYPE",
-                mithril_config.chain_observer_type.as_str(),
-            ),
-            ("CARDANO_NODE_DIR", mithril_config.cardano_node_dir.as_str()),
-            ("MITHRIL_DATA_DIR", mithril_data_dir.as_str()),
-            (
-                "GENESIS_VERIFICATION_KEY",
-                mithril_config.genesis_verification_key.as_str(),
-            ),
-            (
-                "GENESIS_SECRET_KEY",
-                mithril_config.genesis_secret_key.as_str(),
-            ),
-            ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
-        ]),
-    );
-    match mithril_result {
-        Ok(_) => {
-            log("Mithril stopped successfully (mithril-aggregator, mithril-signer-1, mithril-signer-2)");
-        }
-        Err(e) => {
-            error(&format!("ERROR: Failed to stop Mithril: {}", e));
-        }
-    }
 }
 
 #[cfg(test)]

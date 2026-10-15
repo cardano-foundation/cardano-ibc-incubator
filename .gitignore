@@ -51,8 +51,6 @@ chains/cardano/yaci-postgres/
 chains/cardano/baseinfo/
 chains/cardano/persistence/
 
-chains/mithrils/mithril
-chains/mithrils/data
 cardano-cli
 cardano-node
 

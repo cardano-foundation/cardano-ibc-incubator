@@ -412,6 +412,18 @@ bootstrap needs an epoch of at least 3. The public aggregators are
 `release-mainnet`, `release-preprod` and `pre-release-preview` at
 `https://aggregator.<name>.api.mithril.network/aggregator`.
 
+Caribic's local network runs its own aggregator and two signers, one for each
+of two of its five producers. The aggregator certifies Cardano stake
+distributions with `k = 5`, `m = 100` and `phi_f = 0.65`. As in Mithril's own
+tests, the aggregator and signers start in epoch 1, since in epoch 0 there is
+no earlier epoch to read signers from. The aggregator creates the genesis
+certificate in epoch 2 from the signers registered in epoch 1, and they sign
+from epoch 3. A client
+bootstrapped in epoch C needs the certified distributions of epochs C-3 and
+C-2, so a fresh local network can bootstrap its first client in epoch 5. With
+5,000-slot epochs that is about seven hours after the network starts. Startup
+does not wait for this. Public networks run no Mithril containers.
+
 The Gateway's `MithrilStakeCertificates` query returns up to four certificates
 that extend a given `mithril_epoch`, ready to submit as a client message.
 Hermes asks for them from each client's refresh task and before it

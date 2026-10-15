@@ -183,9 +183,11 @@ class ProfileTests(unittest.TestCase):
                 self.assertEqual(values["GATEWAY_DB_PORT"], runtime.settings["DEVKIT_GATEWAY_DB_PORT"])
                 self.assertEqual(values["GATEWAY_DB_NAME"], "gateway_app")
                 self.assertFalse(any(key.startswith("HISTORY_DB_") for key in values))
+                self.assertEqual(values["MITHRIL_ENDPOINT"], f'http://127.0.0.1:{runtime.settings["DEVKIT_MITHRIL_PORT"]}/aggregator')
                 containers = dict(line.split("=", 1) for line in (runtime.state / "container-endpoints.env").read_text().splitlines())
                 self.assertEqual(containers["GATEWAY_DB_HOST"], "gateway-db")
                 self.assertEqual(values["CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS"], "32")
+                self.assertEqual(containers["MITHRIL_ENDPOINT"], "http://mithril-aggregator:8080/aggregator")
                 return values["CARDANO_LOCAL_NETWORK_ID"]
             first = export_id()
             self.assertEqual(export_id(), first)
@@ -193,6 +195,15 @@ class ProfileTests(unittest.TestCase):
                 run.return_value.stdout = ""
                 runtime.reset()
             self.assertNotEqual(export_id(), first)
+
+    def test_mithril_startup_does_not_wait_for_its_first_epochs(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+            with patch("profile.http") as http, patch.object(runtime, "compose") as calls:
+                runtime.start_mithril()
+            http.assert_not_called()
+            self.assertEqual([call.args for call in calls.call_args_list],
+                             [("up", "-d", "mithril-aggregator", "mithril-signer-2", "mithril-signer-3")])
 
     def test_genesis_fingerprint_ignores_only_start_time(self):
         genesis = {"byron": {"startTime": 1}, "shelley": {"systemStart": "one", "networkMagic": 42}}
