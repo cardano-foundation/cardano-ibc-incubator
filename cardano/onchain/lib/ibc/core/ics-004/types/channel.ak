@@ -10,6 +10,8 @@ use ibc/core/ics_004/types/state.{
   ChannelState, Closed, Init, Open, TryOpen, Uninitialized,
 }
 
+// Frozen public commitment primitive. Keep its fields and order unchanged.
+// Put private metadata in a separate type. See docs/cardano-commitment-codec.md.
 /// Channel defines pipeline for exactly-once packet delivery between specific
 /// modules on separate blockchains, which has at least one end capable of
 /// sending packets and one end capable of receiving packets.

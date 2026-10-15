@@ -1,3 +1,5 @@
+// Frozen public commitment primitive. Keep its constructors and order unchanged.
+// See docs/cardano-commitment-codec.md.
 /// ChannelState defines if a channel is in one of the following states:
 /// CLOSED, INIT, TRYOPEN, OPEN or UNINITIALIZED.
 pub type ChannelState {

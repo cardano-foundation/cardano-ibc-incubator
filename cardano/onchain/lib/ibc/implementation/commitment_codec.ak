@@ -5,10 +5,7 @@ use aiken/collection/list
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
-use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as connection_counterparty
-use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/core/ics_004/types/channel.{Channel}
-use ibc/core/ics_004/types/counterparty.{ChannelCounterparty} as channel_counterparty
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{ProofSpec}
 use ibc/core/ics_025_handler_interface/host_state.{ModuleRegistration}
 
@@ -86,22 +83,6 @@ pub type WireConsensusState {
   timestamp: Int,
   next_validators_hash: ByteArray,
   root: WireRoot,
-}
-
-pub type WireConnection {
-  client_id: ByteArray,
-  versions: List<Version>,
-  state: Data,
-  counterparty: Counterparty,
-  delay_period: Int,
-}
-
-pub type WireChannel {
-  state: Data,
-  ordering: Data,
-  counterparty: ChannelCounterparty,
-  connection_hops: List<ByteArray>,
-  version: ByteArray,
 }
 
 fn wire_height(value: Height) -> WireHeight {
@@ -183,32 +164,14 @@ pub fn encode_consensus_state(raw: Data) -> ByteArray {
 }
 
 pub fn encode_connection(value: ConnectionEnd) -> ByteArray {
-  // The protobuf enum has normative constructor indexes independent of the
-  // private state enum's declaration order.
-  let state: Data = connection_end.convert_to_state_proto(value.state)
-  cbor.serialise(
-    WireConnection {
-      client_id: value.client_id,
-      versions: value.versions,
-      state,
-      counterparty: value.counterparty,
-      delay_period: value.delay_period,
-    },
-  )
+  // ConnectionEnd and its state enum are frozen wire primitives pinned by
+  // wire-schema.lock.json. Copying them into wire records does not fit HostState.
+  cbor.serialise(value)
 }
 
 pub fn encode_channel(value: Channel) -> ByteArray {
-  let state: Data = channel.convert_to_state_proto(value.state)
-  let ordering: Data = channel.convert_to_order_proto(value.ordering)
-  cbor.serialise(
-    WireChannel {
-      state,
-      ordering,
-      counterparty: value.counterparty,
-      connection_hops: value.connection_hops,
-      version: value.version,
-    },
-  )
+  // Channel, its state enum and Order are frozen like ConnectionEnd.
+  cbor.serialise(value)
 }
 
 pub fn encode_registration(value: ModuleRegistration) -> ByteArray {

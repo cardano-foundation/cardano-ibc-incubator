@@ -39,8 +39,11 @@ constructors. They hash the original proof bytes rather than re-encoding them.
 
 `Height`, `AuthToken`, connection `Version`, `MerklePrefix` and the two
 counterparty records and `ModuleRegistration` are existing public protocol
-primitives shared with the encoders. Their declarations are
-part of this frozen ABI. Private metadata belongs in separate types.
+primitives shared with the encoders. So are `ConnectionEnd`, `Channel`, their
+state enums and `Order`, which HostState serialises directly because projecting
+them into copies does not fit its reference script. Their declarations are part
+of this frozen ABI, and `cardano/onchain/wire-schema.lock.json` pins their
+fields and constructor indexes. Private metadata belongs in separate types.
 
 Record fields appear in exactly this order. Nested records also use constructor
 zero. `bytes` means a Plutus byte array. Supported counters and timestamps fit an
@@ -72,7 +75,7 @@ token = [policy_id, name]
 `proof_specs`, `upgrade_path`, `versions`, `features`, `child_order` and
 `connection_hops` are arrays. Chain IDs, identifiers, paths, hashes and opaque
 versions are byte arrays. State, ordering and Boolean constructors have no
-fields. Their constructor indexes are fixed independently of internal enums.
+fields. Their constructor indexes are fixed by the frozen enum declarations.
 Connection states are `Uninitialized = 0`, `Init = 1`, `TryOpen = 2` and
 `Open = 3`. Channel states add `Closed = 4`. Ordering is `None = 0`,
 `Unordered = 1` and `Ordered = 2`. Boolean values are `False = 0` and `True = 1`.

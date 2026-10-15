@@ -10,6 +10,8 @@ use ibc/core/ics_003_connection_semantics/types/state.{
 }
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
 
+// Frozen public commitment primitive. Keep its fields and order unchanged.
+// Put private metadata in a separate type. See docs/cardano-commitment-codec.md.
 pub type ConnectionEnd {
   client_id: ByteArray,
   versions: List<Version>,
