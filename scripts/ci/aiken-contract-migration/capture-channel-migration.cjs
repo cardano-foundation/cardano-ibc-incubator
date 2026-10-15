@@ -9,6 +9,7 @@ const { pathToFileURL } = require('node:url');
 const { ownedRuntimeProviders } = require('./owned-runtime-providers.cjs');
 const { channelUnit } = require('./verify-migration-packet.cjs');
 const { laneRoot } = require('./verify-migration-lanes.cjs');
+const { parseExactJson } = require('./rehearsal-json.cjs');
 const root = path.resolve(__dirname, '../../..');
 const req = createRequire(path.join(root, 'cardano/gateway/package.json'));
 const text = value => Buffer.from(value, 'hex').toString('utf8');
@@ -65,7 +66,7 @@ async function main() {
     assert.ok(response.ok, `Owned query failed: ${url} ${response.status}`);
     if (height) assert.equal(response.headers.get('x-cosmos-block-height') ??
       response.headers.get('grpc-metadata-x-cosmos-block-height'), height, 'Counterparty ignored snapshot height');
-    return response.json();
+    return parseExactJson(await response.text());
   }
   const observed = [];
   const unitKey = unit => unit.slice(0, 56) + '.' + unit.slice(56);
