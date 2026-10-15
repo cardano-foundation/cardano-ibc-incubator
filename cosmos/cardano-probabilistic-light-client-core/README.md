@@ -23,6 +23,8 @@ Run `go test ./...` and `go vet ./...` in the core and both adapter modules. Sta
 
 Pool identities, VRF bindings and registration ages come from the independent registry. Stake amounts remain unsigned claims. Forward updates cannot replace an installed table for the same epoch. Historical challenges may verify an alternative table for an epoch later than their trusted checkpoint. They cannot replace the table for that checkpoint epoch. A table disagreement alone cannot freeze the client. Only incompatible authenticated block histories establish misbehaviour. This does not authenticate the actual stake allocation.
 
+A false table can omit a registered producer absent from its admission evidence and block later canonical progress. The supported fallback is an explicitly trusted substitute and authority recovery once the subject expires. Failed continuations and historical alternatives do not renew the committed checkpoint's lifetime. The bounded recovery sequence and its authority and timing assumptions are described in [the storage and verification design](../../docs/probabilistic-bounded-verification.md). Both SDK adapters test admission of the false table, the genuine omitted producer, same-ancestry disagreement, expiry and recovery on the original channel.
+
 The repository builds against the local core through `replace` directives. Before publishing new adapter versions, publish a core version containing `state` and update both adapters to require that version. The existing `v0.1.5` release does not contain the new package.
 
 Release tags for this nested module use the module directory prefix, for example:
