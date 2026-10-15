@@ -185,8 +185,14 @@ export const loadDeploymentPlan = async (
   lucid: LucidEvolution,
   inputs: DeploymentPlanInputs,
 ) => {
-  const backupOperatorKeyHash = inputs.backupOperatorKeyHash?.toLowerCase() ??
-    "";
+  const backupOperatorKeyHash =
+    inputs.backupOperatorKeyHash?.trim().toLowerCase() ??
+      "";
+  if (lucid.config().network === "Mainnet" && backupOperatorKeyHash === "") {
+    throw new Error(
+      "Mainnet deployment requires DEPLOYER_BACKUP_PAYMENT_KEY_HASH",
+    );
+  }
   if (
     backupOperatorKeyHash !== "" &&
     (!/^[0-9a-f]{56}$/.test(backupOperatorKeyHash) ||

@@ -28,6 +28,32 @@ const lucidLoader = {
 } as unknown as LucidEvolution;
 const inputs = { ...DEPLOYMENT_PLAN_FIXTURE, benchmarkVoucherEnabled: false };
 
+Deno.test("mainnet requires a distinct backup operator before loading deployment scripts", async () => {
+  const mainnet = {
+    config: () => ({ network: "Mainnet" }),
+  } as unknown as LucidEvolution;
+  for (const backupOperatorKeyHash of [undefined, "", "   "]) {
+    await assertRejects(
+      () => loadDeploymentPlan(mainnet, { ...inputs, backupOperatorKeyHash }),
+      Error,
+      "Mainnet deployment requires DEPLOYER_BACKUP_PAYMENT_KEY_HASH",
+    );
+  }
+  for (
+    const backupOperatorKeyHash of [inputs.deployerPaymentKeyHash, "invalid"]
+  ) {
+    await assertRejects(
+      () => loadDeploymentPlan(mainnet, { ...inputs, backupOperatorKeyHash }),
+      Error,
+      "different 28-byte payment key hash",
+    );
+  }
+  await loadDeploymentPlan(mainnet, {
+    ...inputs,
+    backupOperatorKeyHash: "55".repeat(28),
+  });
+});
+
 Deno.test("the backup is fixed in the deployed HostState script", async () => {
   const withoutBackup = await loadDeploymentPlan(lucidLoader, inputs);
   const withBackup = await loadDeploymentPlan(lucidLoader, {

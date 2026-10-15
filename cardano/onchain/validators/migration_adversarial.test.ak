@@ -24,17 +24,19 @@ use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
   ShuttingDown, host_state_token_name, min_shutdown_grace_period_ms,
 }
-use ibc/core/ics_025_handler_interface/host_state_redeemer.{EnterShutdown}
+use ibc/core/ics_025_handler_interface/host_state_redeemer.{
+  ClaimBackup, EnterShutdown, Heartbeat,
+}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
 use ibc/implementation/spending_transfer_module as transfer_dispatch
 use ibc/migration/auth as migration
 use ibc/migration/types.{
   Activate, Authority, Begin, Cancel, CancelRestoration, Counts, Emergency,
-  FixedIdentity, Governance, Implementation, MoveCore, MoveEscrow,
-  MoveTransferRoot, Moving, Proposal, Propose, ProposeEmergencyRotation,
-  ProposeRestoration, Proposed, Ready, Registry, RegistryRedeemer, Replace,
-  Restoration, Restore, Restrict, Rotate, RotateAuthority, minimum_delay_ms,
-  registry_token_name,
+  FixedIdentity, Governance, GraduateDeployer, Implementation, MoveCore,
+  MoveEscrow, MoveTransferRoot, Moving, NominateDeployer, Proposal, Propose,
+  ProposeEmergencyRotation, ProposeRestoration, Proposed, Ready, Registry,
+  RegistryRedeemer, Replace, Restoration, Restore, Restrict, Rotate,
+  RotateAuthority, minimum_delay_ms, registry_token_name,
 }
 use ibc/utils/text_bytes
 use implementation_registry
@@ -2199,4 +2201,321 @@ test migration_budget_gate_short_registry_rejected() fail {
 
 test migration_budget_gate_extra_registry_field_rejected() fail {
   malformed_gate(True)
+}
+
+fn graduation_proposal() -> Proposal {
+  NominateDeployer { nonce: 1, source_generation: 1, successor: hash(44) }
+}
+
+fn graduation() -> Case {
+  let old = approved(graduation_proposal())
+  let previous = host()
+  transition(
+    old,
+    Registry { ..old, phase: Ready },
+    GraduateDeployer,
+    [input(2, host_output(previous, 1))],
+    [
+      host_output(
+        HostStateDatum {
+          ..previous,
+          deployer: hash(44),
+          state: HostState {
+            ..previous.state,
+            version: previous.state.version + 1,
+          },
+        },
+        1,
+      ),
+    ],
+    ready_at,
+    execution_upper,
+    [],
+  )
+}
+
+test graduation_quorum_can_nominate_without_deployer() {
+  let case = propose(graduation_proposal())
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        extra_signatories: [hash(12), hash(13)],
+      },
+    },
+  )
+}
+
+test graduation_insufficient_quorum_fails() fail {
+  let case = propose(graduation_proposal())
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        extra_signatories: [hash(11)],
+      },
+    },
+  )
+}
+
+test graduation_duplicate_votes_fail() fail {
+  let case = propose(graduation_proposal())
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        extra_signatories: [hash(12), hash(12)],
+      },
+    },
+  )
+}
+
+test graduation_invalid_successor_fails() fail {
+  run(
+    propose(NominateDeployer { nonce: 1, source_generation: 1, successor: "" }),
+  )
+}
+
+test graduation_stale_generation_fails() fail {
+  run(
+    propose(
+      NominateDeployer { nonce: 1, source_generation: 2, successor: hash(44) },
+    ),
+  )
+}
+
+test graduation_stale_nonce_fails() fail {
+  run(
+    propose(
+      NominateDeployer { nonce: 0, source_generation: 1, successor: hash(44) },
+    ),
+  )
+}
+
+test graduation_executes_without_deployer_or_governance_signatures() {
+  let case = graduation()
+  let raw = builtin.constr_data(100, [])
+  and {
+    run(case),
+    host_wrapper.host_state.spend(
+      hash(1),
+      1,
+      None,
+      raw,
+      ref(2),
+      case.transaction,
+    ),
+  }
+}
+
+test graduation_before_delay_fails() fail {
+  let case = graduation()
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        validity_range: interval.between(ready_at - 1, execution_upper),
+      },
+    },
+  )
+}
+
+test graduation_expired_approval_fails() fail {
+  let case = graduation()
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        validity_range: interval.between(ready_at, expires_at + 1),
+      },
+    },
+  )
+}
+
+test graduation_consumed_approval_cannot_replay() fail {
+  let case = graduation()
+  run(with_registry_input(case, new_registry(case)))
+}
+
+test graduation_cancelled_approval_fails() fail {
+  run(with_registry_input(graduation(), Registry { ..initial(), nonce: 1 }))
+}
+
+test graduation_cannot_change_successor() fail {
+  let previous = host()
+  run(
+    with_object_output(
+      graduation(),
+      host_output(
+        HostStateDatum {
+          ..previous,
+          deployer: hash(45),
+          state: HostState { ..previous.state, version: 8 },
+        },
+        1,
+      ),
+    ),
+  )
+}
+
+test graduation_cannot_change_commitments_or_claims() fail {
+  let previous = host()
+  run(
+    with_object_output(
+      graduation(),
+      host_output(
+        HostStateDatum {
+          ..previous,
+          deployer: hash(44),
+          state: HostState {
+            ..previous.state,
+            version: 8,
+            ibc_state_root: tree.empty_hash,
+          },
+        },
+        1,
+      ),
+    ),
+  )
+}
+
+test graduation_cannot_change_live_counts() fail {
+  let previous = host()
+  run(
+    with_object_output(
+      graduation(),
+      host_output(
+        HostStateDatum {
+          ..previous,
+          deployer: hash(44),
+          state: HostState { ..previous.state, version: 8 },
+          control: HostStateControl { ..previous.control, live_clients: 0 },
+        },
+        1,
+      ),
+    ),
+  )
+}
+
+test graduation_cannot_drain_host_value() fail {
+  let case = graduation()
+  let output = output_object(case)
+  run(
+    with_object_output(
+      case,
+      Output {
+        ..output,
+        value: assets.from_lovelace(2_000_000)
+          |> assets.add(hash(2), host_state_token_name, 1),
+      },
+    ),
+  )
+}
+
+test graduation_cannot_move_host_address() fail {
+  let case = graduation()
+  run(
+    with_object_output(
+      case,
+      Output { ..output_object(case), address: from_script(hash(200)) },
+    ),
+  )
+}
+
+test graduation_cannot_change_governance() fail {
+  let case = graduation()
+  run(
+    with_registry_output(
+      case,
+      Registry {
+        ..new_registry(case),
+        governance: Governance {
+          signers: [hash(44)],
+          quorum: 1,
+          delay_ms: minimum_delay_ms,
+        },
+      },
+    ),
+  )
+}
+
+fn graduated_heartbeat(signer: ByteArray, redeemer: Data) -> Bool {
+  let case = graduation()
+  let output = output_object(case)
+  expect InlineDatum(data) = output.datum
+  expect previous: HostStateDatum = data
+  let updated =
+    HostStateDatum {
+      ..previous,
+      state: HostState {
+        ..previous.state,
+        version: previous.state.version + 1,
+        last_update_time: execution_upper,
+      },
+    }
+  host_wrapper.host_state.spend(
+    hash(1),
+    1,
+    None,
+    redeemer,
+    ref(2),
+    Transaction {
+      ..placeholder,
+      inputs: [input(2, output)],
+      outputs: [host_output(updated, 1)],
+      reference_inputs: [input(1, registry_output(new_registry(case)))],
+      extra_signatories: [signer],
+      validity_range: interval.between(ready_at, execution_upper),
+    },
+  )
+}
+
+test graduation_successor_can_authorize_heartbeat() {
+  graduated_heartbeat(hash(44), Heartbeat)
+}
+
+test graduation_old_deployer_loses_heartbeat_authority() fail {
+  graduated_heartbeat(hash(11), Heartbeat)
+}
+
+test graduation_backup_key_cannot_bypass_governance() fail {
+  graduated_heartbeat(hash(44), ClaimBackup)
+}
+
+test graduation_old_admin_cannot_shutdown_upgradeable_bridge() fail {
+  graduated_heartbeat(
+    hash(11),
+    EnterShutdown {
+      grace_period_end: execution_upper + min_shutdown_grace_period_ms,
+    },
+  )
+}
+
+test graduation_successor_cannot_bypass_upgradeable_shutdown_prohibition() fail {
+  graduated_heartbeat(
+    hash(44),
+    EnterShutdown {
+      grace_period_end: execution_upper + min_shutdown_grace_period_ms,
+    },
+  )
+}
+
+test graduation_emergency_key_cannot_veto_admin_replacement() {
+  let case = graduation()
+  let old =
+    Registry {
+      ..case.old,
+      emergency: Emergency { ..case.old.emergency, mask: 15 },
+    }
+  run(
+    with_registry_output(
+      with_registry_input(case, old),
+      Registry { ..old, phase: Ready },
+    ),
+  )
 }

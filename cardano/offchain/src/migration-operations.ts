@@ -72,9 +72,22 @@ export async function migrationControl(
       "Publish the original registry reference script before continuing",
     );
   }
+  const object = action === "GraduateDeployer"
+    ? await lucid.utxoByUnit(registry.host_policy + fromText("ibc_host_state"))
+    : undefined;
+  const hostCredential = registry.current.addresses[0].payment_credential;
+  const objectReference =
+    action === "GraduateDeployer" && "Script" in hostCredential
+      ? references.find((entry) =>
+        entry.scriptRef &&
+        validatorToScriptHash(entry.scriptRef) === hostCredential.Script[0]
+      )
+      : undefined;
   return buildMigrationTransaction(lucid, deployment.migration!.registryUnit, {
     registry: utxo,
     registryReference: reference,
+    object,
+    objectReference,
     ...timing,
     signers,
   }, action);
