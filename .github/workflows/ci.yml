@@ -1225,6 +1225,16 @@ jobs:
           GOWORK: off
         run: go test ./...
 
+      # gouroboros decoders panicked on malformed relayer block bytes before
+      # v0.205.4 (#687). Fuzzing catches a regression after an upgrade.
+      - name: Fuzz Cardano block decoding
+        if: matrix.module.name == 'core'
+        env:
+          GOWORK: off
+        run: |
+          go test -run '^$' -fuzz '^FuzzDecodeLedgerBlock$' -fuzztime 60s .
+          go test -run '^$' -fuzz '^FuzzDecodeLedgerHeader$' -fuzztime 30s .
+
       - name: Vet non-generated packages
         env:
           GOWORK: off
