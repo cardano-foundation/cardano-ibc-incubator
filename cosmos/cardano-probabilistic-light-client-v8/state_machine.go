@@ -16,6 +16,8 @@ func coreMessage(msg exported.ClientMessage) any {
 		return toCoreProbabilisticHeader(msg)
 	case *Misbehaviour:
 		return toCoreMisbehaviour(msg)
+	case *MithrilStakeCertificates:
+		return toCoreMithrilStakeCertificates(msg)
 	default:
 		return msg
 	}

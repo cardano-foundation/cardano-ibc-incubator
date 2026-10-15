@@ -1,0 +1,237 @@
+package state
+
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"strconv"
+
+	errorsmod "cosmossdk.io/errors"
+	storetypes "cosmossdk.io/store/types"
+	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/mithril"
+)
+
+// For a client with a Mithril anchor, a Cardano stake distribution certified by
+// Mithril outranks an uploaded stake table. A new epoch's table must match the
+// certified distribution once one is recorded, and then needs no response
+// window. Until then the uploaded table and its response window apply as for
+// any client. Mithril certifies the distribution that elects an epoch's
+// leaders during the epoch before it, so relayers can record it well ahead of
+// the rollover.
+const (
+	MaxMithrilCertificates            = 8
+	MaxMithrilCertificateBytes        = 512 * 1024
+	MithrilCertificateVerificationGas = uint64(2_000_000)
+)
+
+var mithrilStakeRootPrefix = []byte("mithrilStakeRoot/")
+
+// Certified roots belong to the verification generation whose Mithril state
+// verified them. Recovery starts a generation with the substitute's state.
+func mithrilStakeRootKey(generation, epoch uint64) []byte {
+	key := binary.BigEndian.AppendUint64(bytes.Clone(mithrilStakeRootPrefix), generation)
+	return binary.BigEndian.AppendUint64(key, epoch)
+}
+
+// certifiedStakeRoot is a root a recovery carries into its new generation.
+type certifiedStakeRoot struct {
+	Epoch uint64
+	Root  string
+}
+
+// maxRecoveredMithrilRoots bounds the roots a recovery carries. Mithril
+// certifies stake at most two epochs ahead of a current checkpoint.
+const maxRecoveredMithrilRoots = 8
+
+func (cs *ClientState) mithrilAnchor() (mithril.Anchor, bool) {
+	if cs.MithrilEpoch == 0 && cs.MithrilAggregateVerificationKey == "" && cs.MithrilProtocolParametersHash == "" {
+		return mithril.Anchor{}, false
+	}
+	return mithril.Anchor{
+		Epoch:                    cs.MithrilEpoch,
+		AggregateVerificationKey: cs.MithrilAggregateVerificationKey,
+		ProtocolParametersHash:   cs.MithrilProtocolParametersHash,
+	}, true
+}
+
+func (cs *ClientState) validateMithrilAnchor() error {
+	anchor, ok := cs.mithrilAnchor()
+	if !ok {
+		return nil
+	}
+	if err := mithril.ValidateAnchor(anchor); err != nil {
+		return errorsmod.Wrap(ErrIBCInvalidClient, err.Error())
+	}
+	return nil
+}
+
+// ValidateBasic bounds a certificate message before any verification work.
+func (m *MithrilStakeCertificates) ValidateBasic() error {
+	if m == nil || len(m.Certificates) == 0 || len(m.Certificates) > MaxMithrilCertificates {
+		return errorsmod.Wrapf(ErrInvalidHeader, "Mithril stake update must carry 1 to %d certificates", MaxMithrilCertificates)
+	}
+	total := 0
+	for index, certificate := range m.Certificates {
+		if len(certificate) > MaxMithrilCertificateBytes {
+			return errorsmod.Wrapf(ErrInvalidHeader, "Mithril certificate %d exceeds %d bytes", index, MaxMithrilCertificateBytes)
+		}
+		total += len(certificate)
+	}
+	// The message must fit the transport budget of a bounded operation.
+	if total > MaxOperationSignedBytes-20000 {
+		return errorsmod.Wrap(ErrInvalidHeader, "Mithril certificates exceed the transport budget")
+	}
+	return nil
+}
+
+func (cs *ClientState) verifyMithrilStakeCertificates(ctx Context, msg *MithrilStakeCertificates) error {
+	if err := msg.ValidateBasic(); err != nil {
+		return err
+	}
+	if ctx.ConsumeGas != nil {
+		// Covers the verification here and its repetition in UpdateState.
+		ctx.ConsumeGas(uint64(len(msg.Certificates))*MithrilCertificateVerificationGas, "Mithril certificate verification")
+	}
+	_, _, err := cs.extendMithrilAnchor(msg)
+	return err
+}
+
+// extendMithrilAnchor verifies certificates that extend the client's anchor.
+// Each must certify a stake distribution, so the anchor cannot pass an epoch
+// without recording the stake that elects the next epoch's leaders.
+func (cs *ClientState) extendMithrilAnchor(msg *MithrilStakeCertificates) (mithril.Anchor, []mithril.StakeDistribution, error) {
+	anchor, ok := cs.mithrilAnchor()
+	if !ok {
+		return mithril.Anchor{}, nil, errorsmod.Wrap(ErrIBCInvalidClient, "client has no Mithril anchor")
+	}
+	next, distributions, err := mithril.VerifyCertificates(anchor, msg.Certificates)
+	if err != nil {
+		return mithril.Anchor{}, nil, errorsmod.Wrap(ErrInvalidHeader, err.Error())
+	}
+	if len(distributions) != len(msg.Certificates) {
+		return mithril.Anchor{}, nil, errorsmod.Wrap(ErrInvalidHeader, "every Mithril certificate must certify a Cardano stake distribution")
+	}
+	return next, distributions, nil
+}
+
+func (cs *ClientState) applyMithrilStakeCertificates(ctx Context, cdc StateCodec, clientStore storetypes.KVStore, msg *MithrilStakeCertificates) []HeightValue {
+	// ReCheckTx omits VerifyClientMessage, so verification repeats here.
+	next, distributions, err := cs.extendMithrilAnchor(msg)
+	if err != nil {
+		panic(err)
+	}
+	for _, distribution := range distributions {
+		clientStore.Set(mithrilStakeRootKey(cs.VerificationGeneration, distribution.LeaderEpoch()), []byte(distribution.MerkleRoot))
+		ctx.emitEvent("mithril_stake_certified",
+			newEventAttribute("leader_epoch", strconv.FormatUint(distribution.LeaderEpoch(), 10)),
+			newEventAttribute("merkle_root", distribution.MerkleRoot),
+		)
+	}
+	cs.MithrilEpoch = next.Epoch
+	cs.MithrilAggregateVerificationKey = next.AggregateVerificationKey
+	cs.MithrilProtocolParametersHash = next.ProtocolParametersHash
+	if err := writeClientState(ctx, cdc, clientStore, cs); err != nil {
+		panic(err)
+	}
+	return nil
+}
+
+// requireCertifiedStake rejects a sealed table whose Mithril root differs from
+// the distribution Mithril certified for its epoch. It reports whether one was
+// certified. Without one, the table keeps its response window.
+func requireCertifiedStake(clientStore storetypes.KVStore, generation, epoch uint64, root string) (bool, error) {
+	certified := clientStore.Get(mithrilStakeRootKey(generation, epoch))
+	if certified == nil {
+		return false, nil
+	}
+	if root != string(certified) {
+		return false, fmt.Errorf("epoch %d stake table differs from the Mithril-certified distribution", epoch)
+	}
+	return true, nil
+}
+
+// recoveredMithrilRoots selects the certification state a recovery adopts:
+// the substitute's anchor and the roots it certified for epochs after its
+// checkpoint, which the replacement's coming rollovers need. Earlier roots
+// are not needed. The subject's roots stay with its old generation. A
+// relayer re-establishes any it had beyond the substitute's anchor by
+// submitting those certificates again. Roots both clients certified for the
+// same epoch describe the same Cardano stake, so they must agree.
+func recoveredMithrilRoots(subject *ClientState, subjectStore storetypes.KVStore, substitute *ClientState, substituteStore storetypes.KVStore, checkpointEpoch uint64) ([]certifiedStakeRoot, error) {
+	anchor, ok := substitute.mithrilAnchor()
+	if !ok {
+		return nil, nil
+	}
+	if held, ok := subject.mithrilAnchor(); ok && held.Epoch == anchor.Epoch && held != anchor {
+		return nil, fmt.Errorf("subject and substitute hold different Mithril anchors for epoch %d", anchor.Epoch)
+	}
+	if anchor.Epoch > checkpointEpoch && anchor.Epoch-checkpointEpoch > maxRecoveredMithrilRoots {
+		return nil, fmt.Errorf("substitute's Mithril anchor is more than %d epochs ahead of its checkpoint", maxRecoveredMithrilRoots)
+	}
+	var roots []certifiedStakeRoot
+	for epoch := checkpointEpoch + 1; epoch <= anchor.Epoch; epoch++ {
+		root := substituteStore.Get(mithrilStakeRootKey(substitute.VerificationGeneration, epoch))
+		if root == nil {
+			continue
+		}
+		if held := subjectStore.Get(mithrilStakeRootKey(subject.VerificationGeneration, epoch)); held != nil && !bytes.Equal(held, root) {
+			return nil, fmt.Errorf("subject and substitute certified different epoch %d stake distributions", epoch)
+		}
+		roots = append(roots, certifiedStakeRoot{Epoch: epoch, Root: string(root)})
+	}
+	return roots, nil
+}
+
+// mithrilStakeConflict reports whether verified certificates certify a stake
+// distribution that differs from an epoch table the client already activated.
+// That table is then proven wrong, so the certificates are misbehaviour.
+func (cs ClientState) mithrilStakeConflict(ctx Context, msg *MithrilStakeCertificates) bool {
+	_, distributions, err := cs.extendMithrilAnchor(msg)
+	if err != nil {
+		return false
+	}
+	shared, err := ctx.snapshotStore()
+	if err != nil {
+		return false
+	}
+	for _, distribution := range distributions {
+		raw := shared.Get(activatedEpochKey(&cs, distribution.LeaderEpoch()))
+		if len(raw) == 0 {
+			continue
+		}
+		var table activatedEpochTable
+		if err := decodeBoundedRecord(raw, &table); err != nil {
+			return false
+		}
+		if table.MithrilRoot != distribution.MerkleRoot {
+			return true
+		}
+	}
+	return false
+}
+
+// AnchorToMithril sets a trusted bootstrap client's Mithril anchor from an
+// aggregator after checking Mithril's distribution against the client's
+// current stake table. The anchor is trusted like the rest of the bootstrap.
+func AnchorToMithril(client *ClientState, aggregator string) error {
+	contexts, err := client.normalizedEpochContexts()
+	if err != nil {
+		return err
+	}
+	current := epochContextByEpoch(contexts, client.CurrentEpoch)
+	if current == nil {
+		return fmt.Errorf("trusted client has no epoch %d stake table", client.CurrentEpoch)
+	}
+	entries := make([]mithril.StakeEntry, 0, len(current.StakeDistribution))
+	for _, entry := range current.StakeDistribution {
+		entries = append(entries, mithril.StakeEntry{PoolID: entry.PoolId, Stake: entry.Stake})
+	}
+	anchor, err := mithril.FetchStakeAnchor(aggregator, client.CurrentEpoch, entries)
+	if err != nil {
+		return err
+	}
+	client.MithrilEpoch = anchor.Epoch
+	client.MithrilAggregateVerificationKey = anchor.AggregateVerificationKey
+	client.MithrilProtocolParametersHash = anchor.ProtocolParametersHash
+	return nil
+}

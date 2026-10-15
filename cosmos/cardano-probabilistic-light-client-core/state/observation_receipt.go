@@ -23,6 +23,7 @@ type verifiedObservation struct {
 	AnchorHash                        [32]byte
 	SettledHistory                    SnapshotRoot
 	Table                             stakeSnapshot
+	TableMithrilRoot                  string
 	TableNonce                        []byte
 	InputDigest                       [32]byte
 	Blocks, Descendants               uint32
@@ -111,7 +112,7 @@ func completeObservation(ctx Context, store storetypes.KVStore, cs *ClientState,
 	if now <= 0 {
 		return [32]byte{}, fmt.Errorf("invalid receipt completion time")
 	}
-	receipt := &verifiedObservation{Version: VerificationPolicyVersion, Namespace: bytes.Clone(cs.StorageNamespace), Generation: cs.VerificationGeneration, Scope: session.Anchor.Scope, BaseReference: bytes.Clone(session.BaseReference), AnchorReference: anchorRef, AnchorHeight: session.Anchor.Height, AnchorHash: session.Anchor.BlockHash, SettledHistory: session.Anchor.SettledHistory, Table: session.Table, TableNonce: bytes.Clone(session.TableNonce), InputDigest: session.ExpectedDigest, Blocks: session.BlockCount, Descendants: uint32(descendants), QualifiedPools: session.QualifiedCount, QualifiedStakeBps: bps, IsCheckpoint: session.IsCheckpoint, VerifiedAt: uint64(now)}
+	receipt := &verifiedObservation{Version: VerificationPolicyVersion, Namespace: bytes.Clone(cs.StorageNamespace), Generation: cs.VerificationGeneration, Scope: session.Anchor.Scope, BaseReference: bytes.Clone(session.BaseReference), AnchorReference: anchorRef, AnchorHeight: session.Anchor.Height, AnchorHash: session.Anchor.BlockHash, SettledHistory: session.Anchor.SettledHistory, Table: session.Table, TableMithrilRoot: session.TableMithrilRoot, TableNonce: bytes.Clone(session.TableNonce), InputDigest: session.ExpectedDigest, Blocks: session.BlockCount, Descendants: uint32(descendants), QualifiedPools: session.QualifiedCount, QualifiedStakeBps: bps, IsCheckpoint: session.IsCheckpoint, VerifiedAt: uint64(now)}
 	id, err := saveVerifiedObservation(store, receipt)
 	if err != nil {
 		return [32]byte{}, err
@@ -162,6 +163,7 @@ type activatedEpochTable struct {
 	Deadline      uint64
 	Receipt       []byte
 	BaseReference []byte
+	MithrilRoot   string
 }
 
 func activatedEpochKey(cs *ClientState, epoch uint64) []byte {
@@ -202,6 +204,15 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 			if err != nil {
 				return nil, err
 			}
+			certified, err := requireCertifiedStake(private, cs.VerificationGeneration, receipt.Table.Epoch, receipt.TableMithrilRoot)
+			if err != nil {
+				return nil, err
+			}
+			if certified {
+				// Mithril authenticates this table, so it needs no response
+				// window. It becomes usable after the next committed block.
+				deadline = uint64(ctx.BlockTime().UnixNano())
+			}
 			if cs.TrustingPeriod <= 0 || live.Timestamp > ^uint64(0)-uint64(cs.TrustingPeriod) || live.Timestamp+uint64(cs.TrustingPeriod) <= deadline {
 				return nil, fmt.Errorf("proposal must leave its entire response window inside the client's trusting period")
 			}
@@ -214,7 +225,7 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 			if err := pinSnapshotObject(store, receipt.Scope, objectReceipt, accepted, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 6, binary.BigEndian.AppendUint64(nil, receipt.Table.Epoch))); err != nil {
 				return nil, err
 			}
-			proposal := activatedEpochTable{receipt.Table, bytes.Clone(receipt.TableNonce), deadline, bytes.Clone(accepted[:]), bytes.Clone(receipt.BaseReference)}
+			proposal := activatedEpochTable{receipt.Table, bytes.Clone(receipt.TableNonce), deadline, bytes.Clone(accepted[:]), bytes.Clone(receipt.BaseReference), receipt.TableMithrilRoot}
 			raw, err = cbor.Encode(proposal)
 			if err != nil {
 				return nil, err
@@ -224,7 +235,7 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 				return nil, err
 			}
 			cs.EpochContextChallenges = append(cs.EpochContextChallenges, &EpochContextChallenge{Epoch: receipt.Table.Epoch, UsableAfterUnixNs: deadline})
-			ctx.emitEvent("probabilistic_epoch_context_pending", newEventAttribute("epoch", fmt.Sprint(receipt.Table.Epoch)), newEventAttribute("usable_after_unix_ns", fmt.Sprint(deadline)), newEventAttribute("trusted_height", fmt.Sprintf("0-%d", session.Working.Height-uint64(session.BlockCount))), newEventAttribute("receipt_id", hex.EncodeToString(accepted[:])))
+			ctx.emitEvent("probabilistic_epoch_context_pending", newEventAttribute("epoch", fmt.Sprint(receipt.Table.Epoch)), newEventAttribute("usable_after_unix_ns", fmt.Sprint(deadline)), newEventAttribute("trusted_height", fmt.Sprintf("0-%d", session.Working.Height-uint64(session.BlockCount))), newEventAttribute("receipt_id", hex.EncodeToString(accepted[:])), newEventAttribute("mithril_certified", fmt.Sprint(certified)))
 			if err := writeClientState(ctx, cdc, private, cs); err != nil {
 				return nil, err
 			}

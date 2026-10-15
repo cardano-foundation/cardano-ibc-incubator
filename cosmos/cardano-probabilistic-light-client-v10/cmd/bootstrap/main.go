@@ -17,6 +17,7 @@ import (
 func run() error {
 	input := flag.String("input", "", "trusted JSON containing client and consensus records")
 	output := flag.String("output", "", "output bootstrap bundle for Hermes")
+	aggregator := flag.String("mithril-aggregator", "", "optional Mithril aggregator URL that anchors the client to Mithril-certified stake")
 	flag.Parse()
 	if *input == "" || *output == "" {
 		return fmt.Errorf("both -input and -output are required")
@@ -34,6 +35,11 @@ func run() error {
 	}
 	if trusted.Client == nil || trusted.Consensus == nil {
 		return fmt.Errorf("trusted client and consensus are required")
+	}
+	if *aggregator != "" {
+		if err := lc.AnchorToMithril(trusted.Client, *aggregator); err != nil {
+			return err
+		}
 	}
 	client, consensus, steps, err := lc.BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, trusted.Client, trusted.Consensus)
 	if err != nil {

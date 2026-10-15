@@ -13,6 +13,14 @@ func BuildBootstrap(store storetypes.KVStore, client *ClientState, consensus *Co
 	compact, initial, steps, err := state.BuildBootstrap(store, toCoreClientState(client), toCoreConsensusState(consensus))
 	return fromCoreClientState(compact), fromCoreConsensusState(initial), mapCoreSlice(steps, fromCoreProbabilisticHeader), err
 }
+func AnchorToMithril(client *ClientState, aggregator string) error {
+	anchored := toCoreClientState(client)
+	if err := state.AnchorToMithril(anchored, aggregator); err != nil {
+		return err
+	}
+	*client = *fromCoreClientState(anchored)
+	return nil
+}
 func BuildObservationPlan(client *ClientState, header *ProbabilisticHeader, original []byte, priorRows uint64, blocksPerStep int) ([]*ProbabilisticHeader, []byte, error) {
 	plan, err := state.BuildObservationPlan(toCoreClientState(client), toCoreProbabilisticHeader(header), original, priorRows, blocksPerStep)
 	if err != nil {

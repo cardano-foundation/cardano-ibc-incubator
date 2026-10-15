@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -98,9 +99,22 @@ func TestMainnetStakeDistributionMatchesItsCertificate(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, root, changed)
 	_, err = StakeDistributionRoot(append(entries, entries[1]))
-	require.ErrorContains(t, err, "duplicate pool ID")
+	require.ErrorContains(t, err, "strictly increasing")
 	_, err = StakeDistributionRoot(nil)
 	require.Error(t, err)
+
+	// Entries supplied one at a time in pool ID order give the same root.
+	entries[0].Stake--
+	sort.Slice(entries, func(i, j int) bool { return entries[i].PoolID < entries[j].PoolID })
+	var builder StakeRootBuilder
+	for _, entry := range entries {
+		require.NoError(t, builder.Append(entry.PoolID, entry.Stake))
+	}
+	require.LessOrEqual(t, len(builder.Peaks), 12)
+	incremental, err := builder.Root()
+	require.NoError(t, err)
+	require.Equal(t, root, incremental)
+	require.ErrorContains(t, builder.Append(entries[0].PoolID, 1), "strictly increasing")
 }
 
 func TestProtocolParametersHashMatchesTheNextEpoch(t *testing.T) {

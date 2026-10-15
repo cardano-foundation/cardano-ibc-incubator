@@ -16,4 +16,5 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 	registry.RegisterImplementations((*exported.Height)(nil), &Height{})
 	registry.RegisterImplementations((*exported.ClientMessage)(nil), &Misbehaviour{})
 	registry.RegisterImplementations((*exported.ClientMessage)(nil), &ProbabilisticHeader{})
+	registry.RegisterImplementations((*exported.ClientMessage)(nil), &MithrilStakeCertificates{})
 }

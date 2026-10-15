@@ -9,7 +9,8 @@ if (process.env.CARDANO_CLIENT_PREPARER) {
   mkdirSync(resolve(gateway, 'bin'), { recursive: true });
   const result = spawnSync('go', ['build', '-trimpath', '-o', resolve(gateway, 'bin/prepare-client'), './cmd/prepare-client'], {
     cwd: resolve(gateway, '../../cosmos/cardano-probabilistic-light-client-v8'),
-    env: { ...process.env, GOWORK: 'off', CGO_ENABLED: '0' }, stdio: 'inherit',
+    // Mithril certificate verification uses blst, which needs cgo.
+    env: { ...process.env, GOWORK: 'off', CGO_ENABLED: '1', CGO_CFLAGS: '-O2 -D__BLST_PORTABLE__' }, stdio: 'inherit',
   });
   if (result.error) throw result.error;
   process.exitCode = result.status ?? 1;
