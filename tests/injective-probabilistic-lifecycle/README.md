@@ -23,3 +23,26 @@ The lifecycle opens a channel through signed transactions. It receives a packet 
 The recorded lifecycle passes under the captured capacity limits. Its challenge is 127,909 bytes and uses 27,376,131 gas. Authorized recovery reaches checkpoint `1032`. A fresh response window blocks packet use until its deadline. The old checkpoint's proof still fails afterward. Packets then deliver a total of 300 voucher units and retain successful acknowledgements across a host restart.
 
 The larger cases fail under those limits. A 3,815,978-byte challenge passes transaction admission but execution runs out of gas with a 75 million gas allowance. The client remains unfrozen. A 5,241,616-byte challenge is rejected by the block-size precheck. Their proposals are also rejected for insufficient gas. This is not a reproduced example of an admitted proposal whose challenge cannot execute. It establishes that these supported evidence cases do not work under the captured public capacity settings. Both pairs commit under the larger local profile. The near-limit proposal uses 242,851,313 gas and its challenge uses 214,433,028 gas. These results leave the production capacity gate open. No relayer or verifier limits were increased by this test.
+
+Storage version `2` has a separate bounded execution replay. Its [recorded results](evidence/bounded-results.json) use the same pinned native `InjectiveApp` and captured gas parameters. A separate socket ABCI process executes the actual application with persistent stores and a controlled clock. The source CLI does not support standalone ABCI. This replay therefore does not measure public CometBFT inclusion or elapsed detection time. It uses seven days of source trust for the deliberately sparse synthetic Cardano history.
+
+Prepare the native graph with the bounded helper target. `prepare.sh` still builds `injectived`. The bounded helper constructs that same native application for the controlled-clock replay.
+
+```sh
+INJECTIVE_PROBE_IMAGE=local/injective-bounded-verification \
+INJECTIVE_PROBE_BUILDER_IMAGE=local/injective-bounded-verification-builder \
+INJECTIVE_PROBE_HELPER_IMAGE=local/injective-bounded-verification-probe \
+INJECTIVE_PROBE_TARGET=bounded-probe \
+bash tests/injective-probabilistic-lifecycle/prepare.sh "$HOME/injective-bounded-build"
+
+python3 tests/injective-probabilistic-lifecycle/run_bounded.py "$HOME/injective-bounded-size" --fixture size
+python3 tests/injective-probabilistic-lifecycle/run_bounded.py "$HOME/injective-bounded-limit" --fixture limit
+python3 tests/injective-probabilistic-lifecycle/run_bounded.py "$HOME/injective-bounded-small-proposal" --fixture limit --small-proposal
+python3 tests/injective-probabilistic-lifecycle/run_bounded.py "$HOME/injective-bounded-combined" --fixture combined --small-proposal
+python3 tests/injective-probabilistic-lifecycle/run_bounded.py "$HOME/injective-bounded-lifecycle" --fixture lifecycle
+python3 tests/injective-probabilistic-lifecycle/run_bounded.py "$HOME/injective-bounded-lifecycle" --fixture lifecycle --resume
+```
+
+The size and near-limit observations now admit their proposals and commit honest challenges on the resulting state. One case gives the proposal 13 pool rows and the alternative 4,000 rows. Their largest signed transaction is 42,398 bytes. Peak execution is about 2.48 million gas. The largest requested allowance is about 4.45 million gas after the `1.8` multiplier. Their public client is 531 bytes and the final receipt challenge uses about 161,000 execution gas. These are measurements of these fixtures rather than worst-case certification for every supported mutation pattern.
+
+The lifecycle opens a channel and receives a packet. It then commits the proposal and challenge, rejects frozen proof use and rejects unauthorized recovery. Expedited governance approves the replacement. The bounded recovery continuation installs generation `2`. Early proof use fails. Proofs at a genuinely accepted height from the discarded generation still fail after the fresh window. Subsequent packets produce 300 voucher units and three successful acknowledgements. Restart checks the persisted client and those acknowledgements.

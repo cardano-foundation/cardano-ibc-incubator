@@ -1,5 +1,7 @@
 # Cardano Probabilistic Light Client Core
 
+Storage version `2` adds small public records, shared destination snapshots and bounded observation verification. Its twelve-hour response window and per-transaction resource limits are described in [the storage and verification design](../../docs/probabilistic-bounded-verification.md). The earlier single-transaction limits and three-minute window below describe storage version `0`.
+
 This module contains shared Cardano/probabilistic verification logic used by the `ibc-go` versioned adapters:
 
 ```text

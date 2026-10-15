@@ -1,5 +1,7 @@
 ## Probabilistic Light Client Design
 
+Storage version `2` adds small public records, shared destination snapshots and bounded observation verification. Its twelve-hour response window and per-transaction resource limits are described in [the storage and verification design](probabilistic-bounded-verification.md). The earlier single-transaction limits and three-minute window below describe storage version `0`.
+
 Author: Julius Tranquilli, https://github.com/floor-licker
 
 Date: April 7, 2026
