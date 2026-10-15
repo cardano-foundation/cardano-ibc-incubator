@@ -49,6 +49,10 @@ func VerifyIbcStateMembership(root []byte, key []byte, value []byte, proofBytes 
 }
 
 func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committedValue []byte) error {
+	// Each leaf names its codec. Fail closed on one this release cannot read.
+	if err := codec.RequireSupportedCodec(committedValue); err != nil {
+		return err
+	}
 	keyStr := string(key)
 
 	switch {
