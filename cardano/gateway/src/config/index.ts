@@ -163,6 +163,7 @@ export default (): Partial<Config> => {
   const cardanoLightClientMode =
     process.env.CARDANO_LIGHT_CLIENT_MODE === 'mithril' ? 'mithril' : 'stake-weighted-stability';
   const cardanoEpochParamsEndpoint =
+    (process.env.CARDANO_NETWORK_MAGIC === '42' ? process.env.CARDANO_EPOCH_PARAMS_ENDPOINT : undefined) ||
     process.env.CARDANO_BLOCKFROST_ENDPOINT || defaultBlockfrostEndpoint(process.env.CARDANO_NETWORK_MAGIC);
   if (cardanoLightClientMode === 'stake-weighted-stability') {
     validatePublicNetworkStabilityConfig(cardanoNetwork, cardanoEpochParamsEndpoint);

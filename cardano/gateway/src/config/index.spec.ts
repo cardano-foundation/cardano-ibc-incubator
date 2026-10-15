@@ -79,6 +79,7 @@ describe('Public network stability configuration', () => {
       'CARDANO_NETWORK_MAGIC',
       'CARDANO_LIGHT_CLIENT_MODE',
       'CARDANO_BLOCKFROST_ENDPOINT',
+      'CARDANO_EPOCH_PARAMS_ENDPOINT',
       'CARDANO_STABILITY_ASSUME_STATIC_STAKE',
       'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT',
       'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE',
@@ -95,6 +96,18 @@ describe('Public network stability configuration', () => {
 
   it('uses hosted Blockfrost on Mainnet by default', () => {
     process.env.CARDANO_NETWORK_MAGIC = '764824073';
+    expect(loadConfig().cardanoEpochParamsEndpoint).toBe('https://cardano-mainnet.blockfrost.io/api/v0');
+  });
+
+  it('uses the configured HTTP nonce provider on the explicit local devnet', () => {
+    process.env.CARDANO_NETWORK_MAGIC = '42';
+    process.env.CARDANO_EPOCH_PARAMS_ENDPOINT = 'http://127.0.0.1:62447';
+    expect(loadConfig().cardanoEpochParamsEndpoint).toBe('http://127.0.0.1:62447');
+  });
+
+  it('does not apply the local nonce provider to a public network', () => {
+    process.env.CARDANO_NETWORK_MAGIC = '764824073';
+    process.env.CARDANO_EPOCH_PARAMS_ENDPOINT = 'http://127.0.0.1:62447';
     expect(loadConfig().cardanoEpochParamsEndpoint).toBe('https://cardano-mainnet.blockfrost.io/api/v0');
   });
 
