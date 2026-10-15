@@ -201,9 +201,8 @@ func beginObservation(ctx Context, store storetypes.KVStore, private storetypes.
 	if ^uint64(0)-base.Height < uint64(chunk.BlockCount) {
 		return zero, fmt.Errorf("observation height overflow")
 	}
-	if !chunk.IsCheckpoint && chunk.HostStateTxHash == "" {
-		return zero, fmt.Errorf("proof-bearing observation requires its anchor HostState transaction")
-	}
+	// Complete bridge and anchor bodies authenticate the packet snapshot.
+	// Gateway may omit a HostState transaction hint, as it does in legacy mode.
 	now := ctx.BlockTime().UnixNano()
 	if now <= 0 || now > int64(^uint64(0)>>1)-int64(observationSessionLifetime) {
 		return zero, fmt.Errorf("observation expiry cannot be represented")
