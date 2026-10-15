@@ -44,6 +44,9 @@ func makeNativeBoundaryFixture(t *testing.T, countStall bool, paddingBytes int) 
 }
 
 func makeNativeBoundaryFixtureAtHeight(t *testing.T, countStall bool, paddingBytes int, trustedHeight uint64) nativeBoundaryFixture {
+	return makeNativeBoundaryFixtureAtHeightAndFork(t, countStall, paddingBytes, trustedHeight, 0)
+}
+func makeNativeBoundaryFixtureAtHeightAndFork(t *testing.T, countStall bool, paddingBytes int, trustedHeight, forkOverride uint64) nativeBoundaryFixture {
 	t.Helper()
 	cs := newProbabilisticTestClientState()
 	if trustedHeight == 904 {
@@ -117,7 +120,8 @@ func makeNativeBoundaryFixtureAtHeight(t *testing.T, countStall bool, paddingByt
 		}
 		for n := trustedHeight + 1; n <= lastHeight; n++ {
 			if n == forkHeight {
-				slot = header.BridgeBlocks[n-trustedHeight-1].Slot + 1
+				original := append(append(append([]*ProbabilisticBlock{}, header.BridgeBlocks...), header.AnchorBlock), header.DescendantBlocks...)
+				slot = original[n-trustedHeight-1].Slot + 1
 			}
 			producerIndex := int((n - 967) % 11)
 			if countStall && n <= 1000 {
@@ -211,6 +215,9 @@ func makeNativeBoundaryFixtureAtHeight(t *testing.T, countStall bool, paddingByt
 	forkHeight := uint64(977)
 	if countStall || trustedHeight == 904 {
 		forkHeight = trustedHeight + 1
+	}
+	if forkOverride != 0 {
+		forkHeight = forkOverride
 	}
 	fork := makeHeader(forkHeight)
 	return nativeBoundaryFixture{Client: cs, Consensus: consensus, Header: header, Fork: fork}

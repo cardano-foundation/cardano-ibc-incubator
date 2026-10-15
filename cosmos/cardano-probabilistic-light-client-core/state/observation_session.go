@@ -88,6 +88,9 @@ func (h ProbabilisticHeader) validateObservationChunk() error {
 	} else if chunk.Operation < ObservationBootstrapImport && chunk.Operation != ObservationCleanup && len(chunk.SessionId) != 32 {
 		return fmt.Errorf("observation operation requires a 32-byte session id")
 	}
+	if chunk.Operation == ObservationBootstrapImport && len(chunk.Objects) > maxBootstrapPagesPerStep*(SnapshotPageBytes+64) {
+		return fmt.Errorf("bootstrap object payload exceeds its page bound")
+	}
 	return nil
 }
 func observationSessionKey(namespace []byte, generation uint64, id []byte) []byte {

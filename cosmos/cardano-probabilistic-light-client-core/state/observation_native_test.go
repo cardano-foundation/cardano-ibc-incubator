@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
+	core "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	"os"
 	"testing"
 	"time"
@@ -24,6 +26,7 @@ func runObservationStep(t *testing.T, ctx Context, cdc StateCodec, private store
 }
 func TestStagedNativeBoundaryDifferential(t *testing.T) {
 	fixture := makeNativeBoundaryFixture(t, false, 80*1024)
+	fixture.Client.TrustingPeriod = 7 * 24 * time.Hour
 	// This logical window deliberately exceeds a one-transaction header limit.
 	require.Greater(t, len(fixture.Header.BridgeBlocks), 30)
 	meter := storetypes.NewInfiniteGasMeter()
@@ -33,7 +36,8 @@ func TestStagedNativeBoundaryDifferential(t *testing.T) {
 	cdc := jsonTestCodec{}
 	client, _, err := EnableSharedSnapshots(ctx, cdc, private, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
-	ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod)
+	ctx.VerifyHostUsability = stagedTestHostWindow
+	ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod + 2*time.Second)
 	base := bytes.Clone(client.CheckpointReference)
 	plan, err := BuildObservationPlan(client, fixture.Header, nil, uint64(len(fixture.Client.EpochStakeDistribution)), 4)
 	require.NoError(t, err)
@@ -67,8 +71,56 @@ func TestStagedNativeBoundaryDifferential(t *testing.T) {
 	require.NoError(t, err)
 	auth, err := fixture.Client.authenticateHeaderBlocksWithContexts(fixture.Header, append(fixture.Client.EpochContexts, fixture.Header.NewEpochContext), trusted.operationalCertificateCounters, trusted)
 	require.NoError(t, err)
+	require.NoError(t, attachSettlementCredit(auth, trusted, append(fixture.Client.EpochContexts, fixture.Header.NewEpochContext)))
+	require.NoError(t, attachPoolProduction(auth, trusted))
 	require.Equal(t, auth.anchorNonceState, cp.Nonce)
 	require.Equal(t, auth.anchorBlock.hash, client.LatestCheckpointBlockHash)
+	for _, counter := range auth.anchorOperationalCertificateCounters {
+		raw, found, err := NewSnapshotMap(shared, cp.Scope, snapshotCounters).Lookup(cp.Counters, counter.PoolId)
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, counter.SequenceNumber, binary.BigEndian.Uint64(raw))
+	}
+	for _, binding := range auth.anchorPoolRegistry.Effective {
+		stored, found, err := lookupBinding(shared, cp.Scope, cp.Registry.Effective, mustPoolKey(t, binding.PoolId))
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, binding, stored)
+	}
+	credits, err := settlementCreditMap(auth.anchorSettlementCredit.Reference)
+	require.NoError(t, err)
+	for name, expected := range credits {
+		got, err := lookupCredit(shared, cp.Scope, cp.Credit, mustPoolKey(t, name))
+		require.NoError(t, err)
+		require.Zero(t, got.Cmp(expected))
+	}
+	for _, expected := range auth.anchorPoolProduction.Pools {
+		got, err := lookupProduction(shared, cp.Scope, cp.Production, mustPoolKey(t, expected.PoolId), cp.Epoch)
+		require.NoError(t, err)
+		require.Equal(t, expected, got)
+	}
+	previous, err := core.DecodePacketStateSnapshot(fixture.Consensus.PacketStateSnapshot)
+	require.NoError(t, err)
+	var bodies [][]byte
+	for _, block := range append(append([]*ProbabilisticBlock{}, fixture.Header.BridgeBlocks...), fixture.Header.AnchorBlock) {
+		bodies = append(bodies, block.BlockCbor)
+	}
+	expectedPacket, err := core.AdvancePacketStateSnapshot(previous, bodies, client.PacketLanePolicyId, client.HostStateNftPolicyId, client.HostStateNftTokenName)
+	require.NoError(t, err)
+	packet, err := loadPacketCheckpoint(shared, cp.Scope, cp.PacketReference)
+	require.NoError(t, err)
+	actualPacket := packetSubset(packet)
+	_, err = NewSnapshotMap(shared, cp.Scope, snapshotPacketLanes).Visit(packet.Lanes, nil, 128, func(key, value []byte) error {
+		lane, err := decodePacketLane(value, packet.Height)
+		if err != nil {
+			return err
+		}
+		actualPacket.Lanes[hex.EncodeToString(key)] = lane
+		return nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, expectedPacket, actualPacket)
+
 	// Descendants' counters and production never replace anchor state.
 	production, err := lookupProduction(shared, cp.Scope, cp.Production, mustPoolKey(t, fixture.Client.EpochStakeDistribution[0].PoolId), cp.Epoch)
 	require.NoError(t, err)
@@ -99,6 +151,7 @@ func savedNativeBoundary(t *testing.T, name string) nativeBoundaryFixture {
 }
 func TestReceiptChallengeAndRecoveryUsePinnedHistory(t *testing.T) {
 	fixture := savedNativeBoundary(t, "size")
+	fixture.Client.TrustingPeriod = 7 * 24 * time.Hour
 	shared := dbadapter.Store{DB: dbm.NewMemDB()}
 	subjectPrivate := dbadapter.Store{DB: dbm.NewMemDB()}
 	substitutePrivate := dbadapter.Store{DB: dbm.NewMemDB()}
@@ -108,7 +161,8 @@ func TestReceiptChallengeAndRecoveryUsePinnedHistory(t *testing.T) {
 	require.NoError(t, err)
 	substitute, _, err := EnableSharedSnapshots(ctx, cdc, substitutePrivate, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
-	ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod)
+	ctx.VerifyHostUsability = stagedTestHostWindow
+	ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod + 2*time.Second)
 	plan, err := BuildObservationPlan(subject, fixture.Header, nil, 13, 4)
 	require.NoError(t, err)
 	for _, step := range plan.Steps {
@@ -185,5 +239,38 @@ func TestStagingRetriesAndOrderingDoNotChangeDeadlines(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, first, retry)
 	require.Error(t, client.VerifyClientMessage(ctx, cdc, private, plan.Steps[3]))
+	require.Equal(t, fixture.Client.LatestCheckpointHeight, client.LatestCheckpointHeight)
+}
+
+func stagedTestHostWindow(current Context, deadline uint64) error {
+	return VerifyHostWindow(current, deadline, &HostProgress{Height: current.Height, TimeUnixNs: uint64(current.BlockTime().UnixNano()), PreviousTimeUnixNs: uint64(current.BlockTime().Add(-time.Nanosecond).UnixNano()), ResumeUsableAfterUnixNs: 1})
+}
+
+func TestNativeReceiptsIgnoreDifferentTemporaryTails(t *testing.T) {
+	fixture := makeNativeBoundaryFixtureAtHeightAndFork(t, false, 0, 966, 1005)
+	earlier := *fixture.Header
+	earlier.AnchorBlock = earlier.BridgeBlocks[len(earlier.BridgeBlocks)-1]
+	earlier.BridgeBlocks = earlier.BridgeBlocks[:len(earlier.BridgeBlocks)-1]
+	earlier.DescendantBlocks = append([]*ProbabilisticBlock{fixture.Header.AnchorBlock}, fixture.Header.DescendantBlocks...)
+	shared := dbadapter.Store{DB: dbm.NewMemDB()}
+	private := dbadapter.Store{DB: dbm.NewMemDB()}
+	ctx := Context{Time: time.Unix(0, int64(fixture.Fork.DescendantBlocks[len(fixture.Fork.DescendantBlocks)-1].Timestamp)).Add(time.Hour), Height: 1, SelfHeight: NewHostHeight(0, 1), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
+	cdc := jsonTestCodec{}
+	client, _, err := EnableSharedSnapshots(ctx, cdc, private, fixture.Client, fixture.Consensus)
+	require.NoError(t, err)
+	receipts := [][]byte{}
+	for _, header := range []*ProbabilisticHeader{&earlier, fixture.Fork} {
+		plan, err := BuildObservationPlan(client, header, nil, 13, 4)
+		require.NoError(t, err)
+		for _, step := range plan.Steps {
+			runObservationStep(t, ctx, cdc, private, client, step)
+		}
+		session, err := loadObservationSession(shared, client, plan.SessionID[:])
+		require.NoError(t, err)
+		receipts = append(receipts, session.Receipt)
+	}
+	evidence := &Misbehaviour{VerifiedObservation_1: receipts[0], VerifiedObservation_2: receipts[1]}
+	require.ErrorIs(t, client.VerifyClientMessage(ctx, cdc, private, evidence), ErrIBCInvalidMisbehaviour)
+	require.False(t, client.CheckForMisbehaviour(ctx, cdc, private, evidence))
 	require.Equal(t, fixture.Client.LatestCheckpointHeight, client.LatestCheckpointHeight)
 }

@@ -40,6 +40,19 @@ func validateThinClient(cs *ClientState) error {
 	if cs.LatestHeight == nil || cs.LatestCheckpointHeight == nil || cs.LatestHeight.IsZero() || cs.LatestCheckpointHeight.IsZero() || cs.ChainId == "" || cs.TrustingPeriod <= 0 || cs.MaxClockDrift <= 0 {
 		return fmt.Errorf("compact client configuration and cursors must be complete")
 	}
+	if len(cs.ChainId) > 50 || len(cs.HostStateNftPolicyId) != 28 || len(cs.PacketLanePolicyId) != 28 || len(cs.HostStateNftTokenName) == 0 || len(cs.HostStateNftTokenName) > 32 || cs.SlotLengthNs == 0 || cs.SystemStartUnixNs == 0 || cs.SlotsPerKesPeriod == 0 || cs.MaxKesEvolutions == 0 || cs.MaxKesEvolutions > maxSupportedKesEvolutions || cs.ActiveSlotCoefficientNumerator == 0 || cs.ActiveSlotCoefficientDenominator == 0 || cs.ActiveSlotCoefficientNumerator > cs.ActiveSlotCoefficientDenominator {
+		return fmt.Errorf("compact client has invalid immutable network rules")
+	}
+	if cs.LatestHeight.RevisionNumber != 0 || cs.LatestCheckpointHeight.RevisionNumber != 0 || cs.LatestCheckpointHeight.LT(cs.LatestHeight) || cs.CurrentEpoch != cs.LatestCheckpointEpoch {
+		return fmt.Errorf("compact client checkpoint position is invalid")
+	}
+	if _, err := decodeBlockHash(cs.LatestCheckpointBlockHash); err != nil {
+		return err
+	}
+	derived, err := cs.DeriveTimestampFromSlot(cs.LatestCheckpointSlot)
+	if err != nil || derived != cs.LatestCheckpointTimestamp {
+		return fmt.Errorf("compact checkpoint timestamp is not derived from its slot")
+	}
 	if err := cs.validateNonceConfiguration(); err != nil {
 		return err
 	}

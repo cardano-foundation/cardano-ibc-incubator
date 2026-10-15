@@ -193,6 +193,10 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 			if err != nil {
 				return nil, err
 			}
+			trusted, found := GetConsensusState(private, cdc, cs.LatestHeight)
+			if !found || cs.TrustingPeriod <= 0 || trusted.Timestamp > ^uint64(0)-uint64(cs.TrustingPeriod) || trusted.Timestamp+uint64(cs.TrustingPeriod) <= deadline {
+				return nil, fmt.Errorf("proposal must leave its entire response window inside the client's trusting period")
+			}
 			receipt.ActivatedAt = uint64(ctx.BlockTime().UnixNano())
 			receipt.Deadline = deadline
 			accepted, err := saveVerifiedObservation(store, receipt)

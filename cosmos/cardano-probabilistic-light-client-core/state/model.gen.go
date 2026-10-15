@@ -224,9 +224,3 @@ type MsgContinueClient struct {
 
 type MsgContinueClientResponse struct {
 }
-
-type UnimplementedQueryServer struct {
-}
-
-type UnimplementedMsgServer struct {
-}
