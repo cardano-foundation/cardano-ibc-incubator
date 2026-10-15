@@ -138,6 +138,24 @@ describe('direct Yaci REST history', () => {
     expect(blocks).toHaveBeenCalledTimes(2);
   });
 
+  it('excludes the empty Yaci genesis placeholder while retaining real block zero', async () => {
+    const fixture = restBlockFixture();
+    const { source } = provider([fixture]);
+    const first = { ...fixture.metadata, number: 0, slot: 8 };
+    const genesis = { number: -1, slot: -1, epoch: 0, tx_count: 0, size: 0, slot_leader: null, issuer_vkey: null };
+    jest.spyOn(source.api, 'json').mockResolvedValue({ total_pages: 1, blocks: [first, genesis] });
+    await expect(source.firstBlockInEpoch(0)).resolves.toMatchObject({ number: 0, slot: 8 });
+    await expect(source.latestBlockInEpoch(0)).resolves.toMatchObject({ number: 0, slot: 8 });
+    await expect(source.epochBlocks(0)).resolves.toMatchObject([{ number: 0, slot: 8 }]);
+    for (const change of [{ number: -2 }, { slot: 0 }, { epoch: 1 }, { tx_count: 1 }, { size: 1 },
+      { slot_leader: fixture.metadata.slot_leader }, { issuer_vkey: '11'.repeat(32) }]) {
+      jest.mocked(source.api.json).mockResolvedValue({ total_pages: 1, blocks: [first, { ...genesis, ...change }] });
+      await expect(source.firstBlockInEpoch(0)).rejects.toThrow('Invalid Yaci transaction height');
+      await expect(source.latestBlockInEpoch(0)).rejects.toThrow('Invalid Yaci transaction height');
+      await expect(source.epochBlocks(0)).rejects.toThrow('Invalid Yaci transaction height');
+    }
+  });
+
   it('starts at page one and fails if pagination repeats instead of looping', async () => {
     const { source, request } = provider([restBlockFixture()]);
     jest.spyOn(source.api, 'json').mockResolvedValue(Array.from({ length: 100 }, (_, n) => ({ unit: '33'.repeat(28) + n.toString(16).padStart(2, '0') })));
