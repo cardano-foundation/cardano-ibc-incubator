@@ -107,7 +107,7 @@ func boundedPrepare(encoding injcodec.EncodingConfig, address string) {
 	ctx := sdk.Context{}.WithMultiStore(ms).WithBlockTime(time.Now().Add(-5 * time.Minute)).WithBlockHeight(1).WithChainID("injective-777").WithGasMeter(storetypes.NewInfiniteGasMeter()).WithEventManager(sdk.NewEventManager())
 	clients, consensuses, metadatas := []any{}, []any{}, []any{}
 	for i, key := range keys {
-		cs, cons, err := lc.InitializeFromTrustedCheckpoint(ctx, encoding.Codec, ctx.KVStore(key), f.Client, f.Consensus)
+		cs, cons, err := lc.InitializeFromTrustedCheckpoint(ctx, encoding.Codec, ctx.KVStore(key), f.Client, f.Consensus, certifyBootstrap(f.Client))
 		must(err)
 		id := fmt.Sprintf("%s-%d", lc.ModuleName, i)
 		clients = append(clients, map[string]any{"client_id": id, "client_state": anyJSON(encoding.Codec, cs)})

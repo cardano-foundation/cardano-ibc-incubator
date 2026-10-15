@@ -44,50 +44,76 @@ func newAnchoredClient(t *testing.T) *anchoredClient {
 	require.NotNil(t, table)
 	network, err := mithriltest.NewNetwork(100, 200, 300, 400, 500)
 	require.NoError(t, err)
-	anchorToLocalMithril(t, fixture.Client, network)
-	anchor := network.Anchor(table.Epoch - 1)
-	require.Equal(t, anchor, mithril.Anchor{Epoch: fixture.Client.MithrilEpoch, AggregateVerificationKey: fixture.Client.MithrilAggregateVerificationKey, ProtocolParametersHash: fixture.Client.MithrilProtocolParametersHash})
+	certificate := anchorToLocalMithril(t, fixture.Client, network)
+	require.Equal(t, network.Anchor(fixture.Client.CurrentEpoch-1), mithril.Anchor{Epoch: fixture.Client.MithrilEpoch, AggregateVerificationKey: fixture.Client.MithrilAggregateVerificationKey, ProtocolParametersHash: fixture.Client.MithrilProtocolParametersHash})
 
 	shared := dbadapter.Store{DB: dbm.NewMemDB()}
 	private := dbadapter.Store{DB: dbm.NewMemDB()}
 	ctx := Context{Time: time.Unix(0, int64(fixture.Header.DescendantBlocks[len(fixture.Header.DescendantBlocks)-1].Timestamp)).Add(time.Hour), Height: 1, SelfHeight: NewHostHeight(0, 1), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 	cdc := jsonTestCodec{}
-	client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, fixture.Client, fixture.Consensus)
+	client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, fixture.Client, fixture.Consensus, certificate)
 	require.NoError(t, err)
-	require.Equal(t, anchor.Epoch, client.MithrilEpoch)
+	// The bootstrap moves the anchor to the epoch whose certificates certify
+	// the table electing the next epoch's leaders.
+	require.Equal(t, network.Anchor(table.Epoch-1), mithril.Anchor{Epoch: client.MithrilEpoch, AggregateVerificationKey: client.MithrilAggregateVerificationKey, ProtocolParametersHash: client.MithrilProtocolParametersHash})
 	ctx.VerifyHostUsability = stagedTestHostWindow
-	ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod + 2*time.Second)
+	// The certified bootstrap table is usable after the next block.
+	ctx.Time = ctx.Time.Add(time.Second)
 	return &anchoredClient{ctx: ctx, cdc: cdc, private: private, shared: shared, client: client, fixture: fixture, network: network, table: table, base: bytes.Clone(client.CheckpointReference)}
 }
 
-// anchorToLocalMithril anchors a trusted bootstrap client through an aggregator
-// serving the certificate that sealed the stake electing its current epoch.
-func anchorToLocalMithril(t *testing.T, client *ClientState, network *mithriltest.Network) {
+// localAggregator serves certified stake distributions by epoch, each with
+// its certificate.
+func localAggregator(t *testing.T, distributions map[uint64]map[string]uint64, certificates map[uint64]string) *httptest.Server {
 	t.Helper()
-	table := epochContextByEpoch(client.EpochContexts, client.CurrentEpoch)
-	require.NotNil(t, table)
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hash := func(epoch uint64) string { return strings.Repeat(strconv.FormatUint(epoch%10, 10), 64) }
+		if text, ok := strings.CutPrefix(r.URL.Path, "/artifact/cardano-stake-distribution/epoch/"); ok {
+			epoch, err := strconv.ParseUint(text, 10, 64)
+			if _, found := certificates[epoch]; err == nil && found {
+				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"epoch": epoch, "certificate_hash": hash(epoch), "stake_distribution": distributions[epoch]}))
+				return
+			}
+		}
+		for epoch, certificate := range certificates {
+			if r.URL.Path == "/certificate/"+hash(epoch) {
+				_, _ = w.Write([]byte(certificate))
+				return
+			}
+		}
+		http.NotFound(w, r)
+	}))
+}
+
+func tableDistribution(table *EpochContext) map[string]uint64 {
 	distribution := map[string]uint64{}
 	for _, entry := range table.StakeDistribution {
 		distribution[entry.PoolId] = entry.Stake
 	}
-	certificate, err := network.StakeCertificate(client.CurrentEpoch-1, network, tableRoot(t, table))
-	require.NoError(t, err)
-	hash := strings.Repeat("cd", 32)
-	aggregator := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/artifact/cardano-stake-distribution/epoch/" + strconv.FormatUint(client.CurrentEpoch-2, 10):
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"epoch": client.CurrentEpoch - 2, "certificate_hash": hash, "stake_distribution": distribution}))
-		case "/certificate/" + hash:
-			_, _ = w.Write([]byte(certificate))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer aggregator.Close()
-	require.NoError(t, AnchorToMithril(client, aggregator.URL))
+	return distribution
 }
 
-func tableRoot(t *testing.T, table *EpochContext) string {
+// anchorToLocalMithril prepares a trusted bootstrap client through an
+// aggregator, as the bootstrap tool does, and returns the certificate that
+// completes its bootstrap. The certificate sealing the distribution three
+// epochs back names the anchor. The next one certifies the client's table.
+func anchorToLocalMithril(t *testing.T, client *ClientState, network *mithriltest.Network) []byte {
+	t.Helper()
+	table := epochContextByEpoch(client.EpochContexts, client.CurrentEpoch)
+	require.NotNil(t, table)
+	earlier, err := network.StakeCertificate(client.CurrentEpoch-2, network, strings.Repeat("ab", 32))
+	require.NoError(t, err)
+	_, certificate, err := network.Bootstrap(client.CurrentEpoch, tableRoot(t, table))
+	require.NoError(t, err)
+	aggregator := localAggregator(t, map[uint64]map[string]uint64{client.CurrentEpoch - 2: tableDistribution(table)}, map[uint64]string{client.CurrentEpoch - 3: earlier, client.CurrentEpoch - 2: certificate})
+	defer aggregator.Close()
+	bootstrap, err := AnchorToMithril(client, aggregator.URL)
+	require.NoError(t, err)
+	require.Equal(t, certificate, string(bootstrap))
+	return bootstrap
+}
+
+func tableRoot(t testing.TB, table *EpochContext) string {
 	t.Helper()
 	entries := make([]mithril.StakeEntry, 0, len(table.StakeDistribution))
 	for _, entry := range table.StakeDistribution {
@@ -274,30 +300,25 @@ func TestStakeRowsFollowMithrilOrder(t *testing.T) {
 	require.ErrorContains(t, appendObservationStake(store, session, row), "Mithril's pool ID order")
 }
 
-// The bootstrap tool refuses an anchor whose distribution is not the trusted table.
+// The bootstrap tool refuses a table that is not the distribution Mithril
+// certified.
 func TestBootstrapAnchorsMatchTheTrustedTable(t *testing.T) {
 	fixture := makeNativeBoundaryFixture(t, false, 0)
 	network, err := mithriltest.NewNetwork(100, 200, 300, 400, 500)
 	require.NoError(t, err)
 	current := epochContextByEpoch(fixture.Client.EpochContexts, fixture.Client.CurrentEpoch)
+	epoch := fixture.Client.CurrentEpoch
 	// Mithril certifies a distribution with one stake changed.
 	current.StakeDistribution[0].Stake++
-	certificate, err := network.StakeCertificate(fixture.Client.CurrentEpoch-1, network, tableRoot(t, current))
+	certified := tableDistribution(current)
+	_, certificate, err := network.Bootstrap(epoch, tableRoot(t, current))
 	require.NoError(t, err)
 	current.StakeDistribution[0].Stake--
-	distribution := map[string]uint64{}
-	for _, entry := range current.StakeDistribution {
-		distribution[entry.PoolId] = entry.Stake
-	}
-	distribution[current.StakeDistribution[0].PoolId]++
-	aggregator := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/certificate/") {
-			_, _ = w.Write([]byte(certificate))
-			return
-		}
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"epoch": fixture.Client.CurrentEpoch - 2, "certificate_hash": strings.Repeat("cd", 32), "stake_distribution": distribution}))
-	}))
+	earlier, err := network.StakeCertificate(epoch-2, network, strings.Repeat("ab", 32))
+	require.NoError(t, err)
+	aggregator := localAggregator(t, map[uint64]map[string]uint64{epoch - 2: certified}, map[uint64]string{epoch - 3: earlier, epoch - 2: certificate})
 	defer aggregator.Close()
-	require.ErrorContains(t, AnchorToMithril(fixture.Client, aggregator.URL), "differs from the bootstrap table")
+	_, err = AnchorToMithril(fixture.Client, aggregator.URL)
+	require.ErrorContains(t, err, "differs from the bootstrap table")
 	require.Zero(t, fixture.Client.MithrilEpoch)
 }

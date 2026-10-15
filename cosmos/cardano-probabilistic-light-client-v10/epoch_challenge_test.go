@@ -37,7 +37,10 @@ func TestEpochChallengeBlocksValidProofsUntilHostDeadline(t *testing.T) {
 			cs, consensus = installTestCheckpoint(t, ctx, cdc, store, cs, consensus)
 			cs, _ = getClientState(store, cdc)
 			require.Len(t, cs.EpochContextChallenges, 1)
-			require.Equal(t, uint64(ctx.BlockTime().Add(state.SharedSnapshotChallengePeriod).UnixNano()), cs.epochChallenge(7).UsableAfterUnixNs)
+			// The bootstrap table is Mithril-certified, so it needs no response window.
+			require.Equal(t, uint64(ctx.BlockTime().UnixNano()), cs.epochChallenge(7).UsableAfterUnixNs)
+			// An uncertified table waits for its response window.
+			cs.EpochContextChallenges = []*EpochContextChallenge{{Epoch: cs.CurrentEpoch, UsableAfterUnixNs: uint64(ctx.BlockTime().Add(state.SharedSnapshotChallengePeriod).UnixNano())}}
 
 			path := commitmenttypesv2.NewMerklePath([]byte("ibc"), key)
 			verify := func(offset time.Duration, blockHeight int64) error {

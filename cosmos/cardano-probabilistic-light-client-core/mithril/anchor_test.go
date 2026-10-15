@@ -2,17 +2,14 @@ package mithril
 
 import (
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func mainnetDistribution(t *testing.T) (map[string]uint64, string, []StakeEntry) {
+func mainnetDistribution(t *testing.T) []StakeEntry {
 	t.Helper()
 	var artifact struct {
-		CertificateHash   string            `json:"certificate_hash"`
 		StakeDistribution map[string]uint64 `json:"stake_distribution"`
 	}
 	require.NoError(t, json.Unmarshal(readFixture(t, "mainnet-stake-distribution-659.json.gz"), &artifact))
@@ -20,50 +17,46 @@ func mainnetDistribution(t *testing.T) (map[string]uint64, string, []StakeEntry)
 	for pool, stake := range artifact.StakeDistribution {
 		table = append(table, StakeEntry{PoolID: pool, Stake: stake})
 	}
-	return artifact.StakeDistribution, artifact.CertificateHash, table
+	return table
 }
 
 // Epoch 659's distribution elects epoch 661's leaders. Its certificate, sealed
 // in epoch 660, names the key that signs epoch 661's certificates.
 func TestMainnetStakeAnchor(t *testing.T) {
-	distribution, _, table := mainnetDistribution(t)
 	certificate := readFixture(t, "mainnet-epoch-660-certificate.json.gz")
-	anchor, err := StakeAnchor(certificate, distribution, 661, table)
+	anchor, err := StakeAnchor(certificate, 661)
 	require.NoError(t, err)
 	require.Equal(t, uint64(661), anchor.Epoch)
 	require.Equal(t, loadCertificate(t, "661").fields["aggregate_verification_key"], anchor.AggregateVerificationKey)
 	_, _, err = VerifyCertificates(anchor, []string{string(readFixture(t, "mainnet-epoch-661-certificate.json.gz"))})
 	require.NoError(t, err)
 
-	_, err = StakeAnchor(certificate, distribution, 662, table)
+	_, err = StakeAnchor(certificate, 662)
 	require.ErrorContains(t, err, "does not certify the epoch 660")
-	table[0].Stake++
-	_, err = StakeAnchor(certificate, distribution, 661, table)
-	require.ErrorContains(t, err, "differs from the bootstrap table")
-	_, err = StakeAnchor(certificate, distribution, 661, table[1:])
-	require.ErrorContains(t, err, "2671 pools but the bootstrap table has 2670")
-	distribution[table[0].PoolID]++
-	_, err = StakeAnchor(certificate, distribution, 661, table)
-	require.ErrorContains(t, err, "does not match its certificate")
+	_, err = StakeAnchor(certificate, 1)
+	require.ErrorContains(t, err, "at least 2")
 }
 
-func TestFetchStakeAnchorFromAnAggregator(t *testing.T) {
-	_, hash, table := mainnetDistribution(t)
-	aggregator := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/aggregator/artifact/cardano-stake-distribution/epoch/659":
-			_, _ = w.Write(readFixture(t, "mainnet-stake-distribution-659.json.gz"))
-		case "/aggregator/certificate/" + hash:
-			_, _ = w.Write(readFixture(t, "mainnet-epoch-660-certificate.json.gz"))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer aggregator.Close()
-
-	anchor, err := FetchStakeAnchor(aggregator.URL+"/aggregator/", 661, table)
+// With the anchor for epoch 661, epoch 661's certificate completes the
+// bootstrap of a client in epoch 662, whose leaders epoch 660's distribution
+// elects. Epoch 659's distribution matches the root that epoch 660's
+// certificate signs.
+func TestMainnetBootstrapStake(t *testing.T) {
+	anchor, err := StakeAnchor(readFixture(t, "mainnet-epoch-660-certificate.json.gz"), 661)
 	require.NoError(t, err)
-	require.Equal(t, loadCertificate(t, "661").fields["aggregate_verification_key"], anchor.AggregateVerificationKey)
-	_, err = FetchStakeAnchor(aggregator.URL+"/aggregator", 662, table)
-	require.ErrorContains(t, err, "404")
+	certificate := loadCertificate(t, "661")
+	root := certificate.parts()["cardano_stake_distribution_merkle_root"].(string)
+	next, err := VerifyBootstrapStake(anchor, certificate.raw, 662, root)
+	require.NoError(t, err)
+	require.Equal(t, uint64(662), next.Epoch)
+	require.Equal(t, certificate.parts()["next_aggregate_verification_key"], next.AggregateVerificationKey)
+
+	_, err = VerifyBootstrapStake(anchor, certificate.raw, 662, "00"+root[2:])
+	require.ErrorContains(t, err, "differs from the distribution Mithril certified")
+	_, err = VerifyBootstrapStake(anchor, certificate.raw, 663, root)
+	require.ErrorContains(t, err, "needs the Mithril anchor for epoch 662")
+
+	epoch659, err := StakeDistributionRoot(mainnetDistribution(t))
+	require.NoError(t, err)
+	require.Equal(t, loadCertificate(t, "660").parts()["cardano_stake_distribution_merkle_root"], epoch659)
 }

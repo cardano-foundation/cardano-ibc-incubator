@@ -1,3 +1,4 @@
+import { ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { bech32 } from 'bech32';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync, copyFileSync, existsSync } from 'node:fs';
@@ -30,7 +31,33 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-function setup(network = 'Preview', stakeRows = 13) {
+// A local Mithril network certifies each test's initial stake table, because
+// a client starts only from Mithril-certified stake.
+let aggregatorBinary: string;
+const aggregators: ChildProcess[] = [];
+beforeAll(() => {
+  aggregatorBinary = join(mkdtempSync(join(tmpdir(), 'mithril-test-aggregator-')), 'aggregator');
+  const result = spawnSync('go', ['build', '-o', aggregatorBinary, './mithril/mithriltest/cmd/aggregator'], {
+    cwd: resolve(__dirname, '../../../../../cosmos/cardano-probabilistic-light-client-core'),
+    env: { ...process.env, GOWORK: 'off', CGO_ENABLED: '1' },
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) throw new Error(`Building the test Mithril aggregator failed: ${result.stderr}`);
+}, 300_000);
+afterEach(() => aggregators.splice(0).forEach((child) => child.kill()));
+
+function localAggregator(epoch: bigint, table: { pool_id: string; stake: bigint }[]): Promise<string> {
+  const child = spawn(aggregatorBinary, [], { stdio: ['pipe', 'pipe', 'inherit'] });
+  aggregators.push(child);
+  const distribution = table.map((row) => `${JSON.stringify(row.pool_id)}:${row.stake.toString()}`).join(',');
+  child.stdin!.end(`{"epoch":${epoch.toString()},"stake_distribution":{${distribution}}}`);
+  return new Promise((accept, reject) => {
+    child.stdout!.once('data', (data) => accept(String(data).trim()));
+    child.once('exit', (code) => reject(new Error(`The test Mithril aggregator exited with ${code}`)));
+  });
+}
+
+async function setup(network = 'Preview', stakeRows = 13, mithril = true) {
   const raw = JSON.parse(
     gunzipSync(
       readFileSync(
@@ -64,7 +91,9 @@ function setup(network = 'Preview', stakeRows = 13) {
     timestampUnixNs: client.latest_checkpoint_timestamp,
   };
   const context = client.epoch_contexts[0];
+  const mithrilEndpoint = mithril ? await localAggregator(client.current_epoch, context.stake_distribution) : undefined;
   const values = {
+    mithrilEndpoint,
     cardanoChainId: client.chain_id,
     cardanoNetwork: network,
     ogmiosEndpoint: 'ws://operator-node',
@@ -156,12 +185,13 @@ function setup(network = 'Preview', stakeRows = 13) {
 it.each(['Custom', 'Preview'])(
   'creates a shared-storage client on %s without an operator file or settlement descendants',
   async (network) => {
-    const { service, history, block } = setup(network);
+    const { service, history, block } = await setup(network);
     const response = await service.queryNewClient(QueryNewClientRequest.fromPartial({ height: 0n }));
     const client = ClientState.decode(response.client_state!.value);
     const consensus = ConsensusState.decode(response.consensus_state!.value);
     expect(client.storage_version).toBe(2);
     expect(client.bootstrap_pending).toBe(true);
+    expect(client.mithril_epoch).toBe(client.current_epoch - 1n);
     expect(client.latest_height!.revision_height).toBe(BigInt(block.height));
     expect(client.epoch_stake_distribution).toEqual([]);
     expect(consensus.packet_state_snapshot).toHaveLength(0);
@@ -174,7 +204,7 @@ it.each(['Custom', 'Preview'])(
 );
 
 it('resumes a 4000-row initialization and exposes each bounded import through completion', async () => {
-  const { service, create, history, block } = setup('Preview', 4000);
+  const { service, create, history, block } = await setup('Preview', 4000);
   const initial = await service.queryNewClient(QueryNewClientRequest.fromPartial({ height: 0n }));
   const records = [Buffer.from(QueryNewClientResponse.encode(initial).finish()).toString('base64')];
   const restarted = create();
@@ -196,14 +226,27 @@ it('resumes a 4000-row initialization and exposes each bounded import through co
     expect(chunk.operation).toBe(10);
   }
   const last = QueryNewClientResponse.decode(Buffer.from(records[records.length - 1], 'base64'));
-  expect(ProbabilisticHeader.decode(last.initialization_message!.value).observation_chunk!.operation).toBe(11);
+  const completion = ProbabilisticHeader.decode(last.initialization_message!.value).observation_chunk!;
+  expect(completion.operation).toBe(11);
+  // The final import carries the certificate of the initial stake table.
+  expect(JSON.parse(Buffer.from(completion.objects).toString()).protocol_message.message_parts.current_epoch).toBe(
+    (ClientState.decode(initial.client_state!.value).current_epoch - 1n).toString(),
+  );
   expect(history.findEpochContextAtBlock).toHaveBeenCalledTimes(1);
   if (process.env.CLIENT_INITIALIZATION_FIXTURE)
     writeFileSync(process.env.CLIENT_INITIALIZATION_FIXTURE, JSON.stringify(records));
 }, 60_000);
 
+it('refuses to prepare a client without a Mithril aggregator', async () => {
+  const { service, history } = await setup('Preview', 13, false);
+  await expect(service.queryNewClient(QueryNewClientRequest.fromPartial({ height: 0n }))).rejects.toThrow(
+    'requires MITHRIL_ENDPOINT',
+  );
+  expect(history.findEpochContextAtBlock).not.toHaveBeenCalled();
+});
+
 it('does not query ledger context before this instance has a HostState UTxO', async () => {
-  const { service, history } = setup();
+  const { service, history } = await setup();
   history.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue(undefined);
   await expect(service.queryNewClient(QueryNewClientRequest.fromPartial({ height: 1n }))).rejects.toThrow(
     'HostState UTxO does not exist',
@@ -213,7 +256,7 @@ it('does not query ledger context before this instance has a HostState UTxO', as
 });
 
 it('reloads the initial point from disk after the Gateway process loses its memory cache', async () => {
-  const { service } = setup();
+  const { service } = await setup();
   const response = await service.queryNewClient(QueryNewClientRequest.fromPartial({ height: 0n }));
   const client = ClientState.decode(response.client_state!.value);
   const identity = `${client.chain_id}:${Buffer.from(client.host_state_nft_policy_id).toString('hex')}.${Buffer.from(client.host_state_nft_token_name).toString('hex')}:${client.latest_checkpoint_block_hash}:${client.trusting_period!.seconds}:${client.max_clock_drift!.seconds}:${client.randomness_stabilisation_window_slots}`;
@@ -228,7 +271,7 @@ it('reloads the initial point from disk after the Gateway process loses its memo
 
 
 it('preserves pending initialization data when the automatic cache reaches capacity', async () => {
-  const { service } = setup();
+  const { service } = await setup();
   const response = await service.queryNewClient(QueryNewClientRequest.fromPartial({ height: 0n }));
   const client = ClientState.decode(response.client_state!.value);
   const cache = join(directory, 'client-initialization');

@@ -84,7 +84,7 @@ func TestStakeOmissionExpiresAndRecoversThroughAuthority(t *testing.T) {
 		return execute(msg)
 	}
 	bootstrap := func(id string, full *ClientState, consensus *ConsensusState) {
-		compact, initial, steps, err := BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, full, consensus)
+		compact, initial, steps, err := buildTrustedBootstrap(t, dbadapter.Store{DB: dbm.NewMemDB()}, full, consensus)
 		require.NoError(t, err)
 		require.NoError(t, compact.Initialize(ctx, cdc, clientStore(id), initial))
 		require.Empty(t, client(id).EpochContextChallenges, "imports cannot install a previous destination deadline")
@@ -92,7 +92,8 @@ func TestStakeOmissionExpiresAndRecoversThroughAuthority(t *testing.T) {
 			require.NoError(t, update(id, step))
 		}
 		require.False(t, client(id).BootstrapPending)
-		require.Equal(t, uint64(ctx.BlockTime().Add(state.SharedSnapshotChallengePeriod).UnixNano()), client(id).EpochContextChallenges[0].UsableAfterUnixNs)
+		// The bootstrap table is Mithril-certified, so it needs no response window.
+		require.Equal(t, uint64(ctx.BlockTime().UnixNano()), client(id).EpochContextChallenges[0].UsableAfterUnixNs)
 	}
 	bootstrap(subjectID, fixture.Client, fixture.Consensus)
 	base := bytes.Clone(client(subjectID).CheckpointReference)

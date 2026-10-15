@@ -42,18 +42,28 @@ function validate(plan: PreparedClient): PreparedClient {
     !Buffer.from(consensus.checkpoint_reference).equals(Buffer.from(client.checkpoint_reference)) ||
     consensus.verification_generation !== 1n ||
     !plan.imports?.length ||
-    plan.imports.length > 4096
+    plan.imports.length > 4096 ||
+    // A client starts from Mithril-certified stake: it holds the anchor for
+    // the epoch before its checkpoint, and its final import the certificate.
+    client.mithril_epoch + 1n !== client.current_epoch ||
+    !client.mithril_aggregate_verification_key ||
+    !client.mithril_protocol_parameters_hash
   )
     throw new Error('Invalid prepared client initialization');
   plan.imports.forEach((encoded, index) => {
     const chunk = ProbabilisticHeader.decode(Buffer.from(encoded, 'base64')).observation_chunk;
-    if (!chunk || chunk.sequence !== index + 1 || chunk.operation !== (index === plan.imports.length - 1 ? 11 : 10))
+    const last = index === plan.imports.length - 1;
+    if (!chunk || chunk.sequence !== index + 1 || chunk.operation !== (last ? 11 : 10) || (last && !chunk.objects.length))
       throw new Error('Invalid client initialization import sequence');
   });
   return plan;
 }
 
-export async function encodeInitialClient(client: ClientState, consensus: ConsensusState): Promise<PreparedClient> {
+export async function encodeInitialClient(
+  client: ClientState,
+  consensus: ConsensusState,
+  mithrilAggregator: string,
+): Promise<PreparedClient> {
   const executable = process.env.CARDANO_CLIENT_PREPARER || resolve(process.cwd(), 'bin/prepare-client');
   return new Promise((accept, reject) => {
     const child = execFile(executable, { timeout: 120_000, maxBuffer: maxPlanBytes }, (error, stdout, stderr) => {
@@ -69,6 +79,7 @@ export async function encodeInitialClient(client: ClientState, consensus: Consen
       JSON.stringify({
         client_state: Buffer.from(ClientState.encode(client).finish()).toString('base64'),
         consensus_state: Buffer.from(ConsensusState.encode(consensus).finish()).toString('base64'),
+        mithril_aggregator: mithrilAggregator,
       }),
     );
   });
