@@ -180,7 +180,7 @@ func certifiedStake(certificateEpoch uint64, parts map[string]string) (*StakeDis
 		return nil, nil
 	}
 	epoch, err := strconv.ParseUint(epochText, 10, 64)
-	if err != nil || strconv.FormatUint(epoch, 10) != epochText || !isHash(root) {
+	if err != nil || strconv.FormatUint(epoch, 10) != epochText || !isStakeRoot(root) {
 		return nil, fmt.Errorf("%w: malformed stake distribution parts", ErrInvalidCertificate)
 	}
 	// Mithril certifies the distribution of epoch E-1 during epoch E.
@@ -334,6 +334,20 @@ func decodeMultiSignature(encoded string) (*crypto.StmAggrSig, error) {
 		signature.BatchProof.Hasher, _ = blake2b.New256(nil)
 	}
 	return signature, nil
+}
+
+// maxStakeRootBytes bounds a single pool's root: its bech32 ID and stake.
+const maxStakeRootBytes = 128
+
+// isStakeRoot reports whether value is a hex stake distribution root. Merged
+// mountain range nodes are BLAKE2s-256 hashes, but a single pool's root is its
+// leaf.
+func isStakeRoot(value string) bool {
+	if len(value) == 0 || len(value)%2 != 0 || len(value) > 2*maxStakeRootBytes {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
 }
 
 func isHash(value string) bool {

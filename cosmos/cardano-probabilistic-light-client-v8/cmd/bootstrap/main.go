@@ -1,6 +1,8 @@
 // bootstrap converts an explicitly trusted starting checkpoint into a
 // small MsgCreateClient input and bounded on-chain import messages. It does not
-// establish that the starting ledger or stake allocation is correct.
+// establish that the starting ledger is correct. The stake table must be the
+// distribution Mithril certified, and the client verifies that certificate
+// before its bootstrap completes.
 package main
 
 import (
@@ -17,10 +19,10 @@ import (
 func run() error {
 	input := flag.String("input", "", "trusted JSON containing client and consensus records")
 	output := flag.String("output", "", "output bootstrap bundle for Hermes")
-	aggregator := flag.String("mithril-aggregator", "", "optional Mithril aggregator URL that anchors the client to Mithril-certified stake")
+	aggregator := flag.String("mithril-aggregator", "", "Mithril aggregator URL that certifies the bootstrap stake table, ending in /aggregator")
 	flag.Parse()
-	if *input == "" || *output == "" {
-		return fmt.Errorf("both -input and -output are required")
+	if *input == "" || *output == "" || *aggregator == "" {
+		return fmt.Errorf("-input, -output and -mithril-aggregator are required")
 	}
 	raw, err := os.ReadFile(*input)
 	if err != nil {
@@ -36,12 +38,11 @@ func run() error {
 	if trusted.Client == nil || trusted.Consensus == nil {
 		return fmt.Errorf("trusted client and consensus are required")
 	}
-	if *aggregator != "" {
-		if err := lc.AnchorToMithril(trusted.Client, *aggregator); err != nil {
-			return err
-		}
+	certificate, err := lc.AnchorToMithril(trusted.Client, *aggregator)
+	if err != nil {
+		return err
 	}
-	client, consensus, steps, err := lc.BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, trusted.Client, trusted.Consensus)
+	client, consensus, steps, err := lc.BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, trusted.Client, trusted.Consensus, certificate)
 	if err != nil {
 		return err
 	}

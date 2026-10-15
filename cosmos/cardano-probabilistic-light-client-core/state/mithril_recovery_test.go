@@ -33,13 +33,19 @@ func newMithrilRecovery(t *testing.T) *mithrilRecovery {
 	}
 }
 
-func (m *mithrilRecovery) anchored(network *mithriltest.Network) func(*ClientState) {
-	return func(client *ClientState) {
-		anchor := network.Anchor(client.CurrentEpoch)
-		client.MithrilEpoch = anchor.Epoch
-		client.MithrilAggregateVerificationKey = anchor.AggregateVerificationKey
-		client.MithrilProtocolParametersHash = anchor.ProtocolParametersHash
-	}
+// client bootstraps a recovery client with network's certificate.
+func (m *mithrilRecovery) client(t *testing.T, network *mithriltest.Network, heightOffset uint64) (*ClientState, storetypes.KVStore) {
+	t.Helper()
+	return recoveryRetryClientWith(t, m.ctx, m.cdc, network, heightOffset, 10, 10)
+}
+
+// unanchored writes back a client state without an anchor. Clients are always
+// created anchored, so this simulates a state recovery must still refuse.
+func (m *mithrilRecovery) unanchored(t *testing.T, client *ClientState, store storetypes.KVStore) *ClientState {
+	t.Helper()
+	client.MithrilEpoch, client.MithrilAggregateVerificationKey, client.MithrilProtocolParametersHash = 0, "", ""
+	require.NoError(t, writeClientState(m.ctx, m.cdc, store, client))
+	return client
 }
 
 // certify records Mithril's root for the epoch after the client's anchor.
@@ -76,8 +82,8 @@ func root(label string) string { return strings.Repeat(label, 32) }
 // old generation, and certificate ingestion continues from the new anchor.
 func TestRecoveryAdoptsTheSubstitutesMithrilCertification(t *testing.T) {
 	m := newMithrilRecovery(t)
-	subject, private := recoveryRetryClient(t, m.ctx, m.cdc, 0, 10, 10, m.anchored(m.network))
-	substitute, substituteStore := recoveryRetryClient(t, m.ctx, m.cdc, 10, 10, 10, m.anchored(m.network))
+	subject, private := m.client(t, m.network, 0)
+	substitute, substituteStore := m.client(t, m.network, 10)
 	epoch := subject.CurrentEpoch
 	subject = m.certify(t, subject, private, root("a1"))
 	substitute = m.certify(t, substitute, substituteStore, root("a1"))
@@ -107,8 +113,8 @@ func TestRecoveryAdoptsTheSubstitutesMithrilCertification(t *testing.T) {
 // earlier anchor. The subject's later root needs its certificate again.
 func TestRecoveryFromASubstituteWithLessCertificateProgress(t *testing.T) {
 	m := newMithrilRecovery(t)
-	subject, private := recoveryRetryClient(t, m.ctx, m.cdc, 0, 10, 10, m.anchored(m.network))
-	substitute, substituteStore := recoveryRetryClient(t, m.ctx, m.cdc, 10, 10, 10, m.anchored(m.network))
+	subject, private := m.client(t, m.network, 0)
+	substitute, substituteStore := m.client(t, m.network, 10)
 	epoch := subject.CurrentEpoch
 	subject = m.certify(t, subject, private, root("a1"))
 	subject = m.certify(t, subject, private, root("a2"))
@@ -129,8 +135,8 @@ func TestRecoveryFromASubstituteWithLessCertificateProgress(t *testing.T) {
 
 func TestRecoveryRejectsConflictingCertifiedStake(t *testing.T) {
 	m := newMithrilRecovery(t)
-	subject, private := recoveryRetryClient(t, m.ctx, m.cdc, 0, 10, 10, m.anchored(m.network))
-	substitute, substituteStore := recoveryRetryClient(t, m.ctx, m.cdc, 10, 10, 10, m.anchored(m.network))
+	subject, private := m.client(t, m.network, 0)
+	substitute, substituteStore := m.client(t, m.network, 10)
 	subject = m.certify(t, subject, private, root("a1"))
 	substitute = m.certify(t, substitute, substituteStore, root("b1"))
 	_, err := m.recover(t, subject, private, substitute, substituteStore)
@@ -144,17 +150,24 @@ func TestRecoveryKeepsTheMithrilTrustConfiguration(t *testing.T) {
 	other, err := mithriltest.NewNetwork(1000, 2000, 3000)
 	require.NoError(t, err)
 	for _, test := range []struct {
-		name                string
-		subject, substitute []func(*ClientState)
-		message             string
+		name                                    string
+		substituteNetwork                       *mithriltest.Network
+		unanchoredSubject, unanchoredSubstitute bool
+		message                                 string
 	}{
-		{"anchored to unanchored", []func(*ClientState){m.anchored(m.network)}, nil, "substitute"},
-		{"unanchored to anchored", nil, []func(*ClientState){m.anchored(m.network)}, "substitute"},
-		{"another Mithril network", []func(*ClientState){m.anchored(m.network)}, []func(*ClientState){m.anchored(other)}, "different Mithril anchors"},
+		{"anchored to unanchored", m.network, false, true, "substitute"},
+		{"unanchored to anchored", m.network, true, false, "substitute"},
+		{"another Mithril network", other, false, false, "different Mithril anchors"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			subject, private := recoveryRetryClient(t, m.ctx, m.cdc, 0, 10, 10, test.subject...)
-			substitute, substituteStore := recoveryRetryClient(t, m.ctx, m.cdc, 10, 10, 10, test.substitute...)
+			subject, private := m.client(t, m.network, 0)
+			substitute, substituteStore := m.client(t, test.substituteNetwork, 10)
+			if test.unanchoredSubject {
+				subject = m.unanchored(t, subject, private)
+			}
+			if test.unanchoredSubstitute {
+				substitute = m.unanchored(t, substitute, substituteStore)
+			}
 			_, err := m.recover(t, subject, private, substitute, substituteStore)
 			require.ErrorContains(t, err, test.message)
 			frozen, _ := GetClientState(private, m.cdc)
@@ -185,14 +198,12 @@ func TestRecoveredClientRollsOverOnCarriedCertification(t *testing.T) {
 	earlierConsensus.Timestamp = earlier.LatestCheckpointTimestamp
 	earlierConsensus.AcceptedBlockHash = earlier.LatestCheckpointBlockHash
 	setTestPacketSnapshot(t, &earlierConsensus, height.RevisionHeight)
-	anchorToLocalMithril(t, &earlier, network)
 	private := dbadapter.Store{DB: dbm.NewMemDB()}
-	subject, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, &earlier, &earlierConsensus)
+	subject, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, &earlier, &earlierConsensus, anchorToLocalMithril(t, &earlier, network))
 	require.NoError(t, err)
 
-	anchorToLocalMithril(t, fixture.Client, network)
 	substituteStore := dbadapter.Store{DB: dbm.NewMemDB()}
-	substitute, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, substituteStore, fixture.Client, fixture.Consensus)
+	substitute, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, substituteStore, fixture.Client, fixture.Consensus, anchorToLocalMithril(t, fixture.Client, network))
 	require.NoError(t, err)
 	substitute = m.certify(t, substitute, substituteStore, tableRoot(t, table))
 	require.Equal(t, table.Epoch, substitute.MithrilEpoch)

@@ -40,7 +40,7 @@ func TestSnapshotCrossEpochZeroStakeProducer(t *testing.T) {
 			private := dbadapter.Store{DB: dbm.NewMemDB()}
 			ctx := Context{Time: time.Unix(0, int64(header.DescendantBlocks[len(header.DescendantBlocks)-1].Timestamp)), Height: 1, SelfHeight: NewHostHeight(0, 1), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 			cdc := jsonTestCodec{}
-			client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, fixture.Client, fixture.Consensus)
+			client, _, err := initializeTrusted(t, ctx, cdc, private, fixture.Client, fixture.Consensus)
 			require.NoError(t, err)
 			ctx.VerifyHostUsability = stagedTestHostWindow
 			ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod + time.Second)

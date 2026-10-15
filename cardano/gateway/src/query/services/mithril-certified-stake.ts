@@ -23,6 +23,8 @@ type StakeCertificate = {
 };
 
 const HASH = /^[0-9a-f]{64}$/;
+// Merged mountain range nodes are hashes, but a single pool's root is its leaf.
+const STAKE_ROOT = /^(?:[0-9a-f]{2}){1,128}$/;
 
 // A stake table that disagrees with Mithril's certified distribution.
 export class MithrilStakeMismatchError extends Error {}
@@ -39,7 +41,7 @@ function parseStakeCertificate(json: string, stakeEpoch: number): StakeCertifica
     throw new Error(`Mithril certificate does not certify the epoch ${stakeEpoch} Cardano stake distribution`);
   }
   if (
-    !HASH.test(parts.cardano_stake_distribution_merkle_root ?? '') ||
+    !STAKE_ROOT.test(parts.cardano_stake_distribution_merkle_root ?? '') ||
     !HASH.test(parts.next_protocol_parameters ?? '') ||
     typeof parts.next_aggregate_verification_key !== 'string' ||
     !parts.next_aggregate_verification_key ||

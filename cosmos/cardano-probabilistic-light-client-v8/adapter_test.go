@@ -308,7 +308,7 @@ func installTestCheckpoint(t *testing.T, ctx sdk.Context, cdc codec.BinaryCodec,
 	slot, err := input.DeriveSlotFromTimestamp(consensus.Timestamp)
 	require.NoError(t, err)
 	setTestCheckpoint(t, input, input.LatestHeight, consensus.AcceptedBlockHash, consensus.AcceptedEpoch, slot)
-	installed, initial, err := InitializeFromTrustedCheckpoint(ctx, cdc, store, input, consensus)
+	installed, initial, err := initializeTrusted(t, ctx, cdc, store, input, consensus)
 	require.NoError(t, err)
 	return installed, initial
 }

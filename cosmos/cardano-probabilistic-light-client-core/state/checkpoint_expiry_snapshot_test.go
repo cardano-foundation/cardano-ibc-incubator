@@ -29,7 +29,7 @@ func newSnapshotExpiryFixture(t *testing.T) *compactExpiryFixture {
 	start := time.Unix(0, int64(evidence.Consensus.Timestamp))
 	ctx := Context{Time: start, Height: 100, SelfHeight: NewHostHeight(0, 100), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 	cdc := jsonTestCodec{}
-	client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, evidence.Client, evidence.Consensus)
+	client, _, err := initializeTrusted(t, ctx, cdc, private, evidence.Client, evidence.Consensus)
 	require.NoError(t, err)
 	ctx.VerifyHostUsability = stagedTestHostWindow
 	return &compactExpiryFixture{ctx, cdc, private, shared, client, evidence, start}

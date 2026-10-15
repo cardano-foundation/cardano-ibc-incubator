@@ -77,6 +77,8 @@ func TestGatewayClientInitialization(t *testing.T) {
 		require.LessOrEqual(t, installed.Size(), state.MaxClientBytes)
 	}
 	require.False(t, installed.BootstrapPending)
+	// Completion verified the Mithril certificate of the initial stake table.
+	require.Equal(t, installed.CurrentEpoch, installed.MithrilEpoch)
 	saved, found := GetConsensusState(private, app.AppCodec(), installed.LatestHeight)
 	require.True(t, found)
 	require.LessOrEqual(t, saved.Size(), state.MaxConsensusBytes)

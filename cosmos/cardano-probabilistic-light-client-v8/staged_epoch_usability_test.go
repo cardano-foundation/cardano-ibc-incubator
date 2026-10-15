@@ -48,7 +48,7 @@ func TestAppFollowingEpochActivationRequiresCommittedCutoffBlock(t *testing.T) {
 	ctx := withTestHostProgress(sdk.NewContext(ms, cmtproto.Header{ChainID: chainID, Height: 100, Time: start}, false, log.NewNopLogger()))
 	cdc := newProbabilisticTestCodec()
 	private := ctx.KVStore(privateKey)
-	client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, history.Client, history.Consensus)
+	client, _, err := initializeTrusted(t, ctx, cdc, private, history.Client, history.Consensus)
 	require.NoError(t, err)
 	ctx = ctx.WithBlockTime(start.Add(12*time.Hour + time.Second))
 	base := append([]byte(nil), client.CheckpointReference...)

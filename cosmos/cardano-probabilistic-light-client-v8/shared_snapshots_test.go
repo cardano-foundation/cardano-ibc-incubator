@@ -57,7 +57,7 @@ func TestSDKSnapshotBootstrapAndFreeze4000Pools(t *testing.T) {
 	require.NoError(t, err)
 	fixture.Consensus.PoolRegistry = &PoolRegistryState{}
 	require.NoError(t, fixture.Consensus.PoolRegistry.Unmarshal(registryBytes))
-	compact, initial, steps, err := BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, client, fixture.Consensus)
+	compact, initial, steps, err := buildTrustedBootstrap(t, dbadapter.Store{DB: dbm.NewMemDB()}, client, fixture.Consensus)
 	require.NoError(t, err)
 	database := dbm.NewMemDB()
 	multistore := store.NewCommitMultiStore(database, log.NewNopLogger(), metrics.NewNoOpMetrics())

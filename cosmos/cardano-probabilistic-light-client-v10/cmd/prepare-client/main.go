@@ -1,5 +1,7 @@
 // prepare-client encodes operator-trusted initial state for bounded creation.
-// Gateway invokes it over standard input and output. It creates no files.
+// Gateway invokes it over standard input and output. It creates no files. The
+// initial stake table must be the distribution Mithril certified, so it reads
+// the bootstrap certificate from the Mithril aggregator in the request.
 package main
 
 import (
@@ -14,9 +16,10 @@ import (
 )
 
 type preparation struct {
-	Client    []byte   `json:"client_state"`
-	Consensus []byte   `json:"consensus_state"`
-	Imports   [][]byte `json:"imports,omitempty"`
+	Client            []byte   `json:"client_state"`
+	Consensus         []byte   `json:"consensus_state"`
+	MithrilAggregator string   `json:"mithril_aggregator,omitempty"`
+	Imports           [][]byte `json:"imports,omitempty"`
 }
 
 func prepare(input io.Reader, output io.Writer) error {
@@ -32,7 +35,14 @@ func prepare(input io.Reader, output io.Writer) error {
 	if err := consensus.Unmarshal(request.Consensus); err != nil {
 		return err
 	}
-	prepared, initial, steps, err := lc.BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, &client, &consensus)
+	if request.MithrilAggregator == "" {
+		return fmt.Errorf("client preparation requires a Mithril aggregator")
+	}
+	certificate, err := lc.AnchorToMithril(&client, request.MithrilAggregator)
+	if err != nil {
+		return err
+	}
+	prepared, initial, steps, err := lc.BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, &client, &consensus, certificate)
 	if err != nil {
 		return err
 	}

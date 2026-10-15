@@ -80,6 +80,13 @@ func (n *Network) StakeCertificate(epoch uint64, next *Network, root string) (st
 	return n.Certificate(parts)
 }
 
+// Bootstrap returns the anchor and the certificate that bootstrap a client in
+// epoch whose stake table has root.
+func (n *Network) Bootstrap(epoch uint64, root string) (mithril.Anchor, string, error) {
+	certificate, err := n.StakeCertificate(epoch-1, n, root)
+	return n.Anchor(epoch - 1), certificate, err
+}
+
 // Certificate signs arbitrary protocol message parts.
 func (n *Network) Certificate(parts map[string]string) (string, error) {
 	signedMessage, err := mithril.ProtocolMessageHash(parts)

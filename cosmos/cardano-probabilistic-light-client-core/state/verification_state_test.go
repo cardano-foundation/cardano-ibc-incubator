@@ -61,7 +61,7 @@ func TestSnapshotPublicStateAndFreezeWith4000Pools(t *testing.T) {
 	private := gaskv.NewStore(dbadapter.Store{DB: dbm.NewMemDB()}, meter, storetypes.KVGasConfig())
 	ctx := Context{Time: time.Unix(0, int64(consensus.Timestamp)), Height: 1, SelfHeight: NewHostHeight(0, 1), GasConsumed: meter.GasConsumed, ConsumeGas: meter.ConsumeGas, Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 	cdc := jsonTestCodec{}
-	thin, compact, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, client, consensus)
+	thin, compact, err := initializeTrusted(t, ctx, cdc, private, client, consensus)
 	require.NoError(t, err)
 	require.LessOrEqual(t, len(cdc.EncodeClient(thin)), MaxClientBytes)
 	require.LessOrEqual(t, len(cdc.EncodeConsensus(compact)), MaxConsensusBytes)
@@ -91,9 +91,9 @@ func TestSharedSnapshotOwnershipAcrossClients(t *testing.T) {
 	first := dbadapter.Store{DB: dbm.NewMemDB()}
 	second := dbadapter.Store{DB: dbm.NewMemDB()}
 	cdc := jsonTestCodec{}
-	a, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, first, client, consensus)
+	a, _, err := initializeTrusted(t, ctx, cdc, first, client, consensus)
 	require.NoError(t, err)
-	b, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, second, client, consensus)
+	b, _, err := initializeTrusted(t, ctx, cdc, second, client, consensus)
 	require.NoError(t, err)
 	require.NotEqual(t, a.StorageNamespace, b.StorageNamespace)
 	require.Equal(t, a.CheckpointReference, b.CheckpointReference)
@@ -138,7 +138,7 @@ func TestLazyProductionProjectionMatchesLegacyRules(t *testing.T) {
 func TestBoundedTrustedBootstrapImport4000Pools(t *testing.T) {
 	client, consensus := compactTrustedFixture(t, 4000)
 	temporary := dbadapter.Store{DB: dbm.NewMemDB()}
-	compact, initial, steps, err := BuildBootstrap(temporary, client, consensus)
+	compact, initial, steps, err := buildTrustedBootstrap(t, temporary, client, consensus)
 	require.NoError(t, err)
 	require.Greater(t, len(steps), 20)
 	meter := storetypes.NewInfiniteGasMeter()

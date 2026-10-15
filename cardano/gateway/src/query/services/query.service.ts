@@ -573,6 +573,12 @@ export class QueryService {
     const deployment = this.configService.get('deployment');
     const identity = `${cardanoChainId}:${deployment.hostStateNFT.policyId}.${deployment.hostStateNFT.name}:${anchorBlock.hash}:${this.configService.get<number>('cardanoClientTrustingPeriodSeconds') ?? 172_800}:${this.configService.get<number>('cardanoClientMaxClockDriftSeconds') ?? 10}:${this.configService.get<string>('cardanoRandomnessStabilisationWindowSlots')}`;
     const plan = await initialClientPlan(identity, async () => {
+      // A client starts only from a stake table Mithril certified.
+      const mithrilEndpoint = this.configService.get<string>('mithrilEndpoint');
+      if (!mithrilEndpoint)
+        throw new GrpcFailedPreconditionException(
+          'Probabilistic client creation requires MITHRIL_ENDPOINT, because a client starts from Mithril-certified stake',
+        );
       const context = await this.historyService.findEpochContextAtBlock(anchorBlock);
       if (!context || context.epoch !== anchorBlock.epochNo)
         throw new GrpcFailedPreconditionException('Initial epoch context is unavailable');
@@ -726,7 +732,7 @@ export class QueryService {
         security_score_bps: 0n,
       };
 
-      return encodeInitialClient(clientStateProbabilistic, consensusStateProbabilistic);
+      return encodeInitialClient(clientStateProbabilistic, consensusStateProbabilistic, mithrilEndpoint);
     });
     if (sequence > plan.imports.length)
       throw new GrpcInvalidArgumentException('Initialization sequence exceeds the prepared imports');
