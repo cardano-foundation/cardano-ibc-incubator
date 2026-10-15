@@ -34,6 +34,9 @@ func validateClientState(cs *ClientState) error {
 	if len(cs.BootstrapObjects) > MaxOperationSignedBytes {
 		return fmt.Errorf("bootstrap objects exceed the bounded transport envelope")
 	}
+	if err := cs.validateMithrilAnchor(); err != nil {
+		return err
+	}
 	if len(cs.EpochStakeDistribution) > 0 || len(cs.EpochContexts) > 0 || cs.LatestCheckpointPoolRegistry != nil || cs.LatestCheckpointSettlementCredit != nil || cs.LatestCheckpointPoolProduction != nil || len(cs.LatestCheckpointOperationalCertificateCounters) > 0 {
 		return fmt.Errorf("public client state cannot embed verification collections")
 	}

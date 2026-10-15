@@ -8,12 +8,14 @@ func (cs ClientState) CheckForMisbehaviour(ctx Context, cdc StateCodec, clientSt
 	if cs.Validate() != nil {
 		return false
 	}
-	evidence, ok := msg.(*Misbehaviour)
-	if !ok {
-		return false
+	switch evidence := msg.(type) {
+	case *Misbehaviour:
+		conflict, err := cs.verifiedReceiptConflict(ctx, evidence)
+		return err == nil && conflict
+	case *MithrilStakeCertificates:
+		return cs.mithrilStakeConflict(ctx, evidence)
 	}
-	conflict, err := cs.verifiedReceiptConflict(ctx, evidence)
-	return err == nil && conflict
+	return false
 }
 
 func (cs *ClientState) verifyMisbehaviour(ctx Context, clientStore storetypes.KVStore, cdc StateCodec, evidence *Misbehaviour) error {

@@ -6,10 +6,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/big"
+	"sort"
 	"time"
 
 	storetypes "cosmossdk.io/store/types"
 	"github.com/blinklabs-io/gouroboros/cbor"
+	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/mithril"
 )
 
 const (
@@ -43,7 +45,8 @@ type observationSession struct {
 	InputDigest, TableDigest                 [32]byte
 	Table                                    stakeSnapshot
 	RowsRead                                 uint32
-	LastPool                                 []byte
+	TableMithril                             mithril.StakeRootBuilder
+	TableMithrilRoot                         string
 	CreditReady                              bool
 	CreditCursor                             []byte
 	CreditRows                               uint64
@@ -278,12 +281,20 @@ func appendObservationStake(store storetypes.KVStore, session *observationSessio
 		return fmt.Errorf("stake row batch must contain the next %d committed rows", expected)
 	}
 	var changes []SnapshotChange
-	previous := session.LastPool
 	for cursor := 0; cursor < len(rows); cursor += 36 {
 		key := rows[cursor : cursor+28]
 		amount := binary.BigEndian.Uint64(rows[cursor+28 : cursor+36])
-		if amount == 0 || bytes.Compare(key, previous) <= 0 {
-			return fmt.Errorf("stake rows require positive amounts and strictly increasing binary identities")
+		if amount == 0 {
+			return fmt.Errorf("stake rows require positive amounts")
+		}
+		// Rows follow Mithril's pool ID order, which also rules out repeats,
+		// so sealing the table yields the root Mithril certifies for it.
+		name, err := poolName(key)
+		if err != nil {
+			return err
+		}
+		if err := session.TableMithril.Append(name, amount); err != nil {
+			return fmt.Errorf("stake rows must follow Mithril's pool ID order: %w", err)
 		}
 		_, found, err := lookupBinding(store, session.Working.Scope, session.Working.Registry.Mark, key)
 		if err != nil {
@@ -299,17 +310,22 @@ func appendObservationStake(store storetypes.KVStore, session *observationSessio
 		}
 		changes = append(changes, SnapshotChange{bytes.Clone(key), bytes.Clone(rows[cursor+28 : cursor+36])})
 		session.TableDigest = sha256.Sum256(append(session.TableDigest[:], rows[cursor:cursor+36]...))
-		previous = key
 	}
+	sort.Slice(changes, func(i, j int) bool { return bytes.Compare(changes[i].Key, changes[j].Key) < 0 })
 	root, err := NewSnapshotMap(store, session.Working.Scope, snapshotStake).PutBatch(session.Table.Root, changes)
 	if err != nil {
 		return err
 	}
 	session.Table.Root = root
 	session.RowsRead += count
-	session.LastPool = bytes.Clone(previous)
-	if session.RowsRead == session.TableRows && (session.Table.Total != session.TableTotal || session.TableDigest != session.ExpectedTableDigest) {
-		return fmt.Errorf("sealed table total or digest disagrees with its complete uploaded contents")
+	if session.RowsRead == session.TableRows {
+		if session.Table.Total != session.TableTotal || session.TableDigest != session.ExpectedTableDigest {
+			return fmt.Errorf("sealed table total or digest disagrees with its complete uploaded contents")
+		}
+		if session.TableMithrilRoot, err = session.TableMithril.Root(); err != nil {
+			return err
+		}
+		session.TableMithril = mithril.StakeRootBuilder{}
 	}
 	return nil
 }

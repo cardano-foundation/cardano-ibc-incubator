@@ -22,6 +22,8 @@ type recoveryInvariantClientState struct {
 	ActiveSlotCoefficientNumerator     uint64
 	ActiveSlotCoefficientDenominator   uint64
 	MaxClockDrift                      time.Duration
+	// Recovery cannot add or remove Mithril-certified stake.
+	MithrilAnchored bool
 }
 
 func (cs ClientState) CheckSubstituteAndUpdateState(ctx Context, cdc StateCodec, subjectStore, substituteStore storetypes.KVStore, substitute any) error {
@@ -44,6 +46,7 @@ func IsMatchingClientState(subject, substitute ClientState) bool {
 }
 
 func recoveryInvariantProjection(cs ClientState) recoveryInvariantClientState {
+	_, anchored := cs.mithrilAnchor()
 	return recoveryInvariantClientState{
 		PacketLanePolicyId:                 bytes.Clone(cs.PacketLanePolicyId),
 		RandomnessStabilisationWindowSlots: cs.RandomnessStabilisationWindowSlots,
@@ -57,5 +60,6 @@ func recoveryInvariantProjection(cs ClientState) recoveryInvariantClientState {
 		ActiveSlotCoefficientNumerator:     cs.ActiveSlotCoefficientNumerator,
 		ActiveSlotCoefficientDenominator:   cs.ActiveSlotCoefficientDenominator,
 		MaxClockDrift:                      cs.MaxClockDrift,
+		MithrilAnchored:                    anchored,
 	}
 }

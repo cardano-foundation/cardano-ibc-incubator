@@ -1300,6 +1300,18 @@ jobs:
           go test -run '^$' -fuzz '^FuzzDecodeLedgerBlock$' -fuzztime 60s .
           go test -run '^$' -fuzz '^FuzzDecodeLedgerHeader$' -fuzztime 30s .
 
+      # Mithril certificates and aggregate signatures come from relayers.
+      - name: Fuzz Mithril certificate verification
+        if: matrix.module.name == 'core'
+        env:
+          GOWORK: off
+        run: |
+          go test -run '^$' -fuzz '^FuzzVerifyCertificate$' -fuzztime 30s ./mithril
+          go test -run '^$' -fuzz '^FuzzCanonicalPhiF$' -fuzztime 15s ./mithril
+          go test -run '^$' -fuzz '^FuzzDecodeAggregateSignature$' -fuzztime 30s ./mithril/crypto
+          go test -run '^$' -fuzz '^FuzzDecodeAggregateVerificationKey$' -fuzztime 15s ./mithril/crypto
+          go test -run '^$' -fuzz '^FuzzVerifyAggregateSignature$' -fuzztime 30s ./mithril/crypto
+
       - name: Vet non-generated packages
         env:
           GOWORK: off
@@ -1308,6 +1320,57 @@ jobs:
           if [ "${#packages[@]}" -gt 0 ]; then
             go vet "${packages[@]}"
           fi
+
+  # The probabilistic clients link blst through cgo. blst's Go binding assumes
+  # ADX on amd64 unless built portable, so distributed binaries use
+  # -D__BLST_PORTABLE__. Every supported build must reach the same results on
+  # the mithril-stm reference vectors and mainnet certificates.
+  mithril-verifier-builds:
+    name: Mithril verifier (${{ matrix.runner }}, ${{ matrix.blst }})
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: docs-update
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            blst: default
+            cflags: ""
+          - runner: ubuntu-latest
+            blst: portable
+            cflags: "-O2 -D__BLST_PORTABLE__"
+          - runner: ubuntu-24.04-arm
+            blst: default
+            cflags: ""
+          - runner: macos-latest
+            blst: default
+            cflags: ""
+
+    defaults:
+      run:
+        working-directory: cosmos/cardano-probabilistic-light-client-core
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: cosmos/cardano-probabilistic-light-client-core/go.mod
+          cache-dependency-path: cosmos/cardano-probabilistic-light-client-core/go.sum
+
+      - name: Test
+        env:
+          GOWORK: off
+          CGO_ENABLED: "1"
+          BLST_CGO_CFLAGS: ${{ matrix.cflags }}
+        run: |
+          if [ -n "$BLST_CGO_CFLAGS" ]; then export CGO_CFLAGS="$BLST_CGO_CFLAGS"; fi
+          go test -count=1 ./mithril/...
 
   light-client-parity:
     name: Light Client Parity

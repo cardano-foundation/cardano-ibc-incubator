@@ -29,7 +29,10 @@ func TestCrossLanguageObservationSegmentCommitments(t *testing.T) {
 	}
 	plan, err := BuildObservationPlan(client, header, nil, 2, 4)
 	require.NoError(t, err)
-	require.Equal(t, "47f9a8871da8cf81d8345564d023a95888035fbb34189d7d183d5c69383caa0a", hex.EncodeToString(plan.Steps[0].ObservationChunk.EvidenceDigest))
+	// Rows follow Mithril's pool ID order, which here reverses binary key order.
+	require.Less(t, second, first)
+	require.Equal(t, bytes.Repeat([]byte{2}, 28), plan.Steps[1].ObservationChunk.StakeRows[:28])
+	require.Equal(t, "3bee5b87e4f6fb30cdcf230e735a11c5f31fc4f47380bbda95aac90ff903731a", hex.EncodeToString(plan.Steps[0].ObservationChunk.EvidenceDigest))
 	require.Equal(t, "10495c5e7616f6bdc85b7cfee7b46e71f0f66ae54f369cdc28877190a216fdb9", hex.EncodeToString(plan.Steps[1].ObservationChunk.EvidenceDigest))
 	require.Equal(t, "2e8bcd5d17896af3c4db1ecc52f6d6827ff840aa12a64bc3927f480c0a765845", hex.EncodeToString(plan.Steps[3].ObservationChunk.EvidenceDigest))
 	root, err := observationSegmentCommitment(plan.Steps[1].ObservationChunk, 42)

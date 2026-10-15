@@ -38,7 +38,8 @@ func BuildObservationPlan(cs *ClientState, header *ProbabilisticHeader, original
 			}
 			keys[entry.PoolId] = key
 		}
-		sort.Slice(entries, func(i, j int) bool { return bytes.Compare(keys[entries[i].PoolId], keys[entries[j].PoolId]) < 0 })
+		// The destination rebuilds Mithril's stake root from rows in its pool ID order.
+		sort.Slice(entries, func(i, j int) bool { return entries[i].PoolId < entries[j].PoolId })
 		for _, entry := range entries {
 			row := binary.BigEndian.AppendUint64(bytes.Clone(keys[entry.PoolId]), entry.Stake)
 			var ok bool

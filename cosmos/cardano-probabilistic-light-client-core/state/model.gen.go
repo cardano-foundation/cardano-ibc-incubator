@@ -73,6 +73,9 @@ type ClientState struct {
 	StorageNamespace                                []byte                           `protobuf:"bytes,40,opt,name=storage_namespace,json=storageNamespace,proto3" json:"storage_namespace,omitempty"`
 	BootstrapObjects                                []byte                           `protobuf:"bytes,41,opt,name=bootstrap_objects,json=bootstrapObjects,proto3" json:"bootstrap_objects,omitempty"`
 	BootstrapPending                                bool                             `protobuf:"varint,42,opt,name=bootstrap_pending,json=bootstrapPending,proto3" json:"bootstrap_pending,omitempty"`
+	MithrilEpoch                                    uint64                           `protobuf:"varint,43,opt,name=mithril_epoch,json=mithrilEpoch,proto3" json:"mithril_epoch,omitempty"`
+	MithrilAggregateVerificationKey                 string                           `protobuf:"bytes,44,opt,name=mithril_aggregate_verification_key,json=mithrilAggregateVerificationKey,proto3" json:"mithril_aggregate_verification_key,omitempty"`
+	MithrilProtocolParametersHash                   string                           `protobuf:"bytes,45,opt,name=mithril_protocol_parameters_hash,json=mithrilProtocolParametersHash,proto3" json:"mithril_protocol_parameters_hash,omitempty"`
 }
 
 type PoolProductionHistory struct {
@@ -155,6 +158,10 @@ type Misbehaviour struct {
 	ProbabilisticHeader2  *ProbabilisticHeader `protobuf:"bytes,3,opt,name=probabilistic_header_2,json=probabilisticHeader2,proto3" json:"probabilistic_header_2,omitempty"`
 	VerifiedObservation_1 []byte               `protobuf:"bytes,4,opt,name=verified_observation_1,json=verifiedObservation1,proto3" json:"verified_observation_1,omitempty"`
 	VerifiedObservation_2 []byte               `protobuf:"bytes,5,opt,name=verified_observation_2,json=verifiedObservation2,proto3" json:"verified_observation_2,omitempty"`
+}
+
+type MithrilStakeCertificates struct {
+	Certificates []string `protobuf:"bytes,1,rep,name=certificates,proto3" json:"certificates,omitempty"`
 }
 
 type ProbabilisticBlock struct {
