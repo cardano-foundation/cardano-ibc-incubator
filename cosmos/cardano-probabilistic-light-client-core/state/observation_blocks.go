@@ -55,7 +55,7 @@ func lookupStakeAmount(store storetypes.KVStore, scope [32]byte, snapshot stakeS
 		return 0, err
 	}
 	if !found || len(raw) != 8 {
-		return 0, fmt.Errorf("issuer has no sealed stake row")
+		return 0, fmt.Errorf("issuer has no sealed stake row: epoch %d, pool %x", snapshot.Epoch, key)
 	}
 	amount := binary.BigEndian.Uint64(raw)
 	if amount == 0 || snapshot.Total == 0 || amount > snapshot.Total {

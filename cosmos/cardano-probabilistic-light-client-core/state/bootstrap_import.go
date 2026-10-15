@@ -117,6 +117,10 @@ func (cs *ClientState) initializeCompact(ctx Context, cdc StateCodec, private st
 	if err != nil {
 		return err
 	}
+	// A trusted export can carry another client's host-local deadlines. The
+	// new namespace gets its own response window only after import completes.
+	// Installing exported deadlines now would make that final window immutable.
+	cs.EpochContextChallenges = nil
 	cs.BootstrapObjects = nil
 	frontierChanges := map[string][]byte{}
 	for _, root := range checkpointRoots(cp, manifest.Packet) {
