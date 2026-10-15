@@ -13,6 +13,7 @@ import (
 	"cosmossdk.io/store/dbadapter"
 	"cosmossdk.io/store/gaskv"
 	storetypes "cosmossdk.io/store/types"
+	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger/common"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/stretchr/testify/require"
@@ -150,6 +151,18 @@ func TestBoundedTrustedBootstrapImport4000Pools(t *testing.T) {
 	require.True(t, found)
 	require.True(t, fresh.BootstrapPending)
 	require.Equal(t, Active, fresh.Status(ctx, private, cdc))
+	// Another uploader cannot turn an authentic batch into enough small
+	// imports to exhaust the initialization sequence budget.
+	var pages []bootstrapPage
+	_, err = cbor.Decode(steps[0].ObservationChunk.Objects, &pages)
+	require.NoError(t, err)
+	require.Len(t, pages, maxBootstrapPagesPerStep)
+	fragment := *steps[0].ObservationChunk
+	fragment.Objects, err = cbor.Encode(pages[:1])
+	require.NoError(t, err)
+	before := bytes.Clone(shared.Get(bootstrapProgressKey(fresh)))
+	require.ErrorContains(t, fresh.VerifyClientMessage(ctx, cdc, private, &ProbabilisticHeader{ObservationChunk: &fragment}), "differs from the initialized plan")
+	require.Equal(t, before, shared.Get(bootstrapProgressKey(fresh)))
 	for _, step := range steps {
 		start := meter.GasConsumed()
 		runObservationStep(t, ctx, cdc, private, fresh, step)

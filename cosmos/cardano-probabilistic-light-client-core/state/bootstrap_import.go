@@ -17,8 +17,10 @@ const snapshotBootstrapFrontier byte = 14
 const maxBootstrapPagesPerStep = 8
 
 type bootstrapManifest struct {
-	Checkpoint *verificationCheckpoint
-	Packet     *packetCheckpoint
+	Checkpoint       *verificationCheckpoint
+	Packet           *packetCheckpoint
+	ImportCommitment [32]byte
+	ImportOperations uint32
 }
 type bootstrapPage struct {
 	Kind byte
@@ -35,6 +37,19 @@ type bootstrapProgress struct {
 	Frontier   SnapshotRoot
 	Sequence   uint32
 	LastDigest [32]byte
+	Remaining  [32]byte
+}
+
+// The initial MsgCreateClient commits the exact bounded transport plan.
+// An authentic page in another position cannot advance its saved cursor.
+func bootstrapStepCommitment(reference []byte, chunk *ObservationChunk) [32]byte {
+	raw := append([]byte("cardano-ibc.initialization-step/v2\x00"), reference...)
+	raw = binary.BigEndian.AppendUint32(raw, chunk.Sequence)
+	raw = binary.BigEndian.AppendUint32(raw, chunk.Operation)
+	raw = binary.BigEndian.AppendUint32(raw, uint32(len(chunk.Objects)))
+	raw = append(raw, chunk.Objects...)
+	raw = append(raw, chunk.EvidenceDigest...)
+	return sha256.Sum256(raw)
 }
 
 func bootstrapProgressKey(cs *ClientState) []byte {
@@ -85,7 +100,7 @@ func (cs *ClientState) initializeClientState(ctx Context, cdc StateCodec, privat
 	if _, err := cbor.Decode(cs.BootstrapObjects, &manifest); err != nil {
 		return err
 	}
-	if manifest.Checkpoint == nil || manifest.Packet == nil {
+	if manifest.Checkpoint == nil || manifest.Packet == nil || manifest.ImportOperations == 0 || manifest.ImportOperations > MaxObservationSteps || manifest.ImportCommitment == ([32]byte{}) {
 		return fmt.Errorf("bootstrap manifest is incomplete")
 	}
 	cp := manifest.Checkpoint
@@ -133,7 +148,7 @@ func (cs *ClientState) initializeClientState(ctx Context, cdc StateCodec, privat
 			frontierChanges[string(bootstrapFrontierKey(root.Kind, root.Root.Hash))] = raw
 		}
 	}
-	progress := bootstrapProgress{Manifest: manifest}
+	progress := bootstrapProgress{Manifest: manifest, Remaining: manifest.ImportCommitment}
 	progress.Frontier, err = NewSnapshotMap(shared, scope, snapshotBootstrapFrontier).PutBatch(SnapshotRoot{}, orderedPacketChanges(frontierChanges))
 	if err != nil {
 		return err
@@ -168,8 +183,14 @@ func (cs *ClientState) continueBootstrap(ctx Context, cdc StateCodec, private, s
 	if chunk.Sequence == progress.Sequence && digest == progress.LastDigest {
 		return nil
 	}
-	if chunk.Sequence != progress.Sequence+1 || chunk.Sequence > MaxObservationSteps {
+	if chunk.Sequence != progress.Sequence+1 || chunk.Sequence > progress.Manifest.ImportOperations {
 		return fmt.Errorf("bootstrap chunk is reordered")
+	}
+	if len(chunk.EvidenceDigest) != sha256.Size || bootstrapStepCommitment(cs.CheckpointReference, chunk) != progress.Remaining {
+		return fmt.Errorf("bootstrap import differs from the initialized plan")
+	}
+	if (chunk.Operation == ObservationBootstrapComplete) != (chunk.Sequence == progress.Manifest.ImportOperations) {
+		return fmt.Errorf("bootstrap completion is not at the end of its plan")
 	}
 	scope := progress.Manifest.Checkpoint.Scope
 	frontier := NewSnapshotMap(shared, scope, snapshotBootstrapFrontier)
@@ -259,6 +280,9 @@ func (cs *ClientState) continueBootstrap(ctx Context, cdc StateCodec, private, s
 		if err != nil {
 			return err
 		}
+		if len(pages) != maxBootstrapPagesPerStep && progress.Frontier.Rows != 0 {
+			return fmt.Errorf("bootstrap requires a full page batch except for the final import")
+		}
 	} else {
 		if progress.Frontier.Rows != 0 {
 			return fmt.Errorf("bootstrap cannot activate before every committed page is imported")
@@ -299,6 +323,7 @@ func (cs *ClientState) continueBootstrap(ctx Context, cdc StateCodec, private, s
 	}
 	progress.Sequence = chunk.Sequence
 	progress.LastDigest = digest
+	copy(progress.Remaining[:], chunk.EvidenceDigest)
 	raw, err := cbor.Encode(progress)
 	if err != nil {
 		return err
@@ -328,10 +353,6 @@ func BuildBootstrap(store storetypes.KVStore, client *ClientState, consensus *Co
 	}
 	thin := referenceClientState(client, make([]byte, 32), cp, ref)
 	thin.BootstrapPending = true
-	thin.BootstrapObjects, err = cbor.Encode(bootstrapManifest{cp, packet})
-	if err != nil {
-		return nil, nil, nil, err
-	}
 	compact := referenceConsensusState(consensus, cp, ref, 1)
 	var pages []bootstrapPage
 	seen := map[string]bool{}
@@ -388,5 +409,18 @@ func BuildBootstrap(store storetypes.KVStore, client *ClientState, consensus *Co
 	}
 	seq++
 	steps = append(steps, &ProbabilisticHeader{ObservationChunk: &ObservationChunk{Operation: ObservationBootstrapComplete, Sequence: seq}})
+	if len(steps) > int(MaxObservationSteps) {
+		return nil, nil, nil, fmt.Errorf("initial state requires more than %d bounded import operations", MaxObservationSteps)
+	}
+	var commitment [32]byte
+	for index := len(steps) - 1; index >= 0; index-- {
+		chunk := steps[index].ObservationChunk
+		chunk.EvidenceDigest = bytes.Clone(commitment[:])
+		commitment = bootstrapStepCommitment(ref[:], chunk)
+	}
+	thin.BootstrapObjects, err = cbor.Encode(bootstrapManifest{Checkpoint: cp, Packet: packet, ImportCommitment: commitment, ImportOperations: uint32(len(steps))})
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	return thin, compact, steps, nil
 }

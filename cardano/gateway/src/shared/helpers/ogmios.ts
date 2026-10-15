@@ -662,6 +662,23 @@ const queryOperationalCertificateCountersAtPoint = async (
   });
 };
 
+// Only initial creation uses these node answers as trusted registry input.
+const queryInitialPoolParametersAtPoint = async (ogmiosUrl: string, point: OgmiosLedgerPoint) => {
+  return withAcquiredLedgerState(ogmiosUrl, point, async (session) => {
+    const pools = await session.request<OgmiosStakePools>('queryLedgerState/stakePools', {});
+    const genesis = await session.request<{ initialStakePools?: { stakePools?: OgmiosStakePools } }>(
+      'queryNetwork/genesisConfiguration', { era: 'shelley' },
+    );
+    const bindings = (rows: OgmiosStakePools) => Object.entries(rows).map(([poolId, row]) => {
+      const bytes = operationalCertificatePoolIdBytes(poolId);
+      const vrf = typeof row.vrfVerificationKeyHash === 'string' ? normalizeHex(row.vrfVerificationKeyHash) : '';
+      if (!/^[0-9a-f]{64}$/.test(vrf)) throw new Error('Initial pool parameters have no VRF binding');
+      return { pool_id: bech32.encode('pool', bech32.toWords(bytes)), vrf_key_hash: Buffer.from(vrf, 'hex'), first_registration_slot: 0n };
+    });
+    return { current: bindings(pools), genesis: bindings(genesis.initialStakePools?.stakePools ?? {}) };
+  });
+};
+
 const queryCurrentEpochVerificationData = async (
   ogmiosUrl: string,
   epochNonce: string,
@@ -696,12 +713,14 @@ const queryCurrentEpochStakeDistribution = async (
 
 export {
   ogmiosRequest,
+  operationalCertificatePoolIdBytes,
   parseOperationalCertificateCounters,
   parseShelleyGenesisConfig,
   parseStakeDistributionRows,
   queryCurrentEpochStakeDistribution,
   queryCurrentEpochVerificationData,
   queryEpochContextAtPoint,
+  queryInitialPoolParametersAtPoint,
   queryOperationalCertificateCountersAtPoint,
   queryPraosNoncesAtPoint,
   type OgmiosCurrentEpochStakeDistributionEntry,

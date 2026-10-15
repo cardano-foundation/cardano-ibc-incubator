@@ -86,7 +86,7 @@ go get github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probab
 
 ## Epoch challenge deployment
 
-New epoch roots are quarantined for three minutes of Cosmos host time, including
+New epoch roots are quarantined for twelve hours of Cosmos host time, including
 bootstrap and recovery. Updates can advance while pending, but IBC proof use is
 blocked. This requires the companion Gateway/Hermes changes to commit proposals
 separately and wait on host-assigned deadlines. Legacy states without deadlines

@@ -137,7 +137,6 @@ interface Config {
   cardanoClientTrustingPeriodSeconds: number;
   cardanoClientMaxClockDriftSeconds: number;
   cardanoRandomnessStabilisationWindowSlots?: string;
-  cardanoPoolRegistryCheckpointFile?: string;
   cardanoStabilityCheckpointMaxBridgeBlocks: number;
   cardanoEpochParamsEndpoint?: string;
   cardanoLocalEpochContextEndpoint?: string;
@@ -160,12 +159,13 @@ export default (): Partial<Config> => {
     process.env.CARDANO_BLOCKFROST_ENDPOINT || defaultBlockfrostEndpoint(process.env.CARDANO_NETWORK_MAGIC);
   validatePublicNetworkStabilityConfig(cardanoNetwork, cardanoEpochParamsEndpoint);
 
-  const cardanoClientTrustingPeriodSeconds = Number(process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS || 86_400);
+  const defaultTrustingPeriod = 172_800;
+  const cardanoClientTrustingPeriodSeconds = Number(process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS || defaultTrustingPeriod);
   if (
     !Number.isSafeInteger(cardanoClientTrustingPeriodSeconds) ||
     cardanoClientTrustingPeriodSeconds < MIN_CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS
   ) {
-    throw new Error('CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS must be at least 86400 for six-hour HostState heartbeats');
+    throw new Error('CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS must be at least 172800 for bounded initialization and the response window');
   }
 
   return {
@@ -187,7 +187,6 @@ export default (): Partial<Config> => {
       process.env.CARDANO_EPOCH_LENGTH || defaultEpochLength(process.env.CARDANO_NETWORK_MAGIC),
     ),
     cardanoRandomnessStabilisationWindowSlots: process.env.CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS,
-    cardanoPoolRegistryCheckpointFile: process.env.CARDANO_POOL_REGISTRY_CHECKPOINT_FILE,
     cardanoClientTrustingPeriodSeconds,
     cardanoClientMaxClockDriftSeconds: positiveGoDurationSecondsEnv(
       'CARDANO_CLIENT_MAX_CLOCK_DRIFT_SECONDS',

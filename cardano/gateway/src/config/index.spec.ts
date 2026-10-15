@@ -190,14 +190,14 @@ describe('Permissionless heartbeat trusting period', () => {
     process.env = originalEnv;
   });
 
-  it('keeps the supported 24-hour default', () => {
-    expect(loadConfig().cardanoClientTrustingPeriodSeconds).toBe(86_400);
+  it('keeps the supported 48-hour default', () => {
+    expect(loadConfig().cardanoClientTrustingPeriodSeconds).toBe(172_800);
   });
-  it.each(['1', '21600', '86399', '-1', '86400.5', 'NaN'])(
+  it.each(['1', '21600', '86399', '86400', '172799', '-1', '86400.5', 'NaN'])(
     'rejects a probabilistic trusting period of %s seconds',
     (value) => {
       process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS = value;
-      expect(() => loadConfig()).toThrow('must be at least 86400');
+      expect(() => loadConfig()).toThrow('must be at least 172800');
     },
   );
 });
