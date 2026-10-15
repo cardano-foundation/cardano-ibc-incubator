@@ -56,9 +56,9 @@ async function main() {
   const req = createRequire(path.join(root, 'cardano/gateway/package.json'));
   const { Data } = req('@lucid-evolution/lucid');
   const [clients, connections, channels] = await Promise.all([
-    json('http://127.0.0.1:1527/ibc/core/client/v1/client_states'),
-    json('http://127.0.0.1:1527/ibc/core/connection/v1/connections'),
-    json('http://127.0.0.1:1527/ibc/core/channel/v1/channels'),
+    json(`http://${providers.cosmosRest}/ibc/core/client/v1/client_states`),
+    json(`http://${providers.cosmosRest}/ibc/core/connection/v1/connections`),
+    json(`http://${providers.cosmosRest}/ibc/core/channel/v1/channels`),
   ]);
   assertNoIbcState(Data.from(datum.datum), clients, connections, channels);
   console.log(JSON.stringify({ poolAgingPermitted: true, genesisSha256: providers.genesisSha256 }));

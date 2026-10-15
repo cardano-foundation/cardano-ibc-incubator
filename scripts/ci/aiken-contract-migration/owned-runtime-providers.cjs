@@ -5,7 +5,12 @@ const { createHash } = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 
 function loopbackAddress(config, service, target) {
-  const bindings = config.services[service].ports.filter(port =>
+  const bindings = config.services[service].ports.map(port => {
+    if (typeof port !== 'string') return port;
+    const fields = port.split(':');
+    assert.equal(fields.length, 3, 'Owned provider requires an explicit IPv4 loopback binding');
+    return { host_ip: fields[0], published: fields[1], target: Number(fields[2]) };
+  }).filter(port =>
     typeof port === 'object' && Number(port.target) === target);
   assert.equal(bindings.length, 1, `Expected one ${service}:${target} binding`);
   const binding = bindings[0];
@@ -34,8 +39,10 @@ function ownedRuntimeProviders(runtimeArg, counterparty = false) {
     providers[name] = address;
   }
   if (counterparty) {
-    for (const [target, port] of [[26657, 28757], [1317, 1527]]) {
-      assert.equal(docker(['port', 'cosmos', String(target)]).trim(), `127.0.0.1:${port}`, 'Counterparty runtime mismatch');
+    for (const [name, target] of [['cosmosRpc', 26657], ['cosmosRest', 1317]]) {
+      const address = loopbackAddress(config, 'cosmos', target);
+      assert.equal(docker(['port', 'cosmos', String(target)]).trim(), address, 'Counterparty runtime mismatch');
+      providers[name] = address;
     }
   }
   const genesis = fs.readFileSync(path.join(runtime, 'runtime/genesis-shelley.json'), 'utf8');
@@ -44,6 +51,7 @@ function ownedRuntimeProviders(runtimeArg, counterparty = false) {
   assert.equal(JSON.parse(genesis).networkMagic, 42, 'Owned magic-42 network required');
   return { kupo: providers.kupo, ogmios: providers.ogmios, node: providers.node,
     history: providers.history, historyDb: providers.historyDb,
+    ...(counterparty ? { cosmosRpc: providers.cosmosRpc, cosmosRest: providers.cosmosRest } : {}),
     genesisSha256: createHash('sha256').update(genesis).digest('hex') };
 }
 
