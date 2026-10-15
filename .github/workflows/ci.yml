@@ -1172,7 +1172,7 @@ jobs:
           go-version-file: cosmos/cardano-probabilistic-light-client-v8/go.mod
           cache-dependency-path: |
             cosmos/cardano-probabilistic-light-client-v8/go.sum
-            cosmos/cardano-mithril-light-client-v10/go.sum
+            cosmos/cardano-probabilistic-light-client-v10/go.sum
 
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
@@ -1221,8 +1221,6 @@ jobs:
             path: cosmos/async-icq-v10
           - name: vesseloracle-v10
             path: cosmos/vesseloracle-v10
-          - name: mithril-v10
-            path: cosmos/cardano-mithril-light-client-v10
           - name: ibc-go-v10
             path: cosmos/cardano-probabilistic-light-client-v10
           - name: ibc-go-v8
