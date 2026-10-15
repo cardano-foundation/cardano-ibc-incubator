@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -369,8 +370,8 @@ func TestExportIdleCheckpointHistory(t *testing.T) {
 		exportedContexts = append(exportedContexts, hex.EncodeToString(raw))
 	}
 	acceptanceWriteJSON(t, filepath.Join(root, "gateway-history.json"), map[string]any{"blocks": exportedBlocks, "contexts": exportedContexts})
-    channelProof,_:=acceptanceProof(t,acceptanceChannelValues(t),"channelEnds/ports/transfer/channels/channel-0")
-    acceptanceWriteJSON(t,filepath.Join(root,"channel-proof.json"),map[string]any{"proof":channelProof})
+	channelProof, _ := acceptanceProof(t, acceptanceChannelValues(t), "channelEnds/ports/transfer/channels/channel-0")
+	acceptanceWriteJSON(t, filepath.Join(root, "channel-proof.json"), map[string]any{"proof": channelProof})
 
 	headers := map[string]*ProbabilisticHeader{}
 	trusted := uint64(966)
@@ -382,12 +383,49 @@ func TestExportIdleCheckpointHistory(t *testing.T) {
 		trusted = anchor
 	}
 	headers["fork"] = acceptanceSourceHeader(t, history, "bad", 976, 1001, true)
-    headers["later-fork"] = acceptanceSourceHeader(t,history,"later",1063,1094,true)
+	headers["later-fork"] = acceptanceSourceHeader(t, history, "later", 1063, 1094, true)
 	acceptanceWriteJSON(t, filepath.Join(root, "headers.json"), headers)
 	for _, point := range []struct{ height, count uint64 }{{966, 1}, {1125, 2}} {
 		for seq := uint64(1); seq <= point.count; seq++ {
 			proof, _ := acceptanceProof(t, acceptanceLaneValuesForReceiver(t, point.count, receiver), acceptanceCommitmentKey(seq))
 			acceptanceWriteJSON(t, filepath.Join(root, fmt.Sprintf("packet-%d-%d.json", point.height, seq)), map[string]any{"packet": acceptancePacketForReceiver(seq, receiver), "proof_commitment": proof, "proof_height": NewHeight(0, point.height), "signer": receiver})
 		}
+	}
+}
+
+// Export proofs and later signed headers without regenerating or shifting the
+// source history of an already initialized native application.
+func TestExportIdleCheckpointAuxiliaryProofs(t *testing.T) {
+	root := os.Getenv("IDLE_CHECKPOINT_FIXTURE_DIR")
+	if root == "" {
+		t.Skip("called by the native checkpoint lifecycle driver")
+	}
+	var history acceptanceHistory
+	acceptanceReadJSON(t, filepath.Join(root, "source-history.json"), &history)
+	receiverBytes, err := os.ReadFile(filepath.Join(root, "operator-address.txt"))
+	require.NoError(t, err)
+	receiver := strings.TrimSpace(string(receiverBytes))
+	key := "channelEnds/ports/transfer/channels/channel-0"
+	proof, rootHash := acceptanceProof(t, acceptanceChannelValues(t), key)
+	require.Equal(t, history.Consensus.IbcStateRoot, rootHash, "fixture must use this release's channel encoding")
+	expected := channeltypes.NewChannel(channeltypes.TRYOPEN, channeltypes.UNORDERED, channeltypes.NewCounterparty("transfer", "channel-0"), []string{"connection-0"}, "ics20-1")
+	expectedBytes, err := expected.Marshal()
+	require.NoError(t, err)
+	require.NoError(t, VerifyIbcStateMembership(rootHash, []byte(key), expectedBytes, proof))
+	timeout := history.Consensus.Timestamp + uint64(72*time.Hour)
+	data := transfer.NewFungibleTokenPacketData("inj", "1", receiver, "cardano-test-receiver", "").GetBytes()
+	packet := channeltypes.NewPacket(data, 1, "transfer", "channel-0", "transfer", "channel-0", clienttypes.ZeroHeight(), timeout)
+	for _, point := range []struct{ height, count uint64 }{{966, 1}, {1125, 2}} {
+		key := "receipts/ports/transfer/channels/channel-0/sequences/1"
+		proof, _ := acceptanceProof(t, acceptanceLaneValuesForReceiver(t, point.count, receiver), key)
+		message := channeltypes.NewMsgTimeout(packet, 0, proof, clienttypes.NewHeight(0, point.height), receiver)
+		acceptanceWriteJSON(t, filepath.Join(root, fmt.Sprintf("timeout-%d.json", point.height)), message)
+	}
+	for name, header := range map[string]*ProbabilisticHeader{
+		"expired-update":    acceptanceSourceHeader(t, history, "honest", 966, 1001, true),
+		"frozen-checkpoint": acceptanceSourceHeader(t, history, "honest", 1100, 1110, true),
+		"late-checkpoint":   acceptanceSourceHeader(t, history, "honest", 1125, 1131, true),
+	} {
+		acceptanceWriteJSON(t, filepath.Join(root, name+"-header.json"), header)
 	}
 }
