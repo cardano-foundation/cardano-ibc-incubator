@@ -59,7 +59,7 @@ func TestAppStagedRecoveryRechecksSubstituteInvalidation(t *testing.T) {
 				require.True(t, found)
 				return cs
 			}
-			_, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private(subjectID), subject, history.Consensus)
+			_, _, err := initializeTrusted(t, ctx, cdc, private(subjectID), subject, history.Consensus)
 			require.NoError(t, err)
 			// This helper authenticates signed canonical and conflicting histories.
 			// The challenge disputes B's committed epoch-9 ancestry, not its table.

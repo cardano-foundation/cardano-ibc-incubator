@@ -51,7 +51,7 @@ func checkpointPrepare(encoding injcodec.EncodingConfig, address string) {
 	ctx := sdk.Context{}.WithMultiStore(ms).WithBlockTime(time.Unix(0, int64(f.Consensus.Timestamp))).WithBlockHeight(1).WithChainID("injective-777").WithGasMeter(storetypes.NewInfiniteGasMeter()).WithEventManager(sdk.NewEventManager())
 	clients, consensuses, metadatas := []any{}, []any{}, []any{}
 	for i, key := range keys {
-		cs, consensus, err := lc.InitializeFromTrustedCheckpoint(ctx, encoding.Codec, ctx.KVStore(key), f.Client, f.Consensus)
+		cs, consensus, err := lc.InitializeFromTrustedCheckpoint(ctx, encoding.Codec, ctx.KVStore(key), f.Client, f.Consensus, certifyBootstrap(f.Client))
 		must(err)
 		id := lc.ModuleName + "-" + string(rune('0'+i))
 		clients = append(clients, map[string]any{"client_id": id, "client_state": anyJSON(encoding.Codec, cs)})
@@ -150,7 +150,7 @@ func checkpointAddMaintainer(encoding injcodec.EncodingConfig, address string) {
 	must(json.Unmarshal(raw, &f))
 	f.Client.TrustingPeriod = 96 * time.Hour
 	client, consensus := f.Client, f.Consensus
-	client, consensus, steps, err := lc.BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, client, consensus)
+	client, consensus, steps, err := lc.BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, client, consensus, certifyBootstrap(client))
 	must(err)
 	message, err := clienttypes.NewMsgCreateClient(client, consensus, address)
 	must(err)

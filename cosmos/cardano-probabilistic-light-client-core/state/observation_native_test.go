@@ -35,7 +35,7 @@ func TestStagedNativeBoundaryDifferential(t *testing.T) {
 	private := gaskv.NewStore(dbadapter.Store{DB: dbm.NewMemDB()}, meter, storetypes.KVGasConfig())
 	ctx := Context{Time: time.Unix(0, int64(fixture.Header.DescendantBlocks[len(fixture.Header.DescendantBlocks)-1].Timestamp)).Add(time.Hour), Height: 1, SelfHeight: NewHostHeight(0, 1), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }, ConsumeGas: meter.ConsumeGas, GasConsumed: meter.GasConsumed}
 	cdc := jsonTestCodec{}
-	client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, fixture.Client, fixture.Consensus)
+	client, _, err := initializeTrusted(t, ctx, cdc, private, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
 	ctx.VerifyHostUsability = stagedTestHostWindow
 	ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod + 2*time.Second)
@@ -158,9 +158,9 @@ func TestReceiptChallengeAndRecoveryUsePinnedHistory(t *testing.T) {
 	substitutePrivate := dbadapter.Store{DB: dbm.NewMemDB()}
 	ctx := Context{Time: time.Unix(0, int64(fixture.Header.DescendantBlocks[len(fixture.Header.DescendantBlocks)-1].Timestamp)).Add(time.Hour), Height: 1, SelfHeight: NewHostHeight(0, 1), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 	cdc := jsonTestCodec{}
-	subject, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, subjectPrivate, fixture.Client, fixture.Consensus)
+	subject, _, err := initializeTrusted(t, ctx, cdc, subjectPrivate, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
-	substitute, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, substitutePrivate, fixture.Client, fixture.Consensus)
+	substitute, _, err := initializeTrusted(t, ctx, cdc, substitutePrivate, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
 	ctx.VerifyHostUsability = stagedTestHostWindow
 	ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod + 2*time.Second)
@@ -226,7 +226,7 @@ func TestStagingRetriesAndOrderingDoNotChangeDeadlines(t *testing.T) {
 	private := dbadapter.Store{DB: dbm.NewMemDB()}
 	ctx := Context{Time: time.Unix(0, int64(fixture.Consensus.Timestamp)), Height: 1, SelfHeight: NewHostHeight(0, 1), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 	cdc := jsonTestCodec{}
-	client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, fixture.Client, fixture.Consensus)
+	client, _, err := initializeTrusted(t, ctx, cdc, private, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
 	plan, err := BuildObservationPlan(client, fixture.Header, nil, 13, 4)
 	require.NoError(t, err)
@@ -326,7 +326,7 @@ func TestNativeReceiptsIgnoreDifferentTemporaryTails(t *testing.T) {
 	private := dbadapter.Store{DB: dbm.NewMemDB()}
 	ctx := Context{Time: time.Unix(0, int64(fixture.Fork.DescendantBlocks[len(fixture.Fork.DescendantBlocks)-1].Timestamp)).Add(time.Hour), Height: 1, SelfHeight: NewHostHeight(0, 1), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 	cdc := jsonTestCodec{}
-	client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, fixture.Client, fixture.Consensus)
+	client, _, err := initializeTrusted(t, ctx, cdc, private, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
 	receipts := [][]byte{}
 	for _, header := range []*ProbabilisticHeader{&earlier, fixture.Fork} {

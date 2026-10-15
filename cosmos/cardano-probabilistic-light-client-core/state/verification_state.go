@@ -127,7 +127,11 @@ func currentVerificationCheckpoint(ctx Context, cs *ClientState) (*verificationC
 // InitializeFromTrustedCheckpoint is called by the bootstrap builder with explicit trusted
 // starting data. It never constructs missing nonce, registration or production
 // history. Pages are destination objects and can be shared by other checkpoints.
-func InitializeFromTrustedCheckpoint(ctx Context, cdc StateCodec, private storetypes.KVStore, client *ClientState, consensus *ConsensusState) (*ClientState, *ConsensusState, error) {
+// As at runtime, the stake table must match the Mithril certificate.
+func InitializeFromTrustedCheckpoint(ctx Context, cdc StateCodec, private storetypes.KVStore, client *ClientState, consensus *ConsensusState, mithrilCertificate []byte) (*ClientState, *ConsensusState, error) {
+	if err := client.requireBootstrapAnchor(); err != nil {
+		return nil, nil, err
+	}
 	store, err := ctx.snapshotStore()
 	if err != nil {
 		return nil, nil, err
@@ -155,7 +159,7 @@ func InitializeFromTrustedCheckpoint(ctx Context, cdc StateCodec, private storet
 	namespace := sha256.Sum256(binary.BigEndian.AppendUint64(append([]byte("cardano-ibc.namespace/v2\x00"), checkpoint.Scope[:]...), sequence))
 	store.Set([]byte("snapshots/v2/nextNamespace"), binary.BigEndian.AppendUint64(nil, sequence))
 	thin := referenceClientState(client, namespace[:], checkpoint, reference)
-	if err := thin.resetEpochDeadline(ctx, checkpoint.Epoch); err != nil {
+	if err := thin.certifyBootstrapStake(ctx, private, store, checkpoint.Scope, checkpoint.Stake.Root, mithrilCertificate); err != nil {
 		return nil, nil, err
 	}
 	if err := pinVerificationCheckpoint(store, checkpoint, namespaceOwner(thin.StorageNamespace, thin.VerificationGeneration, 1, nil)); err != nil {

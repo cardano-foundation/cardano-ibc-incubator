@@ -88,6 +88,10 @@ func (cs *ClientState) verifyMithrilStakeCertificates(ctx Context, msg *MithrilS
 	if err := msg.ValidateBasic(); err != nil {
 		return err
 	}
+	// The bootstrap's own certificate moves the anchor to its epoch.
+	if cs.BootstrapPending {
+		return errorsmod.Wrap(ErrInvalidHeader, "trusted bootstrap import has not completed")
+	}
 	if ctx.ConsumeGas != nil {
 		// Covers the verification here and its repetition in UpdateState.
 		ctx.ConsumeGas(uint64(len(msg.Certificates))*MithrilCertificateVerificationGas, "Mithril certificate verification")
@@ -208,30 +212,4 @@ func (cs ClientState) mithrilStakeConflict(ctx Context, msg *MithrilStakeCertifi
 		}
 	}
 	return false
-}
-
-// AnchorToMithril sets a trusted bootstrap client's Mithril anchor from an
-// aggregator after checking Mithril's distribution against the client's
-// current stake table. The anchor is trusted like the rest of the bootstrap.
-func AnchorToMithril(client *ClientState, aggregator string) error {
-	contexts, err := client.normalizedEpochContexts()
-	if err != nil {
-		return err
-	}
-	current := epochContextByEpoch(contexts, client.CurrentEpoch)
-	if current == nil {
-		return fmt.Errorf("trusted client has no epoch %d stake table", client.CurrentEpoch)
-	}
-	entries := make([]mithril.StakeEntry, 0, len(current.StakeDistribution))
-	for _, entry := range current.StakeDistribution {
-		entries = append(entries, mithril.StakeEntry{PoolID: entry.PoolId, Stake: entry.Stake})
-	}
-	anchor, err := mithril.FetchStakeAnchor(aggregator, client.CurrentEpoch, entries)
-	if err != nil {
-		return err
-	}
-	client.MithrilEpoch = anchor.Epoch
-	client.MithrilAggregateVerificationKey = anchor.AggregateVerificationKey
-	client.MithrilProtocolParametersHash = anchor.ProtocolParametersHash
-	return nil
 }

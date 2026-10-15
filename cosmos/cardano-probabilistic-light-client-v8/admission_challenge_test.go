@@ -122,7 +122,7 @@ func TestAppAdmitsSnapshotChallengeThroughCheckTx(t *testing.T) {
 func stageSnapshotChallenge(t *testing.T, ctx sdk.Context, cdc codec.BinaryCodec, private storetypes.KVStore, clientID string, history idleCheckpointHistoryData) (*Misbehaviour, time.Time) {
 	t.Helper()
 	ctx = withTestHostProgress(ctx.WithBlockTime(time.Unix(0, int64(history.Consensus.Timestamp))))
-	client, _, err := InitializeFromTrustedCheckpoint(ctx, cdc, private, history.Client, history.Consensus)
+	client, _, err := initializeTrusted(t, ctx, cdc, private, history.Client, history.Consensus)
 	require.NoError(t, err)
 	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(12*time.Hour + time.Second))
 	reload := func() {

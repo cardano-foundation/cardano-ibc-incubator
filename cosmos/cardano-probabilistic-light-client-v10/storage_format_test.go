@@ -20,7 +20,7 @@ import (
 
 func TestOnlySnapshotStorageCanCreateAClient(t *testing.T) {
 	fixture := capacityEvidence(t, "control")
-	client, initial, _, err := BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, fixture.Client, fixture.Consensus)
+	client, initial, _, err := buildTrustedBootstrap(t, dbadapter.Store{DB: dbm.NewMemDB()}, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
 	require.Equal(t, state.StorageVersion, client.StorageVersion)
 	require.Empty(t, client.EpochStakeDistribution)
@@ -119,6 +119,6 @@ func TestInitialRegistryCanRetainZeroStakePoolsBeyondElectionCapacity(t *testing
 		registry.Effective = append(registry.Effective, binding)
 	}
 	require.Len(t, fixture.Client.EpochStakeDistribution, state.MaxStakeEntries)
-	_, _, _, err := BuildBootstrap(dbadapter.Store{DB: dbm.NewMemDB()}, fixture.Client, fixture.Consensus)
+	_, _, _, err := buildTrustedBootstrap(t, dbadapter.Store{DB: dbm.NewMemDB()}, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
 }

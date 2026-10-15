@@ -9,6 +9,7 @@ import (
 
 	storetypes "cosmossdk.io/store/types"
 	"github.com/blinklabs-io/gouroboros/cbor"
+	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/mithril"
 )
 
 const ObservationBootstrapImport uint32 = 10
@@ -95,6 +96,9 @@ func allocateStorageNamespace(store storetypes.KVStore, scope [32]byte) ([]byte,
 func (cs *ClientState) initializeClientState(ctx Context, cdc StateCodec, private storetypes.KVStore, consensus *ConsensusState) error {
 	if !cs.BootstrapPending || cs.VerificationGeneration != 1 || len(cs.BootstrapObjects) == 0 || len(cs.BootstrapObjects) > MaxClientBytes {
 		return fmt.Errorf("initialization requires an explicit trusted bootstrap manifest")
+	}
+	if err := cs.requireBootstrapAnchor(); err != nil {
+		return err
 	}
 	var manifest bootstrapManifest
 	if _, err := cbor.Decode(cs.BootstrapObjects, &manifest); err != nil {
@@ -313,10 +317,10 @@ func (cs *ClientState) continueBootstrap(ctx Context, cdc StateCodec, private, s
 				return err
 			}
 		}
-		cs.BootstrapPending = false
-		if err := cs.resetEpochDeadline(ctx, cs.CurrentEpoch); err != nil {
+		if err := cs.certifyBootstrapStake(ctx, private, shared, scope, progress.Manifest.Checkpoint.Stake.Root, chunk.Objects); err != nil {
 			return err
 		}
+		cs.BootstrapPending = false
 		if err := writeClientState(ctx, cdc, private, cs); err != nil {
 			return err
 		}
@@ -336,11 +340,27 @@ func packetObjectDigest(scope [32]byte, raw []byte) [32]byte {
 }
 
 // BuildBootstrap runs in a preparation tool. The creator explicitly
-// trusts the resulting checkpoint. Imports prove only that the uploaded bytes
-// match that starting commitment, not that a relayer-selected checkpoint is true.
-func BuildBootstrap(store storetypes.KVStore, client *ClientState, consensus *ConsensusState) (*ClientState, *ConsensusState, []*ProbabilisticHeader, error) {
+// trusts the resulting checkpoint and the client's Mithril anchor. Imports
+// prove only that the uploaded bytes match that starting commitment, not that
+// a relayer-selected checkpoint is true. The final step carries the Mithril
+// certificate that the stake table must match.
+func BuildBootstrap(store storetypes.KVStore, client *ClientState, consensus *ConsensusState, mithrilCertificate []byte) (*ClientState, *ConsensusState, []*ProbabilisticHeader, error) {
+	if err := client.requireBootstrapAnchor(); err != nil {
+		return nil, nil, nil, err
+	}
+	if err := validateBootstrapCertificate(mithrilCertificate); err != nil {
+		return nil, nil, nil, err
+	}
 	cp, err := buildTrustedCheckpoint(store, client, consensus)
 	if err != nil {
+		return nil, nil, nil, err
+	}
+	root, err := stakeTableMithrilRoot(store, cp.Scope, cp.Stake.Root)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	anchor, _ := client.mithrilAnchor()
+	if _, err := mithril.VerifyBootstrapStake(anchor, mithrilCertificate, cp.Epoch, root); err != nil {
 		return nil, nil, nil, err
 	}
 	ref, err := saveVerificationCheckpoint(store, cp)
@@ -408,7 +428,7 @@ func BuildBootstrap(store storetypes.KVStore, client *ClientState, consensus *Co
 		pages = pages[count:]
 	}
 	seq++
-	steps = append(steps, &ProbabilisticHeader{ObservationChunk: &ObservationChunk{Operation: ObservationBootstrapComplete, Sequence: seq}})
+	steps = append(steps, &ProbabilisticHeader{ObservationChunk: &ObservationChunk{Operation: ObservationBootstrapComplete, Objects: bytes.Clone(mithrilCertificate), Sequence: seq}})
 	if len(steps) > int(MaxObservationSteps) {
 		return nil, nil, nil, fmt.Errorf("initial state requires more than %d bounded import operations", MaxObservationSteps)
 	}

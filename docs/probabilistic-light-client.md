@@ -276,17 +276,18 @@ An independent observer still needs qualifying native evidence and transaction i
 
 The epoch nonce comes from verified block history, and pool identities and VRF
 keys come from the registration registry. Stake amounts are the remaining
-unsigned part of an epoch table. For a client created with a Mithril anchor,
-a Cardano stake distribution certified by Mithril outranks an uploaded stake
-table. Once one is recorded for an epoch, that epoch's table must equal it and
-needs no response window. Until then the uploaded table and its 12-hour
-response window apply, as for any client. Every existing check stays in place.
+unsigned part of an epoch table. Every client starts from a stake table that
+Mithril certified. Afterwards a Cardano stake distribution certified by Mithril
+outranks an uploaded stake table. Once one is recorded for an epoch, that
+epoch's table must equal it and needs no response window. Until then the
+uploaded table and its 12-hour response window apply. Every existing check
+stays in place.
 
 The anchor is three client-state fields, trusted at bootstrap like the
 checkpoint: `mithril_epoch`, `mithril_aggregate_verification_key` and
 `mithril_protocol_parameters_hash`. They name the aggregate verification key
 that signs Mithril certificates in that epoch and the hash of its protocol
-parameters. A client without them keeps the response-window model.
+parameters. Every client must be created with them.
 
 A relayer submits `MithrilStakeCertificates` through `MsgUpdateClient`. It
 carries Mithril aggregator certificates in JSON from consecutive epochs,
@@ -371,19 +372,34 @@ lottery comparison for each claimed index.
 The client verifies them again in `UpdateState` because ibc-go's ReCheckTx path
 omits `VerifyClientMessage`.
 
-The bootstrap tool sets the anchor when given an aggregator, for example
+A client never starts from a stake table that only the response window
+protects. A client bootstrapped in epoch `C` is created with the anchor for
+epoch `C-1`. The final step of its bootstrap carries the certificate signed in
+`C-1` that certifies epoch `C-2`'s distribution, which elects epoch `C`'s
+leaders. Before the bootstrap completes, the client verifies that certificate
+against the anchor, computes Mithril's Merkle root over the imported stake
+table and requires the two roots to be equal. It then records the root for
+epoch `C`, moves the anchor to epoch `C`, and makes the table usable after the
+next committed host block. Until the bootstrap completes the client accepts no
+`MithrilStakeCertificates`. With the largest supported table, 4,000 pools, the
+final step uses about 5.9 million gas, within the 36 million gas bound of an
+operation. A genesis builder using `InitializeFromTrustedCheckpoint` must supply
+the same certificate.
+
+The bootstrap tool therefore requires an aggregator, for example
 `go run ./cmd/bootstrap -input trusted-checkpoint.json -output bootstrap.json
 -mithril-aggregator https://aggregator.release-mainnet.api.mithril.network/aggregator`.
-For a client bootstrapped in epoch `C` it reads the certificate that sealed
-epoch `C-2`'s distribution. Its signed parts name the key and parameters that
-sign epoch `C`'s certificates. That distribution elects epoch `C`'s leaders, so
-the tool refuses the anchor unless it equals the trusted table. Without the
-flag the client is unanchored. The local devnet's aggregator does not sign
-Cardano stake distributions, so devnet clients stay unanchored.
+The certificate that sealed epoch `C-3`'s distribution, signed in `C-2`, names
+the key and parameters that sign epoch `C-1`'s certificates, and gives the
+anchor. The tool fetches the certificate that sealed epoch `C-2`'s distribution
+and checks it against the trusted table before writing the bundle, so a
+bootstrap needs an epoch of at least 3. The public aggregators are
+`release-mainnet`, `release-preprod` and `pre-release-preview` at
+`https://aggregator.<name>.api.mithril.network/aggregator`.
 
 The Gateway's `MithrilStakeCertificates` query returns up to four certificates
 that extend a given `mithril_epoch`, ready to submit as a client message.
-Hermes asks for them from each anchored client's refresh task and before it
+Hermes asks for them from each client's refresh task and before it
 stages a new epoch table, and submits any it receives. After an empty answer it
 waits ten minutes before asking again for the same epoch. The Gateway also
 refuses to propose a stake table that differs from a distribution Mithril has
@@ -402,8 +418,9 @@ Recovery adopts the substitute's Mithril state.
   - subject and substitute certified different distributions for one epoch;
   - they hold different anchors for one epoch;
   - the substitute's anchor is more than eight epochs ahead of its checkpoint.
-- **Trust configuration.** Whether a client is anchored is a recovery
-  invariant, so recovery cannot add or remove Mithril-certified stake.
+- **Trust configuration.** Every client is created anchored. Recovery still
+  refuses a subject or substitute without an anchor, so it cannot remove
+  Mithril-certified stake.
 
 The verifier links blst through cgo, so chain binaries must be built with
 `CGO_ENABLED=1`. On amd64, blst's Go binding uses ADX instructions unless it is
@@ -412,11 +429,12 @@ built portable. Build distributed binaries with
 time, as mithril-stm's own blst build does. CI runs the verifier tests on amd64
 in both builds, on arm64 Linux and on macOS.
 
-This adds Mithril's assumptions for anchored clients: the genesis key behind the
-anchor and an honest majority of the stake that signs Mithril certificates. If
-Mithril never certifies some epoch's distribution, the anchor cannot advance
-past that epoch. The client keeps working, and every later epoch falls back to
-the response window.
+This adds Mithril's assumptions: the genesis key behind the anchor and an
+honest majority of the stake that signs Mithril certificates. A client cannot
+be created until Mithril certifies the distribution that elects its bootstrap
+epoch's leaders. If Mithril later never certifies some epoch's distribution,
+the anchor cannot advance past that epoch. The client keeps working, and every
+later epoch falls back to the response window.
 
 ## Host-Chain Software Upgrades
 

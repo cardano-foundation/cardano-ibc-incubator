@@ -87,7 +87,7 @@ func (h ProbabilisticHeader) validateObservationChunk() error {
 	}
 	if (chunk.Operation != ObservationAppendStake && len(chunk.StakeRows) != 0) ||
 		(chunk.Operation != ObservationAppendBlocks && len(chunk.Blocks) != 0) ||
-		(chunk.Operation != ObservationBootstrapImport && len(chunk.Objects) != 0) {
+		(chunk.Operation != ObservationBootstrapImport && chunk.Operation != ObservationBootstrapComplete && len(chunk.Objects) != 0) {
 		return fmt.Errorf("observation operation contains unexpected evidence")
 	}
 	if chunk.Operation == ObservationAppendStake || chunk.Operation == ObservationAppendBlocks || chunk.Operation == ObservationBootstrapImport || chunk.Operation == ObservationBootstrapComplete {
@@ -109,6 +109,9 @@ func (h ProbabilisticHeader) validateObservationChunk() error {
 	}
 	if chunk.Operation == ObservationBootstrapImport && len(chunk.Objects) > maxBootstrapPagesPerStep*(SnapshotPageBytes+64) {
 		return fmt.Errorf("bootstrap object payload exceeds its page bound")
+	}
+	if chunk.Operation == ObservationBootstrapComplete && len(chunk.Objects) > MaxMithrilCertificateBytes {
+		return fmt.Errorf("bootstrap Mithril certificate exceeds %d bytes", MaxMithrilCertificateBytes)
 	}
 	return nil
 }
