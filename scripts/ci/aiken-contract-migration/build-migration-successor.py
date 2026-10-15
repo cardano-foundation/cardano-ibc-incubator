@@ -10,6 +10,7 @@ test release, not a production proposal.
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -44,10 +45,10 @@ def main():
             # The production heartbeat already caps its window at two minutes.
             # Tighten this branch further so the rehearsal still proves that
             # the successor enforces new code while normal ten-second probes pass.
-            heartbeat = "Heartbeat -> host.validate_heartbeat(old_datum, new_datum, transaction.validity_range)"
-            if content.count(heartbeat) != 1:
+            heartbeat = re.compile(r"Heartbeat\s*->\s*host\.validate_heartbeat\(\s*old_datum,\s*new_datum,\s*transaction\.validity_range\s*,?\s*\)")
+            if len(heartbeat.findall(content)) != 1:
                 raise RuntimeError("Heartbeat wrapper changed: review successor fixture")
-            content = content.replace(heartbeat, heartbeat + " && migration_window.get_tx_valid_to(transaction.validity_range) - migration_window.get_tx_valid_from(transaction.validity_range) <= 30000")
+            content = heartbeat.sub(lambda match: match.group(0) + " && migration_window.get_tx_valid_to(transaction.validity_range) - migration_window.get_tx_valid_from(transaction.validity_range) <= 30000", content)
         path.write_text(content)
     subprocess.run(["aiken", "fmt"], cwd=target, check=True)
     subprocess.run(["aiken", "build", "--deny", "--trace-level", "silent"], cwd=target, check=True)
