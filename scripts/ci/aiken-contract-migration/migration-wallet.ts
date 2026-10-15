@@ -12,7 +12,7 @@ import { join, resolve } from "@std/path";
 import { buildOperationalLucid } from "../../../cardano/offchain/scripts/shutdown-deployment.ts";
 import { migrationTiming } from "../../../cardano/offchain/src/migration-timing.ts";
 import { migrationSubmitter } from "../../../cardano/offchain/src/migration-submission.ts";
-import { validateOwnedRuntime } from "./owned-migration-runtime.ts";
+import { ownedRuntimeProviders } from "./owned-migration-runtime.ts";
 
 const root = resolve(import.meta.dirname!, "../../..");
 const runtime = await Deno.realPath(Deno.args[0] ?? "missing-runtime");
@@ -22,15 +22,16 @@ if (!runtime.startsWith(join(root, ".deployment-smoke") + "/")) {
 const genesis = JSON.parse(
   await Deno.readTextFile(join(runtime, "runtime/genesis-shelley.json")),
 );
-const genesisSha256 = await validateOwnedRuntime(runtime);
+const providers = ownedRuntimeProviders(runtime);
+const { genesisSha256 } = providers;
 if (genesis.networkMagic !== 42) {
   throw new Error("Only the owned magic-42 devnet is supported");
 }
 for (
   const name of ["KUPO_API_KEY", "OGMIOS_API_KEY", "MIGRATION_EXECUTOR_SK"]
 ) Deno.env.delete(name);
-Deno.env.set("KUPO_URL", "http://127.0.0.1:2742");
-Deno.env.set("OGMIOS_URL", "http://127.0.0.1:2637");
+Deno.env.set("KUPO_URL", `http://${providers.kupo}`);
+Deno.env.set("OGMIOS_URL", `http://${providers.ogmios}`);
 Deno.env.set("CARDANO_NETWORK_MAGIC", "42");
 // Public, checked-in devnet fixture only. No private material is printed.
 const defaults = await Deno.readTextFile(
