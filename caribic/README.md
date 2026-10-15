@@ -286,7 +286,7 @@ caribic test --light-client challenge-recovery --chain cosmos --network v8-class
 ```
 
 This command starts an isolated native ibc-go v8 application and a separate
-watcher process. Go 1.26.5 is required. It uses the local profile's transaction,
+watcher process. Go 1.26.9 is required. It uses the local profile's transaction,
 RPC and gas limits. It takes about 10 minutes because it waits for the real
 three-minute host challenge windows. It does not require running Docker services
 and it does not take over the existing Hermes daemon.
@@ -337,7 +337,7 @@ must remain enforced. After it elapses the test receives another packet and
 refunds the pending transfer through its valid timeout proof. Native updates
 cross another epoch and packet processing continues after a successor restart.
 
-Go 1.26.5 is required. Allow about seven minutes for the real three-minute
+Go 1.26.9 is required. Allow about seven minutes for the real three-minute
 response windows. No Docker services are required. This uses the same local
 profile limits and signed Cardano fixture source as `challenge-recovery`.
 The Cardano devnet, Gateway and production Hermes are outside this scenario.
