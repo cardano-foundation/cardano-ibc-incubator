@@ -130,3 +130,52 @@ func TestCompactRecoveryRechecksExpiryAndAllowsFreshAuthorization(t *testing.T) 
 	require.Equal(t, Active, subject.Status(ctx, private, cdc))
 	require.Equal(t, uint64(2), subject.VerificationGeneration)
 }
+
+func TestCompactRecoveryRejectsSubstituteGenerationChange(t *testing.T) {
+	_, consensus := compactTrustedFixture(t, 65)
+	shared := dbadapter.Store{DB: dbm.NewMemDB()}
+	ctx := Context{Time: time.Unix(0, int64(consensus.Timestamp)).Add(time.Hour), Height: 100, SelfHeight: NewHostHeight(0, 100), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
+	cdc := jsonTestCodec{}
+	subject, private := recoveryRetryClient(t, ctx, cdc, 0, 10, 10)
+	substitute, substitutePrivate := recoveryRetryClient(t, ctx, cdc, 10, 11, 11)
+	fresh, freshPrivate := recoveryRetryClient(t, ctx, cdc, 20, 12, 12)
+	subject.UpdateStateOnMisbehaviour(ctx, cdc, private, nil)
+	subject, _ = GetClientState(private, cdc)
+	require.NoError(t, subject.CheckSubstituteAndUpdateState(ctx, cdc, private, substitutePrivate, substitute))
+	subject, _ = GetClientState(private, cdc)
+	for i := 0; i < 2; i++ {
+		require.NoError(t, subject.ContinueMaintenance(ctx, cdc, private, ObservationContinueRecovery))
+	}
+	pending := pendingRecovery(t, shared, subject)
+	require.Equal(t, uint64(64), pending.Checked)
+	require.Equal(t, uint64(1), pending.Replacement.VerificationGeneration)
+	require.False(t, pending.Replacement.IsExpired(pending.Checkpoint.Timestamp, ctx.BlockTime()))
+
+	// B is invalidated and then legitimately recovered from C. Its active new
+	// generation does not rehabilitate the old snapshot pinned for A.
+	substitute.UpdateStateOnMisbehaviour(ctx, cdc, substitutePrivate, nil)
+	substitute, _ = GetClientState(substitutePrivate, cdc)
+	require.NoError(t, substitute.CheckSubstituteAndUpdateState(ctx, cdc, substitutePrivate, freshPrivate, fresh))
+	substitute, _ = GetClientState(substitutePrivate, cdc)
+	for i := 0; i < 3; i++ {
+		require.NoError(t, substitute.ContinueMaintenance(ctx, cdc, substitutePrivate, ObservationContinueRecovery))
+		substitute, _ = GetClientState(substitutePrivate, cdc)
+	}
+	require.Equal(t, Active, substitute.Status(ctx, substitutePrivate, cdc))
+	require.Equal(t, uint64(2), substitute.VerificationGeneration)
+	before := bytes.Clone(shared.Get(compactRecoveryKey(subject)))
+	require.ErrorContains(t, subject.ContinueMaintenance(ctx, cdc, private, ObservationContinueRecovery), "substitute generation")
+	require.Equal(t, before, shared.Get(compactRecoveryKey(subject)))
+	subject, _ = GetClientState(private, cdc)
+	require.Equal(t, Frozen, subject.Status(ctx, private, cdc))
+	require.Equal(t, uint64(1), subject.VerificationGeneration)
+	// The authority can choose the new generation explicitly in a new request.
+	require.NoError(t, subject.CheckSubstituteAndUpdateState(ctx, cdc, private, substitutePrivate, substitute))
+	subject, _ = GetClientState(private, cdc)
+	for i := 0; i < 3; i++ {
+		require.NoError(t, subject.ContinueMaintenance(ctx, cdc, private, ObservationContinueRecovery))
+		subject, _ = GetClientState(private, cdc)
+	}
+	require.Equal(t, Active, subject.Status(ctx, private, cdc))
+	require.Equal(t, substitute.CheckpointReference, subject.CheckpointReference)
+}
