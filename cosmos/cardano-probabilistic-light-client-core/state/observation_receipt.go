@@ -238,8 +238,11 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 		if proposal.Table != receipt.Table {
 			return nil, fmt.Errorf("forward observation cannot replace an installed epoch allocation")
 		}
-		if uint64(ctx.BlockTime().UnixNano()) < proposal.Deadline {
-			return nil, fmt.Errorf("epoch allocation is still inside its response window")
+		// Settlement descendants can depend on this table even when the
+		// anchor remains in the old epoch. Apply the same committed-block
+		// and host-continuity gate used by proofs before publishing it.
+		if err := cs.verifyEpochUsable(ctx, proposal.Table.Epoch); err != nil {
+			return nil, err
 		}
 	}
 	if err := pinVerificationCheckpoint(store, anchor, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 1, nil)); err != nil {
