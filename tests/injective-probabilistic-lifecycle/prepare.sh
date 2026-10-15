@@ -23,7 +23,7 @@ docker build --build-arg GO_VERSION=1.26.5 -f "$REPO_DIR/chains/injective/config
   -t "$APP_IMAGE" "$OUTPUT_DIR/injective-source"
 docker build --target builder --build-arg GO_VERSION=1.26.5 -f "$REPO_DIR/chains/injective/configuration/Dockerfile" \
   -t "$BUILDER_IMAGE" "$OUTPUT_DIR/injective-source"
-docker build --build-arg "INJECTIVE_BUILDER_IMAGE=$BUILDER_IMAGE" --build-arg "INJECTIVE_IMAGE=$APP_IMAGE" \
+docker build --target "${INJECTIVE_PROBE_TARGET:-probe}" --build-arg "INJECTIVE_BUILDER_IMAGE=$BUILDER_IMAGE" --build-arg "INJECTIVE_IMAGE=$APP_IMAGE" \
   -f "$REPO_DIR/tests/injective-probabilistic-lifecycle/Dockerfile.probe" -t "$HELPER_IMAGE" \
   "$REPO_DIR/tests/injective-probabilistic-lifecycle"
 cp -R "$REPO_DIR/tests/injective-probabilistic-lifecycle/evidence/network-snapshot" "$OUTPUT_DIR/network-snapshot"

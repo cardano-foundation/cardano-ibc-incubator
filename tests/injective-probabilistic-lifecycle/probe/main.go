@@ -173,6 +173,18 @@ func main() {
 	keyBytes := sha256.Sum256([]byte("cardano-ibc/injective-release/local-test-operator"))
 	key := &ethsecp256k1.PrivKey{Key: keyBytes[:]}
 	address := sdk.AccAddress(key.PubKey().Address()).String()
+	if os.Args[1] == "bounded-serve" {
+		boundedServe()
+		return
+	}
+	if os.Args[1] == "bounded-prepare" {
+		boundedPrepare(encoding, address)
+		return
+	}
+	if os.Args[1] == "bounded-run" {
+		boundedRun(encoding, key, address)
+		return
+	}
 	if os.Args[1] == "address" {
 		fmt.Println(address)
 		return

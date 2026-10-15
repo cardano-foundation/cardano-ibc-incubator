@@ -105,6 +105,8 @@ class Node:
         if self.profile == "local":
             genesis["consensus"]["params"]["block"].update(max_bytes="16777216", max_gas="600000000")
             genesis["app_state"]["txfees"]["params"]["max_gas_wanted_per_tx"] = "600000000"
+        if "shared_objects" in bootstrap:
+            genesis["app_state"]["08-cardano-probabilistic"] = bootstrap["shared_objects"]
         ibc = genesis["app_state"]["ibc"]["client_genesis"]
         if "*" not in ibc["params"]["allowed_clients"]:
             ibc["params"]["allowed_clients"].append("08-cardano-probabilistic")
