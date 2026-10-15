@@ -300,6 +300,8 @@ pub fn validate_chan_close_init(
   expected_datum == output_datum
 }
 
+/// Closing preserves upgrade metadata and its separately committed records as
+/// terminal history. No upgrade step may restore a closed channel.
 pub fn validate_chan_close_confirm(
   input_datum: ChannelDatum,
   output_datum: ChannelDatum,

@@ -203,6 +203,19 @@ describe('channel upgrade transitions', () => {
     expect(cancelUpgrade(complete, { sequence: 1n, message: '' }).state.channel.state).toBe(ChannelState.Open);
   });
 
+  it.each([null, { sequence: 1n, message: '' }, { sequence: 2n, message: '' }])(
+    'CANCEL cannot reopen a Closed channel with retained upgrade metadata: %s', (receipt) => {
+      const pending = initUpgrade(channel(), fields, PERIOD);
+      const closed = {
+        ...pending,
+        state: { ...pending.state, channel: { ...pending.state.channel, state: ChannelState.Close } },
+      };
+      expect(() => cancelUpgrade(closed, receipt)).toThrow(/only an open or flushing channel/);
+      expect(closed.state.channel.state).toBe(ChannelState.Close);
+      expect(closed.state.upgrade).toEqual(pending.state.upgrade);
+    },
+  );
+
   it('accepts only the counterparty of the replacement connection', () => {
     expect(() => requireCompatibleUpgrade(fields, counterpartyUpgrade().fields, hex('connection-5'))).not.toThrow();
     expect(() => requireCompatibleUpgrade(fields, counterpartyUpgrade().fields, hex('connection-6'))).toThrow(

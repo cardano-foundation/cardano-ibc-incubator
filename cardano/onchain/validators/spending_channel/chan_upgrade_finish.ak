@@ -157,6 +157,8 @@ fn transition(
 
     6 -> {
       expect step: CancelStep = data
+      expect
+        channel.state == Open || channel.state == Flushing || channel.state == FlushComplete
       expect Some(_) = upgrade.pending
       when step.error_receipt is {
         // The authority can cancel until this end finished flushing.
