@@ -324,9 +324,14 @@ def main():
                               '--runtime', str(runtime), '--project', project])
                 genesis_start = datetime.datetime.fromisoformat(genesis['systemStart'].replace('Z', '+00:00'))
                 mature_ms = int(genesis_start.timestamp() * 1000) + _clock.POOL_AGING_SECONDS * 1000
-                run('pool-aging', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/advance-migration-clock.py'),
-                    '--runtime', str(runtime), '--project', project, '--file-clock', '--pool-aging',
-                    '--step-seconds', '86400', '--until-ms', str(mature_ms)])
+                if (runtime / 'fresh-deployment-required.json').exists():
+                    current_tip = json.loads(run('verify-mature-history', compose + ['exec', '-T', 'devkit',
+                        'cardano-cli', 'conway', 'query', 'tip', '--testnet-magic', '42']))
+                    _clock.require_mature_history(genesis, current_tip)
+                else:
+                    run('pool-aging', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/advance-migration-clock.py'),
+                        '--runtime', str(runtime), '--project', project, '--file-clock', '--pool-aging',
+                        '--step-seconds', '86400', '--until-ms', str(mature_ms)])
                 history(source)
                 gateway(source, proof_ready=False)
                 run('manifest-v1', runtime_command('export', source))

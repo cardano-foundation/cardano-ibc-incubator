@@ -41,6 +41,15 @@ class References(unittest.TestCase):
         self.assertEqual(clock.proof_readiness_timeout({'securityParam': 48, 'activeSlotsCoeff': 0.25}), 600)
         self.assertEqual(clock.proof_readiness_timeout({'securityParam': 2160, 'activeSlotsCoeff': 0.05}), 1800)
 
+    def test_restored_history_must_already_be_mature_without_another_clock_jump(self):
+        clock.require_mature_history({'slotLength': 1}, {'slot': 20_000_000})
+        clock.require_mature_history({'slotLength': 1}, {'slot': 20_000_001})
+        for tip in [{'slot': 19_999_999}, {'slot': '20000000'}, {}, {'slot': True}]:
+            with self.assertRaisesRegex(ValueError, 'mature canonical history'):
+                clock.require_mature_history({'slotLength': 1}, tip)
+        with self.assertRaisesRegex(ValueError, 'mature canonical history'):
+            clock.require_mature_history({'slotLength': 2}, {'slot': 20_000_000})
+
     def test_funding_requires_the_same_live_outref_amount_and_address(self):
         indexed = [{'transaction_id': 'aa', 'output_index': 0, 'address': 'wallet', 'value': {'coins': 100_000_000_000}}]
         ledger = {'aa#0': {'address': 'wallet', 'value': {'lovelace': 100_000_000_000}}}

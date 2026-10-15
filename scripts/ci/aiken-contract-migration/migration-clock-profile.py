@@ -15,6 +15,11 @@ REHEARSAL_START = datetime.datetime(2025, 12, 29, tzinfo=UTC)
 POOL_AGING_SECONDS = 20_000_000
 
 
+def require_mature_history(genesis, tip):
+    if genesis.get('slotLength') != 1 or type(tip.get('slot')) is not int or tip['slot'] < POOL_AGING_SECONDS:
+        raise ValueError('Restored network does not contain the required mature canonical history')
+
+
 def proof_readiness_timeout(genesis):
     # Twenty-four blocks at the selected mainnet interval can take longer
     # than ten minutes. This changes only the harness wait, never proof rules.
