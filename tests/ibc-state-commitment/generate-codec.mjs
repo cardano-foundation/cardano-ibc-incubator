@@ -81,11 +81,14 @@ const channel = {
 }
 for (const [state, name] of states.entries()) {
   for (const [ordering, order] of ['None', 'Unordered', 'Ordered'].entries()) {
-    const committed = await encodeChannelEndValue({ ...channel, state: name === 'Closed' ? 'Close' : name, ordering: order }, Lucid)
+    // Freeze the historical five-field value even when the runtime writes the
+    // fresh deployment's six-field upgrade-capable channel.
+    const current = Lucid.Data.from(await encodeChannelEndValue({ ...channel, state: name === 'Closed' ? 'Close' : name, ordering: order, upgrade_sequence: 0n }, Lucid))
+    const committed = serialisePlutusData(Lucid.Data.to(new Lucid.Constr(0, current.fields.slice(0, 5))))
     add(`channel_${state}_${ordering}`, 'channel', 1, committed, `codec.encode_channel(Channel {
       state: channel_state.${name}, ordering: channel_order.${order},
       counterparty: ChannelCounterparty { port_id: "transfer", channel_id: "channel-2" },
-      connection_hops: ["connection-0"], version: "ics20-1",
+      connection_hops: ["connection-0"], version: "ics20-1", upgrade_sequence: 0,
     })`, { state, ordering })
   }
 }

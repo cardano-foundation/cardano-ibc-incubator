@@ -6,6 +6,7 @@ use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_004/types/channel.{Channel}
+use ibc/core/ics_004/types/counterparty.{ChannelCounterparty} as channel_counterparty
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{ProofSpec}
 use ibc/core/ics_025_handler_interface/host_state.{ModuleRegistration}
 
@@ -83,6 +84,14 @@ pub type WireConsensusState {
   timestamp: Int,
   next_validators_hash: ByteArray,
   root: WireRoot,
+}
+
+pub type WireChannel {
+  state: Data,
+  ordering: Data,
+  counterparty: ChannelCounterparty,
+  connection_hops: List<ByteArray>,
+  version: ByteArray,
 }
 
 fn wire_height(value: Height) -> WireHeight {
@@ -170,7 +179,22 @@ pub fn encode_connection(value: ConnectionEnd) -> ByteArray {
 }
 
 pub fn encode_channel(value: Channel) -> ByteArray {
-  // Channel, its state enum and Order are frozen like ConnectionEnd.
+  let state: Data = channel.convert_to_state_proto(value.state)
+  let ordering: Data = channel.convert_to_order_proto(value.ordering)
+  cbor.serialise(
+    WireChannel {
+      state,
+      ordering,
+      counterparty: value.counterparty,
+      connection_hops: value.connection_hops,
+      version: value.version,
+    },
+  )
+}
+
+/// The fresh deployment's six-field public layout is pinned by the wire-schema
+/// lock. Keep the historical five-field encoder above unchanged.
+pub fn encode_upgradable_channel(value: Channel) -> ByteArray {
   cbor.serialise(value)
 }
 

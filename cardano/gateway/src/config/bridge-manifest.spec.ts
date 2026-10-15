@@ -220,7 +220,7 @@ console.log(JSON.stringify(smokeManifest()))`,
     });
 
     expect(loaded.bridgeManifest).toMatchObject({
-      schema_version: 5,
+      schema_version: 6,
       consensus_history_format: CONSENSUS_HISTORY_FORMAT,
       deployment_id: 'cardano-devnet:host-policy.host-token',
       deployed_at: '2026-04-01T12:34:56.000Z',
@@ -507,7 +507,7 @@ console.log(JSON.stringify(smokeManifest()))`,
         ...legacy.bridgeManifest,
         schema_version: 3,
       }),
-    ).toThrow('Invalid bridge config: "schema_version" must be 5');
+    ).toThrow('Invalid bridge config: "schema_version" must be 6');
   });
 
   it('accepts legacy voucher_metadata validator payloads and normalizes them to address-only', () => {
@@ -519,7 +519,7 @@ console.log(JSON.stringify(smokeManifest()))`,
 
     const legacyManifest = {
       ...current.bridgeManifest,
-      schema_version: 5,
+      schema_version: 6,
       validators: {
         ...current.bridgeManifest.validators,
         voucher_metadata: {

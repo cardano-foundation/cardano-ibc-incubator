@@ -15,7 +15,7 @@ This implements [issue #631](https://github.com/cardano-foundation/cardano-ibc-i
 | Proposal initiated by the counterparty | Supported once Cardano proposes too (crossing hellos) |
 | Height-based upgrade timeout | Rejected, Cardano uses timestamps |
 
-These state and voucher guarantees apply to a channel within the same deployment. A fresh deployment does not inherit the old deployment's escrow or vouchers. Preserving those across deployments requires a separately authenticated asset and state migration. The Gateway and standalone runtime require manifest schema 5 and reject older full channel datums clearly. Legacy channel commitment decoding in the Go verifier does not make an older full datum compatible with this runtime.
+These state and voucher guarantees apply to a channel within the same deployment. A fresh deployment does not inherit the old deployment's escrow or vouchers. Preserving those across deployments requires a separately authenticated asset and state migration. The Gateway and standalone runtime require manifest schema 6 and reject older full channel datums clearly. Legacy channel commitment decoding in the Go verifier does not make an older full datum compatible with this runtime.
 
 The connection is the part of a channel that names its light clients. Replacing it is how a channel survives the replacement of a client that cannot be recovered or upgraded in place.
 

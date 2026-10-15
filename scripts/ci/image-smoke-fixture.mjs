@@ -38,7 +38,7 @@ export function smokeManifest() {
   };
   const host_state_nft = { policy_id: '22'.repeat(28), token_name: '6962635f686f73745f7374617465' };
   return {
-    schema_version: 5,
+    schema_version: 6,
     consensus_history_format: 'proof-backed-v1',
     deploymentMode: 'legacy',
     deployment_id: 'cardano-devnet:' + host_state_nft.policy_id + '.' + host_state_nft.token_name,

@@ -847,7 +847,7 @@ export function normalizeHandlerJsonDeploymentConfig(
   return {
     deployment: normalizedDeployment,
     bridgeManifest: {
-      schema_version: 5,
+      schema_version: 6,
       packet_state: packetStateToManifest(normalizedDeployment.packetState),
       ...(normalizedDeployment.deploymentMode ? { deploymentMode: normalizedDeployment.deploymentMode } : {}),
       ...(normalizedDeployment.migration ? { migration: normalizedDeployment.migration } : {}),
@@ -1020,7 +1020,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       : {}),
   };
 
-  assert(bridgeManifest.schema_version === 5, 'Invalid bridge config: "schema_version" must be 5');
+  assert(bridgeManifest.schema_version === 6, 'Invalid bridge config: "schema_version" must be 6');
 
   return {
     bridgeManifest,
