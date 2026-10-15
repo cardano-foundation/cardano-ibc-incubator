@@ -64,4 +64,6 @@ Upgrade discovery uses the same proof height as the channel query. Only the Gate
 
 `report:tx-budget-models` measures isolated validators and excludes the verify-proof mint. Those figures do not establish capacity for complete signed upgrade transactions. A release still needs measurements of the exact Gateway transactions with all scripts and witnesses. This includes paired TRY/ACK/CONFIRM proofs, TIMEOUT/CANCEL and an eight-lane FLUSH. The supported historical proof size and lane count must come from those measurements and the intended destination application's limits.
 
+## Before release
+
 Release remains blocked until a composed migration passes on local v8 and the exact intended Injective application. The gate must exercise both initiation directions, multiple packet lanes, pending acknowledgements and timeouts, an unsent funded intent, circulating vouchers, cancellation, timeout, restarts during flushing and after counterparty OPEN, and C0→C1→C2. It must demonstrate original backing and asset identities, routing through the replacement clients and connections, replay rejection and route adoption by existing workers. The v8 simulated-state application tests and Gateway construction tests do not replace this gate.
