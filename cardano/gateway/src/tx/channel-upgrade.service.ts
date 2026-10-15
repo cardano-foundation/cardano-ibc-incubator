@@ -122,7 +122,7 @@ export class ChannelUpgradeService {
 
   async channelUpgradeInit(msg: MsgChannelUpgradeInit): Promise<MsgChannelUpgradeInitResponse> {
     return this.handle('channelUpgradeInit', msg, async (context) => {
-      if (msg.expected_upgrade_sequence === undefined || msg.expected_upgrade_sequence !== context.channelDatum.state.channel.upgrade_sequence) {
+      if (msg.expected_upgrade_sequence == null || BigInt(msg.expected_upgrade_sequence.toString()) !== context.channelDatum.state.channel.upgrade_sequence) {
         throw new GrpcInvalidArgumentException('channel upgrade: INIT requires the current expected upgrade sequence');
       }
       const fields = upgradeFieldsFromProto(msg.fields);
