@@ -18,6 +18,7 @@ import time
 import tomllib
 import urllib.request
 import uuid
+from migration_endpoints import loopback_address
 
 ROOT = Path(__file__).resolve().parents[3]
 COSMOS_ACCOUNT = 'cosmos1rnr5jrt4exl0samwj0yegv99jeskl0hsge5zwt'
@@ -119,7 +120,9 @@ def require_failed_before_build(log):
             'Prior attempt may have constructed or submitted a transaction; reconcile it instead')
 
 
-def validate_configuration(artifacts, channels, population, genesis_sha):
+def validate_configuration(artifacts, channels, population, genesis_sha, providers):
+    kupo = 'http://' + loopback_address(providers, 'devkit', 1442)
+    ogmios = 'http://' + loopback_address(providers, 'devkit', 1337)
     config = tomllib.loads((artifacts / 'hermes.toml').read_text())
     chains = {chain['id']: chain for chain in config['chains']}
     require(len(chains) == len(config['chains']) == 2 and set(chains) == {'cardano-devnet', 'migration-462-1'}, 'Unexpected configured chains')
@@ -127,8 +130,8 @@ def validate_configuration(artifacts, channels, population, genesis_sha):
     cardano, cosmos = chains['cardano-devnet'], chains['migration-462-1']
     for chain in chains.values():
         require(Path(chain['key_store_folder']).resolve() == artifacts / 'hermes-keys', 'Owned key directory required')
-    for key, value in {'gateway_url': 'http://127.0.0.1:5501', 'signing_utxo_kupo_url': 'http://127.0.0.1:2742',
-                       'signing_ogmios_url': 'http://127.0.0.1:2637', 'network_id': 0, 'type': 'Cardano'}.items():
+    for key, value in {'gateway_url': 'http://127.0.0.1:5501', 'signing_utxo_kupo_url': kupo,
+                       'signing_ogmios_url': ogmios, 'network_id': 0, 'type': 'Cardano'}.items():
         require(cardano.get(key) == value, 'Unsupported Cardano configuration: ' + key)
     for key, value in {'rpc_addr': 'http://127.0.0.1:28757', 'grpc_addr': 'http://127.0.0.1:9300', 'type': 'CosmosSdk'}.items():
         require(cosmos.get(key) == value, 'Unsupported counterparty configuration: ' + key)
@@ -142,7 +145,7 @@ def validate_configuration(artifacts, channels, population, genesis_sha):
     require(read_json('http://127.0.0.1:28757/status')['result']['node_info']['network'] == 'migration-462-1', 'Actual counterparty chain mismatch')
     host = manifest['host_state_nft']; host_unit = host['policy_id'] + '.' + host['token_name']
     mint = manifest['history']['host_state_nft_mint']
-    original = read_json(f'http://127.0.0.1:2742/matches/{mint["output_index"]}@{mint["tx_hash"]}')
+    original = read_json(f'{kupo}/matches/{mint["output_index"]}@{mint["tx_hash"]}')
     require(len(original) == 1 and original[0]['value']['assets'].get(host_unit) == 1, 'Manifest Host identity is absent from selected chain')
     routes = []
     for index, remote in enumerate(channels):
@@ -235,8 +238,10 @@ def main():
     compose = ['docker', 'compose', '-p', project, '-f', str(runtime / 'compose.json')]
     require(subprocess.check_output(compose + ['exec', '-T', 'devkit', 'cat', '/clusters/nodes/default/node/genesis/shelley-genesis.json']) == raw_genesis,
             'Actual provider genesis differs from selected runtime')
-    for service, internal, expected in [('devkit', '1337', '127.0.0.1:2637'),
-                                        ('devkit', '1442', '127.0.0.1:2742'),
+    providers = json.loads((runtime / 'compose.json').read_text())
+    kupo = 'http://' + loopback_address(providers, 'devkit', 1442)
+    for service, internal, expected in [('devkit', '1337', loopback_address(providers, 'devkit', 1337)),
+                                        ('devkit', '1442', loopback_address(providers, 'devkit', 1442)),
                                         ('cosmos', '26657', '127.0.0.1:28757')]:
         actual = subprocess.check_output(compose + ['port', service, internal], text=True).strip()
         if actual != expected:
@@ -245,7 +250,7 @@ def main():
         p.error('Supply the two actual existing Cosmos channel IDs')
     population = json.loads((runtime / 'wallet-population.json').read_text())
     genesis_sha = hashlib.sha256(raw_genesis).hexdigest()
-    manifest, routes = validate_configuration(artifacts, args.cosmos_channels, population, genesis_sha)
+    manifest, routes = validate_configuration(artifacts, args.cosmos_channels, population, genesis_sha, providers)
     source_manifest = artifacts / f'bridge-manifest-{manifest["migration"]["generation"]}.json'
     require(json.loads(source_manifest.read_text()) == manifest, 'Installed manifest differs from retained generation artifact')
     asset_a, asset_b = population['units']
@@ -394,7 +399,7 @@ def main():
         packet_matches = 0
         for anchor in record['canonicalTransactions']:
             if anchor['chain'] == cardano:
-                outputs = read_json(f'http://127.0.0.1:2742/matches/*@{anchor["hash"]}')
+                outputs = read_json(f'{kupo}/matches/*@{anchor["hash"]}')
                 require(outputs and all(out['created_at'] == anchor['createdAt'] for out in outputs), 'Cardano transaction changed; reconcile rollback')
                 channel = packet['destination_channel'] if kind == 'WriteAcknowledgement' else packet['source_channel']
                 evidence = packet_observation(historical_manifest, channel, mode='packet', transaction=anchor['hash'],
@@ -479,7 +484,7 @@ def main():
         if not hashes:
             raise RuntimeError('No canonical Cardano transaction identities in successful operation')
         for txhash in hashes:
-            outputs = read_json(f'http://127.0.0.1:2742/matches/*@{txhash}')
+            outputs = read_json(f'{kupo}/matches/*@{txhash}')
             if not outputs or any(out['created_at'] != outputs[0]['created_at'] for out in outputs):
                 raise RuntimeError('Missing or inconsistent canonical Cardano inclusion')
             anchors.append({'chain': cardano, 'hash': txhash, 'createdAt': outputs[0]['created_at']})

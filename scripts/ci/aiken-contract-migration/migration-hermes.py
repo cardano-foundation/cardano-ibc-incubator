@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+from migration_endpoints import loopback_address
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -26,6 +27,7 @@ def main():
     if not artifacts.is_relative_to(ROOT / '.deployment-smoke') or not artifacts.is_dir():
         p.error('Expected existing disposable bridge artifacts')
     config = artifacts / 'hermes.toml'
+    providers = json.loads((runtime / 'compose.json').read_text())
     keys = artifacts / 'hermes-keys'
     snapshot = artifacts / 'hermes-bridge-manifest.json'
     env = dict(os.environ, FAKETIME_DONT_FAKE_MONOTONIC='1')
@@ -48,8 +50,8 @@ def main():
         template = template.replace('enabled = true\nhost = \'127.0.0.1\'\nport = 3002', 'enabled = false\nhost = \'127.0.0.1\'\nport = 3002')
         for old, new in [('http://localhost:5001', 'http://127.0.0.1:5501'),
                          ('__CARDANO_BRIDGE_MANIFEST_PATH__', str(snapshot)),
-                         ('__CARDANO_SIGNING_KUPO_URL__', 'http://127.0.0.1:2742'),
-                         ('__CARDANO_SIGNING_OGMIOS_URL__', 'http://127.0.0.1:2637'),
+                         ('__CARDANO_SIGNING_KUPO_URL__', 'http://' + loopback_address(providers, 'devkit', 1442)),
+                         ('__CARDANO_SIGNING_OGMIOS_URL__', 'http://' + loopback_address(providers, 'devkit', 1337)),
                          ("# key_store_folder = '/Users/yourusername/.hermes/keys'", f"key_store_folder = '{keys}'"),
                          ("max_block_time = '20000ms'", "max_block_time = '40s'"),
                          ("clock_drift = '5s'", "clock_drift = '10s'"),
