@@ -1243,50 +1243,152 @@ describe('bounded boundary workload', () => {
     const root = process.env.CHECKPOINT_ACCEPTANCE_DIR!;
     const client = ClientStateProbabilistic.decode(readFileSync(`${root}/source-client.pb`));
     const history = JSON.parse(readFileSync(`${root}/gateway-history.json`, 'utf8'));
-    const { ProbabilisticBlock, EpochContext } = require('@cardano-ibc/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic');
-    const blocks = history.blocks.map((entry: any) => ProbabilisticBlock.decode(Buffer.from(entry.protobuf, 'hex')));
-    const contexts = [client.epoch_contexts[0], ...history.contexts.map((raw: string) => EpochContext.decode(Buffer.from(raw, 'hex')))];
-    const records = blocks.map((block: any) => ({
-      height: Number(block.height.revision_height), hash: block.hash, prevHash: '', slotNo: block.slot,
-      epochNo: Number(block.epoch), timestampUnixNs: block.timestamp,
-      slotLeader: client.epoch_stake_distribution[Number((block.height.revision_height - 967n) % 11n)].pool_id,
-    }));
-    const trusted = { height: 966, hash: client.latest_checkpoint_block_hash, prevHash: '', slotNo: client.latest_checkpoint_slot,
-      epochNo: 7, timestampUnixNs: client.latest_checkpoint_timestamp, slotLeader: client.epoch_stake_distribution[0].pool_id };
+    const {
+      ProbabilisticBlock,
+      EpochContext,
+    } = require('@cardano-ibc/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic');
+    let blocks = history.blocks.map((entry: any) => ProbabilisticBlock.decode(Buffer.from(entry.protobuf, 'hex')));
+    let contexts = [
+      client.epoch_contexts[0],
+      ...history.contexts.map((raw: string) => EpochContext.decode(Buffer.from(raw, 'hex'))),
+    ];
+    const recordsFor = (items: any[]) =>
+      items.map((block: any) => ({
+        height: Number(block.height.revision_height),
+        hash: block.hash,
+        prevHash: '',
+        slotNo: block.slot,
+        epochNo: Number(block.epoch),
+        timestampUnixNs: block.timestamp,
+        slotLeader: client.epoch_stake_distribution[Number((block.height.revision_height - 967n) % 11n)].pool_id,
+      }));
+    let records = recordsFor(blocks);
+    const sourceText = readFileSync(`${root}/source-history.json`, 'utf8').replace(
+      /(:\s*)([0-9]{16,})(?=[,}])/g,
+      '$1"$2"',
+    );
+    const later = JSON.parse(sourceText).Later;
+    let switched = false;
+    const selectBranch = () => {
+      if (process.env.CHECKPOINT_GATEWAY_WITNESS === '1' && existsSync(`${root}/witness-fork`) && !switched) {
+        blocks = later.Blocks.map((block: any) => ProbabilisticBlock.fromJSON(block));
+        contexts = [client.epoch_contexts[0], ...later.Contexts.map((context: any) => EpochContext.fromJSON(context))];
+        records = recordsFor(blocks);
+        switched = true;
+      }
+    };
+    const trusted = {
+      height: 966,
+      hash: client.latest_checkpoint_block_hash,
+      prevHash: '',
+      slotNo: client.latest_checkpoint_slot,
+      epochNo: 7,
+      timestampUnixNs: client.latest_checkpoint_timestamp,
+      slotLeader: client.epoch_stake_distribution[0].pool_id,
+    };
     const visible = () => Number(readFileSync(`${root}/source-tip`, 'utf8').trim());
-    historyServiceMock.findLatestBlock.mockImplementation(async () => records.find((block: any) => block.height === visible()) ?? trusted);
-    historyServiceMock.findBlockByHeight.mockImplementation(async (height: bigint) => height === 966n ? trusted : records.find((block: any) => BigInt(block.height) === height && block.height <= visible()) ?? null);
-    historyServiceMock.findBridgeBlocks.mockImplementation(async (from: bigint, to: bigint) => records.filter((block: any) => BigInt(block.height) > from && BigInt(block.height) < to && block.height <= visible()));
-    historyServiceMock.findDescendantBlocks.mockImplementation(async (height: bigint, limit: number) => records.filter((block: any) => BigInt(block.height) > height && block.height <= visible()).slice(0, limit));
+    historyServiceMock.findLatestBlock.mockImplementation(
+      async () => records.find((block: any) => block.height === visible()) ?? trusted,
+    );
+    historyServiceMock.findBlockByHeight.mockImplementation(async (height: bigint) =>
+      height === 966n
+        ? trusted
+        : (records.find((block: any) => BigInt(block.height) === height && block.height <= visible()) ?? null),
+    );
+    historyServiceMock.findBridgeBlocks.mockImplementation(async (from: bigint, to: bigint) =>
+      records.filter(
+        (block: any) => BigInt(block.height) > from && BigInt(block.height) < to && block.height <= visible(),
+      ),
+    );
+    historyServiceMock.findDescendantBlocks.mockImplementation(async (height: bigint, limit: number) =>
+      records.filter((block: any) => BigInt(block.height) > height && block.height <= visible()).slice(0, limit),
+    );
     historyServiceMock.findEpochContextAtBlock.mockImplementation(async (block: any) => {
       const context = contexts.find((context: any) => context.epoch === BigInt(block.epochNo));
-      return { epoch: block.epochNo, stakeDistribution: context.stake_distribution.map((row: any) => ({
-        poolId: row.pool_id, stake: row.stake, relativeStakeNumerator: row.relative_stake_numerator,
-        relativeStakeDenominator: row.relative_stake_denominator, vrfKeyHash: Buffer.from(row.vrf_key_hash).toString('hex'), firstRegistrationSlot: row.first_registration_slot,
-      })), verificationContext: { epochNonce: Buffer.from(context.epoch_nonce).toString('hex'), slotsPerKesPeriod: Number(context.slots_per_kes_period),
-        activeSlotCoefficientNumerator: client.active_slot_coefficient_numerator, activeSlotCoefficientDenominator: client.active_slot_coefficient_denominator,
-        maxKesEvolutions: Number(client.max_kes_evolutions), currentEpochStartSlot: context.epoch_start_slot, currentEpochEndSlotExclusive: context.epoch_end_slot_exclusive } };
+      return {
+        epoch: block.epochNo,
+        stakeDistribution: context.stake_distribution.map((row: any) => ({
+          poolId: row.pool_id,
+          stake: row.stake,
+          relativeStakeNumerator: row.relative_stake_numerator,
+          relativeStakeDenominator: row.relative_stake_denominator,
+          vrfKeyHash: Buffer.from(row.vrf_key_hash).toString('hex'),
+          firstRegistrationSlot: row.first_registration_slot,
+        })),
+        verificationContext: {
+          epochNonce: Buffer.from(context.epoch_nonce).toString('hex'),
+          slotsPerKesPeriod: Number(context.slots_per_kes_period),
+          activeSlotCoefficientNumerator: client.active_slot_coefficient_numerator,
+          activeSlotCoefficientDenominator: client.active_slot_coefficient_denominator,
+          maxKesEvolutions: Number(client.max_kes_evolutions),
+          currentEpochStartSlot: context.epoch_start_slot,
+          currentEpochEndSlotExclusive: context.epoch_end_slot_exclusive,
+        },
+      };
     });
-    miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (requested: Array<{hash:string}>) => requested.map((block) => Buffer.from(blocks.find((witness: any) => witness.hash === block.hash).block_cbor)));
-    miniProtocalsServiceMock.extractBlockHeaderCbor.mockImplementation((body, hash) => MiniProtocalsService.prototype.extractBlockHeaderCbor(body, hash));
+    miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (requested: Array<{ hash: string }>) =>
+      requested.map((block) => Buffer.from(blocks.find((witness: any) => witness.hash === block.hash).block_cbor)),
+    );
+    miniProtocalsServiceMock.extractBlockHeaderCbor.mockImplementation((body, hash) =>
+      MiniProtocalsService.prototype.extractBlockHeaderCbor(body, hash),
+    );
     const get = (service as any).configService.get as jest.Mock;
     const fallback = get.getMockImplementation()!;
-    get.mockImplementation((key) => key === 'cardanoRandomnessStabilisationWindowSlots' ? String(client.randomness_stabilisation_window_slots) : fallback(key));
+    get.mockImplementation((key) =>
+      key === 'cardanoRandomnessStabilisationWindowSlots'
+        ? String(client.randomness_stabilisation_window_slots)
+        : fallback(key),
+    );
     const server = new grpc.Server();
-    const method = { path: '/ibc.core.types.v1.Query/IBCHeader', requestStream:false, responseStream:false,
-      requestSerialize:(value: any) => Buffer.from(q.QueryIBCHeaderRequest.encode(value).finish()),
-      requestDeserialize:(bytes: Buffer) => q.QueryIBCHeaderRequest.decode(bytes),
-      responseSerialize:(value: any) => Buffer.from(q.QueryIBCHeaderResponse.encode(value).finish()),
-      responseDeserialize:(bytes: Buffer) => q.QueryIBCHeaderResponse.decode(bytes) };
-    server.addService({ IBCHeader:method }, { IBCHeader:async (call: any, callback: any) => {
-      try { callback(null, await service.queryStabilityIBCHeader(call.request)); }
-      catch(error) { callback({code:grpc.status.FAILED_PRECONDITION, message:String(error)}); }
-    }});
-    await new Promise<void>((resolve, reject) => server.bindAsync(`127.0.0.1:${process.env.CHECKPOINT_GATEWAY_PORT ?? '15001'}`, grpc.ServerCredentials.createInsecure(), (error: Error) => error ? reject(error) : resolve()));
-    writeFileSync(`${root}/gateway.ready`, 'ready');
+    const method = {
+      path: '/ibc.core.types.v1.Query/IBCHeader',
+      requestStream: false,
+      responseStream: false,
+      requestSerialize: (value: any) => Buffer.from(q.QueryIBCHeaderRequest.encode(value).finish()),
+      requestDeserialize: (bytes: Buffer) => q.QueryIBCHeaderRequest.decode(bytes),
+      responseSerialize: (value: any) => Buffer.from(q.QueryIBCHeaderResponse.encode(value).finish()),
+      responseDeserialize: (bytes: Buffer) => q.QueryIBCHeaderResponse.decode(bytes),
+    };
+    server.addService(
+      { IBCHeader: method },
+      {
+        IBCHeader: async (call: any, callback: any) => {
+          try {
+            selectBranch();
+            const response = await service.queryStabilityIBCHeader(call.request);
+            if (response.header) {
+              const header = ProbabilisticHeader.decode(response.header.value);
+              require('node:fs').appendFileSync(
+                `${root}/gateway-${process.env.CHECKPOINT_GATEWAY_PORT ?? '15001'}.jsonl`,
+                JSON.stringify({
+                  trusted: String(header.trusted_height?.revision_height),
+                  anchor: String(header.anchor_block?.height?.revision_height),
+                  checkpoint: header.is_checkpoint,
+                  epoch: String(header.new_epoch_context?.epoch ?? ''),
+                }) + '\n',
+              );
+            }
+            callback(null, response);
+          } catch (error) {
+            console.error(error);
+            callback({ code: grpc.status.FAILED_PRECONDITION, message: String(error) });
+          }
+        },
+      },
+    );
+    await new Promise<void>((resolve, reject) =>
+      server.bindAsync(
+        `127.0.0.1:${process.env.CHECKPOINT_GATEWAY_PORT ?? '15001'}`,
+        grpc.ServerCredentials.createInsecure(),
+        (error: Error) => (error ? reject(error) : resolve()),
+      ),
+    );
+    writeFileSync(`${root}/gateway-${process.env.CHECKPOINT_GATEWAY_PORT ?? '15001'}.ready`, 'ready');
     try {
       while (!existsSync(`${root}/gateway.stop`)) await new Promise((resolve) => setTimeout(resolve, 100));
-    } finally { server.forceShutdown(); }
+    } finally {
+      server.forceShutdown();
+    }
   },
-  3_600_000,
+  12 * 3_600_000,
 );
