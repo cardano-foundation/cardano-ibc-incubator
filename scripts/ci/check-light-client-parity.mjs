@@ -15,6 +15,8 @@ const sharedSourceFiles = [
   "adapter_test.go",
   "challenge_capacity_test.go",
   "checkpoint_expiry_test.go",
+  "checkpoint_lifecycle_test.go",
+  "checkpoint_lifecycle_fixture_test.go",
   "client_state.go",
   "client_state_path_test.go",
   "cmd/compact-bootstrap/main.go",

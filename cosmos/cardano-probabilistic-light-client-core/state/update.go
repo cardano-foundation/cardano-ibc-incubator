@@ -131,6 +131,9 @@ func (cs *ClientState) verifyHeaderWithMode(
 	var challengeContexts []*EpochContext
 	var err error
 	if mode.enforceForwardUpdate {
+		if cs.FrozenHeight != nil && !cs.FrozenHeight.IsZero() {
+			return ErrIBCClientFrozen
+		}
 		if err := cs.validateCheckpointFields(); err != nil {
 			return err
 		}

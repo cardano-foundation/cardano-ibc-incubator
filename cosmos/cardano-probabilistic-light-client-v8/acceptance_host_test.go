@@ -60,9 +60,9 @@ func acceptanceAddress(seed string) sdk.AccAddress {
 
 type acceptanceHostConfig struct{ Root, RPC, P2P, GRPC, History, ConsensusControl string }
 type acceptanceHistory struct {
-	Client            *ClientState
-	Consensus         *ConsensusState
-	Honest, Bad, Tail struct {
+	Client                   *ClientState
+	Consensus                *ConsensusState
+	Honest, Bad, Tail, Later struct {
 		Blocks   []*ProbabilisticBlock
 		Contexts []*EpochContext
 	}
