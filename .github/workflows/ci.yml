@@ -579,12 +579,16 @@ jobs:
           npm test --prefix dapps/ibc-swap/client
 
   deno-offchain:
-    name: Cardano Offchain Deno
+    name: Cardano Offchain Deno (${{ matrix.suite }})
     if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
     needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
-    # Includes signed multi-asset accounting histories as well as channel and shutdown fuzzing.
-    timeout-minutes: 60
+    # The channel fuzz suite alone takes about 21 minutes on a hosted runner.
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [deployment, channels, packet-lanes, shutdown, consensus-history]
 
     steps:
       - name: Checkout
@@ -605,50 +609,62 @@ jobs:
         run: aiken build --deny --trace-level silent
 
       - name: Check formatting
+        if: ${{ matrix.suite == 'deployment' }}
         working-directory: cardano/offchain
         run: deno task fmt:check
 
       - name: Lint
+        if: ${{ matrix.suite == 'deployment' }}
         working-directory: cardano/offchain
         run: deno task lint
 
       - name: Type check
+        if: ${{ matrix.suite == 'deployment' }}
         working-directory: cardano/offchain
         run: deno task check
 
       - name: Test deployment
+        if: ${{ matrix.suite == 'deployment' }}
         working-directory: cardano/offchain
         run: deno task test:deployment
 
       - name: Evaluate channel actions with compiled validators
+        if: ${{ matrix.suite == 'channels' }}
         working-directory: cardano/offchain
         run: deno task test:channels
 
       - name: Fuzz channel transactions with compiled validators
+        if: ${{ matrix.suite == 'channels' }}
         working-directory: cardano/offchain
         run: deno task test:channels:fuzz
 
       - name: Evaluate funded packet batches and independent lanes
+        if: ${{ matrix.suite == 'packet-lanes' }}
         working-directory: cardano/offchain
         run: deno task test:packet-lanes
 
       - name: Test shutdown finalization
+        if: ${{ matrix.suite == 'shutdown' }}
         working-directory: cardano/offchain
         run: deno task test:shutdown
 
       - name: Fuzz shutdown sequences and populated state cleanup
+        if: ${{ matrix.suite == 'shutdown' }}
         working-directory: cardano/offchain
         run: deno task test:shutdown:fuzz
 
       - name: Test production proof-backed consensus history
+        if: ${{ matrix.suite == 'consensus-history' }}
         working-directory: cardano/offchain
         run: deno task test:consensus-history
 
       - name: Test consensus history indexing and recovery
+        if: ${{ matrix.suite == 'consensus-history' }}
         working-directory: cardano/offchain
         run: deno task test:consensus-history-index
 
       - name: Test recovery escrow observations
+        if: ${{ matrix.suite == 'consensus-history' }}
         working-directory: cardano/offchain
         run: deno task test:recovery-escrow
 

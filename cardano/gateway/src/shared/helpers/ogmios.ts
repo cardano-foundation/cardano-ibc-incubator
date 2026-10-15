@@ -696,7 +696,6 @@ const queryCurrentEpochStakeDistribution = async (
 
 export {
   ogmiosRequest,
-  operationalCertificatePoolIdBytes,
   parseOperationalCertificateCounters,
   parseShelleyGenesisConfig,
   parseStakeDistributionRows,
