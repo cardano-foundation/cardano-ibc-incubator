@@ -14,6 +14,7 @@ const v10Dir = path.join(root, "cosmos/cardano-probabilistic-light-client-v10");
 const sharedSourceFiles = [
   "adapter_test.go",
   "challenge_capacity_test.go",
+  "checkpoint_expiry_test.go",
   "client_state.go",
   "client_state_path_test.go",
   "codec.go",

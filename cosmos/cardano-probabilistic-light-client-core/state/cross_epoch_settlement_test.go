@@ -79,11 +79,16 @@ func TestNativeCombinedBoundaryProgress(t *testing.T) {
 	require.NoError(t, client.VerifyClientMessage(ctx, cdc, store, prefix))
 	originalNonce := clonePraosNonceState(client.LatestCheckpointNonceState)
 	originalProduction := clonePoolProduction(client.LatestCheckpointPoolProduction)
+	originalTimestamp := client.LatestCheckpointTimestamp
 	require.Empty(t, client.UpdateState(ctx, cdc, store, prefix))
 	client, _ = GetClientState(store, cdc)
 	require.Equal(t, uint64(966), client.LatestCheckpointHeight.RevisionHeight)
 	require.True(t, praosNonceStatesEqual(originalNonce, client.LatestCheckpointNonceState))
 	require.True(t, poolProductionsEqual(originalProduction, client.LatestCheckpointPoolProduction))
+	require.Equal(t, originalTimestamp, client.LatestCheckpointTimestamp, "an epoch proposal alone must not refresh expiry")
+	expiredCtx := ctx.WithBlockTime(time.Unix(0, int64(originalTimestamp)).Add(client.TrustingPeriod))
+	require.Equal(t, Expired, client.Status(expiredCtx, store, cdc))
+	require.ErrorIs(t, client.VerifyClientMessage(expiredCtx, cdc, store, prefix), ErrTrustingPeriodExpired)
 	deadline := client.epochChallenge(8).UsableAfterUnixNs
 	require.ErrorIs(t, client.VerifyClientMessage(ctx, cdc, store, prefix), ErrEpochContextPending)
 	require.NoError(t, client.verifyEpochUsable(ctx, 7))

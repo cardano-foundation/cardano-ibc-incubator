@@ -90,7 +90,11 @@ func (cs ClientState) Status(ctx Context, clientStore storetypes.KVStore, cdc St
 	if !found {
 		return Expired
 	}
-	if cs.IsExpired(consState.Timestamp, ctx.BlockTime()) {
+	latestTrustedTimestamp := consState.Timestamp
+	if cs.LatestCheckpointTimestamp != 0 {
+		latestTrustedTimestamp = cs.LatestCheckpointTimestamp
+	}
+	if cs.IsExpired(latestTrustedTimestamp, ctx.BlockTime()) {
 		return Expired
 	}
 	return Active

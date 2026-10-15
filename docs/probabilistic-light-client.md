@@ -179,9 +179,11 @@ The `ProbabilisticHeader` carries:
 - `host_state_tx_output_index`
 - `new_epoch_context` when the anchor rolls into `epoch N+1`
 - `is_checkpoint` (proto field 12): rootless checkpoints advance trusted block
-  tracking without extracting a HostState root, creating an IBC consensus state,
-  or renewing the trusting period. Checkpoint headers leave `host_state_tx_hash`
+  tracking and renew client expiry without extracting a HostState root or
+  creating an IBC consensus state. Checkpoint headers leave `host_state_tx_hash`
   empty and `host_state_tx_output_index` at zero.
+
+Client expiry uses the latest committed checkpoint's authenticated block time. A forward update must arrive before that checkpoint's trusting period ends. An epoch table proposal alone does not renew expiry. Temporary descendants do not renew it either. Checkpoints leave existing proof roots, timestamps and delay metadata unchanged. A checkpoint height cannot be used for membership proofs, absence proofs or packet timeouts because it has no IBC consensus state. This behavior requires the updated Cosmos client code but no new protobuf fields.
 
 The important thing to notice is that the header does **not** try to prove arbitrary Cardano ledger state. Just like the Mithril path, it is still centered around the Cardano `HostState` transaction/output that contains the `ibc_state_root`. The new part is that `trusted_height` is now real: `bridge_blocks` must connect the already-trusted consensus block hash at `trusted_height` to the new `anchor_block`, and only the post-anchor `descendant_blocks` are used for the probabilistic score.
 
@@ -467,7 +469,7 @@ They are not supplied by the Gateway and are not serialized into `ClientState`.
 
 ### Permissionless HostState heartbeats
 
-Rootless checkpoints advance the trusted Cardano cursor but do not renew client expiry. Any funded payment-key signer can submit a root-preserving HostState heartbeat without the deployment authority. Gateway schedules it after six hours without an ordinary HostState transaction. Hermes follows the returned check delay and retries failed submissions using `host_state_heartbeat_interval`.
+Rootless checkpoints can keep an idle client active without a Cardano heartbeat transaction. Heartbeats provide fresh root-bearing proof heights. Any funded payment-key signer can submit a root-preserving HostState heartbeat without the deployment authority. Gateway schedules it after six hours without an ordinary HostState transaction. Hermes follows the returned check delay and retries failed submissions using `host_state_heartbeat_interval`.
 
 The contract keeps `last_heartbeat_time` in the Cardano-owned control datum. A heartbeat sets it to the finite validity upper bound and requires the next heartbeat's lower bound to be at least six hours later. Its validity window may be at most two minutes. Ordinary operations preserve this clock. The IBC root, sequence counters, authority, lifecycle state and HostState value remain protected. Heartbeats remain disabled during shutdown and by the existing heartbeat restriction bit.
 

@@ -555,7 +555,7 @@ Channels and denom traces are discovered at runtime through the planner and the 
 
 ### Keeping the route alive
 
-The Injective-side Cardano client can only be updated with headers whose size and gas grow with the update gap (~4.6–8KB and ~85k gas per preprod block), and update targets must be blocks containing a HostState transaction. In practice this means:
+The Injective-side Cardano client verifies contiguous Cardano history, so header size and gas grow with the update gap (~4.6–8KB and ~85k gas per preprod block). With checkpoint-based expiry, verified rootless checkpoints can keep the client active without a HostState transaction. Fresh proof heights still require a HostState transaction. In practice this means:
 
 - The tracked Cardano Hermes profile sets `host_state_heartbeat_interval = '60s'` as its retry interval. Any funded Cardano payment-key signer can submit a heartbeat. Gateway schedules one after six hours without a HostState transaction. The contract enforces at least six hours between heartbeats using a separate ledger-bound clock that ordinary operations cannot reset. Hermes follows Gateway's suggested delay and rechecks hourly for rollbacks. The unchanged IBC root becomes available at a fresh Cardano anchor once the heartbeat is confirmed and relayed. Gateway requires at least a 24-hour trusting period in probabilistic mode so confirmation and relaying have room before expiry.
 

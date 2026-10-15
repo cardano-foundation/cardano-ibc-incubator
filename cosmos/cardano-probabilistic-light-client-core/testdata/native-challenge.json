@@ -6,7 +6,7 @@
     },
     "frozen_height": {},
     "current_epoch": 7,
-    "trusting_period": 86400000000000,
+    "trusting_period": 172800000000000,
     "host_state_nft_policy_id": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ==",
     "host_state_nft_token_name": "aG9zdC1zdGF0ZQ==",
     "epoch_stake_distribution": [

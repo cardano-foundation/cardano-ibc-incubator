@@ -38,6 +38,7 @@ type nativeChallengeProducer struct {
 func makeNativeChallengeFixture(t *testing.T) nativeChallengeFixture {
 	t.Helper()
 	cs := newProbabilisticTestClientState()
+	cs.TrustingPeriod = 48 * time.Hour
 	// Start more than six months after registration. The signing certificate
 	// begins in this KES period so its relative signing period remains zero.
 	slotOffset := uint64(160 * 129600)
