@@ -1,3 +1,4 @@
+import { YaciRestHistory } from '../../shared/helpers/yaci-rest-history';
 import { publicClientCommitmentValues } from '@cardano-ibc/tx-builder-runtime/plutusSerialise';
 import {
   IbcTreeStateStore,
@@ -22,7 +23,6 @@ export type HistoricalTreeDeployment = {
   };
 };
 
-type Sql = { query(sql: string, parameters?: unknown[]): Promise<any[]> };
 type OutputRow = {
   tx_hash: string;
   output_index: number | string;
@@ -34,7 +34,6 @@ type OutputRow = {
 };
 
 type OutputFilter = { policy: string; address?: string; unit?: string; outRef?: IbcTreeHostStateRef; unspent: boolean };
-const PAGE_SIZE = 500;
 const fail = (detail: string): never => {
   throw new Error(`Historical IBC tree unavailable: ${detail}`);
 };
@@ -83,9 +82,9 @@ function output(row: OutputRow, filter: OutputFilter): IbcTreeUtxo {
   };
 }
 
-/** Caller holds one repeatable-read, read-only Yaci snapshot for all queries. */
+/** REST callers pin and recheck the requested block around reconstruction. */
 export async function reconstructHistoricalIbcTree(
-  sql: Sql,
+  source: YaciRestHistory,
   deployment: HistoricalTreeDeployment,
   network: string,
   lucid: Pick<IbcTreeLucidService, 'LucidImporter' | 'decodeDatum'>,
@@ -93,62 +92,13 @@ export async function reconstructHistoricalIbcTree(
   expectedHostState: IbcTreeHostStateRef,
 ): Promise<IbcTreeSnapshot & { blockHash: string }> {
   if (height <= 0n || height > BigInt(Number.MAX_SAFE_INTEGER)) return fail('invalid requested block height');
-  const blocks = await sql.query('SELECT hash FROM block WHERE number = $1', [height.toString()]);
-  if (blocks.length !== 1 || !/^[0-9a-f]{64}$/.test(blocks[0].hash))
-    return fail('requested canonical block is not indexed');
-  const blockHash = blocks[0].hash as string;
+  const block = await source.api.block(height);
+  if (!block || !/^[0-9a-f]{64}$/.test(block.hash)) return fail('requested canonical block is not indexed');
+  const blockHash = block.hash;
 
   async function* outputs(filter: OutputFilter): AsyncGenerator<IbcTreeUtxo> {
     if (!/^[0-9a-f]{56}$/.test(filter.policy)) return fail('invalid deployment policy');
-    let cursor: Array<string | number> = [-1, -1, '', -1];
-    for (;;) {
-      const rows: OutputRow[] = await sql.query(
-        `
-        /* historical-ibc-tree:outputs */
-        SELECT a.tx_hash, a.output_index, t.block, t.tx_index,
-          COALESCE(NULLIF(a.owner_addr_full, ''), a.owner_addr) AS address,
-          a.inline_datum, a.amounts
-        FROM address_utxo a
-        JOIN transaction t ON t.tx_hash = a.tx_hash AND t.block = a.block
-        JOIN block canonical ON canonical.number = t.block AND canonical.hash = t.block_hash
-        WHERE t.invalid = false AND t.block <= $1
-          AND ($11::text IS NULL OR (a.tx_hash = $11 AND a.output_index = $12))
-          AND ($3::text IS NULL OR a.owner_addr = $3 OR a.owner_addr_full = $3)
-          AND EXISTS (
-            SELECT 1 FROM jsonb_array_elements(COALESCE(a.amounts::jsonb, '[]'::jsonb)) amount
-            WHERE left(lower(amount->>'unit'), 56) = $2
-              AND ($4::text IS NULL OR lower(amount->>'unit') = $4)
-          )
-          AND (NOT $5::boolean OR NOT EXISTS (
-            SELECT 1 FROM tx_input spent
-            JOIN transaction consuming ON consuming.tx_hash = spent.spent_tx_hash
-              AND consuming.block = spent.spent_at_block AND consuming.block_hash = spent.spent_at_block_hash
-            JOIN block spent_block ON spent_block.number = consuming.block AND spent_block.hash = consuming.block_hash
-            WHERE spent.tx_hash = a.tx_hash AND spent.output_index = a.output_index
-              AND consuming.invalid = false AND consuming.block <= $1
-          ))
-          AND (t.block, t.tx_index, a.tx_hash, a.output_index) > ($6, $7, $8, $9)
-        ORDER BY t.block, t.tx_index, a.tx_hash, a.output_index
-        LIMIT $10
-      `,
-        [
-          height.toString(),
-          filter.policy,
-          filter.address ?? null,
-          filter.unit ?? null,
-          filter.unspent,
-          ...cursor,
-          PAGE_SIZE,
-          filter.outRef?.txHash ?? null,
-          filter.outRef?.outputIndex ?? null,
-        ],
-      );
-      if (rows.length > PAGE_SIZE) return fail('history page exceeded its limit');
-      for (const row of rows) yield output(row, filter);
-      if (rows.length < PAGE_SIZE) return;
-      const last = rows[rows.length - 1];
-      cursor = [last.block, last.tx_index, last.tx_hash, last.output_index];
-    }
+    for (const row of await source.outputs(filter, Number(height))) yield output(row, filter);
   }
 
   const collect = async (filter: OutputFilter) => {

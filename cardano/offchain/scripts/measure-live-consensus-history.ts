@@ -2,10 +2,7 @@ import type {
   ConsensusHistoryRecovery,
   HistoryDeployment,
 } from "../src/consensus_history_recovery.ts";
-import {
-  recoveryJson,
-  withHistoryDatabase,
-} from "./recover-consensus-history.ts";
+import { recoveryJson } from "./recover-consensus-history.ts";
 import { parse as parseToml } from "@std/toml";
 import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";
@@ -38,7 +35,7 @@ path. Client NFT/address, client ID and signing/query endpoints are cross-checke
 before any update; changed TOML/manifest contents abort the run.
 
 Required environment (loopback URLs only, no credential defaults):
-  HISTORY_DB_URL, KUPO_URL, OGMIOS_URL, YACI_URL, COSMOS_RPC_URL
+  KUPO_URL, OGMIOS_URL, YACI_URL, COSMOS_RPC_URL
 
 Each update advances heightStep Cosmos heights with the current trusted
 height; validator count must stay constant. At each sample the script saves the
@@ -557,7 +554,6 @@ export async function measureLiveConsensusHistory(
   };
   const endpoint = (name: string, protocols = ["http:", "https:"]) =>
     loopbackEndpoint(Deno.env.get(name), name, protocols);
-  const databaseUrl = endpoint("HISTORY_DB_URL", ["postgres:", "postgresql:"]);
   const kupo = endpoint("KUPO_URL");
   const ogmios = endpoint("OGMIOS_URL", ["http:", "https:", "ws:", "wss:"]);
   const yaci = endpoint("YACI_URL");
@@ -577,19 +573,25 @@ export async function measureLiveConsensusHistory(
       manifestText: await Deno.readTextFile(manifestPath),
     });
   const [
-    { default: pg },
     { CML, Kupmios },
     { ConsensusHistoryRecovery },
-    { createYaciHistorySource, discoverYaciHistoryBootstrap },
+    { YaciRestClient },
+    { YaciRestHistory },
+    { createRestHistorySource, discoverRestHistoryBootstrap },
     { Cbor, LazyCborArray },
     { blake2b },
     { join },
     { queryProtocolParametersCompat },
   ] = await Promise.all([
-    import("pg"),
     import("@lucid-evolution/lucid"),
     import("../src/consensus_history_recovery.ts"),
-    import("../src/consensus_history_yaci.ts"),
+    import("../../../packages/cardano-ibc-tx-builder-runtime/src/yaciRest.ts"),
+    import(
+      "../../../packages/cardano-ibc-tx-builder-runtime/src/yaciRestHistory.ts"
+    ),
+    import(
+      "../../../packages/cardano-ibc-tx-builder-runtime/src/consensusHistoryRest.ts"
+    ),
     import("@harmoniclabs/cbor"),
     import("@noble/hashes/blake2b"),
     import("node:path"),
@@ -619,368 +621,359 @@ export async function measureLiveConsensusHistory(
     console.log(line.trim());
   };
   try {
-    const database = new pg.Client({
-      connectionString: databaseUrl,
-      connectionTimeoutMillis: 15_000,
-      query_timeout: 30_000,
-      statement_timeout: 30_000,
-    });
-    await withHistoryDatabase(database, async (sql, wait) => {
-      const deployment: HistoryDeployment = {
-        ...config.deployment,
-        layout: "production",
-        bootstrap: config.deployment.bootstrap ??
-          await discoverYaciHistoryBootstrap(sql, config.deployment),
-      };
-      const unit = deployment.clientToken.policyId +
-        deployment.clientToken.name;
-      const source = () =>
-        createYaciHistorySource(
-          sql,
-          deployment,
-          () => wait(() => provider.getUtxoByUnit(unit)),
+    const history = new YaciRestHistory(new YaciRestClient(yaci));
+    const deployment: HistoryDeployment = {
+      ...config.deployment,
+      layout: "production",
+      bootstrap: config.deployment.bootstrap ??
+        await discoverRestHistoryBootstrap(history, config.deployment),
+    };
+    const unit = deployment.clientToken.policyId +
+      deployment.clientToken.name;
+    const source = () =>
+      createRestHistorySource(
+        history,
+        deployment,
+        () => provider.getUtxoByUnit(unit),
+      );
+    const warmPath = join(directory, "warm.sqlite");
+    const warm = new ConsensusHistoryRecovery(warmPath, deployment);
+    try {
+      const catchUp = async (expected?: bigint) => {
+        const started = performance.now();
+        let lastError: unknown;
+        while (performance.now() - started < config.catchUpTimeoutMs) {
+          try {
+            const result = await warm.recover(source());
+            const height = warm.current().record.height.revisionHeight;
+            if (expected === undefined || height === expected) return result;
+            if (height > expected) {
+              throw new Error(
+                "Another updater advanced this client beyond the requested height",
+              );
+            }
+            lastError = new Error(
+              "Live client has not reached the requested height",
+            );
+          } catch (error) {
+            lastError = error;
+          }
+          await sleep(1_000);
+        }
+        throw new Error(
+          "History did not converge before its deadline: " +
+            redact(
+              lastError instanceof Error ? lastError.message : "unknown error",
+            ),
         );
-      const warmPath = join(directory, "warm.sqlite");
-      const warm = new ConsensusHistoryRecovery(warmPath, deployment);
-      try {
-        const catchUp = async (expected?: bigint) => {
+      };
+      await catchUp();
+      const initial = await countRecords(warm);
+      let count = initial.count;
+      const baselineHeight = warm.current().record.height;
+      await retainedHeight(
+        cosmos,
+        baselineHeight.revisionHeight,
+        config.counterpartyChainId,
+        config.catchUpTimeoutMs,
+      );
+      const fixedValidators = await validators(
+        cosmos,
+        baselineHeight.revisionHeight,
+      );
+      for await (const entry of warm.records()) {
+        if (
+          await validators(cosmos, entry.record.height.revisionHeight) !==
+            fixedValidators
+        ) {
+          throw new Error(
+            "Pre-existing client history mixes validator counts",
+          );
+        }
+      }
+      await Deno.writeTextFile(
+        join(directory, "deployment.json"),
+        recoveryJson(deployment),
+        { createNew: true },
+      );
+      await Deno.writeTextFile(
+        join(directory, "protocol-parameters.json"),
+        recoveryJson(parameters),
+        { createNew: true },
+      );
+      const runManifest = {
+        ...driverMetadata,
+        event: "start",
+        directory,
+        clientId: config.clientId,
+        hostChainId: config.hostChainId,
+        counterpartyChainId: config.counterpartyChainId,
+        initialAcceptedCheckpoints: count,
+        validatorCount: fixedValidators,
+        samples: config.samples,
+        sizeEncoding:
+          "signed transaction reconstructed from accepted block components",
+        executionUnits: "accepted redeemer budgets",
+        historyCountIncludesLiveTip: true,
+      };
+      await Deno.writeTextFile(
+        join(directory, "measurement-manifest.json"),
+        recoveryJson(runManifest),
+        { createNew: true },
+      );
+      await log(runManifest);
+
+      const sample = async () => {
+        const current = warm.current();
+        const response = await fetch(
+          `${yaci}/api/v1/blocks/${current.point.blockHash}/cbor`,
+          {
+            headers: { accept: "application/octet-stream" },
+            signal: AbortSignal.timeout(30_000),
+            redirect: "error",
+          },
+        );
+        if (!response.ok) {
+          throw new Error(
+            `Yaci accepted block CBOR unavailable: HTTP ${response.status}`,
+          );
+        }
+        let blockBytes = new Uint8Array(await response.arrayBuffer());
+        if (blockBytes[0] === 0x82 && blockBytes[1] <= 0x17) {
+          blockBytes = blockBytes.slice(2);
+        }
+        const parsed = Cbor.parseLazyWithOffset(blockBytes);
+        if (
+          !(parsed.parsed instanceof LazyCborArray) ||
+          parsed.parsed.array.length !== 5 ||
+          parsed.offset !== blockBytes.length ||
+          Buffer.from(blake2b(parsed.parsed.array[0], { dkLen: 32 }))
+              .toString("hex") !== current.point.blockHash
+        ) {
+          throw new Error(
+            "Yaci block does not match the authenticated history point",
+          );
+        }
+        const block = CML.Block.from_cbor_bytes(blockBytes);
+        const txIndex = current.point.transactionIndex;
+        if (
+          txIndex >= block.transaction_bodies().len() ||
+          txIndex >= block.transaction_witness_sets().len() ||
+          block.invalid_transactions().includes(txIndex)
+        ) {
+          throw new Error(
+            "Accepted client transaction is missing or invalid in its block",
+          );
+        }
+        const body = block.transaction_bodies().get(txIndex);
+        if (CML.hash_transaction(body).to_hex() !== current.point.txHash) {
+          throw new Error("Accepted transaction body hash mismatch");
+        }
+        const witnesses = block.transaction_witness_sets().get(txIndex);
+        const redeemers = witnesses.redeemers();
+        if (!redeemers || !witnesses.vkeywitnesses()?.len()) {
+          throw new Error(
+            "Accepted update is missing script redeemers or key witnesses",
+          );
+        }
+        const signed = CML.Transaction.new(
+          body,
+          witnesses,
+          true,
+          block.auxiliary_data_set().get(txIndex),
+        );
+        const signedBytes = signed.to_cbor_bytes();
+        const units = CML.compute_total_ex_units(redeemers);
+        if (
+          signedBytes.length > parameters.maxTxSize ||
+          units.mem() > parameters.maxTxExMem ||
+          units.steps() > parameters.maxTxExSteps
+        ) {
+          throw new Error(
+            "Accepted update exceeds the pinned local ledger limits",
+          );
+        }
+        const clientOutput = body.outputs().get(current.utxo.outputIndex);
+        if (clientOutput.amount().coin() !== current.utxo.assets.lovelace) {
+          throw new Error("Client ADA does not match the accepted output");
+        }
+        const coldPath = join(directory, `cold-${count}.sqlite`);
+        const coldStarted = performance.now();
+        const cold = new ConsensusHistoryRecovery(coldPath, deployment);
+        let recovery;
+        let oldestWitness;
+        try {
+          recovery = await cold.recover(source());
+          const recovered = cold.current();
+          if (
+            ref(recovered.utxo) !== ref(current.utxo) ||
+            recovered.root !== current.root
+          ) throw new Error("Client changed during cold replay");
+          if ((await countRecords(cold)).count !== count) {
+            throw new Error(
+              "Replayed accepted checkpoint count differs from the driver count",
+            );
+          }
+          oldestWitness = cold.witness(
+            deployment.clientToken,
+            initial.oldest,
+          );
+          if (oldestWitness.root !== current.root) {
+            throw new Error("Regenerated historical witness root mismatch");
+          }
+        } finally {
+          cold.close();
+        }
+        const coldMilliseconds = performance.now() - coldStarted;
+        const prefix = join(directory, `sample-${count}`);
+        await Deno.writeFile(`${prefix}.block.cbor`, blockBytes, {
+          createNew: true,
+        });
+        await Deno.writeTextFile(
+          `${prefix}.signed.cbor`,
+          Buffer.from(signedBytes).toString("hex"),
+          { createNew: true },
+        );
+        await Deno.writeTextFile(
+          `${prefix}.oldest-witness.json`,
+          recoveryJson(oldestWitness),
+          { createNew: true },
+        );
+        const result = {
+          ...driverMetadata,
+          event: "sample",
+          acceptedCheckpoints: count,
+          archivedCheckpoints: count - 1,
+          validatorCount: fixedValidators,
+          height: current.record.height,
+          clientOutRef: ref(current.utxo),
+          historyRoot: current.root,
+          signedTransactionBytes: signedBytes.length,
+          declaredMemory: units.mem(),
+          declaredCpu: units.steps(),
+          feeLovelace: body.fee(),
+          clientLovelace: current.utxo.assets.lovelace,
+          clientMinLovelace: CML.min_ada_required(
+            clientOutput,
+            parameters.coinsPerUtxoByte,
+          ),
+          clientDatumBytes: current.utxo.datum!.length / 2,
+          warmIndexBytes: await databaseBytes(warmPath),
+          coldIndexBytesAfterClose: await databaseBytes(coldPath),
+          coldRecoveryMilliseconds: coldMilliseconds,
+          coldReplay: recovery,
+          oldestWitnessHeight: initial.oldest,
+          oldestWitnessSiblings: oldestWitness.siblings.length,
+        };
+        await Deno.writeTextFile(`${prefix}.json`, recoveryJson(result), {
+          createNew: true,
+        });
+        await log(result);
+      };
+
+      for (const target of config.samples) {
+        if (count > target) {
+          await log({
+            event: "sample-skipped",
+            target,
+            reason: "client already beyond target at run start",
+          });
+          continue;
+        }
+        while (count < target) {
+          const previous = warm.current();
+          const trustedHeight = previous.record.height.revisionHeight;
+          const next = trustedHeight + BigInt(config.heightStep);
+          await retainedHeight(
+            cosmos,
+            next,
+            config.counterpartyChainId,
+            config.catchUpTimeoutMs,
+          );
+          const validatorCounts = await Promise.all([
+            validators(cosmos, next),
+            ...(config.heightStep === 1
+              ? []
+              : [validators(cosmos, trustedHeight + 1n)]),
+          ]);
+          if (validatorCounts.some((value) => value !== fixedValidators)) {
+            throw new Error(
+              "Target or trusted-next validator count changed; stop rather than mix benchmark axes",
+            );
+          }
           const started = performance.now();
-          let lastError: unknown;
-          while (performance.now() - started < config.catchUpTimeoutMs) {
-            try {
-              const result = await warm.recover(source());
-              const height = warm.current().record.height.revisionHeight;
-              if (expected === undefined || height === expected) return result;
-              if (height > expected) {
+          const abort = new AbortController();
+          const timer = setTimeout(
+            () => abort.abort(),
+            config.commandTimeoutMs,
+          );
+          try {
+            await checkFilePins();
+            await performMeasurementUpdate({
+              config,
+              trustedHeight,
+              targetHeight: next,
+              revisionNumber: baselineHeight.revisionNumber,
+              expectedClientOutRef: previous.utxo,
+              directory,
+              signal: abort.signal,
+            }, async () => {
+              const command = await new Deno.Command(
+                config.hermesCommand[0],
+                {
+                  args: updateArguments(config, trustedHeight),
+                  stdin: "null",
+                  stdout: "piped",
+                  stderr: "piped",
+                  signal: abort.signal,
+                },
+              ).output();
+              if (!command.success) {
                 throw new Error(
-                  "Another updater advanced this client beyond the requested height",
+                  `Hermes update failed with exit ${command.code}: ` +
+                    redact(
+                      new TextDecoder().decode(command.stderr).slice(-1_500),
+                    ),
                 );
               }
-              lastError = new Error(
-                "Live client has not reached the requested height",
-              );
-            } catch (error) {
-              lastError = error;
-            }
-            await sleep(1_000);
-          }
-          throw new Error(
-            "History did not converge before its deadline: " +
-              redact(
-                lastError instanceof Error
-                  ? lastError.message
-                  : "unknown error",
-              ),
-          );
-        };
-        await catchUp();
-        const initial = await countRecords(warm);
-        let count = initial.count;
-        const baselineHeight = warm.current().record.height;
-        await retainedHeight(
-          cosmos,
-          baselineHeight.revisionHeight,
-          config.counterpartyChainId,
-          config.catchUpTimeoutMs,
-        );
-        const fixedValidators = await validators(
-          cosmos,
-          baselineHeight.revisionHeight,
-        );
-        for await (const entry of warm.records()) {
-          if (
-            await validators(cosmos, entry.record.height.revisionHeight) !==
-              fixedValidators
-          ) {
-            throw new Error(
-              "Pre-existing client history mixes validator counts",
-            );
-          }
-        }
-        await Deno.writeTextFile(
-          join(directory, "deployment.json"),
-          recoveryJson(deployment),
-          { createNew: true },
-        );
-        await Deno.writeTextFile(
-          join(directory, "protocol-parameters.json"),
-          recoveryJson(parameters),
-          { createNew: true },
-        );
-        const runManifest = {
-          ...driverMetadata,
-          event: "start",
-          directory,
-          clientId: config.clientId,
-          hostChainId: config.hostChainId,
-          counterpartyChainId: config.counterpartyChainId,
-          initialAcceptedCheckpoints: count,
-          validatorCount: fixedValidators,
-          samples: config.samples,
-          sizeEncoding:
-            "signed transaction reconstructed from accepted block components",
-          executionUnits: "accepted redeemer budgets",
-          historyCountIncludesLiveTip: true,
-        };
-        await Deno.writeTextFile(
-          join(directory, "measurement-manifest.json"),
-          recoveryJson(runManifest),
-          { createNew: true },
-        );
-        await log(runManifest);
-
-        const sample = async () => {
-          const current = warm.current();
-          const response = await fetch(
-            `${yaci}/api/v1/blocks/${current.point.blockHash}/cbor`,
-            {
-              headers: { accept: "application/octet-stream" },
-              signal: AbortSignal.timeout(30_000),
-              redirect: "error",
-            },
-          );
-          if (!response.ok) {
-            throw new Error(
-              `Yaci accepted block CBOR unavailable: HTTP ${response.status}`,
-            );
-          }
-          let blockBytes = new Uint8Array(await response.arrayBuffer());
-          if (blockBytes[0] === 0x82 && blockBytes[1] <= 0x17) {
-            blockBytes = blockBytes.slice(2);
-          }
-          const parsed = Cbor.parseLazyWithOffset(blockBytes);
-          if (
-            !(parsed.parsed instanceof LazyCborArray) ||
-            parsed.parsed.array.length !== 5 ||
-            parsed.offset !== blockBytes.length ||
-            Buffer.from(blake2b(parsed.parsed.array[0], { dkLen: 32 }))
-                .toString("hex") !== current.point.blockHash
-          ) {
-            throw new Error(
-              "Yaci block does not match the authenticated history point",
-            );
-          }
-          const block = CML.Block.from_cbor_bytes(blockBytes);
-          const txIndex = current.point.transactionIndex;
-          if (
-            txIndex >= block.transaction_bodies().len() ||
-            txIndex >= block.transaction_witness_sets().len() ||
-            block.invalid_transactions().includes(txIndex)
-          ) {
-            throw new Error(
-              "Accepted client transaction is missing or invalid in its block",
-            );
-          }
-          const body = block.transaction_bodies().get(txIndex);
-          if (CML.hash_transaction(body).to_hex() !== current.point.txHash) {
-            throw new Error("Accepted transaction body hash mismatch");
-          }
-          const witnesses = block.transaction_witness_sets().get(txIndex);
-          const redeemers = witnesses.redeemers();
-          if (!redeemers || !witnesses.vkeywitnesses()?.len()) {
-            throw new Error(
-              "Accepted update is missing script redeemers or key witnesses",
-            );
-          }
-          const signed = CML.Transaction.new(
-            body,
-            witnesses,
-            true,
-            block.auxiliary_data_set().get(txIndex),
-          );
-          const signedBytes = signed.to_cbor_bytes();
-          const units = CML.compute_total_ex_units(redeemers);
-          if (
-            signedBytes.length > parameters.maxTxSize ||
-            units.mem() > parameters.maxTxExMem ||
-            units.steps() > parameters.maxTxExSteps
-          ) {
-            throw new Error(
-              "Accepted update exceeds the pinned local ledger limits",
-            );
-          }
-          const clientOutput = body.outputs().get(current.utxo.outputIndex);
-          if (clientOutput.amount().coin() !== current.utxo.assets.lovelace) {
-            throw new Error("Client ADA does not match the accepted output");
-          }
-          const coldPath = join(directory, `cold-${count}.sqlite`);
-          const coldStarted = performance.now();
-          const cold = new ConsensusHistoryRecovery(coldPath, deployment);
-          let recovery;
-          let oldestWitness;
-          try {
-            recovery = await cold.recover(source());
-            const recovered = cold.current();
-            if (
-              ref(recovered.utxo) !== ref(current.utxo) ||
-              recovered.root !== current.root
-            ) throw new Error("Client changed during cold replay");
-            if ((await countRecords(cold)).count !== count) {
-              throw new Error(
-                "Replayed accepted checkpoint count differs from the driver count",
-              );
-            }
-            oldestWitness = cold.witness(
-              deployment.clientToken,
-              initial.oldest,
-            );
-            if (oldestWitness.root !== current.root) {
-              throw new Error("Regenerated historical witness root mismatch");
-            }
+            }, driver);
           } finally {
-            cold.close();
+            clearTimeout(timer);
           }
-          const coldMilliseconds = performance.now() - coldStarted;
-          const prefix = join(directory, `sample-${count}`);
-          await Deno.writeFile(`${prefix}.block.cbor`, blockBytes, {
-            createNew: true,
-          });
-          await Deno.writeTextFile(
-            `${prefix}.signed.cbor`,
-            Buffer.from(signedBytes).toString("hex"),
-            { createNew: true },
-          );
-          await Deno.writeTextFile(
-            `${prefix}.oldest-witness.json`,
-            recoveryJson(oldestWitness),
-            { createNew: true },
-          );
-          const result = {
+          const updateMilliseconds = performance.now() - started;
+          const replay = await catchUp(next);
+          const current = warm.current();
+          if (
+            current.record.height.revisionNumber !==
+              baselineHeight.revisionNumber ||
+            ref(current.utxo) === ref(previous.utxo)
+          ) {
+            throw new Error(
+              `${driverMetadata.updateDriverLabel} did not produce the expected new accepted checkpoint`,
+            );
+          }
+          count++;
+          await log({
             ...driverMetadata,
-            event: "sample",
+            event: "checkpoint",
             acceptedCheckpoints: count,
-            archivedCheckpoints: count - 1,
-            validatorCount: fixedValidators,
             height: current.record.height,
             clientOutRef: ref(current.utxo),
-            historyRoot: current.root,
-            signedTransactionBytes: signedBytes.length,
-            declaredMemory: units.mem(),
-            declaredCpu: units.steps(),
-            feeLovelace: body.fee(),
-            clientLovelace: current.utxo.assets.lovelace,
-            clientMinLovelace: CML.min_ada_required(
-              clientOutput,
-              parameters.coinsPerUtxoByte,
-            ),
-            clientDatumBytes: current.utxo.datum!.length / 2,
-            warmIndexBytes: await databaseBytes(warmPath),
-            coldIndexBytesAfterClose: await databaseBytes(coldPath),
-            coldRecoveryMilliseconds: coldMilliseconds,
-            coldReplay: recovery,
-            oldestWitnessHeight: initial.oldest,
-            oldestWitnessSiblings: oldestWitness.siblings.length,
-          };
-          await Deno.writeTextFile(`${prefix}.json`, recoveryJson(result), {
-            createNew: true,
+            updateMilliseconds,
+            warmReplayMilliseconds: replay.milliseconds,
           });
-          await log(result);
-        };
-
-        for (const target of config.samples) {
-          if (count > target) {
-            await log({
-              event: "sample-skipped",
-              target,
-              reason: "client already beyond target at run start",
-            });
-            continue;
-          }
-          while (count < target) {
-            const previous = warm.current();
-            const trustedHeight = previous.record.height.revisionHeight;
-            const next = trustedHeight + BigInt(config.heightStep);
-            await retainedHeight(
-              cosmos,
-              next,
-              config.counterpartyChainId,
-              config.catchUpTimeoutMs,
-            );
-            const validatorCounts = await Promise.all([
-              validators(cosmos, next),
-              ...(config.heightStep === 1
-                ? []
-                : [validators(cosmos, trustedHeight + 1n)]),
-            ]);
-            if (validatorCounts.some((value) => value !== fixedValidators)) {
-              throw new Error(
-                "Target or trusted-next validator count changed; stop rather than mix benchmark axes",
-              );
-            }
-            const started = performance.now();
-            const abort = new AbortController();
-            const timer = setTimeout(
-              () => abort.abort(),
-              config.commandTimeoutMs,
-            );
-            try {
-              await checkFilePins();
-              await performMeasurementUpdate({
-                config,
-                trustedHeight,
-                targetHeight: next,
-                revisionNumber: baselineHeight.revisionNumber,
-                expectedClientOutRef: previous.utxo,
-                directory,
-                signal: abort.signal,
-              }, async () => {
-                const command = await new Deno.Command(
-                  config.hermesCommand[0],
-                  {
-                    args: updateArguments(config, trustedHeight),
-                    stdin: "null",
-                    stdout: "piped",
-                    stderr: "piped",
-                    signal: abort.signal,
-                  },
-                ).output();
-                if (!command.success) {
-                  throw new Error(
-                    `Hermes update failed with exit ${command.code}: ` +
-                      redact(
-                        new TextDecoder().decode(command.stderr).slice(-1_500),
-                      ),
-                  );
-                }
-              }, driver);
-            } finally {
-              clearTimeout(timer);
-            }
-            const updateMilliseconds = performance.now() - started;
-            const replay = await catchUp(next);
-            const current = warm.current();
-            if (
-              current.record.height.revisionNumber !==
-                baselineHeight.revisionNumber ||
-              ref(current.utxo) === ref(previous.utxo)
-            ) {
-              throw new Error(
-                `${driverMetadata.updateDriverLabel} did not produce the expected new accepted checkpoint`,
-              );
-            }
-            count++;
-            await log({
-              ...driverMetadata,
-              event: "checkpoint",
-              acceptedCheckpoints: count,
-              height: current.record.height,
-              clientOutRef: ref(current.utxo),
-              updateMilliseconds,
-              warmReplayMilliseconds: replay.milliseconds,
-            });
-          }
-          await sample();
         }
-        await log({
-          ...driverMetadata,
-          event: "complete",
-          acceptedCheckpoints: count,
-          directory,
-        });
-      } finally {
-        warm.close();
+        await sample();
       }
-    });
+      await log({
+        ...driverMetadata,
+        event: "complete",
+        acceptedCheckpoints: count,
+        directory,
+      });
+    } finally {
+      warm.close();
+    }
   } finally {
     journal.close();
   }

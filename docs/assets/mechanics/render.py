@@ -260,12 +260,11 @@ def along(path, u):
 
 SERVICES = {
     # key: (title, what it holds, colour, row)
-    "yaci_sql": ("Yaci Store · Postgres", "indexed chain history", TEAL, 0),
+    "yaci_history": ("Yaci Store · REST", "indexed chain history", TEAL, 0),
     "yaci_rest": ("Yaci Store · REST", "raw block bytes", TEAL, 1),
-    "relay": ("Relay (node-to-node)", "fallback for block bytes", GREEN, 2),
-    "blockfrost": ("Blockfrost", "epoch and pool history", AMBER, 3),
-    "ogmios": ("Ogmios", "live ledger, evaluate, submit", BLUE, 4),
-    "kupo": ("Kupo", "live UTxOs", BLUE, 5),
+    "blockfrost": ("Blockfrost", "epoch and pool history", AMBER, 2),
+    "ogmios": ("Ogmios", "live ledger, evaluate, submit", BLUE, 3),
+    "kupo": ("Kupo", "live UTxOs", BLUE, 4),
 }
 SVC_X, SVC_W, SVC_Y0, SVC_H, SVC_PITCH = 350, 340, 100, 62, 72
 HERMES_X, HERMES_W = 40, 262
@@ -276,24 +275,23 @@ LANE_Y = 556
 # Act 1: the Gateway builds a light-client header. Each step names the service,
 # the call, and the header field it fills.
 HEADER_STEPS = [
-    ("yaci_sql", "SELECT … FROM block WHERE number > …", "Block list", "heights, hashes, slots",
-     "Yaci's block table lists every block from the trusted height to the anchor, plus 24+ on top."),
+    ("yaci_history", "GET /api/v1/blocks/{height}", "Block list", "heights, hashes, slots",
+     "Gateway requests block metadata through Yaci REST from the trusted height to the anchor, plus 24+ on top."),
     ("yaci_rest", "GET /blocks/{hash}/cbor", "Raw block and header bytes", "signed witnesses",
-     "The light client re-checks every signature, so it needs the raw bytes. The relay is the fallback."),
-    ("yaci_sql", "bridge_utxo_history · HostState NFT", "HostState tx in the anchor", "carries the new root",
+     "The light client re-checks every signature, so it needs the raw bytes served by Yaci REST."),
+    ("yaci_history", "GET /assets/{unit}/transactions", "HostState tx in the anchor", "carries the new root",
      "The anchor block must contain the HostState transaction that carries the new IBC state root."),
     ("blockfrost", "GET /epochs/{n}/parameters", "Epoch nonce", "for VRF checks",
      "VRF proofs are checked against the epoch nonce. On public networks it comes from Blockfrost."),
     ("ogmios", "stakePools · liveStakeDistribution", "Stake and VRF key per pool", "for leader checks",
      "Leader checks need every pool's stake and VRF key: the live ledger from Ogmios, epoch totals from Blockfrost."),
-    ("yaci_sql", "bridge_spo_event_history", "Pool registration slots", "fresh pools don't count",
+    ("yaci_history", "GET /pools/registrations", "Pool registration slots", "fresh pools don't count",
      "Pools must be registered early enough to count, so the Gateway looks up when each one registered."),
     ("ogmios", "queryNetwork/genesisConfiguration", "KES and slot parameters", "from genesis",
      "KES and slot-leader maths need the network's genesis parameters, which Ogmios reads from the node."),
 ]
 # Secondary calls shown alongside a step: (step index, service, call)
-HEADER_EXTRA = [(1, "relay", "BlockFetch if Yaci misses"),
-                (4, "blockfrost", "GET /pools/extended · /epochs/{n}"),
+HEADER_EXTRA = [(4, "blockfrost", "GET /pools/extended · /epochs/{n}"),
                 (5, "blockfrost", "GET /pools/{id}/updates if missing")]
 
 # Act 2: building, checking and submitting a transaction.
@@ -459,7 +457,7 @@ def scene_gateway_calls(t: float) -> Image.Image:
             h_rows.append((start, title, call if key else "then signs", SERVICES[key][2] if key
                            else PURPLE))
         draw_lane_message(c, t, A2_OBSERVE, "ObserveTx(tx_hash)", PURPLE, True)
-        draw_call(c, t, A2_CONFIRM, "yaci_sql", "bridge_tx_evidence WHERE tx_hash", GATEWAY_X,
+        draw_call(c, t, A2_CONFIRM, "yaci_history", "GET /txs/{hash} + block CBOR", GATEWAY_X,
                   active)
         g_rows.append((A2_CONFIRM, "Included, root matches", "commits its IBC tree", TEAL))
         draw_rows(c, GATEWAY_X + 18, PANEL_Y + 74, g_rows, t, rows_under)
@@ -492,7 +490,7 @@ def scene_gateway_calls(t: float) -> Image.Image:
         (A2_REPLY, "The Gateway returns an unsigned transaction. It never holds a signing key."),
         *[(A2_H_FIRST + i * STEP, s[3]) for i, s in enumerate(TX_HERMES_STEPS)],
         (A2_OBSERVE, "Hermes tells the Gateway only the transaction hash."),
-        (A2_CONFIRM, "The Gateway waits for the transaction in Yaci, checks the new root, and "
+        (A2_CONFIRM, "The Gateway reads transaction evidence through REST, checks the new root, and "
                      "commits its IBC tree."),
     ])
     return c.finish()
@@ -500,238 +498,47 @@ def scene_gateway_calls(t: float) -> Image.Image:
 
 # ------------------------------------------------ 2. what yaci store is ---
 
-# (name, columns, column, row) — only tables and columns the Gateway reads.
-YACI_TABLES = [
-    ("block", "number · hash · slot · epoch · slot_leader", 0, 0),
-    ("transaction", "tx_hash · block · invalid", 0, 1),
-    ("transaction_cbor", "tx_hash · cbor_data", 0, 2),
-    ("tx_input", "tx_hash · output_index · spent_tx_hash", 0, 3),
-    ("address_utxo", "owner_addr · amounts · inline_datum", 1, 0),
-    ("pool_registration", "pool_id · tx_hash · block", 1, 1),
-    ("pool", "pool_id · registration_slot", 1, 2),
-    ("epoch_nonce", "epoch · nonce", 1, 3),
-]
-BRIDGE_TABLES = ["bridge_utxo_history", "bridge_tx_evidence", "bridge_spo_event_history"]
-DB_X, DB_Y, DB_W, DB_H = 262, 100, 578, 430
-CARD_W, CARD_H = 272, 58
-YACI = (30, 244, 200, 150)
-NODE = (30, 104, 200, 78)
-GW = (880, 100, 290, 250)
-SIDECAR = (880, 380, 290, 110)
-LANE_Y2 = 556
-
-# Which tables each indexed block writes to, in order.
-BLOCK_WRITES = [
-    ["block", "transaction", "transaction_cbor", "tx_input", "address_utxo"],
-    ["block", "transaction", "transaction_cbor", "tx_input", "address_utxo",
-     "pool_registration", "pool"],
-    ["block", "transaction", "transaction_cbor", "tx_input", "address_utxo", "epoch_nonce"],
-]
-Y_BLOCK_T0, Y_BLOCK_STEP = 1.4, 2.6
-Y_OFF_T = Y_BLOCK_T0 + len(BLOCK_WRITES) * Y_BLOCK_STEP + 0.2
-Y_SIDECAR_T = Y_OFF_T + 2.6
-Y_SQL1_T = Y_SIDECAR_T + 4.4
-Y_SQL2_T = Y_SQL1_T + 4.4
-Y_REST_T = Y_SQL2_T + 4.4
-Y_END_T = Y_REST_T + 4.4
-YACI_STORE_DURATION = Y_END_T + 4.0
-
-SQL_QUERIES = [
-    (Y_SQL1_T, ["block"], ["SELECT number, hash, slot,", "       slot_leader FROM block",
-                          "WHERE number > $1", "ORDER BY number LIMIT 24"],
-     "24 rows: the descendant blocks"),
-    (Y_SQL2_T, ["bridge_utxo_history"], ["SELECT tx_hash, datum", "FROM bridge_utxo_history",
-                                         "WHERE block_no <= $1", "  AND assets_policy = $2"],
-     "1 row: HostState at that block"),
-]
-
-
-def table_card_pos(name):
-    for tname, _, col, row in YACI_TABLES:
-        if tname == name:
-            return DB_X + 14 + col * (CARD_W + 6), DB_Y + 48 + row * (CARD_H + 8)
-    i = BRIDGE_TABLES.index(name)
-    return DB_X + 14 + i * 186, DB_Y + 48 + 4 * (CARD_H + 8) + 12
-
-
-def rows_written(name, t):
-    """How many rows have landed in a table by time t."""
-    n = 0
-    for b, writes in enumerate(BLOCK_WRITES):
-        if name in writes:
-            land = Y_BLOCK_T0 + b * Y_BLOCK_STEP + 0.9 + writes.index(name) * 0.18 + 0.5
-            n += t >= land
-    return n
+YACI_STORE_DURATION = 23.0
 
 
 def scene_yaci_store(t: float) -> Image.Image:
     c = Canvas()
-    header(c, t, "What Yaci Store is", "A chain follower that fills a Postgres database.")
+    header(c, t, "Gateway reads Yaci history through REST",
+           "CF keeps PostgreSQL private. Gateway does not copy chain tables.")
     a = prog(t, 0.2, 1.0)
-    off = t * 30
-
-    # Node and Yaci
-    nx, ny, nw, nh = NODE
-    box(c, nx, ny, nw, nh, "cardano-node", "local node, or a public relay", GREEN, a, 15, 12)
-    yx, yy, yw, yh = YACI
-    c.rrect(yx, yy, yw, yh, fill=fade(PANEL, a), outline=fade(TEAL, a), width=2.5, r=12)
-    c.text(yx + 14, yy + 12, "Yaci Store", 17, fade(TEXT, a, PANEL), "bold")
-    c.text(yx + 14, yy + 36, "Java indexer, not a node", 12, fade(MUTED, a, PANEL))
-    c.text(yx + 14, yy + 54, "bloxbean/yaci-store", 11, fade(MUTED, a, PANEL), "mono")
-    c.text(yx + 14, yy + 88, "follows the chain", 12, fade(TEXT, a, PANEL))
-    c.text(yx + 14, yy + 106, "writes rows to Postgres", 12, fade(TEXT, a, PANEL))
-    c.text(yx + 14, yy + 124, "REST API on :8081", 12, fade(TEXT, a, PANEL))
-    c.arrow((nx + nw / 2, ny + nh), (nx + nw / 2, yy), fade(GREEN, a), 2, dashed=True,
-            offset=-off)
-    c.text(nx + nw / 2 + 8, ny + nh + 14, "ChainSync +", 11, fade(GREEN, a))
-    c.text(nx + nw / 2 + 8, ny + nh + 28, "BlockFetch", 11, fade(GREEN, a))
-    c.arrow((yx + yw, yy + 60), (DB_X, yy + 60), fade(TEAL, a), 2)
-
-    # Database
-    c.rrect(DB_X, DB_Y, DB_W, DB_H, fill=fade((22, 31, 47), a), outline=fade(BORDER, a),
-            width=2, r=14)
-    c.text(DB_X + 16, DB_Y + 13, "Postgres", 17, fade(TEXT, a, (22, 31, 47)), "bold")
-    c.text(DB_X + 104, DB_Y + 16, "database yaci_store", 12, fade(MUTED, a, (22, 31, 47)),
-           "mono")
-    off_a = prog(t, Y_OFF_T, Y_OFF_T + 0.5)
-    if off_a > 0:
-        c.text(DB_X + DB_W - 16, DB_Y + 16, "not indexed: assets · metadata · governance", 11,
-               fade(RED, off_a * 0.9, (22, 31, 47)), anchor="ra")
-
-    active_tables = set()
-    for q_t, tables, _, _ in SQL_QUERIES:
-        if q_t + 0.8 <= t < q_t + 4.0:
-            active_tables.update(tables)
-    def card(name, cols, x, y, w, color, alpha, rows):
-        on = name in active_tables
-        under = (22, 31, 47)
-        c.rrect(x, y, w, CARD_H, fill=fade(PANEL_2 if on else PANEL, alpha, under),
-                outline=fade(color if on else mix(BORDER, color, 0.5), alpha, under),
-                width=2.5 if on else 1.5, r=8)
-        c.text(x + 10, y + 8, name, 12 if w > 200 else 11, fade(color, alpha, PANEL), "mono")
-        if cols:
-            c.text(x + 10, y + 26, cols, 10, fade(MUTED, alpha, PANEL), "mono")
-        for k in range(rows):
-            c.rrect(x + 10 + k * 22, y + 43, 18, 7, fill=fade(color, alpha, PANEL), r=3)
-
-    for name, cols, _, _ in YACI_TABLES:
-        x, y = table_card_pos(name)
-        card(name, cols, x, y, CARD_W, TEAL, a, rows_written(name, t))
-
-    # Bridge tables appear with the sidecar
-    side_a = prog(t, Y_SIDECAR_T, Y_SIDECAR_T + 0.6)
-    by = table_card_pos(BRIDGE_TABLES[0])[1]
-    if side_a > 0:
-        c.text(DB_X + DB_W - 16, by + CARD_H + 8, "written by bridge-history-sync", 10,
-               fade(AMBER, side_a, (22, 31, 47)), anchor="ra")
-        for i, bt in enumerate(BRIDGE_TABLES):
-            x, y = table_card_pos(bt)
-            filled = int(prog(t, Y_SIDECAR_T + 1.2 + i * 0.4, Y_SIDECAR_T + 2.4 + i * 0.4) * 3)
-            card(bt, None, x, y, 180, AMBER, side_a, filled)
-
-    # Blocks travelling from node to Yaci, then rows fanning into tables
-    for b, writes in enumerate(BLOCK_WRITES):
-        start = Y_BLOCK_T0 + b * Y_BLOCK_STEP
-        u = prog(t, start, start + 0.8)
-        if start <= t < start + 0.9:
-            x, y = travel((nx + nw / 2, ny + nh + 14), (yx + yw / 2, yy - 14), u)
-            c.rrect(x - 26, y - 13, 52, 26, fill=GREEN, r=6)
-            c.text(x, y, f"block {101 + b}", 10, BG, "bold", anchor="mm")
-        for k, tname in enumerate(writes):
-            s = start + 0.9 + k * 0.18
-            v = prog(t, s, s + 0.5)
-            if s <= t < s + 0.5:
-                tx, ty = table_card_pos(tname)
-                x, y = travel((yx + yw - 10, yy + 60), (tx + 30, ty + 30), v)
-                c.circle(x, y, 5, fill=TEAL)
-
-    # Sidecar
-    sx, sy, sw, sh = SIDECAR
-    box(c, sx, sy, sw, sh, "bridge-history-sync", "sidecar: copies only the bridge's rows "
-        "into bridge_* tables", AMBER, side_a, 15, 12)
-    if side_a > 0:
-        c.arrow((sx, sy + 70), (DB_X + DB_W, sy + 70), fade(AMBER, side_a), 2, dashed=True,
-                offset=off)
-        for i in range(3):
-            s = Y_SIDECAR_T + 1.2 + i * 0.4
-            v = prog(t, s, s + 0.7)
-            if s <= t < s + 0.7:
-                tx, ty = table_card_pos(BRIDGE_TABLES[i])
-                x, y = travel((sx, sy + 70), (tx + 90, ty + 30), v)
-                c.circle(x, y, 5, fill=AMBER)
-
-    # Gateway and its queries
-    gx, gy, gw, gh = GW
-    c.rrect(gx, gy, gw, gh, fill=fade(PANEL, a), outline=fade(BLUE, a), width=2, r=12)
-    c.text(gx + 14, gy + 12, "Gateway", 17, fade(TEXT, a, PANEL), "bold")
-    c.text(gx + 14, gy + 36, "reads it like any Postgres database", 12, fade(MUTED, a, PANEL))
-    for q_t, tables, sql, result in SQL_QUERIES:
-        qa = prog(t, q_t, q_t + 0.5) * (1 - prog(t, q_t + 4.0, q_t + 4.4))
-        if qa <= 0:
-            continue
-        c.rrect(gx + 12, gy + 62, gw - 24, 104, fill=fade(BG, qa, PANEL),
-                outline=fade(BLUE, qa * 0.6, PANEL), width=1, r=8)
-        for i, line in enumerate(sql):
-            c.text(gx + 22, gy + 72 + i * 22, line, 11, fade(TEXT, qa, BG), "mono")
-        tx, ty = table_card_pos(tables[0])
-        ra = prog(t, q_t + 0.8, q_t + 1.2) * qa
-        if ra > 0:
-            # Route around the cards: out of the Gateway, along a gap, into the card.
-            if tables[0] in BRIDGE_TABLES:
-                gap_y, end = ty + CARD_H + 26, (tx + 90, ty + CARD_H)
-            else:
-                gap_y, end = DB_Y + 40, (tx + CARD_W / 2, ty)
-            path = [(gx, gy + 114), (DB_X + DB_W + 18, gy + 114),
-                    (DB_X + DB_W + 18, gap_y), (end[0], gap_y), end]
-            for p1, p2 in zip(path[:-2], path[1:-1]):
-                c.dashed(p1, p2, fade(BLUE, ra), 2, offset=off)
-            c.arrow(path[-2], path[-1], fade(BLUE, ra), 2, head=8)
-        res = prog(t, q_t + 1.6, q_t + 2.1) * qa
-        if res > 0:
-            c.chip(gx + 12, gy + 178, result, GREEN, alpha=res, under=PANEL, size=12)
-
-    # REST call along the lower lane
-    ra = prog(t, Y_REST_T, Y_REST_T + 0.5) * (1 - prog(t, Y_REST_T + 4.0, Y_REST_T + 4.4))
-    if ra > 0:
-        path = [(gx, gy + gh - 30), (DB_X + DB_W + 18, gy + gh - 30),
-                (DB_X + DB_W + 18, LANE_Y2), (yx + yw / 2, LANE_Y2), (yx + yw / 2, yy + yh)]
-        for p1, p2 in zip(path, path[1:]):
-            c.dashed(p1, p2, fade(BLUE, ra), 2, offset=off)
-        c.text((DB_X + DB_X + DB_W) / 2, LANE_Y2 + 8, "GET :8081/api/v1/blocks/{hash}/cbor",
-               12, fade(BLUE, ra), "mono", anchor="ma")
-        c.rrect(gx + 12, gy + 62, gw - 24, 104, fill=fade(BG, ra, PANEL),
-                outline=fade(BLUE, ra * 0.6, PANEL), width=1, r=8)
-        c.text(gx + 22, gy + 72, "GET /api/v1/blocks/", 11, fade(TEXT, ra, BG), "mono")
-        c.text(gx + 22, gy + 94, "    {hash}/cbor", 11, fade(TEXT, ra, BG), "mono")
-        back = prog(t, Y_REST_T + 1.2, Y_REST_T + 2.4)
-        if Y_REST_T + 1.2 <= t < Y_REST_T + 2.4:
-            x, y = along(path[::-1], back)
-            c.rrect(x - 30, y - 12, 60, 24, fill=TEAL, r=6)
-            c.text(x, y, "84 03 …", 10, BG, "mono", anchor="mm")
-        res = prog(t, Y_REST_T + 2.3, Y_REST_T + 2.8) * ra
-        if res > 0:
-            c.chip(gx + 12, gy + 178, "raw block CBOR it saved", GREEN, alpha=res, under=PANEL,
-                   size=12)
-
+    c.rrect(30, 100, 500, 430, fill=fade(PANEL, a), outline=fade(TEAL, a), width=2, r=14)
+    c.text(48, 114, "CF's services server", 18, fade(TEAL, a, PANEL), "bold")
+    box(c, 60, 158, 220, 68, "Cardano node", "Yaci follows the chain", GREEN, a, 16, 12)
+    box(c, 60, 278, 220, 88, "Yaci Store REST", "indexed history + raw CBOR", TEAL, a, 16, 12)
+    box(c, 60, 424, 220, 68, "Yaci PostgreSQL", "private to CF", TEAL, a, 16, 12)
+    c.arrow((170, 226), (170, 278), fade(GREEN, a), 2)
+    c.arrow((170, 366), (170, 424), fade(TEAL, a), 2)
+    c.text(182, 387, "internal SQL", 11, fade(MUTED, a))
+    c.rrect(590, 100, 580, 430, fill=fade(PANEL, a), outline=fade(BLUE, a), width=2, r=14)
+    c.text(608, 114, "Our Gateway server", 18, fade(BLUE, a, PANEL), "bold")
+    box(c, 620, 158, 230, 88, "Gateway queries", "read indexed history on demand", BLUE, a, 16, 12)
+    box(c, 620, 332, 230, 110, "Existing Gateway DB", "application state and caches", AMBER, a, 16, 12)
+    box(c, 918, 290, 220, 90, "Proof reconstruction", "checks bodies, validity and roots", BLUE, a, 16, 12)
+    api = prog(t, 2.0, 3.0)
+    c.arrow((620, 215), (280, 316), fade(TEAL, api), 2.5, dashed=True, offset=-t * 25)
+    c.text(302, 249, "blocks, txs, assets, addresses", 12, fade(TEAL, api))
+    c.text(302, 271, "GET native /api/v1 endpoints", 12, fade(TEAL, api), "mono")
+    proof = prog(t, 6.0, 7.0)
+    c.arrow((850, 210), (1025, 290), fade(BLUE, proof), 2.5)
+    c.text(922, 219, "REST evidence", 11, fade(BLUE, proof))
+    cache = prog(t, 10.0, 11.0)
+    c.arrow((735, 246), (735, 332), fade(AMBER, cache), 2.5)
+    c.text(747, 275, "derived state only", 11, fade(AMBER, cache))
+    c.text(310, 459, "No external DB", 13, fade(TEAL, a), "bold")
+    c.text(310, 480, "credentials required", 13, fade(TEAL, a))
+    c.text(620, 473, "Recheck the REST anchor before returning a proof.", 12, fade(GREEN, prog(t, 14.0, 15.0)))
     caption(c, t, [
-        (0.6, "Yaci Store is an indexer, not a node: a Java program that follows a Cardano "
-              "node block by block."),
-        (Y_BLOCK_T0 + 0.9, "It unpacks each block into rows in its own Postgres database: "
-                           "blocks, transactions, inputs and UTxOs."),
-        (Y_BLOCK_T0 + Y_BLOCK_STEP + 0.9, "Pool registrations and epoch nonces land in their "
-                                          "own tables too."),
-        (Y_OFF_T, "Our config switches off assets, metadata and governance, and keeps raw "
-                  "block and transaction CBOR."),
-        (Y_SIDECAR_T, "A sidecar, bridge-history-sync, copies just the bridge's own rows into "
-                      "bridge_* tables in the same database."),
-        (Y_SQL1_T, "The Gateway queries it with plain SQL, for example the blocks built on top "
-                   "of an anchor."),
-        (Y_SQL2_T, "It reads the bridge tables the same way, for example where the HostState "
-                   "UTxO was at a given block."),
-        (Y_REST_T, "For raw block bytes it calls Yaci's REST API, which serves the CBOR it "
-                   "saved."),
-        (Y_END_T, "So Yaci Store is a chain follower plus a Postgres database. It runs on "
-                  "every network."),
+        (0.6, "Yaci indexes Cardano in its private PostgreSQL database. CF exposes the REST API."),
+        (2.0, "Gateway calls native block, transaction, asset and address endpoints directly."),
+        (6.0, "Asset history finds outputs. Address history also finds consumers, including burns. Raw blocks supply validity."),
+        (10.0, "Gateway retains application and proof caches. It does not mirror Yaci chain tables or run an import worker."),
+        (14.0, "Historical roots must match their on-chain commitments. Gateway rechecks the REST anchor before returning a proof."),
+        (18.0, "CF must retain the required history and raw blocks. Missing history fails the request without a database fallback."),
     ])
     return c.finish()
 
@@ -1195,7 +1002,7 @@ def draw_architecture() -> Image.Image:
     for i, (title, sub, color) in enumerate([
         ("Ogmios", "ledger queries, evaluate, submit", BLUE),
         ("Kupo", "live UTxOs and datums", BLUE),
-        ("Yaci Store + Postgres", "indexed history, bridge_* tables", TEAL),
+        ("Yaci Store REST", "indexed history and raw blocks", TEAL),
         ("Blockfrost", "epoch and pool history, public nets", AMBER),
     ]):
         r, col = divmod(i, 2)

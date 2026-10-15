@@ -2,7 +2,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { blake2b } from '@noble/hashes/blake2b';
-import type { EntityManager } from 'typeorm';
+import { YaciRestHistory } from '../../shared/helpers/yaci-rest-history';
 import type { HistoryStakeDistributionEntry } from './history.service';
 
 /** Explicit devnet adapter for real cardano-cli ledger snapshots. Not a stake
@@ -14,7 +14,7 @@ export async function readLocalEpochStake(
   directory: string,
   epoch: number,
   genesisNonce: string,
-  manager: Pick<EntityManager, 'query'>,
+  source: YaciRestHistory,
 ): Promise<HistoryStakeDistributionEntry[]> {
   if (!Number.isSafeInteger(epoch) || epoch < 0 || !/^[0-9a-f]{64}$/.test(genesisNonce)) {
     throw new Error('Invalid local epoch/genesis identity');
@@ -30,7 +30,7 @@ export async function readLocalEpochStake(
   if (files.length > 10_000) throw new Error('Local epoch snapshot archive exceeds the supported capture limit');
   for (const file of files) {
     const snapshot = JSON.parse(await readFile(join(archive, file), 'utf8'));
-    const entries = await readCapture(directory, epoch, genesisNonce, manager, snapshot);
+    const entries = await readCapture(directory, epoch, genesisNonce, source, snapshot);
     if (entries?.some((pool) => genesis.staking.pools[pool.poolId]?.vrf !== pool.vrfKeyHash)) {
       throw new Error(
         'Local stake archive contains a non-genesis pool or changed VRF; dynamic pool registration is unsupported in this rehearsal',
@@ -47,7 +47,7 @@ async function readCapture(
   directory: string,
   epoch: number,
   genesisNonce: string,
-  manager: Pick<EntityManager, 'query'>,
+  source: YaciRestHistory,
   snapshot: any,
 ): Promise<HistoryStakeDistributionEntry[] | null> {
   const integer = (value: unknown): bigint => {
@@ -122,12 +122,8 @@ async function readCapture(
   ) {
     throw new Error('Incomplete local ledger pool distribution');
   }
-  const rows = await manager.query(
-    'SELECT hash FROM block WHERE number = $1 AND slot = $2 AND epoch = $3 AND hash = $4',
-    [integer(snapshot.blockHeight).toString(), integer(snapshot.slot).toString(), epoch, snapshot.blockHash],
-  );
-  if (rows.length !== 1 || rows[0].hash !== snapshot.blockHash) {
+  const block = await source.api.block(integer(snapshot.blockHeight));
+  if (!block || block.slot !== Number(snapshot.slot) || block.epoch !== epoch || block.hash !== snapshot.blockHash)
     return null;
-  }
   return entries;
 }

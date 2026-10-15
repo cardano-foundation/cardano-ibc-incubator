@@ -29,52 +29,14 @@ import {
 
 import { reconstructHistoricalIbcTree } from './historical-ibc-tree';
 import { readLocalEpochStake } from './local-epoch-stake';
+import { YaciRestClient } from '../../shared/helpers/yaci-rest';
+import { YaciRestHistory, type RestOutput, type RestTransaction } from '../../shared/helpers/yaci-rest-history';
+import * as CML from '@dcspark/cardano-multiplatform-lib-nodejs';
 import {
   StaleIbcTreeStateError,
   type IbcTreeHostStateRef,
   type IbcTreeSnapshot,
 } from '../../shared/helpers/ibc-state-root';
-
-type BridgeUtxoHistoryRow = {
-  address: string;
-  tx_hash: string;
-  tx_id?: string | number;
-  output_index: string | number;
-  datum?: string | null;
-  datum_hash?: string | null;
-  assets_policy: string;
-  assets_name: string;
-  block_no: string | number;
-  block_id?: string | number;
-};
-
-type BridgeTxHistoryRow = {
-  tx_hash: string;
-  tx_id?: string | number;
-  gas_fee: string | number;
-  tx_size: string | number;
-  block_no: string | number;
-  block_hash?: string | null;
-  slot_no?: string | number | null;
-  tx_index?: string | number | null;
-};
-
-type BridgeTxEvidenceRow = {
-  tx_hash: string;
-  block_no: string | number;
-  block_hash?: string | null;
-  slot_no?: string | number | null;
-  tx_index: string | number;
-  tx_cbor_hex: string;
-  tx_body_cbor_hex: string;
-  redeemers_json: HistoryTxRedeemer[] | null;
-  host_state_output_index?: string | number | null;
-  host_state_datum?: string | null;
-  host_state_datum_hash?: string | null;
-  host_state_root?: string | null;
-  gas_fee?: string | number | null;
-  tx_size?: string | number | null;
-};
 
 type HistoryBlockRow = {
   number: string | number;
@@ -84,10 +46,6 @@ type HistoryBlockRow = {
   epoch: string | number;
   block_time: string | Date;
   slot_leader?: string | null;
-};
-
-type EpochStartSlotRow = {
-  start_slot: string | number | null;
 };
 
 type PoolRegistrationSlotRow = {
@@ -213,32 +171,18 @@ export class YaciHistoryService implements HistoryService {
       if (this.historicalTreeRebuilds.size >= 4) {
         throw new Error('Historical IBC tree rebuild capacity reached; retry later');
       }
-      pending = (async () => {
-        const snapshot = await this.entityManager.transaction('REPEATABLE READ', async (manager) => {
-          await manager.query('SET TRANSACTION READ ONLY');
-          await manager.query('SET LOCAL statement_timeout = 30000');
-          return reconstructHistoricalIbcTree(
-            manager,
-            this.configService.getOrThrow('deployment'),
-            this.configService.getOrThrow('cardanoNetwork'),
-            this.lucidService,
-            height,
-            captured,
-          );
-        });
-        // A rollback during the read snapshot must not publish an orphaned tree.
-        const canonical = await this.entityManager.query('SELECT hash FROM block WHERE number = $1', [
-          height.toString(),
-        ]);
-        if (canonical.length !== 1 || canonical[0].hash !== snapshot.blockHash) {
-          throw new StaleIbcTreeStateError('Requested historical block changed during IBC tree reconstruction');
-        }
-        return {
-          root: snapshot.root,
-          hostState: snapshot.hostState,
-          tree: snapshot.tree,
-        };
-      })();
+      const source = this.restHistory();
+      pending = source.snapshot(height, async () => {
+        const snapshot = await reconstructHistoricalIbcTree(
+          source,
+          this.configService.getOrThrow('deployment'),
+          this.configService.getOrThrow('cardanoNetwork'),
+          this.lucidService,
+          height,
+          captured,
+        );
+        return { root: snapshot.root, hostState: snapshot.hostState, tree: snapshot.tree };
+      });
       this.historicalTreeRebuilds.set(key, pending);
     }
     try {
@@ -260,7 +204,7 @@ export class YaciHistoryService implements HistoryService {
   constructor(
     private readonly configService: ConfigService,
     @Inject(LucidService) private readonly lucidService: LucidService,
-    @InjectEntityManager('history') private readonly entityManager: EntityManager,
+    @InjectEntityManager('gateway') private readonly entityManager: EntityManager,
     @Optional() @Inject(MetricsService) metricsService?: MetricsService,
   ) {
     const cache = <Value>(maxEntries: number, metric: string): BoundedCache<string, Value> =>
@@ -298,53 +242,67 @@ export class YaciHistoryService implements HistoryService {
     };
   }
 
+  private restHistory(): YaciRestHistory {
+    return new YaciRestHistory(new YaciRestClient(this.configService.get<string>('yaciStoreEndpoint')));
+  }
+
+  private restOutput(row: RestOutput, unit: string): UtxoDto {
+    return {
+      address: row.address,
+      txHash: row.tx_hash,
+      txId: 0,
+      outputIndex: row.output_index,
+      index: row.tx_index,
+      datum: row.inline_datum ?? undefined,
+      datumHash: row.data_hash ?? undefined,
+      assetsPolicy: unit.slice(0, 56),
+      assetsName: unit.slice(56),
+      blockNo: row.block,
+      blockId: row.block,
+    };
+  }
+
   async findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]> {
-    const query = `
-      SELECT
-        address,
-        tx_hash,
-        tx_id,
-        output_index,
-        datum,
-        datum_hash,
-        assets_policy,
-        assets_name,
-        block_no,
-        block_id
-      FROM bridge_utxo_history
-      WHERE assets_policy = $1
-        AND position(lower($2) in lower(assets_name)) > 0
-      ORDER BY block_no DESC, COALESCE(tx_index, 0) DESC, output_index DESC
-    `;
-    const rows = await this.entityManager.query(query, [policyId, prefixTokenName]);
-    return rows.map((row: BridgeUtxoHistoryRow) => this.mapUtxoRow(row));
+    const source = this.restHistory();
+    return source.snapshot('latest', async (tip) => {
+      const units = (await source.policyUnits(policyId)).filter((unit) =>
+        unit.slice(56).includes(prefixTokenName.toLowerCase()),
+      );
+      const result: UtxoDto[] = [];
+      for (const unit of units)
+        for (const output of await source.outputs({ policy: policyId, unit, unspent: false }, tip.number))
+          result.push(this.restOutput(output, unit));
+      return result.sort((a, b) => b.blockNo - a.blockNo || b.outputIndex - a.outputIndex);
+    });
   }
 
   async findUtxosByBlockNo(height: number): Promise<UtxoDto[]> {
-    const query = `
-      SELECT
-        address,
-        tx_hash,
-        tx_id,
-        output_index,
-        datum,
-        datum_hash,
-        assets_policy,
-        assets_name,
-        block_no,
-        block_id
-      FROM bridge_utxo_history
-      WHERE block_no = $1
-      ORDER BY output_index ASC
-    `;
-    const rows = await this.entityManager.query(query, [height]);
-    return rows.map((row: BridgeUtxoHistoryRow) => this.mapUtxoRow(row));
+    const source = this.restHistory();
+    return source.snapshot(height, async () => {
+      const deployment = this.configService.getOrThrow('deployment');
+      const policies = new Set<string>(
+        [
+          deployment.hostStateNFT.policyId,
+          ...Object.values(deployment.validators).map((v: any) => v.scriptHash),
+          deployment.packetState?.state?.scriptHash,
+          deployment.packetState?.batch?.scriptHash,
+          deployment.packetState?.configToken?.policyId,
+        ].filter(Boolean),
+      );
+      const result: UtxoDto[] = [];
+      for (const tx of await source.blockTransactions(height))
+        for (const output of tx.outputs) {
+          for (const amount of output.amounts)
+            if (policies.has(amount.unit.slice(0, 56)) && BigInt(amount.quantity) > 0n)
+              result.push(this.restOutput(output, amount.unit));
+        }
+      return result;
+    });
   }
 
   async findUtxoByUnitAtOrBeforeBlockNo(unit: string, height: bigint): Promise<UtxoDto> {
-    if (!/^[0-9a-f]{56}(?:[0-9a-f]{2}){1,32}$/i.test(unit)) {
+    if (!/^[0-9a-f]{56}(?:[0-9a-f]{2}){1,32}$/i.test(unit))
       throw new GrpcNotFoundException('Not found: invalid asset unit for historical UTxO lookup');
-    }
     return this.findCanonicalStateNftAtHeight(
       unit.slice(0, 56).toLowerCase(),
       unit.slice(56).toLowerCase(),
@@ -358,127 +316,69 @@ export class YaciHistoryService implements HistoryService {
     return this.findCanonicalStateNftAtHeight(hostStateNFT.policyId, hostStateNFT.name, height, 'HostState UTxO');
   }
 
-  /** Projections discover candidates; raw canonical outputs and spends authenticate them. */
   private async findCanonicalStateNftAtHeight(
     policyId: string,
     assetName: string,
     height: bigint,
     label: string,
   ): Promise<UtxoDto> {
-    const query = `
-      SELECT
-        COALESCE(NULLIF(a.owner_addr_full, ''), a.owner_addr) AS address,
-        a.tx_hash, h.tx_id, a.output_index,
-        a.inline_datum AS datum, a.data_hash AS datum_hash,
-        h.assets_policy, h.assets_name, t.block AS block_no, t.block AS block_id
-      FROM bridge_utxo_history h
-      JOIN address_utxo a ON a.tx_hash = h.tx_hash AND a.output_index = h.output_index
-      JOIN transaction t ON t.tx_hash = a.tx_hash AND t.block = a.block
-      JOIN block canonical ON canonical.number = t.block AND canonical.hash = t.block_hash
-      WHERE t.invalid = false AND t.block <= $1
-        AND h.assets_policy = $2 AND h.assets_name = $3
-        AND EXISTS (
-          SELECT 1 FROM jsonb_array_elements(COALESCE(a.amounts::jsonb, '[]'::jsonb)) amount
-          WHERE lower(amount->>'unit') = $2 || $3
-            AND (amount->>'quantity')::numeric = 1
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM tx_input spent
-          JOIN transaction consuming ON consuming.tx_hash = spent.spent_tx_hash
-            AND consuming.block = spent.spent_at_block AND consuming.block_hash = spent.spent_at_block_hash
-          JOIN block spent_block ON spent_block.number = consuming.block AND spent_block.hash = consuming.block_hash
-          WHERE spent.tx_hash = a.tx_hash AND spent.output_index = a.output_index
-            AND consuming.invalid = false AND consuming.block <= $1
-        )
-      ORDER BY t.block DESC, COALESCE(t.tx_index, 0) DESC, a.output_index DESC
-      LIMIT 2
-    `;
-
-    const rows = await this.entityManager.query(query, [height.toString(), policyId, assetName]);
-    if (rows.length <= 0) {
-      throw new GrpcNotFoundException(`Not found: ${label} not found at or before height ${height.toString()}`);
-    }
-    if (rows.length !== 1) {
-      throw new StaleIbcTreeStateError(
-        `Multiple canonical ${label} outputs at height ${height}; synchronize canonical spend history`,
+    const source = this.restHistory();
+    return source.snapshot(height, async () => {
+      const rows = await source.outputs(
+        { policy: policyId, unit: policyId + assetName, unspent: true },
+        Number(height),
       );
-    }
-
-    return this.mapUtxoRow(rows[0]);
+      if (!rows.length) throw new GrpcNotFoundException(`Not found: ${label} not found at or before height ${height}`);
+      if (rows.length !== 1)
+        throw new StaleIbcTreeStateError(`Multiple canonical ${label} outputs at height ${height}`);
+      return this.restOutput(rows[0], policyId + assetName);
+    });
   }
 
   async findLatestBlock(): Promise<HistoryBlock | null> {
-    const query = `
-      SELECT
-        number,
-        hash,
-        prev_hash,
-        slot,
-        epoch,
-        block_time,
-        slot_leader
-      FROM block
-      ORDER BY number DESC
-      LIMIT 1
-    `;
-    const rows = await this.entityManager.query(query);
-    return rows[0] ? this.mapHistoryBlockRow(rows[0]) : null;
+    const block = await this.restHistory().api.block('latest');
+    return block ? this.mapRestBlock(block) : null;
   }
 
   async findBlockByHeight(height: bigint): Promise<HistoryBlock | null> {
-    const query = `
-      SELECT
-        number,
-        hash,
-        prev_hash,
-        slot,
-        epoch,
-        block_time,
-        slot_leader
-      FROM block
-      WHERE number = $1
-      LIMIT 1
-    `;
-    const rows = await this.entityManager.query(query, [height.toString()]);
-    return rows[0] ? this.mapHistoryBlockRow(rows[0]) : null;
+    const block = await this.restHistory().api.block(height);
+    return block ? this.mapRestBlock(block) : null;
+  }
+
+  private mapRestBlock(block: import('../../shared/helpers/yaci-rest').YaciRestBlock): HistoryBlock {
+    return this.mapHistoryBlockRow({ ...block, prev_hash: block.previous_block ?? '', block_time: String(block.time) });
   }
 
   async findBridgeBlocks(trustedHeight: bigint, anchorHeight: bigint): Promise<HistoryBlock[]> {
-    const query = `
-      SELECT
-        number,
-        hash,
-        prev_hash,
-        slot,
-        epoch,
-        block_time,
-        slot_leader
-      FROM block
-      WHERE number > $1
-        AND number < $2
-      ORDER BY number ASC
-    `;
-    const rows = await this.entityManager.query(query, [trustedHeight.toString(), anchorHeight.toString()]);
-    return rows.map((row: HistoryBlockRow) => this.mapHistoryBlockRow(row));
+    if (anchorHeight <= trustedHeight || anchorHeight > BigInt(Number.MAX_SAFE_INTEGER))
+      throw new Error('Invalid bridge block range');
+    const source = this.restHistory();
+    return source.snapshot(anchorHeight, async () => {
+      const blocks: HistoryBlock[] = [];
+      let previous = await source.api.block(trustedHeight);
+      if (!previous) throw new Error('Trusted Cardano block is unavailable');
+      for (let height = trustedHeight + 1n; height <= anchorHeight; height++) {
+        const next = await source.api.block(height);
+        if (!next || next.previous_block !== previous.hash)
+          throw new Error('Yaci REST block range is incomplete or changed');
+        if (height < anchorHeight) blocks.push(this.mapRestBlock(next));
+        previous = next;
+      }
+      return blocks;
+    });
   }
 
   async findDescendantBlocks(anchorHeight: bigint, limit: number): Promise<HistoryBlock[]> {
-    const query = `
-      SELECT
-        number,
-        hash,
-        prev_hash,
-        slot,
-        epoch,
-        block_time,
-        slot_leader
-      FROM block
-      WHERE number > $1
-      ORDER BY number ASC
-      LIMIT $2
-    `;
-    const rows = await this.entityManager.query(query, [anchorHeight.toString(), limit]);
-    return rows.map((row: HistoryBlockRow) => this.mapHistoryBlockRow(row));
+    if (!Number.isSafeInteger(limit) || limit < 0) throw new Error('Invalid descendant limit');
+    const source = this.restHistory();
+    return source.snapshot('latest', async (tip) => {
+      const last = BigInt(Math.min(tip.number, Number(anchorHeight) + limit));
+      if (last <= anchorHeight) return [];
+      const blocks = await this.findBridgeBlocks(anchorHeight, last);
+      const end = await source.api.block(last);
+      if (!end) throw new Error('Yaci descendant block is unavailable');
+      return [...blocks, this.mapRestBlock(end)];
+    });
   }
 
   // These indexed observations guide standalone proof-height discovery. They are
@@ -528,7 +428,7 @@ export class YaciHistoryService implements HistoryService {
           localSnapshotDirectory,
           block.epochNo,
           normalizeHex(process.env.CARDANO_EPOCH_NONCE_GENESIS),
-          this.entityManager,
+          this.restHistory(),
         )
       ).map((entry) => ({ ...entry, poolId: normalizePoolId(entry.poolId) }));
       const verification = await queryCurrentEpochVerificationData(ogmiosEndpoint, epochNonce);
@@ -1027,17 +927,14 @@ export class YaciHistoryService implements HistoryService {
     historicalStakeEndpoint: string,
   ): Promise<HistoryEpochContextAtBlock> {
     const [producerSummaryRows, verificationContext] = await Promise.all([
-      this.entityManager.query(
-        `
-          SELECT
-            COUNT(*)::text AS block_count,
-            ARRAY_AGG(DISTINCT slot_leader ORDER BY slot_leader)
-              FILTER (WHERE slot_leader IS NOT NULL AND BTRIM(slot_leader) <> '') AS pool_ids
-          FROM block
-          WHERE epoch = $1
-        `,
-        [block.epochNo],
-      ),
+      this.restHistory()
+        .epochBlocks(block.epochNo)
+        .then((blocks) => [
+          {
+            block_count: String(blocks.length),
+            pool_ids: [...new Set(blocks.map((item) => item.slot_leader))],
+          },
+        ]),
       queryCurrentEpochVerificationData(ogmiosEndpoint, epochNonce),
     ]);
     const producerSummary = (producerSummaryRows as HistoricalEpochProducerSummaryRow[])[0];
@@ -1407,60 +1304,39 @@ export class YaciHistoryService implements HistoryService {
   }
 
   async findClientUtxosByBlockNo(height: number): Promise<UtxoDto[]> {
-    const deploymentConfig = this.configService.get('deployment');
-    const mintClientScriptHash = deploymentConfig.validators.mintClientStt.scriptHash;
-    const tokenBase = deploymentConfig.hostStateNFT;
-    const clientTokenNamePrefix = this.lucidService.generateTokenName(tokenBase, CLIENT_PREFIX, 0n).slice(0, 40);
-
-    const query = `
-      SELECT
-        address,
-        tx_hash,
-        tx_id,
-        output_index,
-        datum,
-        datum_hash,
-        assets_policy,
-        assets_name,
-        block_no,
-        block_id
-      FROM bridge_utxo_history
-      WHERE block_no = $1
-        AND assets_policy = $2
-        AND lower(assets_name) LIKE lower($3)
-      ORDER BY COALESCE(tx_index, 0) ASC, output_index ASC
-    `;
-    const rows = await this.entityManager.query(query, [height, mintClientScriptHash, `${clientTokenNamePrefix}%`]);
-    return rows.map((row: BridgeUtxoHistoryRow) => this.mapUtxoRow(row));
+    const deployment = this.configService.get('deployment');
+    const prefix = this.lucidService.generateTokenName(deployment.hostStateNFT, CLIENT_PREFIX, 0n).slice(0, 40);
+    return (await this.findUtxosByBlockNo(height)).filter(
+      (output) =>
+        output.assetsPolicy === deployment.validators.mintClientStt.scriptHash && output.assetsName.startsWith(prefix),
+    );
   }
 
   async checkExistPoolUpdateByBlockNo(height: number): Promise<boolean> {
-    const query = `
-      SELECT 1
-      FROM bridge_spo_event_history
-      WHERE block_no = $1 AND event_type = 'register'
-      LIMIT 1
-    `;
-    const rows = await this.entityManager.query(query, [height]);
-    return rows.length > 0;
+    return (await this.restHistory().blockTransactions(height)).some((tx) => this.hasCertificate(tx, 'register'));
   }
 
   async checkExistPoolRetireByBlockNo(height: number): Promise<boolean> {
-    const query = `
-      SELECT 1
-      FROM bridge_spo_event_history
-      WHERE block_no = $1 AND event_type = 'unregister'
-      LIMIT 1
-    `;
-    const rows = await this.entityManager.query(query, [height]);
-    return rows.length > 0;
+    return (await this.restHistory().blockTransactions(height)).some((tx) => this.hasCertificate(tx, 'retire'));
+  }
+
+  private hasCertificate(tx: RestTransaction, kind: 'register' | 'retire'): boolean {
+    if (!tx.valid) return false;
+    const certificates = tx.body.certs();
+    for (let i = 0; certificates && i < certificates.len(); i++) {
+      const cert = certificates.get(i);
+      if (kind === 'register' ? cert.as_pool_registration() : cert.as_pool_retirement()) return true;
+    }
+    return false;
   }
 
   private async fetchEpochNonce(epoch: number): Promise<string> {
     const endpoint = this.configService.get<string>('cardanoEpochParamsEndpoint')?.replace(/\/+$/, '');
     if (!endpoint) {
       if (this.isExplicitLocalDevnet()) {
-        return this.fetchLocalEpochNonce(epoch);
+        throw new Error(
+          'Local epoch nonces require CARDANO_EPOCH_PARAMS_ENDPOINT. Direct Yaci database nonce reads are no longer supported',
+        );
       }
       const localEpochNonceOverride = normalizeHex(process.env.CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE);
       if (
@@ -1515,84 +1391,6 @@ export class YaciHistoryService implements HistoryService {
       this.configService.get<number>('cardanoChainNetworkMagic') === 42 &&
       this.configService.get<string>('cardanoNetwork') === 'Custom'
     );
-  }
-
-  private async fetchLocalEpochNonce(epoch: number): Promise<string> {
-    if (!Number.isSafeInteger(epoch) || epoch < 0) {
-      throw new Error('Local Cardano epoch must be a non-negative safe integer');
-    }
-    const genesisNonce = normalizeHex(process.env.CARDANO_EPOCH_NONCE_GENESIS);
-    if (!/^[0-9a-f]{64}$/.test(genesisNonce)) {
-      throw new Error('Local Cardano genesis nonce must be configured from the actual node genesis hash');
-    }
-
-    // The optional Yaci epoch-nonce module reconstructs these values from the
-    // retained chain and removes them on rollback. Do not cache by epoch here:
-    // a rollback across an epoch boundary can replace the corresponding nonce.
-    const rows = await this.entityManager.query(
-      `
-        SELECT n.epoch, n.nonce, b.hash AS block_hash, b.epoch AS block_epoch,
-               genesis.nonce AS genesis_nonce, gb.hash AS genesis_block_hash,
-               gb.epoch AS genesis_block_epoch,
-               (
-                 SELECT COUNT(DISTINCT history.epoch)::text
-                 FROM epoch_nonce history
-                 JOIN block history_block
-                   ON history_block.number = history.block
-                  AND history_block.slot = history.slot
-                  AND history_block.epoch = history.epoch
-                 WHERE history.epoch BETWEEN 0 AND $1
-                   AND history.nonce ~* '^[0-9a-f]{64}$'
-                   AND history_block.hash ~* '^[0-9a-f]{64}$'
-               ) AS canonical_epoch_count
-        FROM epoch_nonce n
-        LEFT JOIN block b ON b.number = n.block AND b.slot = n.slot
-        LEFT JOIN epoch_nonce genesis ON genesis.epoch = 0
-        LEFT JOIN block gb ON gb.number = genesis.block AND gb.slot = genesis.slot
-        WHERE n.epoch = $1
-      `,
-      [epoch],
-    );
-    if (rows.length === 0) {
-      // Only epoch zero may use its actual genesis hash before replay reaches
-      // the first block. The legacy unscoped override is never a later nonce.
-      if (epoch === 0) return genesisNonce;
-      throw new Error(
-        `Local Cardano nonce for epoch ${epoch} is not indexed; enable store.epoch-nonce.enabled and replay Yaci from genesis`,
-      );
-    }
-    const row = rows[0];
-    const nonce = normalizeHex(row.nonce);
-    if (
-      rows.length !== 1 ||
-      parseNonNegativeBigInt(row.epoch) !== BigInt(epoch) ||
-      parseNonNegativeBigInt(row.block_epoch) !== BigInt(epoch) ||
-      !/^[0-9a-f]{64}$/.test(normalizeHex(row.block_hash)) ||
-      !/^[0-9a-f]{64}$/.test(nonce) ||
-      parseNonNegativeBigInt(row.genesis_block_epoch) !== 0n ||
-      !/^[0-9a-f]{64}$/.test(normalizeHex(row.genesis_block_hash)) ||
-      normalizeHex(row.genesis_nonce) !== genesisNonce ||
-      (epoch === 0 && nonce !== genesisNonce)
-    ) {
-      throw new Error(
-        `Local Cardano nonce evidence for epoch ${epoch} is invalid or belongs to another genesis; rebuild the disposable Yaci index from the exact node genesis files`,
-      );
-    }
-    // Yaci can lose a transition row on a boundary rollback without recreating
-    // it on replacement blocks. A later row must not conceal that missing
-    // prerequisite. Epoch is the nonce primary key; distinct canonical epochs
-    // in [0, epoch] must cover the entire interval, without loading rows into JS.
-    const canonicalEpochCount = row.canonical_epoch_count;
-    if (
-      typeof canonicalEpochCount !== 'string' ||
-      !/^(0|[1-9][0-9]*)$/.test(canonicalEpochCount) ||
-      BigInt(canonicalEpochCount) !== BigInt(epoch) + 1n
-    ) {
-      throw new Error(
-        `Local Cardano nonce history through epoch ${epoch} is incomplete or non-canonical; rebuild the disposable Yaci index from the exact node genesis files`,
-      );
-    }
-    return nonce;
   }
 
   private epochNonceCacheKey(epoch: number): string {
@@ -1718,9 +1516,13 @@ export class YaciHistoryService implements HistoryService {
       return cachedSlots;
     }
 
-    const localSlots = await this.findLocalPoolRegistrationSlots(missingAfterCache);
-    // The history indexer owns chain-derived cache writes. A delayed Gateway
-    // reader must not write an orphan age back after rollback cleanup commits.
+    // Public pool ages can predate the provider's raw-block retention checkpoint.
+    // The existing external pool-history provider supplies those registrations.
+    const localSlots = this.configService.get<string>('cardanoPoolRegistrationHistoryEndpoint')
+      ? new Map<string, bigint>()
+      : await this.findLocalPoolRegistrationSlots(missingAfterCache);
+    // Chain-derived registration ages are read through REST on each lookup.
+    // Only results from the external registration provider are cached.
 
     const mergedSlots = new Map([...cachedSlots, ...localSlots]);
     const assumedRegistrationSlot = getAssumedPoolRegistrationSlot();
@@ -1741,17 +1543,19 @@ export class YaciHistoryService implements HistoryService {
     }
 
     await this.entityManager.query(`
-      CREATE TABLE IF NOT EXISTS bridge_pool_registration_cache (
-        pool_id text PRIMARY KEY,
+      CREATE TABLE IF NOT EXISTS gateway_pool_registration_cache (
+        network_key text NOT NULL,
+        pool_id text NOT NULL,
         first_registration_slot bigint NOT NULL,
         source text NOT NULL,
         source_tx_hash varchar(64),
         created_at timestamptz NOT NULL DEFAULT now(),
-        updated_at timestamptz NOT NULL DEFAULT now()
+        updated_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (network_key, pool_id)
       );
 
-      CREATE INDEX IF NOT EXISTS idx_bridge_pool_registration_cache_slot
-        ON bridge_pool_registration_cache(first_registration_slot);
+      CREATE INDEX IF NOT EXISTS idx_gateway_pool_registration_cache_slot
+        ON gateway_pool_registration_cache(first_registration_slot);
     `);
     this.poolRegistrationCacheTableReady = true;
   }
@@ -1760,35 +1564,39 @@ export class YaciHistoryService implements HistoryService {
     const rows = await this.entityManager.query(
       `
         SELECT lower(pool_id) AS pool_id, first_registration_slot::text AS first_registration_slot
-        FROM bridge_pool_registration_cache
-        WHERE lower(pool_id) = ANY($1::text[])
+        FROM gateway_pool_registration_cache
+        WHERE lower(pool_id) = ANY($1::text[]) AND network_key = $2 AND source = 'external'
       `,
-      [poolIds.map((poolId) => poolId.toLowerCase())],
+      [poolIds.map((poolId) => poolId.toLowerCase()), this.epochNonceCacheKey(0)],
     );
 
     return this.mapPoolRegistrationSlotRows(rows);
   }
 
   private async findLocalPoolRegistrationSlots(poolIds: string[]): Promise<Map<string, bigint>> {
-    const query = `
-      WITH registration_slots AS (
-        SELECT lower(pool_id) AS pool_id, slot_no::bigint AS first_registration_slot
-        FROM bridge_spo_event_history
-        WHERE event_type = 'register'
-          AND lower(pool_id) = ANY($1::text[])
-          AND slot_no IS NOT NULL
-        UNION ALL
-        SELECT lower(pool_id) AS pool_id, registration_slot::bigint AS first_registration_slot
-        FROM pool
-        WHERE lower(pool_id) = ANY($1::text[])
-          AND registration_slot IS NOT NULL
-      )
-      SELECT pool_id, MIN(first_registration_slot)::text AS first_registration_slot
-      FROM registration_slots
-      GROUP BY pool_id
-    `;
-    const rows = await this.entityManager.query(query, [poolIds.map((poolId) => poolId.toLowerCase())]);
-    return this.mapPoolRegistrationSlotRows(rows);
+    const source = this.restHistory();
+    return source.snapshot('latest', async (tip) => {
+      const slots = new Map<string, bigint>();
+      const wanted = new Set(poolIds.map(normalizePoolId));
+      for await (const row of source.pages('pools/registrations')) {
+        if (!wanted.has(normalizePoolId(row.pool_id))) continue;
+        const number = Number(row.block_number ?? row.block);
+        if (!Number.isSafeInteger(number) || number < 0) throw new Error('Invalid Yaci pool registration block');
+        if (number > tip.number) continue;
+        for (const tx of await source.blockTransactions(number)) {
+          if (!tx.valid) continue;
+          const certificates = tx.body.certs();
+          for (let i = 0; certificates && i < certificates.len(); i++) {
+            const registration = certificates.get(i).as_pool_registration();
+            if (!registration) continue;
+            const pool = normalizePoolId(registration.pool_params().operator().to_hex());
+            const slot = BigInt(tx.block.slot);
+            if (wanted.has(pool) && (!slots.has(pool) || slots.get(pool)! > slot)) slots.set(pool, slot);
+          }
+        }
+      }
+      return slots;
+    });
   }
 
   private mapPoolRegistrationSlotRows(
@@ -1817,12 +1625,12 @@ export class YaciHistoryService implements HistoryService {
 
     await this.entityManager.query(
       `
-        INSERT INTO bridge_pool_registration_cache(pool_id, first_registration_slot, source)
-        SELECT row.pool_id, row.first_registration_slot::bigint, $2
+        INSERT INTO gateway_pool_registration_cache(network_key, pool_id, first_registration_slot, source)
+        SELECT $3, row.pool_id, row.first_registration_slot::bigint, $2
         FROM jsonb_to_recordset($1::jsonb) AS row(pool_id text, first_registration_slot text)
-        ON CONFLICT (pool_id) DO NOTHING
+        ON CONFLICT (network_key, pool_id) DO NOTHING
       `,
-      [JSON.stringify(rows), source],
+      [JSON.stringify(rows), source, this.epochNonceCacheKey(0)],
     );
   }
 
@@ -1949,115 +1757,83 @@ export class YaciHistoryService implements HistoryService {
   }
 
   async findTxByHash(hash: string): Promise<TxDto | null> {
-    const query = `
-      SELECT
-        tx_hash,
-        id AS tx_id,
-        gas_fee,
-        tx_size,
-        block_no,
-        block_hash,
-        slot_no,
-        tx_index
-      FROM bridge_tx_history
-      WHERE tx_hash = $1
-      LIMIT 1
-    `;
-    const rows = await this.entityManager.query(query, [hash.toLowerCase()]);
-    if (rows.length <= 0) {
-      return null;
-    }
-
-    return this.mapTxRow(rows[0]);
+    const tx = await this.restHistory().transaction(hash);
+    return tx?.valid
+      ? {
+          hash: tx.hash,
+          tx_id: 0,
+          gas_fee: Number(tx.body.fee()),
+          tx_size: tx.cborHex.length / 2,
+          height: tx.block.number,
+        }
+      : null;
   }
 
   async findIntentSpendingTransaction(hash: string, address: string): Promise<HistoryTxEvidence | null> {
-    const rows = await this.entityManager.query(
-      `
-      SELECT DISTINCT spent.spent_tx_hash AS tx_hash
-      FROM tx_input spent
-      JOIN address_utxo utxo ON utxo.tx_hash = spent.tx_hash AND utxo.output_index = spent.output_index
-      JOIN transaction tx ON tx.tx_hash = spent.spent_tx_hash
-        AND tx.block = spent.spent_at_block AND tx.block_hash = spent.spent_at_block_hash
-      JOIN block canonical ON canonical.number = tx.block AND canonical.hash = tx.block_hash
-      WHERE spent.tx_hash = $1 AND tx.invalid = false
-        AND (utxo.owner_addr = $2 OR utxo.owner_addr_full = $2)
-    `,
-      [hash.toLowerCase(), address],
-    );
-    if (rows.length !== 1) return null;
-    return this.findTransactionEvidenceByHash(rows[0].tx_hash);
+    const source = this.restHistory();
+    return source.snapshot('latest', async (tip) => {
+      const creation = await source.transaction(hash);
+      if (!creation) return null;
+      const intentOutputIndexes = new Set(
+        creation.outputs.filter((output) => output.address === address).map((output) => output.output_index),
+      );
+      if (intentOutputIndexes.size === 0) return null;
+      const transactions = await source.transactionsFor(
+        `addresses/${encodeURIComponent(address)}/transactions`,
+        tip.number,
+      );
+      const matches = transactions.filter((tx) =>
+        tx.inputs.some((input) => input.txHash === creation.hash && intentOutputIndexes.has(input.outputIndex)),
+      );
+      if (matches.length !== 1) return null;
+      return this.transactionEvidence(matches[0]);
+    });
   }
 
   async findTransactionEvidenceByHash(hash: string): Promise<HistoryTxEvidence | null> {
-    const query = `
-      SELECT
-        tx_hash,
-        block_no,
-        block_hash,
-        slot_no,
-        tx_index,
-        encode(tx_cbor, 'hex') AS tx_cbor_hex,
-        encode(tx_body_cbor, 'hex') AS tx_body_cbor_hex,
-        redeemers_json,
-        host_state_output_index,
-        host_state_datum,
-        host_state_datum_hash,
-        host_state_root,
-        gas_fee,
-        tx_size
-      FROM bridge_tx_evidence
-      WHERE tx_hash = $1
-      LIMIT 1
-    `;
-    const rows = await this.entityManager.query(query, [hash.toLowerCase()]);
-    return rows[0] ? this.mapTxEvidenceRow(rows[0]) : null;
+    const tx = await this.restHistory().transaction(hash);
+    return tx?.valid ? this.transactionEvidence(tx) : null;
   }
 
-  private mapUtxoRow(row: BridgeUtxoHistoryRow): UtxoDto {
+  private async transactionEvidence(tx: RestTransaction): Promise<HistoryTxEvidence> {
+    const redeemers: HistoryTxRedeemer[] = [];
+    const set = tx.transaction.witness_set().redeemers();
+    const kind = (tag: number) =>
+      tag === CML.RedeemerTag.Mint ? 'mint' : tag === CML.RedeemerTag.Spend ? 'spend' : `tag_${tag}`;
+    const map = set?.as_map_redeemer_key_to_redeemer_val();
+    const keys = map?.keys();
+    if (map && keys)
+      for (let i = 0; i < keys.len(); i++) {
+        const key = keys.get(i);
+        const value = map.get(key)!;
+        redeemers.push({ type: kind(key.tag()), index: Number(key.index()), data: value.data().to_cbor_hex() });
+      }
+    const legacy = set?.as_arr_legacy_redeemer();
+    if (legacy)
+      for (let i = 0; i < legacy.len(); i++) {
+        const item = legacy.get(i);
+        redeemers.push({ type: kind(item.tag()), index: Number(item.index()), data: item.data().to_cbor_hex() });
+      }
+    const token = this.configService.getOrThrow('deployment').hostStateNFT;
+    const host = tx.outputs.find((output) =>
+      output.amounts.some((amount) => amount.unit === token.policyId + token.name && amount.quantity === '1'),
+    );
+    const datum = host?.inline_datum ? await this.lucidService.decodeDatum<any>(host.inline_datum, 'host_state') : null;
     return {
-      address: row.address,
-      txHash: row.tx_hash,
-      txId: row.tx_id === undefined ? 0 : Number(row.tx_id),
-      outputIndex: Number(row.output_index),
-      datum: row.datum ?? undefined,
-      datumHash: row.datum_hash ?? undefined,
-      assetsName: row.assets_name,
-      assetsPolicy: row.assets_policy,
-      blockNo: Number(row.block_no),
-      blockId: row.block_id === undefined ? Number(row.block_no) : Number(row.block_id),
-    } as UtxoDto;
-  }
-
-  private mapTxRow(row: BridgeTxHistoryRow): TxDto {
-    return {
-      hash: row.tx_hash,
-      tx_id: row.tx_id === undefined ? 0 : Number(row.tx_id),
-      gas_fee: Number(row.gas_fee),
-      tx_size: Number(row.tx_size),
-      height: Number(row.block_no),
-    };
-  }
-
-  private mapTxEvidenceRow(row: BridgeTxEvidenceRow): HistoryTxEvidence {
-    return {
-      txHash: row.tx_hash,
-      blockNo: Number(row.block_no),
-      blockHash: row.block_hash ?? null,
-      slotNo: row.slot_no === undefined || row.slot_no === null ? null : BigInt(row.slot_no),
-      txIndex: Number(row.tx_index),
-      txCborHex: row.tx_cbor_hex,
-      txBodyCborHex: row.tx_body_cbor_hex,
-      redeemers: Array.isArray(row.redeemers_json) ? row.redeemers_json : [],
-      hostStateOutputIndex:
-        row.host_state_output_index === undefined || row.host_state_output_index === null
-          ? null
-          : Number(row.host_state_output_index),
-      hostStateDatum: row.host_state_datum ?? null,
-      hostStateDatumHash: row.host_state_datum_hash ?? null,
-      hostStateRoot: row.host_state_root ?? null,
-      gasFee: row.gas_fee === undefined || row.gas_fee === null ? null : Number(row.gas_fee),
-      txSize: row.tx_size === undefined || row.tx_size === null ? null : Number(row.tx_size),
+      txHash: tx.hash,
+      blockNo: tx.block.number,
+      blockHash: tx.block.hash,
+      slotNo: BigInt(tx.block.slot),
+      txIndex: tx.index,
+      txCborHex: tx.cborHex,
+      txBodyCborHex: tx.bodyCborHex,
+      redeemers,
+      hostStateOutputIndex: host?.output_index ?? null,
+      hostStateDatum: host?.inline_datum ?? null,
+      hostStateDatumHash: host?.data_hash ?? null,
+      hostStateRoot: datum?.state.ibc_state_root ?? null,
+      gasFee: Number(tx.body.fee()),
+      txSize: tx.cborHex.length / 2,
     };
   }
 
@@ -2098,27 +1874,12 @@ export class YaciHistoryService implements HistoryService {
   private async findEpochSlotBounds(
     epoch: number,
   ): Promise<Pick<HistoryEpochVerificationContext, 'currentEpochStartSlot' | 'currentEpochEndSlotExclusive'> | null> {
-    const startSlotQuery = `
-      SELECT MIN(slot) AS start_slot
-      FROM block
-      WHERE epoch = $1
-        AND slot >= 0
-    `;
-    const nextEpochStartSlotQuery = `
-      SELECT MIN(slot) AS start_slot
-      FROM block
-      WHERE epoch = $1
-        AND slot >= 0
-    `;
-
-    const [startSlotRow] = await this.entityManager.query(startSlotQuery, [epoch]);
-    const startSlot = this.parseSlot(startSlotRow);
-    if (startSlot === null) {
-      return null;
-    }
-
-    const [nextEpochStartSlotRow] = await this.entityManager.query(nextEpochStartSlotQuery, [epoch + 1]);
-    const nextEpochStartSlot = this.parseSlot(nextEpochStartSlotRow);
+    const source = this.restHistory();
+    const first = await source.firstBlockInEpoch(epoch);
+    if (!first) return null;
+    const startSlot = BigInt(first.slot);
+    const next = await source.firstBlockInEpoch(epoch + 1);
+    const nextEpochStartSlot = next ? BigInt(next.slot) : null;
     const configuredEpochLength = BigInt(this.configService.get<number>('cardanoEpochLength') || 0);
     const currentEpochEndSlotExclusive =
       nextEpochStartSlot ?? (configuredEpochLength > 0n ? startSlot + configuredEpochLength : null);
@@ -2133,34 +1894,8 @@ export class YaciHistoryService implements HistoryService {
   }
 
   private async findLatestBlockInEpoch(epoch: number): Promise<HistoryBlock | null> {
-    const query = `
-      SELECT
-        number,
-        hash,
-        prev_hash,
-        slot,
-        epoch,
-        block_time,
-        slot_leader
-      FROM block
-      WHERE epoch = $1
-      ORDER BY number DESC
-      LIMIT 1
-    `;
-    const rows = await this.entityManager.query(query, [epoch]);
-    return rows[0] ? this.mapHistoryBlockRow(rows[0]) : null;
-  }
-
-  private parseSlot(row?: EpochStartSlotRow | null): bigint | null {
-    const slot = row?.start_slot;
-    if (slot === undefined || slot === null) {
-      return null;
-    }
-    const parsedSlot = BigInt(slot);
-    if (parsedSlot < 0n) {
-      return null;
-    }
-    return parsedSlot;
+    const last = await this.restHistory().latestBlockInEpoch(epoch);
+    return last ? this.findBlockByHeight(BigInt(last.number)) : null;
   }
 }
 

@@ -1,3 +1,4 @@
+import { sqlRestHistoryFixture } from '../../test-config/sql-rest-history-fixture';
 import * as Lucid from '@lucid-evolution/lucid';
 import { Client, Pool, PoolClient } from 'pg';
 import { publicClientCommitmentValues } from '@cardano-ibc/tx-builder-runtime/plutusSerialise';
@@ -286,7 +287,7 @@ async function expectedTree(n: number) {
       Lucid,
     );
   const rebuild = (height = 2n, id = 30) =>
-    reconstructHistoricalIbcTree(sql, deployment, 'Custom', decoder, height, { txHash: hash(id), outputIndex: 3 });
+    reconstructHistoricalIbcTree(sqlRestHistoryFixture(sql), deployment, 'Custom', decoder, height, { txHash: hash(id), outputIndex: 3 });
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: databaseUrl, max: 1 });
@@ -401,7 +402,7 @@ async function expectedTree(n: number) {
       [2, 30],
       [3, 40],
     ]) {
-      const snapshot = await reconstructHistoricalIbcTree(sql, migrated, 'Custom', decoder, BigInt(height), {
+      const snapshot = await reconstructHistoricalIbcTree(sqlRestHistoryFixture(sql), migrated, 'Custom', decoder, BigInt(height), {
         txHash: hash(id),
         outputIndex: 3,
       });
@@ -410,7 +411,7 @@ async function expectedTree(n: number) {
     }
     await expect(rebuild()).rejects.toThrow();
     await db.query('DELETE FROM block WHERE number=3');
-    const rolledBack = await reconstructHistoricalIbcTree(sql, migrated, 'Custom', decoder, 2n, {
+    const rolledBack = await reconstructHistoricalIbcTree(sqlRestHistoryFixture(sql), migrated, 'Custom', decoder, 2n, {
       txHash: hash(30),
       outputIndex: 3,
     });
@@ -466,7 +467,7 @@ async function expectedTree(n: number) {
 
     it('exports the populated canonical root and exact transfer-port witness', async () => {
       await commitFixture();
-      const result = await exportMigrationWitness(db, migrationHandler());
+      const result = await exportMigrationWitness(sqlRestHistoryFixture(db, true), migrationHandler());
       expect(result).toEqual({
         format: 'cardano-ibc-migration-port-witness-v1',
         host: { txHash: hash(40), outputIndex: 3 },
@@ -487,7 +488,7 @@ async function expectedTree(n: number) {
       await put(60, 0, 4, 'client-v2', clientPolicy + name, await encodeClientDatum(client(3), Lucid));
       await commitFixture();
       // No replacement address is supplied in the handler or originalAddresses.
-      const result = await exportMigrationWitness(db, migrationHandler());
+      const result = await exportMigrationWitness(sqlRestHistoryFixture(db, true), migrationHandler());
       expect(result.host).toEqual({ txHash: hash(50), outputIndex: 3 });
       expect(result.block).toEqual({ height: '4', hash: hash(4) });
       expect(result.root).toBe(roots[2]);
@@ -515,7 +516,7 @@ async function expectedTree(n: number) {
             hash(40),
           ]);
         await commitFixture();
-        await expect(exportMigrationWitness(db, migrationHandler())).rejects.toThrow(
+        await expect(exportMigrationWitness(sqlRestHistoryFixture(db, true), migrationHandler())).rejects.toThrow(
           /Tree rebuild failed|Historical IBC tree unavailable|Canonical HostState/,
         );
         // Failure must close the read-only transaction; the lease remains usable.
@@ -528,7 +529,7 @@ async function expectedTree(n: number) {
     it('selects the surviving canonical snapshot after a successor rollback', async () => {
       await db.query('DELETE FROM block WHERE number=3');
       await commitFixture();
-      const result = await exportMigrationWitness(db, migrationHandler());
+      const result = await exportMigrationWitness(sqlRestHistoryFixture(db, true), migrationHandler());
       expect(result.host).toEqual({ txHash: hash(30), outputIndex: 3 });
       expect(result.block).toEqual({ height: '2', hash: hash(2) });
       expect(result.root).toBe(roots[1]);
@@ -551,7 +552,7 @@ async function expectedTree(n: number) {
         },
       } as Pick<Client, 'query'>;
       try {
-        await expect(exportMigrationWitness(reorgDuringCommit, migrationHandler())).rejects.toThrow(
+        await expect(exportMigrationWitness(sqlRestHistoryFixture(reorgDuringCommit, true), migrationHandler())).rejects.toThrow(
           /canonical|rollback|changed|orphan/i,
         );
         expect(removedTip).toBe(true);

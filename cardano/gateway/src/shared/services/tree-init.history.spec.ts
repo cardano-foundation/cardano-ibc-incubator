@@ -2,6 +2,8 @@ import { HistoryConfigurationError } from '../../config/history-coverage';
 import { ConfigService } from '@nestjs/config';
 import { TreeInitService } from './tree-init.service';
 import * as historyCoverage from '../../config/history-coverage';
+import { YaciRestHistory } from '../helpers/yaci-rest-history';
+import { YaciRestClient } from '../helpers/yaci-rest';
 
 describe('cold manifest startup readiness', () => {
   const originalRecoveryMode = process.env.GATEWAY_HISTORICAL_READ_ONLY;
@@ -15,15 +17,14 @@ describe('cold manifest startup readiness', () => {
     process.env.GATEWAY_HISTORICAL_READ_ONLY = 'true';
     const verify = jest.spyOn(historyCoverage, 'verifyHistoryCoverage').mockResolvedValue(undefined);
     const manifest = { history: { format: 'cardano-history-v1' } };
-    const manager = { query: jest.fn() };
-    const database = { transaction: async (_: string, action: any) => action(manager) };
+    jest.spyOn(YaciRestClient.prototype, 'block').mockResolvedValue({ hash: '22'.repeat(32) } as never);
     const live = jest.fn().mockRejectedValue(new Error('Bridge migration is in progress'));
     const cache = { ensureSchema: jest.fn() };
     const store = { rebuildTreeFromChain: jest.fn() };
     const service = new TreeInitService({ findUtxoAtHostStateNFT: live } as never, cache as never,
-      store as never, { get: () => manifest } as never, database as never);
+      store as never, { get: (key: string) => key === 'yaciStoreEndpoint' ? 'https://yaci.example' : manifest } as never);
     await service.onModuleInit();
-    expect(verify).toHaveBeenCalledWith(manager, manifest);
+    expect(verify).toHaveBeenCalledWith(expect.any(YaciRestHistory), manifest);
     expect(live).not.toHaveBeenCalled();
     expect(store.rebuildTreeFromChain).not.toHaveBeenCalled();
     expect(cache.ensureSchema).toHaveBeenCalled();
@@ -61,18 +62,14 @@ describe('cold manifest startup readiness', () => {
         host_state_nft_mint: { tx_hash: 'bb'.repeat(32), output_index: 0 },
       },
     };
-    const config = { get: (key: string) => (key === 'bridgeManifest' ? manifest : 30) };
-    const query = jest.fn(async (text: string) =>
-      text.startsWith('SET') ? [] : [{ number: 5, hash: 'cc'.repeat(32), slot: 100 }],
-    );
-    const database = { transaction: async (_isolation: string, read: any) => read({ query }) };
+    const config = { get: (key: string) => key === 'bridgeManifest' ? manifest : key === 'yaciStoreEndpoint' ? 'https://yaci.example' : 30 };
+    jest.spyOn(historyCoverage, 'verifyHistoryCoverage').mockRejectedValue(new HistoryConfigurationError('wrong checkpoint'));
     const lucid = { findUtxoAtHostStateNFT: async () => ({ txHash: 'dd'.repeat(32), outputIndex: 0 }) };
     const service = new TreeInitService(
       lucid as never,
       {} as never,
       {} as never,
       config as ConfigService,
-      database as never,
     );
     await expect(service.onModuleInit()).rejects.toThrow(HistoryConfigurationError);
     expect(jest.getTimerCount()).toBe(0);

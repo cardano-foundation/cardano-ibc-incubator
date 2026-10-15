@@ -1364,9 +1364,6 @@ fn write_gateway_env_for_network(
                 "OGMIOS_ENDPOINT",
                 "KUPO_ENDPOINT",
                 "YACI_STORE_ENDPOINT",
-                "HISTORY_DB_HOST",
-                "HISTORY_DB_PORT",
-                "HISTORY_DB_PASSWORD",
                 "GATEWAY_DB_HOST",
                 "GATEWAY_DB_PORT",
                 "GATEWAY_DB_PASSWORD",
@@ -1444,11 +1441,7 @@ fn write_gateway_env_for_network(
             }
 
             let public_testnet_gateway_defaults = [
-                ("HISTORY_DB_HOST", "yaci-store-postgres"),
-                ("HISTORY_DB_PORT", "5432"),
-                ("HISTORY_DB_NAME", "yaci_store"),
-                ("HISTORY_DB_USERNAME", "yaci"),
-                ("HISTORY_DB_PASSWORD", "dbpass"),
+                ("CARDANO_DOCKER_NETWORK_EXTERNAL", "true"),
                 ("GATEWAY_DB_HOST", "postgres"),
                 ("GATEWAY_DB_PORT", "5432"),
                 ("CARDANO_EPOCH_LENGTH", epoch_length.as_str()),
