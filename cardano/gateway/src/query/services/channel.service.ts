@@ -32,7 +32,6 @@ import { CHANNEL_ID_PREFIX, ORDER_MAPPING_CHANNEL, STATE_MAPPING_CHANNEL } from 
 import { convertHex2String } from '../../shared/helpers/hex';
 import { validQueryChannelParam, validQueryConnectionChannelsParam } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
-import { MithrilService } from '~@/shared/modules/mithril/mithril.service';
 import {
   GATEWAY_GRPC_ERROR_CODE,
   gatewayGrpcError,
@@ -88,7 +87,6 @@ export class ChannelService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     @Inject(KupoService) private kupoService: KupoService,
-    @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(HISTORY_SERVICE) private historyService: HistoryService,
     @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
     private readonly ibcTreeStore: IbcTreeStateStore,
@@ -98,12 +96,8 @@ export class ChannelService {
     return resolveProofHeightForCurrentRoot({
       logger: this.logger,
       lucidService: this.lucidService,
-      mithrilService: this.mithrilService,
       historyService: this.historyService,
       context: 'queryChannel',
-      lightClientMode:
-        this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
-        'stake-weighted-stability',
     });
   }
 
@@ -117,20 +111,14 @@ export class ChannelService {
   }
 
   private async getProofContext(context: string, requestedHeight?: bigint) {
-    const lightClientMode =
-      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
-      'stake-weighted-stability';
-
     return resolveProofContextForQuery({
       ibcTreeStore: this.ibcTreeStore,
       logger: this.logger,
       lucidService: this.lucidService,
-      mithrilService: this.mithrilService,
       historyService: this.historyService,
       ibcTreeCacheService: this.ibcTreeCacheService,
       context,
       requestedHeight,
-      lightClientMode,
     });
   }
 

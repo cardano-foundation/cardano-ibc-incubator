@@ -15,7 +15,6 @@ describe('default transfer packet queries', () => {
     {} as any,
     {} as any,
     {} as any,
-    {} as any,
     { proof, entries } as any,
   );
   beforeEach(() => jest.clearAllMocks());

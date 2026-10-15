@@ -31,7 +31,6 @@ import { getConnectionIdByTokenName } from '../../shared/helpers/connection';
 import { validPagination } from '../helpers/helper';
 import { convertHex2String, fromHex } from '../../shared/helpers/hex';
 import { validQueryConnectionParam } from '../helpers/connection.validate';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import {
   GrpcInternalException,
   GrpcInvalidArgumentException,
@@ -51,7 +50,6 @@ export class ConnectionService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     @Inject(KupoService) private kupoService: KupoService,
-    @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(HISTORY_SERVICE) private historyService: HistoryService,
     @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
     private readonly ibcTreeStore: IbcTreeStateStore,
@@ -62,12 +60,8 @@ export class ConnectionService {
       const height = await resolveProofHeightForCurrentRoot({
         logger: this.logger,
         lucidService: this.lucidService,
-        mithrilService: this.mithrilService,
         historyService: this.historyService,
         context: 'queryConnection',
-        lightClientMode:
-          this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
-          'stake-weighted-stability',
       });
       return height > 0n ? height : 1n;
     } catch {
@@ -80,20 +74,14 @@ export class ConnectionService {
   }
 
   private async getProofContext(context: string, requestedHeight?: bigint) {
-    const lightClientMode =
-      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
-      'stake-weighted-stability';
-
     return resolveProofContextForQuery({
       ibcTreeStore: this.ibcTreeStore,
       logger: this.logger,
       lucidService: this.lucidService,
-      mithrilService: this.mithrilService,
       historyService: this.historyService,
       ibcTreeCacheService: this.ibcTreeCacheService,
       context,
       requestedHeight,
-      lightClientMode,
     });
   }
 

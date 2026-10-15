@@ -140,7 +140,7 @@ const { Client } = require('pg');
         env.pop(key, None)
     env.update({'PORT': '8800', 'GRPC_HOST': '127.0.0.1', 'GRPC_PORT': '5501', 'CARDANO_NETWORK_MAGIC': '42',
         'CARDANO_CHAIN_HOST': '127.0.0.1', 'CARDANO_CHAIN_PORT': loopback_address(config, 'devkit', 3001).rsplit(':', 1)[1],
-        'CARDANO_CHAIN_NETWORK_MAGIC': '42', 'CARDANO_CHAIN_ID': 'cardano-devnet', 'CARDANO_LIGHT_CLIENT_MODE': 'stake-weighted-stability',
+        'CARDANO_CHAIN_NETWORK_MAGIC': '42', 'CARDANO_CHAIN_ID': 'cardano-devnet',
         'CARDANO_EPOCH_LENGTH': str(genesis['epochLength']), 'CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS': '604800',
         'CARDANO_CLIENT_MAX_CLOCK_DRIFT_SECONDS': '10',
         'CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS': str(math.ceil(4 * genesis['securityParam'] / Fraction(str(genesis['activeSlotsCoeff'])))),

@@ -12,7 +12,6 @@ import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { HistoryService } from '../services/history.service';
 
 describe('QueryService denom trace queries', () => {
@@ -48,7 +47,6 @@ describe('QueryService denom trace queries', () => {
       {} as KupoService,
       {} as HistoryService,
       {} as MiniProtocalsService,
-      {} as MithrilService,
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as any,
       createTestTreeStore(),

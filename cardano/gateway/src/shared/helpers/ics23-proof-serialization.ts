@@ -8,8 +8,8 @@
 // Proof format:
 // - We must emit canonical protobuf bytes for `ibc.core.commitment.v1.MerkleProof` so Hermes and
 //   standard IBC tooling can carry these proofs unchanged.
-// - The Cosmos-side Mithril light client accepts `MerkleProof` bytes and verifies the path according
-//   to the Cardano commitment scheme (a fixed-depth binary tree keyed by sha256(key)).
+// - The Cosmos-side probabilistic light client accepts `MerkleProof` bytes and verifies the path
+//   according to the Cardano commitment scheme (a fixed-depth binary tree keyed by sha256(key)).
 //
 // Note: While we use the ICS-23 protobuf container types (`ExistenceProof`, `InnerOp`, ...),
 // the verification logic on the counterparty is specific to our commitment scheme, not the generic

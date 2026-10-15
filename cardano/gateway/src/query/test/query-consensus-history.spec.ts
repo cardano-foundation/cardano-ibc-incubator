@@ -7,7 +7,6 @@ import { QueryService } from '../services/query.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { HistoryService } from '../services/history.service';
 import { decodeClientDatum } from '../../shared/types/client-datum';
@@ -132,7 +131,6 @@ async function makeFixture(archives: ConsensusStateDatum[], latestHeight = LATES
     {} as KupoService,
     historyService as unknown as HistoryService,
     {} as MiniProtocalsService,
-    {} as MithrilService,
     {} as DenomTraceService,
     {} as never,
     {} as IbcTreeStateStore,

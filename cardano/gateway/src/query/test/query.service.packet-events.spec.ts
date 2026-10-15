@@ -7,7 +7,6 @@ import { ATTRIBUTE_KEY_PACKET, CHANNEL_TOKEN_PREFIX, EVENT_TYPE_PACKET } from '.
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { HistoryService } from '../services/history.service';
@@ -91,7 +90,6 @@ describe('QueryService packet event queries', () => {
       {} as KupoService,
       historyServiceMock as unknown as HistoryService,
       {} as MiniProtocalsService,
-      {} as MithrilService,
       {} as DenomTraceService,
       {} as IbcTreeCacheService,
       createTestTreeStore(),
