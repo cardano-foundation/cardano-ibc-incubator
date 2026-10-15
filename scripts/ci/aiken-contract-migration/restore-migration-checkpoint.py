@@ -36,7 +36,9 @@ def inspect_checkpoint(checkpoint, blueprint):
         raise ValueError('Checkpoint must contain the original owned baseline')
     if sha256(files / 'runtime/genesis-shelley.json') != metadata['genesisSha256']:
         raise ValueError('Checkpoint genesis has changed')
-    if sha256(blueprint) != result['blueprintSha256'] or sha256(files / 'plutus.json') != result['blueprintSha256']:
+    if sha256(files / 'plutus.json') != result['blueprintSha256']:
+        raise ValueError('Checkpoint compiled deployment has changed')
+    if blueprint is not None and sha256(blueprint) != result['blueprintSha256']:
         raise ValueError('Checkpoint deployment differs from the selected blueprint')
     if json.loads((files / 'clock-state.json').read_text()) != metadata['clockState']:
         raise ValueError('Checkpoint clock evidence has changed')
@@ -56,7 +58,7 @@ def inspect_checkpoint(checkpoint, blueprint):
     return metadata, result, config
 
 
-def restore(checkpoint, runtime, project, blueprint):
+def restore(checkpoint, runtime, project, blueprint, network_only=False):
     started = time.monotonic()
     if not runtime.is_relative_to(ROOT / '.deployment-smoke') or runtime == ROOT / '.deployment-smoke':
         raise ValueError('New owned disposable runtime required')
@@ -64,7 +66,7 @@ def restore(checkpoint, runtime, project, blueprint):
         raise ValueError('Explicit disposable project name required')
     if runtime.exists():
         raise ValueError('Refusing to overwrite any existing runtime')
-    metadata, result, config = inspect_checkpoint(checkpoint, blueprint)
+    metadata, result, config = inspect_checkpoint(checkpoint, None if network_only else blueprint)
     if project == metadata['project']:
         raise ValueError('A restored project must have a different name')
     output = lambda command: subprocess.check_output(command, text=True).strip()
@@ -126,6 +128,12 @@ def restore(checkpoint, runtime, project, blueprint):
     (runtime / 'compose.json').write_text(json.dumps(config, indent=2) + '\n')
     result.update(project=project, networkRuntime=str(runtime), artifacts=str(runtime))
     (runtime / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+    if network_only:
+        (runtime / 'fresh-deployment-required.json').write_text(json.dumps({
+            'checkpointBlueprintSha256': result['blueprintSha256'],
+            'selectedBlueprintSha256': sha256(blueprint),
+            'instruction': 'Deploy the selected contracts into a new artifact directory on this existing network. '
+                           'The saved deployment must not be used as the new baseline.'}, indent=2) + '\n')
     import_map = runtime / 'import-map.json'
     if import_map.exists():
         import_map.write_text(json.dumps(relocate(json.loads(import_map.read_text())), indent=2) + '\n')
@@ -141,7 +149,7 @@ def restore(checkpoint, runtime, project, blueprint):
               'project': project, 'runtime': str(runtime), 'genesisSha256': metadata['genesisSha256'],
               'blueprintSha256': result['blueprintSha256'], 'images': images,
               'volumes': len(volumes), 'restoreSeconds': round(time.monotonic() - started, 3),
-              'servicesStarted': False}
+              'servicesStarted': False, 'requiresFreshDeployment': network_only}
     (runtime / 'checkpoint-restore.json').write_text(json.dumps(report, indent=2) + '\n')
     return report
 
@@ -152,5 +160,6 @@ if __name__ == '__main__':
     parser.add_argument('--runtime', type=Path, required=True)
     parser.add_argument('--project', required=True)
     parser.add_argument('--blueprint', type=Path, default=ROOT / 'cardano/onchain/plutus.json')
+    parser.add_argument('--network-only', action='store_true', help='Reuse mature chain history for a fresh contract deployment. The saved bridge is not an acceptance baseline.')
     args = parser.parse_args()
-    print(json.dumps(restore(args.checkpoint.resolve(), args.runtime.resolve(), args.project, args.blueprint.resolve())))
+    print(json.dumps(restore(args.checkpoint.resolve(), args.runtime.resolve(), args.project, args.blueprint.resolve(), args.network_only)))

@@ -71,6 +71,19 @@ class Checkpoint(unittest.TestCase):
                     run.assert_not_called()
                 self.assertEqual(marker.read_text(), 'existing state')
 
+    def test_new_contracts_can_reuse_network_history_without_trusting_a_changed_saved_deployment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            saved = self.fixture(root)
+            fresh = root / 'fresh-blueprint.json'
+            fresh.write_text('new reviewed contracts')
+            with self.assertRaisesRegex(ValueError, 'selected blueprint'):
+                checkpoint.inspect_checkpoint(root, fresh)
+            checkpoint.inspect_checkpoint(root, None)
+            saved.write_text('changed saved contracts')
+            with self.assertRaisesRegex(ValueError, 'compiled deployment has changed'):
+                checkpoint.inspect_checkpoint(root, None)
+
     def test_existing_volume_is_never_reused(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
