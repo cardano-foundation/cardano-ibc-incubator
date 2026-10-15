@@ -47,6 +47,10 @@ func makeNativeBoundaryFixtureAtHeight(t *testing.T, countStall bool, paddingByt
 	return makeNativeBoundaryFixtureAtHeightAndFork(t, countStall, paddingBytes, trustedHeight, 0)
 }
 func makeNativeBoundaryFixtureAtHeightAndFork(t *testing.T, countStall bool, paddingBytes int, trustedHeight, forkOverride uint64) nativeBoundaryFixture {
+	return makeNativeBoundaryFixtureWithProducers(t, countStall, paddingBytes, trustedHeight, forkOverride, nil)
+}
+
+func makeNativeBoundaryFixtureWithProducers(t *testing.T, countStall bool, paddingBytes int, trustedHeight, forkOverride uint64, producerOverrides map[uint64]int) nativeBoundaryFixture {
 	t.Helper()
 	cs := newProbabilisticTestClientState()
 	if trustedHeight == 904 || trustedHeight == stakeOmissionTrustedHeight {
@@ -147,6 +151,9 @@ func makeNativeBoundaryFixtureAtHeightAndFork(t *testing.T, countStall bool, pad
 				} else {
 					producerIndex = 0
 				}
+			}
+			if producer, ok := producerOverrides[n]; ok {
+				producerIndex = producer
 			}
 			p := &producers[producerIndex]
 			epoch := uint64(7)

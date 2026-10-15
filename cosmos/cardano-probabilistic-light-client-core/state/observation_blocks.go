@@ -53,18 +53,37 @@ func observationBlockDigest(previous [32]byte, block *ProbabilisticBlock, anchor
 	return sha256.Sum256(append(previous[:], raw...)), nil
 }
 func lookupStakeAmount(store storetypes.KVStore, scope [32]byte, snapshot stakeSnapshot, key []byte) (uint64, error) {
-	raw, found, err := NewSnapshotMap(store, scope, snapshotStake).Lookup(snapshot.Root, key)
+	amount, found, err := lookupOptionalStakeAmount(store, scope, snapshot, key)
 	if err != nil {
 		return 0, err
 	}
-	if !found || len(raw) != 8 {
+	if !found {
 		return 0, fmt.Errorf("issuer has no sealed stake row: epoch %d, pool %x", snapshot.Epoch, key)
 	}
-	amount := binary.BigEndian.Uint64(raw)
-	if amount == 0 || snapshot.Total == 0 || amount > snapshot.Total {
-		return 0, fmt.Errorf("sealed stake amount is invalid")
-	}
 	return amount, nil
+}
+
+// Qualification may find no row for a pool that had zero stake at the anchor.
+// Stored rows must still be valid. Native eligibility requires a present row.
+func lookupOptionalStakeAmount(store storetypes.KVStore, scope [32]byte, snapshot stakeSnapshot, key []byte) (uint64, bool, error) {
+	raw, found, err := NewSnapshotMap(store, scope, snapshotStake).Lookup(snapshot.Root, key)
+	if err != nil {
+		return 0, false, err
+	}
+	if snapshot.Total == 0 {
+		return 0, false, fmt.Errorf("sealed stake total is invalid")
+	}
+	if !found {
+		return 0, false, nil
+	}
+	if len(raw) != 8 {
+		return 0, false, fmt.Errorf("sealed stake row has an invalid size")
+	}
+	amount := binary.BigEndian.Uint64(raw)
+	if amount == 0 || amount > snapshot.Total {
+		return 0, false, fmt.Errorf("sealed stake amount is invalid")
+	}
+	return amount, true, nil
 }
 
 func appendObservationBlocks(ctx Context, store storetypes.KVStore, cs *ClientState, session *observationSession, blocks []*ProbabilisticBlock) error {
@@ -452,9 +471,17 @@ func creditObservationProducer(store storetypes.KVStore, cs *ClientState, sessio
 	if production.CompletedEpochsBitmap == 0 {
 		return nil
 	}
-	amount, err := lookupStakeAmount(store, anchor.Scope, anchor.Stake, key)
+	amount, found, err := lookupOptionalStakeAmount(store, anchor.Scope, anchor.Stake, key)
 	if err != nil {
 		return err
+	}
+	if !found {
+		// A pool can regain stake in the following epoch. Its native header
+		// is valid there, but it contributes nothing to anchor qualification.
+		if session.Working.Epoch > anchor.Epoch {
+			return nil
+		}
+		return fmt.Errorf("settlement producer has no anchor stake row")
 	}
 	old, err := lookupCredit(store, anchor.Scope, anchor.Credit, key)
 	if err != nil {

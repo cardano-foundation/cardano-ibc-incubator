@@ -591,11 +591,17 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 				}
 				observed := production[poolID]
 				if eligible && observed != nil && observed.CompletedEpochsBitmap != 0 {
-					qualifiedUniquePools++
 					credit := credits[poolID]
 					if credit == nil {
+						// A valid next-epoch producer can have zero anchor-epoch
+						// stake. It does not qualify under that frozen table.
+						if block.epoch > anchorEpoch {
+							prevHash, prevHeight = block.hash, block.height
+							continue
+						}
 						return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "qualified producer missing from stake table")
 					}
+					qualifiedUniquePools++
 					if header.settlementStakeLimits != nil {
 						limit := header.settlementStakeLimits[poolID]
 						if limit == nil {
