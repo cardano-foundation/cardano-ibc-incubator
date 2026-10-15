@@ -369,6 +369,9 @@ func TestExportIdleCheckpointHistory(t *testing.T) {
 		exportedContexts = append(exportedContexts, hex.EncodeToString(raw))
 	}
 	acceptanceWriteJSON(t, filepath.Join(root, "gateway-history.json"), map[string]any{"blocks": exportedBlocks, "contexts": exportedContexts})
+    channelProof,_:=acceptanceProof(t,acceptanceChannelValues(t),"channelEnds/ports/transfer/channels/channel-0")
+    acceptanceWriteJSON(t,filepath.Join(root,"channel-proof.json"),map[string]any{"proof":channelProof})
+
 	headers := map[string]*ProbabilisticHeader{}
 	trusted := uint64(966)
 	for _, anchor := range []uint64{976, 1001, 1063, 1094, 1110, 1125} {
@@ -379,6 +382,7 @@ func TestExportIdleCheckpointHistory(t *testing.T) {
 		trusted = anchor
 	}
 	headers["fork"] = acceptanceSourceHeader(t, history, "bad", 976, 1001, true)
+    headers["later-fork"] = acceptanceSourceHeader(t,history,"later",1063,1094,true)
 	acceptanceWriteJSON(t, filepath.Join(root, "headers.json"), headers)
 	for _, point := range []struct{ height, count uint64 }{{966, 1}, {1125, 2}} {
 		for seq := uint64(1); seq <= point.count; seq++ {
