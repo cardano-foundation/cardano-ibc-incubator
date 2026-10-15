@@ -32,9 +32,8 @@ To run it as a containerized demo UI:
 docker compose -f dapps/docker-compose.yml up --build ibc-explorer
 ```
 
-By default the container is published on `http://localhost:8081` so it does not
-collide with the local Mithril service already using host port `8080`. Override
-that with `IBC_EXPLORER_HOST_PORT` if needed.
+By default the container is published on `http://localhost:8081`. Override that
+with `IBC_EXPLORER_HOST_PORT` if needed.
 
 See [dapps/README.md](../README.md) for compose variables and default local endpoint wiring.
 

@@ -3,8 +3,6 @@ use std::path::Path;
 use std::time::Duration;
 use std::time::Instant;
 
-use indicatif::{ProgressBar, ProgressStyle};
-
 use crate::{
     chains, config, logger,
     start::{
@@ -18,8 +16,6 @@ use crate::{
 
 const HERMES_BUILD_PROGRESS_LOG_INTERVAL_SECS: u64 = 10;
 const HERMES_BUILD_POLL_INTERVAL_SECS: u64 = 2;
-const MITHRIL_DISABLED_ERROR: &str =
-    "ERROR: The local Mithril devnet is disabled and not maintained.";
 const DEVKIT_DAPP_LIMITATION: &str = "The swap UI is not supported on the local network yet. Use `caribic demo token-swap --chain cosmos --network v8-classic`.";
 
 fn requires_injective_testnet_route(network: config::CoreCardanoNetwork) -> bool {
@@ -109,7 +105,6 @@ fn target_starts_dapp(
 pub async fn run_start(
     target: Option<StartTarget>,
     clean: bool,
-    with_mithril: bool,
     network: Option<String>,
     chain_flags: Vec<String>,
 ) -> Result<(), String> {
@@ -117,10 +112,6 @@ pub async fn run_start(
 
     let project_config = config::get_config();
     let project_root_path = Path::new(&project_config.project_root);
-
-    if with_mithril || target == Some(StartTarget::Mithril) {
-        return Err(MITHRIL_DISABLED_ERROR.to_string());
-    }
 
     // Determine what to start.
     let start_all = target.is_none() || target == Some(StartTarget::All);
@@ -160,7 +151,6 @@ pub async fn run_start(
 
     let mut aiken_build_handle = None;
     let mut hermes_build_handle = None;
-    let mut mithril_genesis_handle = None;
 
     if start_all {
         if start_bridge {
@@ -252,16 +242,14 @@ pub async fn run_start(
         match crate::start::start_local_cardano_network(
             project_root_path,
             clean,
-            false,
             core_cardano_network,
         )
         .await
         {
-            Ok(handle) => {
-                mithril_genesis_handle = handle;
+            Ok(()) => {
                 let managed_services = match core_cardano_network {
                     config::CoreCardanoNetwork::Local => {
-                        "Yaci DevKit five-producer network, Ogmios, Kupo, Yaci Store, databases"
+                        "Yaci DevKit five-producer network, Ogmios, Kupo, Yaci Store, Mithril, databases"
                     }
                     config::CoreCardanoNetwork::Preprod | config::CoreCardanoNetwork::Preview => {
                         "postgres, yaci-store, yaci-store-postgres; external Cardano relay, Kupo, and Ogmios"
@@ -554,57 +542,6 @@ pub async fn run_start(
             )
             .map_err(|error| format!("ERROR: Failed to query final balance: {}", error))?;
             logger::log(&format!("Final balance {}", &balance.to_string().as_str()));
-        }
-
-        if let Some(handle) = mithril_genesis_handle.take() {
-            let optional_progress_bar = match logger::get_verbosity() {
-                logger::Verbosity::Verbose => None,
-                _ => Some(ProgressBar::new_spinner()),
-            };
-
-            if let Some(progress_bar) = &optional_progress_bar {
-                progress_bar.enable_steady_tick(Duration::from_millis(100));
-                progress_bar.set_style(
-                    ProgressStyle::with_template(
-                        "{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}",
-                    )
-                    .map_err(|error| {
-                        format!("ERROR: Failed to configure progress output: {error}")
-                    })?
-                    .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-                );
-                progress_bar.set_prefix("Waiting for Mithril to become ready ...".to_owned());
-                progress_bar
-                    .set_message("This can take a few minutes on a fresh devnet".to_owned());
-            } else {
-                logger::log(
-                    "Waiting for Mithril to become ready (this can take a few minutes on a fresh devnet) ...",
-                );
-            }
-
-            let result = handle.await;
-
-            if let Some(progress_bar) = &optional_progress_bar {
-                progress_bar.finish_and_clear();
-            }
-
-            match result {
-                Ok(Ok(())) => logger::log(
-                    "PASS: Immutable Cardano node files have been created, and Mithril is working as expected",
-                ),
-                Ok(Err(error)) => {
-                    return fail_and_stop_started_services(project_root_path, StopTarget::Bridge, core_cardano_network, &format!(
-                        "ERROR: Mithril failed to read the immutable cardano node files: {}",
-                        error
-                    ))
-                }
-                Err(error) => {
-                    return fail_and_stop_started_services(project_root_path, StopTarget::Bridge, core_cardano_network, &format!(
-                        "ERROR: Mithril genesis bootstrap task failed: {}",
-                        error
-                    ))
-                }
-            }
         }
 
         logger::log("\nBridge started successfully!");
