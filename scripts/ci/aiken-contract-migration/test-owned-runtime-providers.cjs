@@ -1,14 +1,22 @@
-const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const { test } = require('node:test');
 const { loopbackAddress } = require('./owned-runtime-providers.cjs');
 
-test('provider selection binds the requested service to its owned loopback port', () => {
-  const binding = { target: 1337, published: '49152', host_ip: '127.0.0.1' };
-  const runtime = ports => ({ services: { devkit: { ports } } });
-  assert.equal(loopbackAddress(runtime([binding]), 'devkit', 1337), '127.0.0.1:49152');
-  for (const ports of [[], [binding, binding], [{ ...binding, host_ip: '0.0.0.0' }],
-    [{ ...binding, target: 1442 }], [{ ...binding, published: 0 }],
-    [{ ...binding, published: 65536 }], [{ ...binding, published: 'invalid' }]]) {
-    assert.throws(() => loopbackAddress(runtime(ports), 'devkit', 1337));
+test('restored counterparty checks use the selected compose ports in either syntax', () => {
+  for (const ports of [
+    ['127.0.0.1:20609:1317', '127.0.0.1:20608:26657'],
+    [{ host_ip: '127.0.0.1', published: '20609', target: 1317 },
+      { host_ip: '127.0.0.1', published: '20608', target: 26657 }],
+  ]) {
+    const config = { services: { cosmos: { ports } } };
+    assert.equal(loopbackAddress(config, 'cosmos', 1317), '127.0.0.1:20609');
+    assert.equal(loopbackAddress(config, 'cosmos', 26657), '127.0.0.1:20608');
+  }
+});
+
+test('missing, ambiguous and public bindings cannot select a different provider', () => {
+  for (const ports of [[], ['1527:1317'], ['0.0.0.0:1527:1317'],
+    ['127.0.0.1:1527:1317', '127.0.0.1:20609:1317']]) {
+    assert.throws(() => loopbackAddress({ services: { cosmos: { ports } } }, 'cosmos', 1317));
   }
 });
