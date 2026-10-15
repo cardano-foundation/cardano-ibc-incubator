@@ -676,18 +676,19 @@ func (cs *ClientState) UpdateState(
 
 // The authenticator seam matches verification tests; production always uses nil.
 func (cs *ClientState) updateStateWithAuthenticator(ctx Context, cdc StateCodec, clientStore storetypes.KVStore, clientMsg any, authenticateHeader headerAuthenticator) []HeightValue {
+	// The v8 and v10 redundant-relay ante handlers call UpdateState after
+	// verifying custom misbehaviour. Only the keeper's misbehaviour path freezes
+	// the client. Admission must leave the cached client unchanged in either
+	// storage mode, so this precedes the compact-client dispatch.
+	if _, ok := clientMsg.(*Misbehaviour); ok {
+		return nil
+	}
 	if cs.StorageVersion == StorageVersionSharedSnapshots {
 		header, ok := clientMsg.(*ProbabilisticHeader)
 		if !ok {
 			panic("bounded update requires an observation operation")
 		}
 		return cs.consumeObservationResult(ctx, cdc, clientStore, header)
-	}
-	// The v8 redundant-relay ante handler calls UpdateState after verifying
-	// custom misbehaviour. Only the keeper's misbehaviour path freezes the
-	// client. Admission must leave the cached client unchanged.
-	if _, ok := clientMsg.(*Misbehaviour); ok {
-		return nil
 	}
 	header, ok := clientMsg.(*ProbabilisticHeader)
 	if !ok {
