@@ -37,6 +37,22 @@ func TestSignedPartialStakeUploadCannotPoisonAnotherSubmitter(t *testing.T) {
 	history := idleCheckpointHistory(t)
 	history.Client.TrustingPeriod = 96 * time.Hour
 	header := idleCheckpointSourceHeader(t, history, "honest", 966, 1001, true)
+	testSignedStagedUpload(t, history.Client, history.Consensus, header, history.Bad.Blocks, false)
+}
+
+func TestSignedMaximumObservationPreservesActivationBudget(t *testing.T) {
+	fixture := capacityEvidence(t, "limit")
+	fixture.Client.TrustingPeriod = 96 * time.Hour
+	require.Len(t, fixture.Client.EpochStakeDistribution, state.MaxStakeEntries)
+	require.Len(t, fixture.Header.NewEpochContext.StakeDistribution, state.MaxStakeEntries)
+	require.Len(t, fixture.Header.BridgeBlocks, state.MaxBridgeBlocks)
+	require.Len(t, fixture.Header.DescendantBlocks, state.MaxHeaderBlocks-state.MaxBridgeBlocks-1)
+	conflicting := append(append([]*ProbabilisticBlock{}, fixture.Fork.BridgeBlocks...), fixture.Fork.AnchorBlock)
+	testSignedStagedUpload(t, fixture.Client, fixture.Consensus, fixture.Header, conflicting, true)
+}
+
+func testSignedStagedUpload(t *testing.T, initial *ClientState, consensus *ConsensusState, header *ProbabilisticHeader, conflicting []*ProbabilisticBlock, activate bool) {
+	t.Helper()
 	now := time.Unix(0, int64(header.DescendantBlocks[len(header.DescendantBlocks)-1].Timestamp))
 	const chainID = "staged-safety-1"
 	const clientID = ModuleName + "-0"
@@ -57,7 +73,7 @@ func TestSignedPartialStakeUploadCannotPoisonAnotherSubmitter(t *testing.T) {
 		app.IBCKeeper.ClientKeeper.SetParams(ctx, params)
 		seedAcceptanceHostProgress(ctx, app.GetKey("ibc"))
 		_, _, err = EnableSharedSnapshots(ctx.WithBlockTime(now.Add(-13*time.Hour)), app.AppCodec(),
-			app.IBCKeeper.ClientKeeper.ClientStore(ctx, clientID), history.Client, history.Consensus)
+			app.IBCKeeper.ClientKeeper.ClientStore(ctx, clientID), initial, consensus)
 		return response, err
 	})
 	require.NoError(t, app.LoadLatestVersion())
@@ -88,7 +104,7 @@ func TestSignedPartialStakeUploadCannotPoisonAnotherSubmitter(t *testing.T) {
 	clientStore := func() storetypes.KVStore { return app.IBCKeeper.ClientKeeper.ClientStore(context(), clientID) }
 	client, found := getClientState(clientStore(), app.AppCodec())
 	require.True(t, found)
-	steps, sessionID, err := BuildObservationPlan(client, header, nil, 13, 4)
+	steps, sessionID, err := BuildObservationPlan(client, header, nil, uint64(len(initial.EpochStakeDistribution)), 4)
 	require.NoError(t, err)
 	send := func(step *ProbabilisticHeader, signer int, wantError string) {
 		t.Helper()
@@ -102,7 +118,7 @@ func TestSignedPartialStakeUploadCannotPoisonAnotherSubmitter(t *testing.T) {
 		require.NoError(t, err)
 		wire, err := app.TxConfig().TxEncoder()(tx)
 		require.NoError(t, err)
-		now = now.Add(time.Second)
+		now = now.Add(state.SupportedInclusionTimePerStep)
 		response, err := app.FinalizeBlock(&abci.RequestFinalizeBlock{Height: app.LastBlockHeight() + 1, Time: now, NextValidatorsHash: validators.Hash(), Txs: [][]byte{wire}})
 		require.NoError(t, err)
 		require.Len(t, response.TxResults, 1)
@@ -138,22 +154,31 @@ func TestSignedPartialStakeUploadCannotPoisonAnotherSubmitter(t *testing.T) {
 	require.Equal(t, sharedBefore, recoveryStoreSnapshot(t, context().KVStore(SharedStoreKey)))
 	send(&ProbabilisticHeader{ObservationChunk: &ObservationChunk{Operation: state.ObservationDiscard, SessionId: sessionID, Sequence: 1}}, 1, "live observation")
 	require.Equal(t, sharedBefore, recoveryStoreSnapshot(t, context().KVStore(SharedStoreKey)))
-	// The second signer may submit the authentic prefix. The original signer
-	// then completes its remainder and all block verification normally.
-	send(&ProbabilisticHeader{ObservationChunk: &partial}, 1, "")
-	remainder := *first
-	remainder.Sequence++
-	remainder.StakeRows = bytes.Clone(first.StakeRows[36:])
-	send(&ProbabilisticHeader{ObservationChunk: &remainder}, 0, "")
-	checkedFork := false
+	// Even an authentic one-row prefix must not multiply the table's step count.
+	send(&ProbabilisticHeader{ObservationChunk: &partial}, 1, "stake row batch must contain")
+	require.Equal(t, privateBefore, recoveryStoreSnapshot(t, clientStore()))
+	require.Equal(t, sharedBefore, recoveryStoreSnapshot(t, context().KVStore(SharedStoreKey)))
+	send(steps[1], 1, "")
+	// Block batching may still vary without exhausting the bounded workload.
+	singles, sameID, err := BuildObservationPlan(client, header, nil, uint64(len(initial.EpochStakeDistribution)), 1)
+	require.NoError(t, err)
+	require.Equal(t, sessionID, sameID)
+	blockSuffixes := map[uint64][]byte{}
+	for _, step := range singles {
+		if blocks := step.ObservationChunk.Blocks; len(blocks) == 1 {
+			blockSuffixes[blocks[0].Height.RevisionHeight] = step.ObservationChunk.EvidenceDigest
+		}
+	}
+	sequence := first.Sequence
+	checkedFork, splitBlocks := false, false
 	for _, step := range steps[2:] {
 		chunk := *step.ObservationChunk
-		chunk.Sequence++
+		chunk.Sequence = sequence + 1
 		if !checkedFork && len(chunk.Blocks) != 0 && chunk.Blocks[0].Height.RevisionHeight <= 980 && chunk.Blocks[len(chunk.Blocks)-1].Height.RevisionHeight >= 980 {
 			fork := chunk
 			fork.Blocks = append([]*ProbabilisticBlock(nil), chunk.Blocks...)
 			for i, block := range fork.Blocks {
-				for _, alternative := range history.Bad.Blocks {
+				for _, alternative := range conflicting {
 					if block.Height.RevisionHeight == alternative.Height.RevisionHeight {
 						fork.Blocks[i] = alternative
 					}
@@ -166,8 +191,20 @@ func TestSignedPartialStakeUploadCannotPoisonAnotherSubmitter(t *testing.T) {
 			require.Equal(t, sharedBefore, recoveryStoreSnapshot(t, context().KVStore(SharedStoreKey)))
 			checkedFork = true
 		}
+		if !splitBlocks && len(chunk.Blocks) > 1 {
+			prefix := chunk
+			prefix.Blocks = chunk.Blocks[:1]
+			prefix.EvidenceDigest = blockSuffixes[prefix.Blocks[0].Height.RevisionHeight]
+			send(&ProbabilisticHeader{ObservationChunk: &prefix}, 1, "")
+			sequence++
+			chunk.Sequence = sequence + 1
+			chunk.Blocks = chunk.Blocks[1:]
+			splitBlocks = true
+		}
 		send(&ProbabilisticHeader{ObservationChunk: &chunk}, 0, "")
+		sequence++
 	}
+	require.True(t, splitBlocks)
 	require.True(t, checkedFork, "the second signer must also try an independently signed conflicting block prefix")
 	client, found = getClientState(clientStore(), app.AppCodec())
 	require.True(t, found)
@@ -177,11 +214,70 @@ func TestSignedPartialStakeUploadCannotPoisonAnotherSubmitter(t *testing.T) {
 		Complete bool
 		RowsRead uint32
 		Receipt  []byte
+		Sequence uint32
 	}
 	require.NoError(t, json.Unmarshal(raw, &session))
 	require.True(t, session.Complete)
 	require.Equal(t, steps[0].ObservationChunk.TableRows, session.RowsRead)
 	require.Len(t, session.Receipt, 32)
+	require.Equal(t, sequence, session.Sequence)
+	querySession := func() []byte {
+		t.Helper()
+		raw, err := state.QueryVerification(coreContext(context()), coreCodec{app.AppCodec()}, &state.QueryVerificationRequest{Namespace: client.StorageNamespace, Generation: client.VerificationGeneration, Kind: 8, SessionId: sessionID})
+		require.NoError(t, err)
+		return raw
+	}
+	assertNoProgress := func() {
+		t.Helper()
+		before := querySession()
+		for _, attempt := range []struct {
+			operation uint32
+			errorText string
+		}{
+			{state.ObservationComplete, "already complete"},
+			{state.ObservationAdvanceCredit, "already completed"},
+			{state.ObservationContinueBody, "no authenticated body"},
+		} {
+			for retry := 0; retry < 3; retry++ {
+				send(&ProbabilisticHeader{ObservationChunk: &ObservationChunk{Operation: attempt.operation, SessionId: sessionID, Sequence: sequence + 1}}, 1, attempt.errorText)
+				require.Equal(t, before, querySession())
+			}
+		}
+	}
+	// Retrying the last accepted COMPLETE stays idempotent at its old sequence.
+	before := querySession()
+	send(&ProbabilisticHeader{ObservationChunk: &ObservationChunk{Operation: state.ObservationComplete, SessionId: sessionID, Sequence: sequence}}, 1, "")
+	require.Equal(t, before, querySession())
+	assertNoProgress()
+	if !activate {
+		return
+	}
+	base := bytes.Clone(client.CheckpointReference)
+	send(&ProbabilisticHeader{ObservationChunk: &ObservationChunk{Operation: state.ObservationActivate, SessionId: sessionID, Sequence: sequence + 1}}, 0, "")
+	sequence++
+	client, found = getClientState(clientStore(), app.AppCodec())
+	require.True(t, found)
+	require.Equal(t, base, client.CheckpointReference)
+	deadline := client.EpochContextChallenges[len(client.EpochContextChallenges)-1].UsableAfterUnixNs
+	assertNoProgress()
+	before = querySession()
+	send(&ProbabilisticHeader{ObservationChunk: &ObservationChunk{Operation: state.ObservationActivate, SessionId: sessionID, Sequence: sequence + 1}}, 1, "inside its response window")
+	require.Equal(t, before, querySession())
+	// Commit uninterrupted empty blocks so the real host continuity gate elapses.
+	for uint64(now.UnixNano()) <= deadline {
+		now = now.Add(state.SupportedInclusionTimePerStep)
+		_, err := app.FinalizeBlock(&abci.RequestFinalizeBlock{Height: app.LastBlockHeight() + 1, Time: now, NextValidatorsHash: validators.Hash()})
+		require.NoError(t, err)
+		_, err = app.Commit()
+		require.NoError(t, err)
+	}
+	send(&ProbabilisticHeader{ObservationChunk: &ObservationChunk{Operation: state.ObservationActivate, SessionId: sessionID, Sequence: sequence + 1}}, 0, "")
+	client, found = getClientState(clientStore(), app.AppCodec())
+	require.True(t, found)
+	require.Equal(t, header.AnchorBlock.Height.RevisionHeight, client.LatestCheckpointHeight.RevisionHeight)
+	require.NotEqual(t, base, client.CheckpointReference)
+	require.Equal(t, deadline, client.EpochContextChallenges[len(client.EpochContextChallenges)-1].UsableAfterUnixNs)
+	require.Less(t, sequence+1, state.MaxObservationSteps)
 }
 
 func TestAppFailedStagedRecoveryAllowsAuthorizedRetry(t *testing.T) {
