@@ -173,6 +173,22 @@ func main() {
 	keyBytes := sha256.Sum256([]byte("cardano-ibc/injective-release/local-test-operator"))
 	key := &ethsecp256k1.PrivKey{Key: keyBytes[:]}
 	address := sdk.AccAddress(key.PubKey().Address()).String()
+	if os.Args[1] == "checkpoint-add-maintainer" {
+		checkpointAddMaintainer(encoding, address)
+		return
+	}
+	if os.Args[1] == "checkpoint-messages" {
+		checkpointMessages(encoding, address)
+		return
+	}
+	if os.Args[1] == "checkpoint-plan" {
+		checkpointPlan(encoding, address)
+		return
+	}
+	if os.Args[1] == "checkpoint-prepare" {
+		checkpointPrepare(encoding, address)
+		return
+	}
 	if os.Args[1] == "bounded-serve" {
 		boundedServe()
 		return

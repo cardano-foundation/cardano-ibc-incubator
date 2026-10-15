@@ -50,6 +50,8 @@ class Node:
 
     def command(self, *args, check=True):
         cmd = ["docker", "run", "--rm", "-i", "-v", f"{self.root}:/out", self.image]
+        if getattr(self, "data_volume", None):
+            cmd[-1:-1] = ["-v", self.data_volume + ":/out/" + self.home.name + "/data"]
         stdin = "local-test-only\n" if "unsafe-import-eth-key" in args else None
         result = subprocess.run(cmd + list(args), input=stdin, text=True, capture_output=True)
         if check and result.returncode:
