@@ -597,13 +597,9 @@ console.log(JSON.stringify(smokeManifest()))`,
 
 describe('migration operational counterparty boundary', () => {
   const matrix = ['handler', 'manifest'].flatMap((source) =>
-    [false, true].flatMap((migration) =>
-      ['mithril', 'stake-weighted-stability'].flatMap((mode) =>
-        [false, true].map((readOnly) => [source, migration, mode, readOnly] as const),
-      ),
-    ),
+    [false, true].flatMap((migration) => [false, true].map((readOnly) => [source, migration, readOnly] as const)),
   );
-  it.each(matrix)('%s migration=%s mode=%s historical-only=%s', (source, migration, mode, readOnly) => {
+  it.each(matrix)('%s migration=%s historical-only=%s', (source, migration, readOnly) => {
     const handler = {
       ...buildStagedHandlerJsonDeployment(),
       deploymentMode: migration ? 'upgradeable' : 'legacy',
@@ -628,15 +624,11 @@ describe('migration operational counterparty boundary', () => {
     const fs = { readFileSync: jest.fn(() => JSON.stringify(source === 'handler' ? handler : manifest)) };
     const env = {
       [source === 'handler' ? 'HANDLER_JSON_PATH' : 'BRIDGE_MANIFEST_PATH']: 'fixture.json',
-      CARDANO_LIGHT_CLIENT_MODE: mode,
       GATEWAY_HISTORICAL_READ_ONLY: String(readOnly),
     };
-    if (migration && mode === 'mithril')
-      expect(() => loadBridgeConfigFromEnv(env, fs)).toThrow('historical Mithril certification');
-    else
-      expect(loadBridgeConfigFromEnv(env, fs).deployment.migration?.profile).toBe(
-        migration ? 'cardano-ibc-compatible-v3' : undefined,
-      );
+    expect(loadBridgeConfigFromEnv(env, fs).deployment.migration?.profile).toBe(
+      migration ? 'cardano-ibc-compatible-v3' : undefined,
+    );
   });
 });
 

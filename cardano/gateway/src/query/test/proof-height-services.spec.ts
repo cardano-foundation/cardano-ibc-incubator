@@ -14,7 +14,6 @@ import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { HistoryService, HistoryTxEvidence } from '../services/history.service';
 import { UtxoDto } from '../dtos/utxo.dto';
 import { decodeChannelDatum } from '../../shared/types/channel/channel-datum';
@@ -134,7 +133,7 @@ function makeHistoricalTree() {
   return tree;
 }
 
-function makeDeps(lightClientMode = 'mithril') {
+function makeDeps() {
   const capturedTree = makeHistoricalTree();
   const treeStore = {
     getCurrentTree: jest.fn(() => ({ generateProof: jest.fn(), generateNonExistenceProof: jest.fn() })),
@@ -151,7 +150,6 @@ function makeDeps(lightClientMode = 'mithril') {
   const logger = makeLogger();
   const configService = {
     get: jest.fn((key: string) => {
-      if (key === 'cardanoLightClientMode') return lightClientMode;
       if (key === 'cardanoChainId') return 'cardano-devnet';
       if (key === 'deployment')
         return {
@@ -219,13 +217,6 @@ function makeDeps(lightClientMode = 'mithril') {
     findUtxosByPolicyIdAndPrefixTokenName: jest.fn(async (): Promise<UtxoDto[]> => []),
     findTransactionEvidenceByHash: jest.fn(async (): Promise<HistoryTxEvidence | null> => null),
   };
-  const mithrilService = {
-    getCardanoTransactionsSetSnapshot: jest.fn(async () => [
-      {
-        block_number: LATEST_ACCEPTED_HEIGHT.toString(),
-      },
-    ]),
-  };
   const ibcTreeCacheService = {
     load: jest.fn(async () => ({
       root: HISTORICAL_ROOT,
@@ -241,12 +232,10 @@ function makeDeps(lightClientMode = 'mithril') {
     configService,
     lucidService: lucidService as unknown as LucidService,
     historyService: historyService as unknown as HistoryService,
-    mithrilService: mithrilService as unknown as MithrilService,
     ibcTreeCacheService,
     mocks: {
       lucidService,
       historyService,
-      mithrilService,
       ibcTreeCacheService,
       treeStore,
     },
@@ -320,8 +309,26 @@ function resetProofServiceMocks() {
   );
 }
 
+// Stability accepts the live HostState at LATEST_ACCEPTED_HEIGHT unless a test
+// says otherwise.
+let stabilitySpies: jest.SpyInstance[] = [];
+function acceptLatestHostState() {
+  stabilitySpies = [
+    jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(LATEST_ACCEPTED_HEIGHT),
+    jest
+      .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
+      .mockImplementation(
+        async ({ height }) => ({ anchorHeight: height, anchorBlock: { hash: 'accepted-anchor' } }) as never,
+      ),
+  ];
+}
+
 describe('proof-bearing services with captured query heights', () => {
-  beforeEach(resetProofServiceMocks);
+  beforeEach(() => {
+    resetProofServiceMocks();
+    acceptLatestHostState();
+  });
+  afterEach(() => stabilitySpies.forEach((spy) => spy.mockRestore()));
 
   it('serves channel proofs from the cached tree at the requested height', async () => {
     const deps = makeDeps();
@@ -330,7 +337,6 @@ describe('proof-bearing services with captured query heights', () => {
       deps.configService,
       deps.lucidService,
       {} as KupoService,
-      deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -356,7 +362,6 @@ describe('proof-bearing services with captured query heights', () => {
       deps.logger,
       deps.configService,
       deps.lucidService,
-      deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -393,7 +398,6 @@ describe('proof-bearing services with captured query heights', () => {
       deps.logger,
       deps.configService,
       deps.lucidService,
-      deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -483,7 +487,6 @@ describe('proof-bearing services with captured query heights', () => {
       deps.logger,
       deps.configService,
       deps.lucidService,
-      deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -517,7 +520,6 @@ describe('proof-bearing services with captured query heights', () => {
         deps.logger,
         deps.configService,
         deps.lucidService,
-        deps.mithrilService,
         deps.historyService,
         deps.ibcTreeCacheService as any,
         deps.treeStore,
@@ -538,7 +540,6 @@ describe('proof-bearing services with captured query heights', () => {
       deps.logger,
       deps.configService,
       deps.lucidService,
-      deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -563,7 +564,6 @@ describe('proof-bearing services with captured query heights', () => {
       deps.logger,
       deps.configService,
       deps.lucidService,
-      deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -588,7 +588,6 @@ describe('proof-bearing services with captured query heights', () => {
       {} as KupoService,
       deps.historyService,
       {} as MiniProtocalsService,
-      deps.mithrilService,
       {} as DenomTraceService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -616,7 +615,6 @@ describe('proof-bearing services with captured query heights', () => {
       {} as KupoService,
       deps.historyService,
       {} as MiniProtocalsService,
-      deps.mithrilService,
       {} as DenomTraceService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -700,7 +698,6 @@ describe('proof-bearing services with captured query heights', () => {
         {} as KupoService,
         deps.historyService,
         {} as MiniProtocalsService,
-        deps.mithrilService,
         {} as DenomTraceService,
         deps.ibcTreeCacheService as any,
         deps.treeStore,
@@ -726,7 +723,6 @@ describe('proof-bearing services with captured query heights', () => {
           deps.configService,
           deps.lucidService,
           {} as KupoService,
-          deps.mithrilService,
           deps.historyService,
           deps.ibcTreeCacheService as any,
           deps.treeStore,
@@ -742,7 +738,6 @@ describe('proof-bearing services with captured query heights', () => {
           deps.configService,
           deps.lucidService,
           {} as KupoService,
-          deps.mithrilService,
           deps.historyService,
           deps.ibcTreeCacheService as any,
           deps.treeStore,
@@ -757,7 +752,6 @@ describe('proof-bearing services with captured query heights', () => {
           deps.logger,
           deps.configService,
           deps.lucidService,
-          deps.mithrilService,
           deps.historyService,
           deps.ibcTreeCacheService as any,
           deps.treeStore,
@@ -776,7 +770,6 @@ describe('proof-bearing services with captured query heights', () => {
           {} as KupoService,
           deps.historyService,
           {} as MiniProtocalsService,
-          deps.mithrilService,
           {} as DenomTraceService,
           deps.ibcTreeCacheService as any,
           deps.treeStore,
@@ -795,7 +788,6 @@ describe('proof-bearing services with captured query heights', () => {
           {} as KupoService,
           deps.historyService,
           {} as MiniProtocalsService,
-          deps.mithrilService,
           {} as DenomTraceService,
           deps.ibcTreeCacheService as any,
           deps.treeStore,
@@ -820,7 +812,6 @@ describe('proof-bearing services with captured query heights', () => {
         deps.logger,
         deps.configService,
         deps.lucidService,
-        deps.mithrilService,
         deps.historyService,
         deps.ibcTreeCacheService as any,
         deps.treeStore,
@@ -866,7 +857,7 @@ describe('proof-bearing services with captured query heights', () => {
     it.each([false, true])(
       `checks the accepted stability block hash for ${method} even with unchanged HostState (rollback=%s)`,
       async (rollback) => {
-        const deps = makeDeps('stake-weighted-stability');
+        const deps = makeDeps();
         const settled = jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(LATEST_ACCEPTED_HEIGHT);
         const evidence = jest.spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight').mockResolvedValue({
           anchorHeight: LATEST_ACCEPTED_HEIGHT,
@@ -893,7 +884,7 @@ describe('proof-bearing services with captured query heights', () => {
     );
     it(`does not fabricate a height when stability fails after snapshot capture for ${method}`, async () => {
       jest.useFakeTimers();
-      const deps = makeDeps('stake-weighted-stability');
+      const deps = makeDeps();
       const settled = jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(LATEST_ACCEPTED_HEIGHT);
       const evidence = jest
         .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
@@ -989,7 +980,6 @@ describe('proof-bearing services with captured query heights', () => {
           deps.configService,
           deps.lucidService,
           {} as KupoService,
-          deps.mithrilService,
           deps.historyService,
           deps.ibcTreeCacheService as any,
           deps.treeStore,
@@ -1020,7 +1010,11 @@ describe('proof-bearing services with captured query heights', () => {
 });
 
 describe('channel upgrade queries with captured query heights', () => {
-  beforeEach(resetProofServiceMocks);
+  beforeEach(() => {
+    resetProofServiceMocks();
+    acceptLatestHostState();
+  });
+  afterEach(() => stabilitySpies.forEach((spy) => spy.mockRestore()));
 
   it('serves an upgrade in progress and its error receipt with proofs at the requested height', async () => {
     const deps = makeDeps();
@@ -1043,7 +1037,6 @@ describe('channel upgrade queries with captured query heights', () => {
       deps.configService,
       deps.lucidService,
       {} as KupoService,
-      deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -1084,7 +1077,6 @@ describe('channel upgrade queries with captured query heights', () => {
       deps.configService,
       deps.lucidService,
       {} as KupoService,
-      deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,

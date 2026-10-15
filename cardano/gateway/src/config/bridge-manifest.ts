@@ -1128,11 +1128,6 @@ export function loadBridgeConfigFromEnv(
     // Downstream SDKs must receive the same explicit capability decision.
     loaded.deployment.deploymentMode = selected as 'upgradeable' | 'legacy';
     loaded.bridgeManifest.deploymentMode = loaded.deployment.deploymentMode;
-    if (loaded.deployment.migration && env.CARDANO_LIGHT_CLIENT_MODE === 'mithril') {
-      throw new Error(
-        'Compatible implementation migration currently supports stake-weighted-stability only; exact historical Mithril certification across migration is unsupported. Use the reviewed probabilistic counterparty profile or retain a non-migration deployment.',
-      );
-    }
     return loaded;
   };
 

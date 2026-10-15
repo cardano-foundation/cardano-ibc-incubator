@@ -31,7 +31,7 @@ const PACKET = {
   timeout_timestamp: 0n,
 } as const;
 
-const MITHRIL_CLIENT_STATE_HEX = 'aabbccdd';
+const COUNTERPARTY_CLIENT_STATE_HEX = 'aabbccdd';
 
 const UPGRADE_FIELDS = {
   ordering: 'Unordered',
@@ -204,7 +204,7 @@ describe('Redeemer encoding regression', () => {
     const encoded = await encodeMintConnectionRedeemer(
       {
         ConnOpenTry: {
-          client_state: MITHRIL_CLIENT_STATE_HEX,
+          client_state: COUNTERPARTY_CLIENT_STATE_HEX,
           proof_init: EMPTY_PROOF as any,
           proof_client: EMPTY_PROOF as any,
           proof_height: HEIGHT,

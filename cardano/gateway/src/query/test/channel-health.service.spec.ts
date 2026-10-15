@@ -4,7 +4,6 @@ import { ConfigService } from '@nestjs/config';
 import { ChannelService } from '../services/channel.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { HistoryService } from '../services/history.service';
 import { decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 
@@ -83,7 +82,6 @@ function makeService(packetState?: any) {
     } as unknown as ConfigService,
     lucidService as unknown as LucidService,
     {} as KupoService,
-    {} as MithrilService,
     {} as HistoryService,
     {} as any,
       createTestTreeStore(),
