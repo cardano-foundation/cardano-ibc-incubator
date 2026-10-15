@@ -239,7 +239,7 @@ def main():
     def history(handler):
         run('init-history', runtime_command('init-history', handler))
 
-    def gateway(handler, historical=False):
+    def gateway(handler, historical=False, proof_ready=True):
         stop('gateway')
         preflight_gateway_ports()
         generation = json.loads(handler.read_text())['migration']['generation']
@@ -255,7 +255,7 @@ def main():
         else:
             env.pop('GATEWAY_HISTORICAL_READ_ONLY', None)
         start('gateway', runtime_command('gateway', handler, database), env)
-        wait_http(not historical)
+        wait_http(not historical and proof_ready)
 
     def hermes(operation):
         return ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-hermes.py'), 'run', '--runtime', str(runtime),
@@ -326,10 +326,17 @@ def main():
                     '--runtime', str(runtime), '--project', project, '--file-clock', '--pool-aging',
                     '--step-seconds', '86400', '--until-ms', str(mature_ms)])
                 history(source)
-                gateway(source)
+                gateway(source, proof_ready=False)
                 run('manifest-v1', runtime_command('export', source))
                 run('hermes-setup', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-hermes.py'), 'setup',
                     '--runtime', str(runtime), '--artifacts-dir', str(artifacts), '--clock-offset-seconds', str(offset())])
+                # The original HostState was published before its pools aged.
+                # Produce a real current root-bearing block before asking for
+                # an eligible anchor or creating a foreign client.
+                run('bootstrap-heartbeat', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-hermes.py'),
+                    'heartbeat', '--runtime', str(runtime), '--artifacts-dir', str(artifacts),
+                    '--clock-offset-seconds', str(offset())])
+                wait_http(True)
                 run('wallet-population', deno + [str(ROOT / 'scripts/ci/aiken-contract-migration/migration-wallet.ts'), str(runtime)])
                 run('connection', hermes(['create', 'connection', '--a-chain', 'cardano-devnet', '--b-chain', 'migration-462-1']))
                 for index in range(2):
