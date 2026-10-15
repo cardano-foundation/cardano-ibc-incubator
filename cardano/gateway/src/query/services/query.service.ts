@@ -2361,7 +2361,16 @@ export class QueryService {
   }
 
   async queryStabilityIBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse> {
-    const { height, trusted_height: trustedHeight } = request;
+    const { trusted_height: trustedHeight } = request;
+    const maintenance = request.checkpoint_only && request.height === 0n;
+    let height = request.height;
+    if (maintenance) {
+      const tip = await this.historyService.findLatestBlock();
+      if (!tip || BigInt(tip.height) <= trustedHeight + 24n) {
+        return {};
+      }
+      height = BigInt(tip.height) - 24n;
+    }
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
@@ -2401,7 +2410,8 @@ export class QueryService {
         effectiveTrustedHeight,
         BigInt(height),
         settlementCreditClient,
-        true,
+        !maintenance,
+        maintenance,
       );
     } else {
       stabilityHeader = await this.buildBoundedStabilityHeader(
@@ -2424,6 +2434,7 @@ export class QueryService {
     targetHeight: bigint,
     settlementCreditClient?: ClientStateProbabilistic,
     challenge = false,
+    maintenance = false,
   ): Promise<ProbabilisticHeader> {
     const targetDistance = targetHeight - trustedHeight;
     if (targetDistance <= 0n) {
@@ -2439,7 +2450,7 @@ export class QueryService {
 
     while (candidateDistance >= 1n) {
       const candidateHeight = trustedHeight + candidateDistance;
-      const isCheckpoint = challenge || candidateHeight < targetHeight;
+      const isCheckpoint = challenge || maintenance || candidateHeight < targetHeight;
 
       let stabilityEvidence: StakeWeightedStabilityHeaderEvidence;
       try {
