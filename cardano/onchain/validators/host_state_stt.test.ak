@@ -9,7 +9,7 @@ use aiken/primitive/bytearray
 use aiken/primitive/int
 use aiken/primitive/string
 use cardano/address.{Address, Credential, Script, VerificationKey}
-use cardano/assets.{PolicyId, Value, add, from_asset, zero}
+use cardano/assets.{PolicyId, Value, add, from_asset, quantity_of, zero}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Redeemer, Spend,
   Transaction, placeholder,
@@ -165,8 +165,7 @@ test module_registration_cbor_matches_offchain_codec() {
 }
 
 test host_state_datum_decodes_injective_compatibility_fixture() {
-  let fixture =
-    #"d87984d8798701582042424242424242424242424242424242424242424242424242424242424242420203048007581c24242424242424242424242424242424242424242424242424242424581c17171717171717171717171717171717171717171717171717171717d87985a1487472616e73666572d87983581c11111111111111111111111111111111111111111111111111111111d87982581c222222222222222222222222222222222222222222222222222222224101d87982581c333333333333333333333333333333333333333333333333333333334102d87980000000"
+  let fixture = #"d87984d8798701582042424242424242424242424242424242424242424242424242424242424242420203048007581c24242424242424242424242424242424242424242424242424242424581c17171717171717171717171717171717171717171717171717171717d87986a1487472616e73666572d87983581c11111111111111111111111111111111111111111111111111111111d87982581c222222222222222222222222222222222222222222222222222222224101d87982581c333333333333333333333333333333333333333333333333333333334102d8798000000000"
   expect Some(data) = cbor.deserialise(fixture)
   expect decoded: HostStateDatum = data
 
@@ -183,6 +182,7 @@ test host_state_datum_decodes_injective_compatibility_fixture() {
     nft_policy: #"24242424242424242424242424242424242424242424242424242424",
     deployer: #"17171717171717171717171717171717171717171717171717171717",
     control: HostStateControl {
+      last_heartbeat_time: 0,
       port_registry: [
         Pair(
           "transfer",
@@ -228,6 +228,7 @@ fn test_host_state_datum_with_control(
     nft_policy,
     deployer: trusted_deployer,
     control: HostStateControl {
+      last_heartbeat_time: 0,
       port_registry,
       shutdown,
       live_clients: 0,
@@ -657,7 +658,26 @@ fn spend_host_state_with_backup(
     None,
     redeemer,
     test_host_ref(),
-    Transaction { ..placeholder, inputs, outputs, extra_signatories },
+    Transaction {
+      ..placeholder,
+      inputs,
+      outputs,
+      extra_signatories,
+      validity_range: when redeemer is {
+        Heartbeat -> {
+          expect Some(output) = list.find(
+            outputs,
+            fn(o) {
+              quantity_of(o.value, test_nft_policy(), host_state_token_name) == 1
+            },
+          )
+          expect InlineDatum(raw) = output.datum
+          expect datum: HostStateDatum = raw
+          interval.between(0, datum.state.last_update_time)
+        }
+        _ -> placeholder.validity_range
+      },
+    },
   )
 }
 
@@ -714,31 +734,6 @@ test backup_claim_rejects_root_mutation() {
 
 test backup_claim_rejects_deployment_without_backup() {
   !claim_backup_as("", named_backup, [named_backup], False)
-}
-
-test old_deployer_cannot_heartbeat_after_backup_claim() {
-  let old_state = test_host_state(empty_ibc_state_root, 1)
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      last_update_time: old_state.last_update_time + 1,
-    }
-  let input = test_host_input(old_state)
-  let Input { output_reference: reference, output: old_output } = input
-  let old_datum =
-    HostStateDatum {
-      ..test_host_state_datum(old_state, test_nft_policy()),
-      deployer: named_backup,
-    }
-  let new_datum = HostStateDatum { ..old_datum, state: new_state }
-  !spend_host_state_with_backup(
-    Heartbeat,
-    [Input(reference, Output { ..old_output, datum: InlineDatum(old_datum) })],
-    [Output { ..test_host_output(new_state), datum: InlineDatum(new_datum) }],
-    [trusted_deployer],
-    named_backup,
-  )
 }
 
 type HostCase =
@@ -5022,51 +5017,47 @@ test host_state_handle_packet_rejects_channel_only_changes() fail {
 
 test host_state_heartbeat_preserves_ibc_state() {
   let old_state = test_host_state(#"11", 1000)
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      last_update_time: old_state.last_update_time + 1,
-    }
+  let new_state = HostState {
+    ..old_state,
+    version: old_state.version + 1,
+    last_update_time: old_state.last_update_time + 1,
+  }
 
   spend_host_state_with_signatories(
     Heartbeat,
     [test_host_input(old_state)],
-    [test_host_output(new_state)],
+    [test_heartbeat_output(new_state)],
     [trusted_deployer],
   )
 }
 
 test host_state_heartbeat_finds_host_output_first() {
   let old_state = test_host_state(#"11", 1000)
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      last_update_time: old_state.last_update_time + 1,
-    }
+  let new_state = HostState {
+    ..old_state,
+    version: old_state.version + 1,
+    last_update_time: old_state.last_update_time + 1,
+  }
 
   spend_host_state_with_signatories(
     Heartbeat,
     [test_host_input(old_state)],
-    [test_host_output(new_state), ..test_unrelated_outputs(8)],
+    [test_heartbeat_output(new_state), ..test_unrelated_outputs(8)],
     [trusted_deployer],
   )
 }
 
 test host_state_heartbeat_finds_host_output_middle() {
   let old_state = test_host_state(#"11", 1000)
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      last_update_time: old_state.last_update_time + 1,
-    }
-  let outputs =
-    list.concat(
-      test_unrelated_outputs(4),
-      [test_host_output(new_state), ..test_unrelated_outputs(4)],
-    )
+  let new_state = HostState {
+    ..old_state,
+    version: old_state.version + 1,
+    last_update_time: old_state.last_update_time + 1,
+  }
+  let outputs = list.concat(
+    test_unrelated_outputs(4),
+    [test_heartbeat_output(new_state), ..test_unrelated_outputs(4)],
+  )
 
   spend_host_state_with_signatories(
     Heartbeat,
@@ -5078,14 +5069,15 @@ test host_state_heartbeat_finds_host_output_middle() {
 
 test host_state_heartbeat_finds_host_output_last() {
   let old_state = test_host_state(#"11", 1000)
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      last_update_time: old_state.last_update_time + 1,
-    }
-  let outputs =
-    list.concat(test_unrelated_outputs(8), [test_host_output(new_state)])
+  let new_state = HostState {
+    ..old_state,
+    version: old_state.version + 1,
+    last_update_time: old_state.last_update_time + 1,
+  }
+  let outputs = list.concat(
+    test_unrelated_outputs(8),
+    [test_heartbeat_output(new_state)],
+  )
 
   spend_host_state_with_signatories(
     Heartbeat,
@@ -5095,66 +5087,36 @@ test host_state_heartbeat_finds_host_output_last() {
   )
 }
 
-test host_state_heartbeat_rejects_unauthorized_signer() fail {
-  let old_state = test_host_state(#"11", 1000)
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      last_update_time: old_state.last_update_time + 1,
-    }
-
-  spend_host_state(
-    Heartbeat,
-    [test_host_input(old_state)],
-    [test_host_output(new_state)],
-  )
-}
-
 test host_state_heartbeat_rejects_root_change() fail {
   let old_state = test_host_state(#"11", 1000)
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      ibc_state_root: #"22",
-      last_update_time: old_state.last_update_time + 1,
-    }
+  let new_state = HostState {
+    ..old_state,
+    version: old_state.version + 1,
+    ibc_state_root: #"22",
+    last_update_time: old_state.last_update_time + 1,
+  }
 
   spend_host_state_with_signatories(
     Heartbeat,
     [test_host_input(old_state)],
-    [test_host_output(new_state)],
+    [test_heartbeat_output(new_state)],
     [trusted_deployer],
   )
 }
 
 test host_state_heartbeat_rejects_counter_change() fail {
   let old_state = test_host_state(#"11", 1000)
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      next_client_sequence: old_state.next_client_sequence + 1,
-      last_update_time: old_state.last_update_time + 1,
-    }
+  let new_state = HostState {
+    ..old_state,
+    version: old_state.version + 1,
+    next_client_sequence: old_state.next_client_sequence + 1,
+    last_update_time: old_state.last_update_time + 1,
+  }
 
   spend_host_state_with_signatories(
     Heartbeat,
     [test_host_input(old_state)],
-    [test_host_output(new_state)],
-    [trusted_deployer],
-  )
-}
-
-test host_state_heartbeat_rejects_stale_timestamp() fail {
-  let old_state = test_host_state(#"11", 1000)
-  let new_state = HostState { ..old_state, version: old_state.version + 1 }
-
-  spend_host_state_with_signatories(
-    Heartbeat,
-    [test_host_input(old_state)],
-    [test_host_output(new_state)],
+    [test_heartbeat_output(new_state)],
     [trusted_deployer],
   )
 }
@@ -5162,39 +5124,41 @@ test host_state_heartbeat_rejects_stale_timestamp() fail {
 test host_state_heartbeat_rejects_shutdown_state() fail {
   let nft_policy = test_nft_policy()
   let old_state = test_host_state(#"11", 1000)
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      last_update_time: old_state.last_update_time + 1,
-    }
-  let shutdown =
-    ShuttingDown {
-      initiated_at: old_state.last_update_time,
-      grace_period_end: old_state.last_update_time + 1000,
-    }
+  let new_state = HostState {
+    ..old_state,
+    version: old_state.version + 1,
+    last_update_time: old_state.last_update_time + 1,
+  }
+  let shutdown = ShuttingDown {
+    initiated_at: old_state.last_update_time,
+    grace_period_end: old_state.last_update_time + 1000,
+  }
   let address = Address(Script(test_host_script_hash()), None)
-  let host_input =
-    Input(
-      test_host_ref(),
-      Output {
-        address,
-        value: from_asset(nft_policy, host_state_token_name, 1),
-        datum: InlineDatum(
-          test_host_state_datum_with_shutdown(old_state, nft_policy, shutdown),
-        ),
-        reference_script: None,
-      },
-    )
-  let host_output =
+  let host_input = Input(
+    test_host_ref(),
     Output {
       address,
       value: from_asset(nft_policy, host_state_token_name, 1),
       datum: InlineDatum(
-        test_host_state_datum_with_shutdown(new_state, nft_policy, shutdown),
+        test_host_state_datum_with_shutdown(old_state, nft_policy, shutdown),
       ),
       reference_script: None,
-    }
+    },
+  )
+  let host_output = Output {
+    address,
+    value: from_asset(nft_policy, host_state_token_name, 1),
+    datum: InlineDatum(
+      HostStateDatum {
+        ..test_host_state_datum_with_shutdown(new_state, nft_policy, shutdown),
+        control: HostStateControl {
+          ..test_host_state_datum_with_shutdown(new_state, nft_policy, shutdown).control,
+          last_heartbeat_time: new_state.last_update_time,
+        },
+      },
+    ),
+    reference_script: None,
+  }
 
   spend_host_state_with_signatories(
     Heartbeat,
@@ -5364,7 +5328,7 @@ fn state_value_heartbeat(input_extra: Value, output_extra: Value) -> Bool {
       last_update_time: old_state.last_update_time + 1,
     }
   let input = test_host_input(old_state)
-  let output = test_host_output(new_state)
+  let output = test_heartbeat_output(new_state)
   let input =
     Input {
       ..input,
@@ -5528,15 +5492,19 @@ fn containment_host_case(operation: Int) -> HostCase {
     5 -> prepare_host_update_client_capacity()
     _ -> {
       let old = test_host_state(ibc_state_commitment.empty_hash, 1_000)
-      let next =
-        HostState { ..old, version: old.version + 1, last_update_time: 2_000 }
+      let next = HostState {
+        ..old,
+        version: old.version + 1,
+        last_update_time: 2_000,
+      }
       Pair(
         Heartbeat,
         Transaction {
           ..placeholder,
           inputs: [test_host_input(old)],
-          outputs: [test_host_output(next)],
-          extra_signatories: [trusted_deployer],
+          outputs: [test_heartbeat_output(next)],
+          extra_signatories: [],
+          validity_range: interval.between(1_000, 2_000),
         },
       )
     }
@@ -6132,5 +6100,84 @@ fn registered_client_cases() -> Fuzzer<client_registry_fixtures.RegistryCase> {
     seed,
     reverse,
     reverse_references,
+  )
+}
+fn test_heartbeat_output(state: HostState) -> Output {
+  let output = test_host_output(state)
+  expect InlineDatum(raw) = output.datum
+  expect datum: HostStateDatum = raw
+  Output {
+    ..output,
+    datum: InlineDatum(
+      HostStateDatum {
+        ..datum,
+        control: HostStateControl {
+          ..datum.control,
+          last_heartbeat_time: state.last_update_time,
+        },
+      },
+    ),
+  }
+}
+
+test heartbeat_does_not_depend_on_current_deployer() {
+  let old_state = test_host_state(empty_ibc_state_root, 1)
+  let new_state = HostState {
+    ..old_state,
+    version: old_state.version + 1,
+    last_update_time: old_state.last_update_time + 1,
+  }
+  let input = test_host_input(old_state)
+  let Input { output_reference: reference, output: old_output } = input
+  let old_datum = HostStateDatum {
+    ..test_host_state_datum(old_state, test_nft_policy()),
+    deployer: named_backup,
+  }
+  let new_datum = HostStateDatum {
+    ..old_datum,
+    state: new_state,
+    control: HostStateControl {
+      ..old_datum.control,
+      last_heartbeat_time: new_state.last_update_time,
+    },
+  }
+  spend_host_state_with_backup(
+    Heartbeat,
+    [Input(reference, Output { ..old_output, datum: InlineDatum(old_datum) })],
+    [
+      Output {
+        ..test_heartbeat_output(new_state),
+        datum: InlineDatum(new_datum),
+      },
+    ],
+    [trusted_deployer],
+    named_backup,
+  )
+}
+
+test host_state_heartbeat_accepts_independent_relayer() {
+  let old_state = test_host_state(#"11", 1000)
+  let new_state = HostState {
+    ..old_state,
+    version: old_state.version + 1,
+    last_update_time: old_state.last_update_time + 1,
+  }
+
+  spend_host_state(
+    Heartbeat,
+    [test_host_input(old_state)],
+    [test_heartbeat_output(new_state)],
+  )
+}
+
+test host_state_heartbeat_rejects_missing_heartbeat_clock() fail {
+  let old_state = test_host_state(#"11", 1000)
+  let new_state = HostState { ..old_state, version: old_state.version + 1 }
+
+  spend_host_state_with_signatories(
+    Heartbeat,
+    [test_host_input(old_state)],
+    [test_host_output(new_state)],
+    [trusted_deployer],
   )
 }

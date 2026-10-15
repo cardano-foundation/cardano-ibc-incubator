@@ -402,6 +402,7 @@ async function fixture(
       live_clients: createClient ? 0n : 1n,
       live_connections: 0n,
       live_channels: 0n,
+      last_heartbeat_time: 0n,
     },
   };
   let host = seed(

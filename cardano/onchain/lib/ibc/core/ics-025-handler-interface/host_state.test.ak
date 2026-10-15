@@ -1,10 +1,12 @@
 use aiken/collection/list
 use aiken/fuzz
+use aiken/interval
 use ibc/auth
 use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
-  ShuttingDown, validate_create_channel, validate_create_client,
-  validate_create_connection, validate_retire_state, validate_update_only_root,
+  ShuttingDown, heartbeat_interval_ms, validate_create_channel,
+  validate_create_client, validate_create_connection, validate_heartbeat,
+  validate_retire_state, validate_update_only_root,
 }
 
 fn fixture(seed: Int) -> HostStateDatum {
@@ -21,6 +23,7 @@ fn fixture(seed: Int) -> HostStateDatum {
     nft_policy: "policy",
     deployer: "deployer",
     control: HostStateControl {
+      last_heartbeat_time: 0,
       port_registry: [],
       shutdown: Active,
       live_clients: 0,
@@ -246,4 +249,91 @@ test shutdown_permits_root_updates_but_no_creation(seed via fuzz.int()) {
       },
     ),
   }
+}
+fn heartbeat_after(old: HostStateDatum, from: Int, to: Int) -> Bool {
+  let next = HostStateDatum {
+    ..old,
+    state: HostState {
+      ..old.state,
+      version: old.state.version + 1,
+      last_update_time: to,
+    },
+    control: HostStateControl { ..old.control, last_heartbeat_time: to },
+  }
+  validate_heartbeat(old, next, interval.between(from, to))
+}
+
+test heartbeat_cooldown_uses_ledger_time_and_accepts_exact_boundary() {
+  let initial = fixture(0)
+  let old = HostStateDatum {
+    ..initial,
+    control: HostStateControl { ..initial.control, last_heartbeat_time: 1_000 },
+  }
+  and {
+    !heartbeat_after(
+      old,
+      1_000 + heartbeat_interval_ms - 1,
+      2_000 + heartbeat_interval_ms,
+    ),
+    heartbeat_after(
+      old,
+      1_000 + heartbeat_interval_ms,
+      2_000 + heartbeat_interval_ms,
+    ),
+    // An ordinary operation's monitoring timestamp cannot bypass the protected clock.
+    !heartbeat_after(
+      HostStateDatum {
+        ..old,
+        state: HostState { ..old.state, last_update_time: 0 },
+      },
+      1_001,
+      2_001,
+    ),
+    // Neither can a bogus future monitoring timestamp prevent a legal heartbeat.
+    heartbeat_after(
+      HostStateDatum {
+        ..old,
+        state: HostState { ..old.state, last_update_time: 999_999_999_999 },
+      },
+      1_000 + heartbeat_interval_ms,
+      2_000 + heartbeat_interval_ms,
+    ),
+  }
+}
+
+test heartbeat_rejects_unbounded_future_clock_and_wide_windows() {
+  let old = fixture(0)
+  let next = HostStateDatum {
+    ..old,
+    state: HostState {
+      ..old.state,
+      version: old.state.version + 1,
+      last_update_time: 2_000,
+    },
+    control: HostStateControl {
+      ..old.control,
+      last_heartbeat_time: 999_999_999_999,
+    },
+  }
+  and {
+    !validate_heartbeat(old, next, interval.between(1_000, 2_000)),
+    !heartbeat_after(old, 0, 120_001),
+    !heartbeat_after(old, -1, 1_000),
+    !heartbeat_after(old, 1_000, 1_000),
+  }
+}
+
+test heartbeat_requires_finite_bounds() fail {
+  let old = fixture(0)
+  validate_heartbeat(old, old, interval.everything)
+}
+
+test ordinary_operations_cannot_reset_the_heartbeat_clock() {
+  let old = fixture(0)
+  let next = HostStateDatum {
+    ..old,
+    state: HostState { ..old.state, version: old.state.version + 1 },
+    control: HostStateControl { ..old.control, last_heartbeat_time: 1_000 },
+  }
+  !validate_update_only_root(old, next)
 }

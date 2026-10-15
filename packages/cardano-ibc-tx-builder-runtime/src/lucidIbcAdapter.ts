@@ -145,6 +145,7 @@ async function encodeHostStateDatum(
       live_clients: Data.Integer(),
       live_connections: Data.Integer(),
       live_channels: Data.Integer(),
+      last_heartbeat_time: Data.Integer(),
     }),
   });
   return Data.to(hostStateDatum, HostStateDatumSchema as any, { canonical: true });
@@ -191,6 +192,7 @@ async function decodeHostStateDatum(
       live_clients: Data.Integer(),
       live_connections: Data.Integer(),
       live_channels: Data.Integer(),
+      last_heartbeat_time: Data.Integer(),
     }),
   });
   return Data.from(encoded, HostStateDatumSchema as any);

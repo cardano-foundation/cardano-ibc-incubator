@@ -314,6 +314,7 @@ fn host_datum() -> HostStateDatum {
     nft_policy: host_policy,
     deployer,
     control: HostStateControl {
+      last_heartbeat_time: 0,
       port_registry: [],
       shutdown: Active,
       live_clients: 0,

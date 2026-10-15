@@ -242,10 +242,7 @@ validator host_state(registry_policy: ByteArray, generation: Int) {
               packet_acknowledgement_siblings,
             ),
           }
-        Heartbeat -> and {
-            list.has(extra_signatories, old_datum.deployer),
-            host.validate_heartbeat(old_datum, new_datum),
-          }
+        Heartbeat -> host.validate_heartbeat(old_datum, new_datum, transaction.validity_range)
         // Shutdown and finalization belong only to immutable deployments.
         _ -> fail
       }

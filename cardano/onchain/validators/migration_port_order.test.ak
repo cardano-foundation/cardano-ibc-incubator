@@ -53,6 +53,7 @@ fn baseline_host(raw: Data) -> Data {
             builtin.i_data(host.next_client_sequence),
             builtin.i_data(host.next_connection_sequence),
             builtin.i_data(host.next_channel_sequence),
+            builtin.i_data(0),
           ],
         ),
       ),

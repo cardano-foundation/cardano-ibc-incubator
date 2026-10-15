@@ -196,6 +196,7 @@ fn mint_client(datum: ClientDatum, validity_range: ValidityRange) -> Bool {
       nft_policy: host_policy,
       deployer: host_policy,
       control: HostStateControl {
+        last_heartbeat_time: 0,
         port_registry: [],
         shutdown: Active,
         live_clients: 0,

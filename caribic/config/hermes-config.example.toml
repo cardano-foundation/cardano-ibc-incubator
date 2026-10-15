@@ -112,10 +112,10 @@ max_total_protocol_output_lovelace = 50000000
 max_wallet_lovelace_top_up = 5000000
 max_validity_interval_slots = 3600
 
-# Check for a HostState heartbeat at the epoch midpoint. Hermes sleeps until
-# Gateway's suggested check time and uses this interval to retry failures.
-# An ordinary IBC transition before the midpoint avoids the heartbeat.
-# The configured Cardano key must match the HostState deployment authority.
+# Any funded Cardano signer may submit a root-preserving heartbeat.
+# Gateway waits six hours after the latest HostState transaction. The contract
+# enforces a separate six-hour heartbeat cooldown. This is the retry interval,
+# not the heartbeat cadence. Hermes also rechecks hourly for rollbacks.
 host_state_heartbeat_interval = '60s'
 
 # Cardano network ID (1 = mainnet, 0 = testnet)

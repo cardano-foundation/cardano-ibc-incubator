@@ -463,3 +463,14 @@ The current finality parameters are embedded in the light-client module:
 - `stake_weight_bps = 6000`
 
 They are not supplied by the Gateway and are not serialized into `ClientState`.
+
+
+### Permissionless HostState heartbeats
+
+Rootless checkpoints advance the trusted Cardano cursor but do not renew client expiry. Any funded payment-key signer can submit a root-preserving HostState heartbeat without the deployment authority. Gateway schedules it after six hours without an ordinary HostState transaction. Hermes follows the returned check delay and retries failed submissions using `host_state_heartbeat_interval`.
+
+The contract keeps `last_heartbeat_time` in the Cardano-owned control datum. A heartbeat sets it to the finite validity upper bound and requires the next heartbeat's lower bound to be at least six hours later. Its validity window may be at most two minutes. Ordinary operations preserve this clock. The IBC root, sequence counters, authority, lifecycle state and HostState value remain protected. Heartbeats remain disabled during shutdown and by the existing heartbeat restriction bit.
+
+Gateway requires a trusting period of at least 24 hours in probabilistic mode. The six-hour cadence leaves time for Cardano confirmation and destination client updates. Operators must still relay those updates before expiry. Clients created outside Gateway need a compatible trusting period too.
+
+This changes the Cardano HostState control schema to wire version 5 and requires the matching validators and builders. Existing deployed scripts retain their old behavior. Existing deployments need a fresh deployment or a schema-aware upgrade before using these heartbeats. Historical five-field control datums remain readable by Gateway. Counterparty light clients treat the control field opaquely, so their HostState root decoding does not change.

@@ -173,3 +173,34 @@ describe('Local epoch snapshot configuration', () => {
     expect(loadConfig().cardanoLocalEpochContextEndpoint).toBe('http://nonce:8080');
   });
 });
+
+describe('Permissionless heartbeat trusting period', () => {
+  const originalEnv = process.env;
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      CARDANO_NETWORK_MAGIC: '42',
+      CARDANO_LIGHT_CLIENT_MODE: 'stake-weighted-stability',
+    };
+    delete process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS;
+  });
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('keeps the supported 24-hour default', () => {
+    expect(loadConfig().cardanoClientTrustingPeriodSeconds).toBe(86_400);
+  });
+  it.each(['1', '21600', '86399', '-1', '86400.5', 'NaN'])(
+    'rejects a probabilistic trusting period of %s seconds',
+    (value) => {
+      process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS = value;
+      expect(() => loadConfig()).toThrow('must be at least 86400');
+    },
+  );
+  it('does not impose the heartbeat policy on Mithril clients', () => {
+    process.env.CARDANO_LIGHT_CLIENT_MODE = 'mithril';
+    process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS = '3600';
+    expect(loadConfig().cardanoClientTrustingPeriodSeconds).toBe(3600);
+  });
+});

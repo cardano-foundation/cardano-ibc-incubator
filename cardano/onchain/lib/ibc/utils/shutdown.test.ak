@@ -39,6 +39,7 @@ fn datum() -> HostStateDatum {
     nft_policy: host_policy,
     deployer,
     control: HostStateControl {
+      last_heartbeat_time: 0,
       port_registry: [
         Pair(
           "transfer",

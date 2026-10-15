@@ -1039,6 +1039,7 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
             nft_policy: host_state_nft_policy_id,
             deployer: #"00000000000000000000000000000000000000000000000000000000",
             control: HostStateControl {
+              last_heartbeat_time: 0,
               port_registry: [
                 Pair(input_channel_datum.port_id, module_registration),
               ],
