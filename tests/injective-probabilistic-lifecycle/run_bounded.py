@@ -27,7 +27,7 @@ if not args.resume:
     shutil.copytree(Path(__file__).parent / 'evidence/network-snapshot', root / 'network-snapshot')
     if args.fixture != 'lifecycle':
         shutil.copy(repo / f'cosmos/cardano-probabilistic-light-client-core/testdata/native-boundary-{args.fixture}.json.gz', root / 'fixture.json.gz')
-    
+
     (root / 'operator-address.txt').write_text(helper('address'))
     helper('key', '/out/operator-key.hex')
     if args.fixture == 'lifecycle':
