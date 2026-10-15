@@ -62,6 +62,8 @@ Authority cancellation captures the operator's observed `upgrade_sequence`. The 
 
 A counterparty-initiated upgrade also needs Cardano's INIT with matching fields. Hermes then sends TRY to Cardano. If a replacement client becomes unusable before flush completion the channel stays on the original route and can be cancelled. After one endpoint opens the relayer preserves the pending handshake and completes the other endpoint. It does not revert an already switched endpoint. Replacement client recovery or refresh can then restore packet availability.
 
+Existing packet workers refresh both channel routes at explicit heights. They adopt replacement connection and client IDs only when the two connection ends agree. A partial cutover or failed query leaves their queued events intact for retry. Queued messages are rebuilt with the replacement connection delay before the worker uses the new route.
+
 Upgrade discovery uses the same proof height as the channel query. Only the Gateway's explicit absent-upgrade response means there is no upgrade. Outages and malformed or stale responses fail discovery and are retried through the normal relayer query path. Channel health disables sending while flushing. It reports certified lanes, remaining commitments, retained acknowledgements and counterparty wait status separately.
 
 ## Costs
