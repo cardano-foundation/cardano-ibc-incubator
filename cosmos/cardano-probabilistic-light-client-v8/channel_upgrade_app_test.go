@@ -90,6 +90,9 @@ func newUpgradeHarness(t *testing.T) *upgradeHarness {
 	t.Cleanup(func() { require.NoError(t, app.Close()) })
 	RegisterInterfaces(app.InterfaceRegistry())
 	ctx := app.NewContextLegacy(false, cmtproto.Header{ChainID: "injective-1", Height: 100, Time: time.Unix(1_700_000_100, 0)})
+	// These simulated-Cardano migration tests start on a continuously running
+	// host. The live acceptance tests exercise the installed liveness hooks.
+	ctx = withTestHostProgress(ctx)
 	params := app.IBCKeeper.ClientKeeper.GetParams(ctx)
 	params.AllowedClients = append(params.AllowedClients, ModuleName)
 	app.IBCKeeper.ClientKeeper.SetParams(ctx, params)
@@ -119,7 +122,7 @@ func (h *upgradeHarness) installClient(id string) {
 	state := newProbabilisticTestClientState()
 	setTestCheckpoint(h.t, state, state.LatestHeight, testBlockHash("checkpoint-"+id), 7, state.LatestHeight.RevisionHeight)
 	state.OperationalCertificateCounterHistoryStartHeight = state.LatestHeight
-	state.EpochContextChallenges = []*EpochContextChallenge{{Epoch: 7, UsableAfterUnixNs: uint64(h.ctx.BlockTime().UnixNano())}}
+	state.EpochContextChallenges = []*EpochContextChallenge{{Epoch: 7, UsableAfterUnixNs: uint64(h.ctx.BlockTime().Add(-time.Second).UnixNano())}}
 	require.NoError(h.t, state.Validate())
 	setClientState(store, cdc, state)
 	consensus := newProbabilisticTestConsensusState(state.LatestCheckpointBlockHash, state.LatestHeight.RevisionHeight)
