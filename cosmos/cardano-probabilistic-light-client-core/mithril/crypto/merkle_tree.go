@@ -430,6 +430,11 @@ func Create(leaves []MTLeaf) (*MerkleTree, error) {
 		nodes[numNodes-n+uint64(i)] = hasher.Sum(nil)
 	}
 
+	// A missing child contributes the hash of a zero byte, as in mithril-stm
+	// and the batch verifier above.
+	hasher.Reset()
+	hasher.Write([]byte{0})
+	empty := hasher.Sum(nil)
 	for i := int(numNodes) - int(n) - 1; i >= 0; i-- {
 		hasher.Reset()
 		left := leftChild(uint64(i))
@@ -437,12 +442,12 @@ func Create(leaves []MTLeaf) (*MerkleTree, error) {
 		if left < numNodes {
 			hasher.Write(nodes[left])
 		} else {
-			hasher.Write([]byte{0}) // Assuming empty hash is 0 byte
+			hasher.Write(empty)
 		}
 		if right < numNodes {
 			hasher.Write(nodes[right])
 		} else {
-			hasher.Write([]byte{0}) // Assuming empty hash is 0 byte
+			hasher.Write(empty)
 		}
 		nodes[i] = hasher.Sum(nil)
 	}
@@ -540,7 +545,8 @@ func (mt *MerkleTree) GetBatchedPath(indices []uint64) (*BatchPath, error) {
 	var proof [][]byte
 
 	for idx > 0 {
-		newIndices := make([]uint64, len(orderedIndices))
+		// Each level keeps one parent per sibling pair, as in mithril-stm.
+		newIndices := make([]uint64, 0, len(orderedIndices))
 		i := 0
 		var err error
 		idx, err = parent(idx)
@@ -548,10 +554,11 @@ func (mt *MerkleTree) GetBatchedPath(indices []uint64) (*BatchPath, error) {
 			return nil, err
 		}
 		for i < len(orderedIndices) {
-			newIndices[i], err = parent(orderedIndices[i])
+			parentIndex, err := parent(orderedIndices[i])
 			if err != nil {
 				return nil, err
 			}
+			newIndices = append(newIndices, parentIndex)
 			sibling, err := sibling(orderedIndices[i])
 			if err != nil {
 				return nil, err
@@ -563,7 +570,7 @@ func (mt *MerkleTree) GetBatchedPath(indices []uint64) (*BatchPath, error) {
 			}
 			i++
 		}
-		copy(orderedIndices, newIndices)
+		orderedIndices = newIndices
 	}
 
 	return &BatchPath{
