@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Configure/run Hermes with only disposable migration-rehearsal keys and endpoints."""
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -108,7 +109,11 @@ compat_mode = '0.38'
             import time
             import urllib.request
             import urllib.error
-            deadline = time.monotonic() + 600
+            spec = importlib.util.spec_from_file_location('migration_clock_profile', Path(__file__).with_name('migration-clock-profile.py'))
+            clock = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(clock)
+            genesis = json.loads((runtime / 'runtime/genesis-shelley.json').read_text())
+            deadline = time.monotonic() + clock.proof_readiness_timeout(genesis)
             while True:
                 try:
                     with urllib.request.urlopen('http://127.0.0.1:8800/health/ready', timeout=30) as response:

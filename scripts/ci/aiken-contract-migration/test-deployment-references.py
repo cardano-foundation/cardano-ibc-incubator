@@ -37,6 +37,10 @@ class References(unittest.TestCase):
         self.assertEqual(now + clock.initial_offset(now), 1_766_966_400)
         self.assertEqual(clock.initial_offset(now + 100), clock.initial_offset(now) - 100)
 
+    def test_proof_wait_covers_mainnet_block_intervals_without_changing_the_default_profile(self):
+        self.assertEqual(clock.proof_readiness_timeout({'securityParam': 48, 'activeSlotsCoeff': 0.25}), 600)
+        self.assertEqual(clock.proof_readiness_timeout({'securityParam': 2160, 'activeSlotsCoeff': 0.05}), 1800)
+
     def test_funding_requires_the_same_live_outref_amount_and_address(self):
         indexed = [{'transaction_id': 'aa', 'output_index': 0, 'address': 'wallet', 'value': {'coins': 100_000_000_000}}]
         ledger = {'aa#0': {'address': 'wallet', 'value': {'lovelace': 100_000_000_000}}}
