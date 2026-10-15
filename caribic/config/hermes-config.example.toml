@@ -145,15 +145,12 @@ max_block_time = '20000ms'
 clock_drift = '5s'
 
 # When Hermes submits a Cardano transaction via the Gateway, the Gateway reports
-# the Cardano inclusion block number. Hermes waits until the active Gateway
-# light-client mode accepts that height before continuing the handshake or relay.
-#
-# These field names are retained for configuration compatibility with the retired
-# Mithril mode. In the default stake-weighted-stability mode they control the
-# accepted-height wait. The height is a Cardano block number, not a slot number.
-mithril_certification_timeout = '30m'
-mithril_poll_interval = '5s'
-mithril_wait_log_interval = '30s'
+# the Cardano inclusion block number. Hermes waits until the Gateway accepts that
+# height before continuing the handshake or relay. The height is a Cardano block
+# number, not a slot number.
+accepted_height_timeout = '30m'
+accepted_height_poll_interval = '5s'
+accepted_height_wait_log_interval = '30s'
 
 # Trust threshold for client updates (2/3 = 0.66)
 trust_threshold = { numerator = '2', denominator = '3' }
