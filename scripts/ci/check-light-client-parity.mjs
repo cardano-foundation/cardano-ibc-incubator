@@ -287,6 +287,7 @@ function assertFileInventory() {
     "internal/cardanodatum/channel.go",
     "module.go",
     "recovery_app_test.go",
+    "stake_omission_recovery_test.go",
     protoFile,
   ].sort();
   const expectedV10 = [
@@ -299,6 +300,7 @@ function assertFileInventory() {
     "internal/cardanodatum/channel_upgrade_sequence.go",
     "module.go",
     "recovery_app_test.go",
+    "stake_omission_recovery_test.go",
     protoFile,
   ].sort();
 

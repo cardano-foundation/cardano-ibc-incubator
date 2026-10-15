@@ -49,7 +49,7 @@ func makeNativeBoundaryFixtureAtHeight(t *testing.T, countStall bool, paddingByt
 func makeNativeBoundaryFixtureAtHeightAndFork(t *testing.T, countStall bool, paddingBytes int, trustedHeight, forkOverride uint64) nativeBoundaryFixture {
 	t.Helper()
 	cs := newProbabilisticTestClientState()
-	if trustedHeight == 904 {
+	if trustedHeight == 904 || trustedHeight == stakeOmissionTrustedHeight {
 		cs.SlotsPerKesPeriod = 259200
 		cs.EpochContexts[0].SlotsPerKesPeriod = cs.SlotsPerKesPeriod
 	}
@@ -64,7 +64,7 @@ func makeNativeBoundaryFixtureAtHeightAndFork(t *testing.T, countStall bool, pad
 	cs.OperationalCertificateCounterHistoryStartHeight = cs.LatestHeight
 	cs.TrustingPeriod = 48 * time.Hour
 	epochLength := uint64(60000)
-	if trustedHeight == 904 {
+	if trustedHeight == 904 || trustedHeight == stakeOmissionTrustedHeight {
 		epochLength = 120000
 	}
 	cs.CurrentEpochEndSlotExclusive = slotOffset + epochLength
@@ -98,7 +98,11 @@ func makeNativeBoundaryFixtureAtHeightAndFork(t *testing.T, countStall bool, pad
 		cs.LatestCheckpointPoolProduction.Pools = append(cs.LatestCheckpointPoolProduction.Pools, &PoolProductionRecord{PoolId: entry.PoolId, CompletedEpochsBitmap: 1})
 	}
 	hash := testBlockHash("native-bootstrap")
-	setTestCheckpoint(t, cs, cs.LatestHeight, hash, 7, slotOffset+10)
+	trustedSlot := slotOffset + 10
+	if trustedHeight == stakeOmissionTrustedHeight {
+		trustedSlot = slotOffset + epochLength - 1000
+	}
+	setTestCheckpoint(t, cs, cs.LatestHeight, hash, 7, trustedSlot)
 	consensus := newProbabilisticTestConsensusState(hash, trustedHeight)
 	consensus.Timestamp = cs.LatestCheckpointTimestamp
 	consensus.NonceState = clonePraosNonceState(cs.LatestCheckpointNonceState)
@@ -111,12 +115,15 @@ func makeNativeBoundaryFixtureAtHeightAndFork(t *testing.T, countStall bool, pad
 		h.NewEpochContext = cloneEpochContext(cs.EpochContexts[0])
 		h.NewEpochContext.Epoch = 8
 		h.NewEpochContext.EpochStartSlot, h.NewEpochContext.EpochEndSlotExclusive = slotOffset+epochLength, slotOffset+2*epochLength
-		previous, slot := hash, slotOffset+11
-		tracker, err := newNonceTracker(&trustedBlockState{height: cs.LatestHeight, blockHash: hash, slot: slotOffset + 10, epoch: 7, nonceState: cs.LatestCheckpointNonceState})
+		previous, slot := hash, trustedSlot+1
+		tracker, err := newNonceTracker(&trustedBlockState{height: cs.LatestHeight, blockHash: hash, slot: trustedSlot, epoch: 7, nonceState: cs.LatestCheckpointNonceState})
 		require.NoError(t, err)
 		lastHeight := uint64(1031)
 		if trustedHeight == 904 {
 			lastHeight = 1032
+		}
+		if trustedHeight == stakeOmissionTrustedHeight {
+			lastHeight = 1062
 		}
 		for n := trustedHeight + 1; n <= lastHeight; n++ {
 			if n == forkHeight {
@@ -124,6 +131,16 @@ func makeNativeBoundaryFixtureAtHeightAndFork(t *testing.T, countStall bool, pad
 				slot = original[n-trustedHeight-1].Slot + 1
 			}
 			producerIndex := int((n - 967) % 11)
+			// The omission case admits only producers 0 through 10, then
+			// encounters registered producer 11 on the same signed ancestry.
+			if trustedHeight == stakeOmissionTrustedHeight {
+				if n == 1031 {
+					slot = max(slot, h.AnchorBlock.Slot+15*60*60)
+				}
+				if n == 1032 {
+					producerIndex = 11
+				}
+			}
 			if countStall && n <= 1000 {
 				if n < 977 {
 					producerIndex = int(n - 966)
@@ -168,7 +185,11 @@ func makeNativeBoundaryFixtureAtHeightAndFork(t *testing.T, countStall bool, pad
 			bh.Body.VrfResult.Proof, bh.Body.VrfResult.Output = proof, output
 			bh.Body.OpCert.HotVkey = p.kesPublic
 			bh.Body.OpCert.KesPeriod = slotOffset / cs.SlotsPerKesPeriod
+			if trustedHeight == stakeOmissionTrustedHeight {
+				bh.Body.OpCert.SequenceNumber = 1
+			}
 			signable := append(bytes.Clone(p.kesPublic), make([]byte, 16)...)
+			binary.BigEndian.PutUint64(signable[32:], bh.Body.OpCert.SequenceNumber)
 			binary.BigEndian.PutUint64(signable[40:], bh.Body.OpCert.KesPeriod)
 			bh.Body.OpCert.Signature = ed25519.Sign(p.cold, signable)
 			encoded, err := cbor.Encode(block)
@@ -219,7 +240,10 @@ func makeNativeBoundaryFixtureAtHeightAndFork(t *testing.T, countStall bool, pad
 	if forkOverride != 0 {
 		forkHeight = forkOverride
 	}
-	fork := makeHeader(forkHeight)
+	fork := header
+	if trustedHeight != stakeOmissionTrustedHeight || forkOverride != 0 {
+		fork = makeHeader(forkHeight)
+	}
 	return nativeBoundaryFixture{Client: cs, Consensus: consensus, Header: header, Fork: fork}
 }
 
