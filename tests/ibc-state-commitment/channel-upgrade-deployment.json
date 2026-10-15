@@ -6,7 +6,7 @@
     "spending_channel/chan_upgrade.chan_upgrade.mint": "a1c3041e8abb32e8f6ff4ba66500e3aa52483b066829358d9021a7f9",
     "spending_channel/chan_upgrade_handshake.chan_upgrade_handshake.mint": "66feb1e75b3576657dd12791aa06988facfc57e277cb515d9fbce978",
     "spending_channel/chan_upgrade_finish.chan_upgrade_finish.mint": "4b287c5eef7935e303ee21f1093990a0dcefac4d472576d8c8fbee20",
-    "host_state_stt.host_state_stt.spend": "640a46c0650e27bbd3d83c7d6e357e96b16671b6cadf79fdf956a828",
+    "host_state_stt.host_state_stt.spend": "b987ddce821c82230cebd74278207ef8a047e7e725c232bb5c13efcc",
     "verifying_proof.verify_proof.mint": "f354df3fa03c20c424ae3158c549967f9807ecd8ceb7417b2b9cf6e1"
   },
   "compiler": "aiken v1.1.24+bacbeb3",
