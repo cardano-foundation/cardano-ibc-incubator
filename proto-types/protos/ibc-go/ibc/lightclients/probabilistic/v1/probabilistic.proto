@@ -125,6 +125,14 @@ message ClientState {
   // Explicitly trusted compact bootstrap objects. Removed from stored ClientState.
   bytes bootstrap_objects = 41;
   bool bootstrap_pending = 42;
+  // Trusted Mithril signing state for certificates of mithril_epoch, set at
+  // bootstrap like the checkpoint. When present, a Mithril-certified stake
+  // distribution outranks a supplied epoch stake table.
+  uint64 mithril_epoch = 43;
+  // Hex-encoded JSON, exactly as Mithril publishes it.
+  string mithril_aggregate_verification_key = 44;
+  // Mithril's hash of the epoch's protocol parameters.
+  string mithril_protocol_parameters_hash = 45;
 }
 
 // Production observed through the checkpoint. Bit 0 represents epoch-1 and
@@ -257,6 +265,15 @@ message Misbehaviour {
   // Receipts are produced by the verifier. They are bound to this client and generation.
   bytes verified_observation_1 = 4;
   bytes verified_observation_2 = 5;
+}
+
+// Mithril aggregator certificates in JSON from consecutive epochs, starting at
+// the client's mithril_epoch. Each certified Cardano stake distribution becomes
+// the required stake table of the epoch whose leaders it elects.
+message MithrilStakeCertificates {
+  option (gogoproto.goproto_getters) = false;
+
+  repeated string certificates = 1;
 }
 
 message ProbabilisticBlock {

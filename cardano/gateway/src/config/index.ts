@@ -142,6 +142,8 @@ interface Config {
   cardanoLocalEpochContextEndpoint?: string;
   cardanoPoolRegistrationHistoryEndpoint?: string;
   cardanoBlockfrostProjectId?: string;
+  // Optional Mithril aggregator for certified Cardano stake distributions.
+  mithrilEndpoint?: string;
 }
 
 export default (): Partial<Config> => {
@@ -203,5 +205,7 @@ export default (): Partial<Config> => {
       process.env.CARDANO_BLOCKFROST_ENDPOINT || defaultBlockfrostEndpoint(process.env.CARDANO_NETWORK_MAGIC),
     cardanoBlockfrostProjectId:
       process.env.CARDANO_BLOCKFROST_PROJECT_ID || process.env.BLOCKFROST_PROJECT_ID,
+
+    mithrilEndpoint: process.env.MITHRIL_ENDPOINT,
   };
 };

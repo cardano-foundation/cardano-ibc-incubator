@@ -25,6 +25,10 @@ service Query {
   rpc IBCHeader(QueryIBCHeaderRequest) returns (QueryIBCHeaderResponse) {
     option (google.api.http).get = "/ibc/core/types/v1/ibc_header"; 
   }
+
+  rpc MithrilStakeCertificates(QueryMithrilStakeCertificatesRequest) returns (QueryMithrilStakeCertificatesResponse) {
+    option (google.api.http).get = "/ibc/core/types/v1/mithril_stake_certificates";
+  }
 }
 
 // QueryBlockResultsRequest is the request type for the Query/BlockResults RPC method.
@@ -83,4 +87,16 @@ message QueryIBCHeaderRequest {
 
 message QueryIBCHeaderResponse {
   google.protobuf.Any header = 1;
+}
+
+// Mithril certificates that extend a probabilistic client's Mithril anchor.
+message QueryMithrilStakeCertificatesRequest {
+  // The destination client's mithril_epoch.
+  uint64 mithril_epoch = 1;
+}
+
+message QueryMithrilStakeCertificatesResponse {
+  // A MithrilStakeCertificates client message. Empty until Mithril certifies a
+  // Cardano stake distribution in mithril_epoch.
+  google.protobuf.Any client_message = 1;
 }
