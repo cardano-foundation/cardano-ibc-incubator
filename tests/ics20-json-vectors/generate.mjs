@@ -59,7 +59,7 @@ const GO_GENERATORS = [
     profile: "ibcGoV10",
     module: "github.com/cosmos/ibc-go/v10",
     version: "v10.2.0",
-    directory: "cosmos/cardano-mithril-light-client-v10",
+    directory: "cosmos/cardano-probabilistic-light-client-v10",
   },
 ];
 
