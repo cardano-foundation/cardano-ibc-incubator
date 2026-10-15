@@ -513,6 +513,8 @@ func (clerk *StmClerk) Aggregate(sigs []*StmSig, msg []byte) (*StmAggrSig, error
 		return nil, err
 	}
 
+	// The batch path covers signers in Merkle index order, as in mithril-stm.
+	sort.Slice(uniqueSigs, func(i, j int) bool { return uniqueSigs[i].Sig.SignerIndex < uniqueSigs[j].Sig.SignerIndex })
 	var mtIndexList []uint64
 	for _, sigReg := range uniqueSigs {
 		mtIndexList = append(mtIndexList, uint64(sigReg.Sig.SignerIndex))

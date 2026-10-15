@@ -292,3 +292,21 @@ func isHash(value string) bool {
 	_, err := hex.DecodeString(value)
 	return err == nil
 }
+
+// ValidateAnchor checks that an anchor can verify certificates.
+func ValidateAnchor(anchor Anchor) error {
+	if anchor.Epoch == 0 {
+		return fmt.Errorf("%w: anchor epoch must be greater than zero", ErrInvalidCertificate)
+	}
+	if !isHash(anchor.ProtocolParametersHash) {
+		return fmt.Errorf("%w: anchor protocol parameters hash must be 32 hex bytes", ErrInvalidCertificate)
+	}
+	_, err := decodeAggregateVerificationKey(anchor.AggregateVerificationKey)
+	return err
+}
+
+// ProtocolMessageHash returns the message a certificate's multi-signature
+// signs for the given protocol message parts.
+func ProtocolMessageHash(parts map[string]string) (string, error) {
+	return messageDigest(parts)
+}
