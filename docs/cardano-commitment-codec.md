@@ -43,7 +43,9 @@ primitives shared with the encoders. So are `ConnectionEnd`, `Channel`, their
 state enums and `Order`, which HostState serialises directly because projecting
 them into copies does not fit its reference script. Their declarations are part
 of this frozen ABI, and `cardano/onchain/wire-schema.lock.json` pins their
-fields and constructor indexes. Private metadata belongs in separate types.
+fields and constructor indexes. The channel-upgrade deployment pins the new
+six-field `Channel` layout. The historical five-field encoder remains separate
+for the compatibility vectors. Private metadata belongs in separate types.
 
 Record fields appear in exactly this order. Nested records also use constructor
 zero. `bytes` means a Plutus byte array. Supported counters and timestamps fit an
@@ -67,6 +69,8 @@ version = [identifier, features]
 connection counterparty = [client_id, connection_id, prefix]
 prefix = [key_prefix]
 channel = [state, ordering, counterparty, connection_hops, version]
+channel with upgrades = [state, ordering, counterparty, connection_hops, version,
+                         upgrade_sequence]
 channel counterparty = [port_id, channel_id]
 port registration = [module_script_hash, port_token, module_token]
 token = [policy_id, name]
@@ -77,7 +81,8 @@ token = [policy_id, name]
 versions are byte arrays. State, ordering and Boolean constructors have no
 fields. Their constructor indexes are fixed by the frozen enum declarations.
 Connection states are `Uninitialized = 0`, `Init = 1`, `TryOpen = 2` and
-`Open = 3`. Channel states add `Closed = 4`. Ordering is `None = 0`,
+`Open = 3`. Channel states add `Closed = 4`. The fresh channel-upgrade deployment
+also has `Flushing = 5` and `FlushComplete = 6`. Ordering is `None = 0`,
 `Unordered = 1` and `Ordered = 2`. Boolean values are `False = 0` and `True = 1`.
 Their CBOR tags are 121 plus the constructor index.
 
@@ -112,8 +117,9 @@ supported.
 
 Consensus fields compare exactly. Connection versions compare in record order
 and their feature arrays compare as unordered collections without changing the
-caller's value. Channel connection hops compare in order. Both formats omit
-`upgrade_sequence`, so an expected nonzero value is rejected. Packet bytes
+caller's value. Channel connection hops compare in order. The historical
+five-field channel omits `upgrade_sequence`, so an expected nonzero value is
+rejected. The six-field channel compares the sequence exactly. Packet bytes
 compare after CBOR decoding. `nextSequenceRecv` compares with ibc-go's eight-byte
 big-endian counter.
 
@@ -127,8 +133,10 @@ value. Equality cannot bypass the supported codec contract.
 
 ## Future activation and retirement
 
-This release preserves existing bytes and supplies both historical readers. It
-does not introduce an active-codec field or authorize a codec migration. A mixed
+The historical readers preserve existing bytes. The six-field channel writer
+requires a fresh schema-6 Cardano deployment. It does not authorize a migration
+of existing state or assets into that deployment. This release does not introduce
+an active-codec field or authorize a codec migration. A mixed
 root containing eight-field and nine-field client leaves remains verifiable
 because each leaf's shape is authenticated by its original bytes.
 
