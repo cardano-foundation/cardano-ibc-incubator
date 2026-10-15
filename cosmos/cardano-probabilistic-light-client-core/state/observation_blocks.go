@@ -20,6 +20,9 @@ const maxCertificatesPerStep = 128
 const maxCertificatesPerBody = 3072
 
 func observationBlockDigest(previous [32]byte, block *ProbabilisticBlock, anchor uint64) ([32]byte, error) {
+	if block == nil || block.Height == nil || block.Height.RevisionNumber != 0 {
+		return [32]byte{}, fmt.Errorf("invalid observation block height")
+	}
 	copy := *block
 	if block.Height.RevisionHeight > anchor && len(block.BlockCbor) > 0 {
 		var fields []cbor.RawMessage
@@ -215,10 +218,6 @@ func appendObservationBlock(ctx Context, store storetypes.KVStore, cs *ClientSta
 	session.Working.Slot = block.Slot
 	session.Working.Timestamp = timestamp
 	session.Working.BlockHash, err = decodeBlockHash(header.Hash().String())
-	if err != nil {
-		return err
-	}
-	session.InputDigest, err = observationBlockDigest(session.InputDigest, block, session.AnchorHeight)
 	if err != nil {
 		return err
 	}

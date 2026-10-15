@@ -85,7 +85,7 @@ func completeObservation(ctx Context, store storetypes.KVStore, cs *ClientState,
 	if session.Complete {
 		return [32]byte(session.Receipt), nil
 	}
-	if session.PendingBlock != nil || session.ProcessedBlocks != session.BlockCount || session.Anchor == nil || !session.CreditReady || session.RowsRead != session.TableRows || session.InputDigest != session.ExpectedDigest {
+	if session.PendingBlock != nil || session.ProcessedBlocks != session.BlockCount || session.Anchor == nil || !session.CreditReady || session.RowsRead != session.TableRows || session.InputDigest != observationTranscriptEnd(session.BaseReference) {
 		return [32]byte{}, fmt.Errorf("observation has not completely verified the committed evidence")
 	}
 	if session.TableRows > 0 && session.Working.Epoch != session.TableEpoch {
@@ -111,7 +111,7 @@ func completeObservation(ctx Context, store storetypes.KVStore, cs *ClientState,
 	if now <= 0 {
 		return [32]byte{}, fmt.Errorf("invalid receipt completion time")
 	}
-	receipt := &verifiedObservation{Version: VerificationPolicyVersion, Namespace: bytes.Clone(cs.StorageNamespace), Generation: cs.VerificationGeneration, Scope: session.Anchor.Scope, BaseReference: bytes.Clone(session.BaseReference), AnchorReference: anchorRef, AnchorHeight: session.Anchor.Height, AnchorHash: session.Anchor.BlockHash, SettledHistory: session.Anchor.SettledHistory, Table: session.Table, TableNonce: bytes.Clone(session.TableNonce), InputDigest: session.InputDigest, Blocks: session.BlockCount, Descendants: uint32(descendants), QualifiedPools: session.QualifiedCount, QualifiedStakeBps: bps, IsCheckpoint: session.IsCheckpoint, VerifiedAt: uint64(now)}
+	receipt := &verifiedObservation{Version: VerificationPolicyVersion, Namespace: bytes.Clone(cs.StorageNamespace), Generation: cs.VerificationGeneration, Scope: session.Anchor.Scope, BaseReference: bytes.Clone(session.BaseReference), AnchorReference: anchorRef, AnchorHeight: session.Anchor.Height, AnchorHash: session.Anchor.BlockHash, SettledHistory: session.Anchor.SettledHistory, Table: session.Table, TableNonce: bytes.Clone(session.TableNonce), InputDigest: session.ExpectedDigest, Blocks: session.BlockCount, Descendants: uint32(descendants), QualifiedPools: session.QualifiedCount, QualifiedStakeBps: bps, IsCheckpoint: session.IsCheckpoint, VerifiedAt: uint64(now)}
 	id, err := saveVerifiedObservation(store, receipt)
 	if err != nil {
 		return [32]byte{}, err

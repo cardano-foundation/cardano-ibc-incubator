@@ -56,6 +56,7 @@ const sharedSourceFiles = [
   "proto/ibc/lightclients/probabilistic/v1/tx.proto",
   "receipt_proof_test.go",
   "shared_snapshots_test.go",
+  "staged_session_safety_test.go",
   "state_machine.go",
   "storage_server.go",
   "store.go",

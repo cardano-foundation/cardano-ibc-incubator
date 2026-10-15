@@ -23,7 +23,7 @@ type operationResult struct {
 var operationResultKey = []byte("boundedOperationResult")
 
 func operationDigest(header *ProbabilisticHeader) ([32]byte, error) {
-	raw, err := cbor.Encode(header)
+	raw, err := cbor.Encode(header.ObservationChunk)
 	if err != nil {
 		return [32]byte{}, err
 	}
@@ -78,15 +78,28 @@ func (cs *ClientState) verifyObservationOperation(ctx Context, cdc StateCodec, p
 		if err != nil {
 			return err
 		}
-		if chunk.Sequence == session.Sequence && digest == session.LastStepDigest {
+		stepDigest := digest
+		if chunk.Operation == ObservationAppendStake || chunk.Operation == ObservationAppendBlocks {
+			stepDigest, err = observationSegmentCommitment(chunk, session.AnchorHeight)
+			if err != nil {
+				return err
+			}
+		}
+		if chunk.Sequence == session.Sequence && stepDigest == session.LastStepDigest {
 			// An exact retry is a no-op. It cannot renew an expiry or response deadline.
 		} else {
 			if session.Sequence == ^uint32(0) || chunk.Sequence != session.Sequence+1 || chunk.Sequence > MaxObservationSteps {
 				return fmt.Errorf("observation chunk is reordered or does not match the last accepted step")
 			}
 			now := ctx.BlockTime().UnixNano()
-			if now <= 0 || uint64(now) >= session.ExpiresAt {
+			if now <= 0 || (chunk.Operation != ObservationDiscard && uint64(now) >= session.ExpiresAt) {
 				return fmt.Errorf("observation session has expired")
+			}
+			if chunk.Operation == ObservationDiscard && uint64(now) < session.ExpiresAt {
+				return fmt.Errorf("a live observation cannot be discarded by another submitter")
+			}
+			if (chunk.Operation == ObservationAppendStake || chunk.Operation == ObservationAppendBlocks) && stepDigest != session.InputDigest {
+				return fmt.Errorf("evidence segment does not match the committed transcript")
 			}
 			switch chunk.Operation {
 			case ObservationAppendStake:
@@ -117,9 +130,12 @@ func (cs *ClientState) verifyObservationOperation(ctx Context, cdc StateCodec, p
 			if err != nil {
 				return err
 			}
+			if chunk.Operation == ObservationAppendStake || chunk.Operation == ObservationAppendBlocks {
+				copy(session.InputDigest[:], chunk.EvidenceDigest)
+			}
 			if chunk.Operation != ObservationDiscard {
 				session.Sequence = chunk.Sequence
-				session.LastStepDigest = digest
+				session.LastStepDigest = stepDigest
 				if err = pinObservationSession(shared, cs, chunk.SessionId, session); err != nil {
 					return err
 				}
