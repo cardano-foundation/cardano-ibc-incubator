@@ -1097,5 +1097,9 @@ describe('channel upgrade queries with captured query heights', () => {
       /no upgrade error/,
     );
     expect(deps.historicalTree.generateProof).not.toHaveBeenCalled();
+    deps.capturedTree.get.mockReturnValue(Buffer.from('01', 'hex'));
+    await expect(service.queryUpgrade({ port_id: 'mock', channel_id: 'channel-0' } as any)).rejects.toThrow(
+      /absence contradicts the captured commitment/,
+    );
   });
 });

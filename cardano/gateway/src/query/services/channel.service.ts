@@ -485,6 +485,9 @@ export class ChannelService {
     }
     await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
     if (!present(datum.state)) {
+      if (proofContext.tree.get(path(portId, channelId)) !== undefined) {
+        throw new GrpcInternalException('Channel upgrade absence contradicts the captured commitment, retry discovery');
+      }
       if (context === 'queryUpgrade') {
         throw new GrpcNotFoundException(gatewayGrpcError(
           GATEWAY_GRPC_ERROR_CODE.CHANNEL_UPGRADE_NOT_FOUND,
