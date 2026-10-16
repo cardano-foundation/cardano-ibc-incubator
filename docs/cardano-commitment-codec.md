@@ -74,6 +74,14 @@ channel with upgrades = [state, ordering, counterparty, connection_hops, version
 channel counterparty = [port_id, channel_id]
 port registration = [module_script_hash, port_token, module_token]
 token = [policy_id, name]
+packet lane = [port_id, channel_id, lane, lane_count, version, root,
+               commitments, receipts, acknowledgements,
+               minimum_receive_proof_height, maximum_receive_proof_height,
+               balances]
+channel upgrade = [fields, timeout, next_sequence_send]
+upgrade fields = [ordering, connection_hops, version]
+upgrade timeout = [height, timestamp]
+upgrade error receipt = [sequence, message]
 ```
 
 `proof_specs`, `upgrade_path`, `versions`, `features`, `child_order` and
@@ -90,6 +98,55 @@ Packet commitments and acknowledgements encode the underlying bytes as a CBOR
 byte string. A packet receipt is the empty byte string `0x40`. Sequence leaves
 are CBOR unsigned integers. Absence is the empty leaf value, which differs from
 the nonempty encoding `0x40` of an existing receipt.
+
+## Protected source records
+
+The schema guard starts from these records and follows their referenced types.
+This is the destination verifier interface, including datums read while advancing
+packet snapshots as well as values authenticated by commitment proofs.
+
+| Protected record | Destination reader |
+| --- | --- |
+| `HostStateDatum` | Shared core `host_state.go` reads the authenticated HostState output |
+| Tendermint `ClientState` | Shared `commitmentcodec/decode.go` reads the client commitment |
+| Tendermint `ConsensusState` | Shared `commitmentcodec/decode.go` reads the consensus commitment |
+| `ConnectionEnd` | Shared `commitmentcodec/decode.go` reads the connection commitment |
+| `Channel` | Shared `cardanodatum/channel.go` reads the channel commitment |
+| `PacketLaneDatum` | Shared `packet_lane_commitment.go` reads tracked lane continuations in the snapshot engine |
+| Channel `Upgrade` | Shared `cardanodatum/channel.go` compares the record for the v8 adapter |
+| Channel `ErrorReceipt` | Shared `cardanodatum/channel.go` compares the record for the v8 adapter |
+
+The upgrade roots include `UpgradeFields` and `UpgradeTimeout`. Existing roots
+already reach `Height`, `AuthToken`, `ModuleRegistration`, proof specifications,
+counterparties and state enums. Scalar packet and sequence leaves use the frozen
+encoders and cross-language vectors described above. The v10 adapter rejects
+channel-upgrade proofs because ibc-go v10 does not implement that protocol.
+
+Private client and channel datum wrappers, redeemers and internal upgrade state
+are not additional roots. Their presence in Go type declarations alone does not
+make them destination verifier inputs. The existing always-failing
+`include_unused_types` validator exposes the otherwise opaque packet-lane and
+upgrade types in the normal Aiken blueprint. It is not deployed. Only the listed
+roots and their references are locked.
+
+Run `aiken build --deny` in `cardano/onchain`, then
+`node scripts/ci/check-aiken-wire-schema.mjs check --base-ref origin/main` from
+the repository root. Lock version 7 extends coverage without changing an on-chain
+record layout or commitment codec. A coverage extension must retain earlier roots
+and increase the lock version.
+
+The checker separately pins the reviewed destination interface in
+`DESTINATION_WIRE_SCHEMA_FINGERPRINT`. `update --version N` regenerates the lock
+but does not update that pin. A changed constructor, field order, field type or
+field count still fails the compatibility check after a version bump. Changing
+the pin requires reviewing the destination readers and the codec or deployment
+transition. Passing this source check does not approve an on-chain deployment or
+teach an already deployed Injective module a new layout. Existing hosts need
+compatible readers or an explicitly coordinated transition before new bytes are
+used. Historical decoders and their compatibility vectors must remain available.
+Direct UTxO datums such as `PacketLaneDatum` are not versioned by the
+commitment-leaf envelope. Changing their layout needs compatible datum readers
+or a new deployment.
 
 ## Keys and semantic comparison
 
