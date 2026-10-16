@@ -240,7 +240,9 @@ message ConsensusState {
   uint64 accepted_epoch = 4;
   uint64 unique_pools_count = 5;
   uint64 unique_stake_bps = 6;
-  uint64 security_score_bps = 7;
+  // Deprecated compatibility value. Verified observations retain 10000.
+  // This is not a confidence measure. Use the settlement diagnostics instead.
+  uint64 security_score_bps = 7 [deprecated = true];
   // Canonical CBOR snapshot of live host and lane outputs at this height.
   bytes packet_state_snapshot = 8;
   // Running nonce values at this accepted block, excluding descendants.

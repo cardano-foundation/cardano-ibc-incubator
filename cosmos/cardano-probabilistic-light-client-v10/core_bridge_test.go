@@ -79,6 +79,28 @@ func fillModel(v reflect.Value, seed uint64) {
 	}
 }
 
+func TestLegacySecurityScoreWireCompatibility(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value uint64
+		wire  []byte
+	}{
+		{name: "bootstrap zero", wire: []byte{}},
+		{name: "historical value", value: 1234, wire: []byte{0x38, 0xd2, 0x09}},
+		{name: "accepted observation", value: 10_000, wire: []byte{0x38, 0x90, 0x4e}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var consensus ConsensusState
+			require.NoError(t, proto.Unmarshal(test.wire, &consensus))
+			require.Equal(t, test.value, consensus.SecurityScoreBps)
+			roundtrip := fromCoreConsensusState(toCoreConsensusState(&consensus))
+			wire, err := proto.Marshal(roundtrip)
+			require.NoError(t, err)
+			require.Equal(t, test.wire, wire)
+		})
+	}
+}
+
 func TestCoreErrorsKeepIBCIdentityCodesAndText(t *testing.T) {
 	for _, mapping := range ibcErrors {
 		require.Same(t, mapping.host, adapterError(mapping.core))

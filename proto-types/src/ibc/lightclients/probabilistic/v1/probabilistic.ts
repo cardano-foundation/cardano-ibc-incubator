@@ -321,6 +321,11 @@ export interface ConsensusState {
   accepted_epoch: bigint;
   unique_pools_count: bigint;
   unique_stake_bps: bigint;
+  /**
+   * Deprecated compatibility value. Verified observations retain 10000.
+   * This is not a confidence measure. Use the settlement diagnostics instead.
+   * @deprecated
+   */
   security_score_bps: bigint;
   /**
    * Canonical CBOR snapshot of live host and lane outputs at this height.

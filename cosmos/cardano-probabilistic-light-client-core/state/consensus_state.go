@@ -4,6 +4,10 @@ import (
 	"time"
 )
 
+// Accepted observations historically serialized this value after every
+// settlement threshold passed. Keep it for compatibility, not as a score.
+const legacyAcceptedSecurityScoreBps uint64 = 10_000
+
 func (ConsensusState) ClientType() string {
 	return ModuleName
 }

@@ -6,7 +6,4 @@ const (
 	DefaultThresholdDepth          = state.DefaultThresholdDepth
 	DefaultThresholdUniquePools    = state.DefaultThresholdUniquePools
 	DefaultThresholdUniqueStakeBps = state.DefaultThresholdUniqueStakeBps
-	DefaultDepthWeightBps          = state.DefaultDepthWeightBps
-	DefaultPoolsWeightBps          = state.DefaultPoolsWeightBps
-	DefaultStakeWeightBps          = state.DefaultStakeWeightBps
 )

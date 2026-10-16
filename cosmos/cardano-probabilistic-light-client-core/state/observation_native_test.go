@@ -200,6 +200,11 @@ func TestReceiptChallengeAndRecoveryUsePinnedHistory(t *testing.T) {
 	ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod + time.Second)
 	activation.ObservationChunk.Sequence++
 	runObservationStep(t, ctx, cdc, substitutePrivate, substitute, activation)
+	receipt, err := loadVerifiedObservation(shared, substitute, stable.Receipt)
+	require.NoError(t, err)
+	require.Equal(t, uint32(len(fixture.Fork.DescendantBlocks)), receipt.Descendants)
+	require.GreaterOrEqual(t, receipt.QualifiedPools, uint64(DefaultThresholdUniquePools))
+	require.GreaterOrEqual(t, receipt.QualifiedStakeBps, uint64(DefaultThresholdUniqueStakeBps))
 	require.NoError(t, subject.CheckSubstituteAndUpdateState(ctx, cdc, subjectPrivate, substitutePrivate, substitute))
 	subject, _ = GetClientState(subjectPrivate, cdc)
 	if subject.Status(ctx, subjectPrivate, cdc) == Frozen {

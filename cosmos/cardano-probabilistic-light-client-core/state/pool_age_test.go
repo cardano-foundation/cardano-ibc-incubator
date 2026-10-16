@@ -66,7 +66,7 @@ func TestPoolAgeMatchesGatewayCalendarAndSettlement(t *testing.T) {
 			// Neither the latest checkpoint nor descendant times can age producers.
 			cs.LatestCheckpointSlot, cs.LatestCheckpointTimestamp = math.MaxUint64, math.MaxUint64
 			header.descendantBlocks[2].timestamp = math.MaxUint64
-			pools, credit, _, err := cs.computeHeaderSecurityMetrics(header, context)
+			pools, credit, err := cs.computeHeaderSecurityMetrics(header, context)
 			require.NoError(t, err)
 			require.Equal(t, fixture.Pools, pools)
 			require.Equal(t, fixture.Credit, credit)

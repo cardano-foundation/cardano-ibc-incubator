@@ -81,13 +81,13 @@ func TestProductionSettlementMatchesGatewayFixture(t *testing.T) {
 			}}
 			header.anchorPoolRegistry = testPoolRegistry(context.Epoch, context.StakeDistribution)
 			require.NoError(t, attachPoolProduction(header, trusted))
-			count, credit, _, err := newProbabilisticTestClientState().computeHeaderSecurityMetrics(header, context)
+			count, credit, err := newProbabilisticTestClientState().computeHeaderSecurityMetrics(header, context)
 			require.NoError(t, err)
 			require.Equal(t, fixture.ExpectedPools, count)
 			require.Equal(t, fixture.ExpectedCredit, credit)
 			if fixture.ExpectedPools == 0 {
 				header.anchorPoolProduction = &PoolProductionHistory{Epoch: context.Epoch}
-				count, credit, _, err = newProbabilisticTestClientState().computeHeaderSecurityMetrics(header, context)
+				count, credit, err = newProbabilisticTestClientState().computeHeaderSecurityMetrics(header, context)
 				require.NoError(t, err)
 				require.Zero(t, count)
 				require.Zero(t, credit)

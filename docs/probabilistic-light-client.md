@@ -90,28 +90,15 @@ The block at `H` is accepted only if all configured thresholds are met:
 - threshold qualified unique stake basis points
 - rolling pool first-registration cutoff
 
-Separately, the client computes a score in basis points for observability and policy:
-
-```text
-score =
-  depth_weight_bps * min(1, depth / threshold_depth) +
-  pools_weight_bps * min(1, qualified_unique_pools / threshold_unique_pools) +
-  stake_weight_bps * min(1, qualified_unique_stake_bps / threshold_unique_stake_bps)
-```
-
-with the weighted result normalized back into a `0..10000` basis-point range.
-
-In the current implementation, the finality thresholds are embedded in the light-client module:
+The settlement thresholds are embedded in the light-client module:
 
 - `threshold_depth = 24`
 - `threshold_unique_pools = 5`
 - `threshold_unique_stake_bps = 511`
-- weights:
-  - `depth_weight_bps = 2000`
-  - `pools_weight_bps = 2000`
-  - `stake_weight_bps = 6000`
 
 These defaults are not special from a consensus perspective, but they are consensus-critical for this light client implementation. They are not supplied by the Gateway and are not serialized into `ClientState`.
+
+Acceptance requires every threshold to pass. Descendant depth, qualifying producer count and aggregate qualified stake remain the diagnostics. The serialized `security_score_bps` field and legacy event attribute are deprecated compatibility values. Newly accepted observations retain the historical value of `10000`. It is not a confidence measure and does not affect acceptance. Existing stored values are preserved. Field number `7` remains allocated and must be reserved if the field is removed in a future schema change.
 
 Pool age eligibility uses a rolling six-calendar-month minimum. A descendant producer counts toward qualified unique pools and qualified unique stake only if its authenticated first registration is strictly before the verified anchor's time minus six calendar months. The subtraction uses UTC and preserves the time of day. If the target month lacks the anchor's day, it uses that month's last day. For example, an anchor on August 31, 2026 uses February 28, 2026 as the cutoff. A registration exactly at the cutoff does not qualify. The cutoff stays fixed for all descendants of that anchor. Replay and historical challenges use that historical anchor rather than the host clock or the latest checkpoint.
 

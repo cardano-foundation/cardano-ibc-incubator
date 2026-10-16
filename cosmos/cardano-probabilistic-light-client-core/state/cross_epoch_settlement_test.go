@@ -82,7 +82,7 @@ func TestCrossEpochSettlementFreezesQualificationAndDoesNotIncreaseCredit(t *tes
 	}
 	trusted := &trustedBlockState{epoch: 7, settlementCredit: mustTestSettlementCredit(current)}
 	require.NoError(t, attachSettlementCredit(header, trusted, []*EpochContext{current, next}))
-	pools, credit, _, err := newProbabilisticTestClientState().computeHeaderSecurityMetrics(header, current)
+	pools, credit, err := newProbabilisticTestClientState().computeHeaderSecurityMetrics(header, current)
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), pools)
 	require.Equal(t, uint64(2100), credit) // 1% decrease plus unchanged 20%, not next epoch's 50%.

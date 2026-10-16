@@ -94,7 +94,7 @@ func TestSettlementCreditCountsDistinctEligibleProducersWithoutRenormalizing(t *
 				})
 				previous = hash
 			}
-			count, credit, _, err := cs.computeHeaderSecurityMetrics(header, context)
+			count, credit, err := cs.computeHeaderSecurityMetrics(header, context)
 			require.NoError(t, err)
 			require.Equal(t, uint64(poolCount), count)
 			require.Equal(t, uint64(poolCount)*50, credit)
