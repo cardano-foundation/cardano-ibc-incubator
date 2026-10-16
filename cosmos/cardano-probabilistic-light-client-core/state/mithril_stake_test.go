@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,9 +37,28 @@ type anchoredClient struct {
 	activate *ProbabilisticHeader
 }
 
+var (
+	boundaryFixtureOnce sync.Once
+	boundaryFixtureJSON []byte
+)
+
+// boundaryFixture returns a fresh copy of the native boundary fixture, which
+// takes most of a Mithril test's time to generate.
+func boundaryFixture(t *testing.T) nativeBoundaryFixture {
+	t.Helper()
+	boundaryFixtureOnce.Do(func() {
+		var err error
+		boundaryFixtureJSON, err = json.Marshal(makeNativeBoundaryFixture(t, false, 0))
+		require.NoError(t, err)
+	})
+	var fixture nativeBoundaryFixture
+	require.NoError(t, json.Unmarshal(boundaryFixtureJSON, &fixture))
+	return fixture
+}
+
 func newAnchoredClient(t *testing.T) *anchoredClient {
 	t.Helper()
-	fixture := makeNativeBoundaryFixture(t, false, 0)
+	fixture := boundaryFixture(t)
 	fixture.Client.TrustingPeriod = 7 * 24 * time.Hour
 	table := fixture.Header.NewEpochContext
 	require.NotNil(t, table)
@@ -303,7 +323,7 @@ func TestStakeRowsFollowMithrilOrder(t *testing.T) {
 // The bootstrap tool refuses a table that is not the distribution Mithril
 // certified.
 func TestBootstrapAnchorsMatchTheTrustedTable(t *testing.T) {
-	fixture := makeNativeBoundaryFixture(t, false, 0)
+	fixture := boundaryFixture(t)
 	network, err := mithriltest.NewNetwork(100, 200, 300, 400, 500)
 	require.NoError(t, err)
 	current := epochContextByEpoch(fixture.Client.EpochContexts, fixture.Client.CurrentEpoch)

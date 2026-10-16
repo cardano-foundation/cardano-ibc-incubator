@@ -179,7 +179,7 @@ func TestRecoveryKeepsTheMithrilTrustConfiguration(t *testing.T) {
 // A recovered client keeps the substitute's certified next epoch, so its
 // rollover activates without a response window.
 func TestRecoveredClientRollsOverOnCarriedCertification(t *testing.T) {
-	fixture := makeNativeBoundaryFixture(t, false, 0)
+	fixture := boundaryFixture(t)
 	fixture.Client.TrustingPeriod = 7 * 24 * time.Hour
 	table := fixture.Header.NewEpochContext
 	network, err := mithriltest.NewNetwork(100, 200, 300, 400, 500)
