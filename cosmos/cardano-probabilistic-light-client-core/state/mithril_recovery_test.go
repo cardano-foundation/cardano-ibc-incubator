@@ -220,3 +220,59 @@ func TestRecoveredClientRollsOverOnCarriedCertification(t *testing.T) {
 	require.NoError(t, a.activateAt(t, proposedAt.Add(time.Second)))
 	require.NotEqual(t, a.base, a.client.CheckpointReference)
 }
+
+// A recovered client inherits the substitute's accepted roots, so a late
+// certificate can still disprove a table the replacement's history relies on.
+func TestRecoveryCarriesAcceptedStake(t *testing.T) {
+	for _, contradicting := range []bool{false, true} {
+		t.Run(map[bool]string{false: "agreeing", true: "contradicting"}[contradicting], func(t *testing.T) {
+			substitute := newAnchoredClient(t)
+			// The subject trusted an earlier checkpoint of the same chain.
+			earlier := *substitute.fixture.Client
+			earlierConsensus := *substitute.fixture.Consensus
+			height := NewHeight(0, earlier.LatestHeight.RevisionHeight-10)
+			earlier.LatestHeight = height
+			setTestCheckpoint(t, &earlier, height, testBlockHash("accepted-recovery-subject"), earlier.CurrentEpoch, earlier.LatestCheckpointSlot-10)
+			earlierConsensus.Timestamp = earlier.LatestCheckpointTimestamp
+			earlierConsensus.AcceptedBlockHash = earlier.LatestCheckpointBlockHash
+			setTestPacketSnapshot(t, &earlierConsensus, height.RevisionHeight)
+			private := dbadapter.Store{DB: dbm.NewMemDB()}
+			subject, _, err := InitializeFromTrustedCheckpoint(substitute.ctx, substitute.cdc, private, &earlier, &earlierConsensus, anchorToLocalMithril(t, &earlier, substitute.network))
+			require.NoError(t, err)
+
+			// The substitute accepts epoch 8's table under the response window
+			// and commits a checkpoint in epoch 8.
+			epoch := substitute.table.Epoch
+			substitute.stage(t)
+			proposedAt := substitute.ctx.Time
+			require.NoError(t, substitute.activateAt(t, proposedAt))
+			require.NoError(t, substitute.activateAt(t, proposedAt.Add(SharedSnapshotChallengePeriod+time.Second)))
+			require.Equal(t, epoch, substitute.client.CurrentEpoch)
+			require.Equal(t, epoch-1, substitute.client.MithrilEpoch)
+
+			ctx, cdc := substitute.ctx, substitute.cdc
+			subject.UpdateStateOnMisbehaviour(ctx, cdc, private, nil)
+			subject, _ = GetClientState(private, cdc)
+			require.NoError(t, subject.CheckSubstituteAndUpdateState(ctx, cdc, private, substitute.private, substitute.client))
+			recovered, _ := GetClientState(private, cdc)
+			// The substitute's newer checkpoint needs bounded counter checks.
+			for i := 0; i < 8 && recovered.Status(ctx, private, cdc) == Frozen; i++ {
+				require.NoError(t, recovered.ContinueMaintenance(ctx, cdc, private, ObservationContinueRecovery))
+				recovered, _ = GetClientState(private, cdc)
+			}
+			require.Equal(t, Active, recovered.Status(ctx, private, cdc))
+			require.Equal(t, subject.VerificationGeneration+1, recovered.VerificationGeneration)
+			require.Equal(t, tableRoot(t, substitute.table), string(private.Get(acceptedStakeRootKey(recovered.VerificationGeneration, epoch))))
+
+			root := tableRoot(t, substitute.table)
+			if contradicting {
+				root = strings.Repeat("ee", 32)
+			}
+			certificate, err := substitute.network.StakeCertificate(recovered.MithrilEpoch, substitute.network, root)
+			require.NoError(t, err)
+			msg := &MithrilStakeCertificates{Certificates: []string{certificate}}
+			require.NoError(t, recovered.VerifyClientMessage(ctx, cdc, private, msg))
+			require.Equal(t, contradicting, recovered.CheckForMisbehaviour(ctx, cdc, private, msg))
+		})
+	}
+}

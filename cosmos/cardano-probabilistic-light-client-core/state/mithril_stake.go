@@ -24,12 +24,26 @@ const (
 	MithrilCertificateVerificationGas = uint64(2_000_000)
 )
 
-var mithrilStakeRootPrefix = []byte("mithrilStakeRoot/")
+var (
+	mithrilStakeRootPrefix  = []byte("mithrilStakeRoot/")
+	acceptedStakeRootPrefix = []byte("acceptedStakeRoot/")
+)
 
 // Certified roots belong to the verification generation whose Mithril state
 // verified them. Recovery starts a generation with the substitute's state.
 func mithrilStakeRootKey(generation, epoch uint64) []byte {
 	key := binary.BigEndian.AppendUint64(bytes.Clone(mithrilStakeRootPrefix), generation)
+	return binary.BigEndian.AppendUint64(key, epoch)
+}
+
+// An accepted root is the Mithril root of a table a generation accepted under
+// the response window, before Mithril certified its epoch. A late certificate
+// is checked against it, so it is kept apart from the activated table, which
+// retention cleanup deletes. It lives until a certificate for its epoch is
+// applied, or with its generation if Mithril never certifies that epoch.
+// Recovery carries the substitute's accepted roots into the new generation.
+func acceptedStakeRootKey(generation, epoch uint64) []byte {
+	key := binary.BigEndian.AppendUint64(bytes.Clone(acceptedStakeRootPrefix), generation)
 	return binary.BigEndian.AppendUint64(key, epoch)
 }
 
@@ -39,9 +53,13 @@ type certifiedStakeRoot struct {
 	Root  string
 }
 
-// maxRecoveredMithrilRoots bounds the roots a recovery carries. Mithril
-// certifies stake at most two epochs ahead of a current checkpoint.
+// maxRecoveredMithrilRoots bounds the certified roots a recovery carries.
+// Mithril certifies stake at most two epochs ahead of a current checkpoint.
 const maxRecoveredMithrilRoots = 8
+
+// maxRecoveredAcceptedRoots bounds the accepted roots a recovery carries: one
+// for each epoch the substitute's anchor trails its checkpoint.
+const maxRecoveredAcceptedRoots = 64
 
 func (cs *ClientState) mithrilAnchor() (mithril.Anchor, bool) {
 	if cs.MithrilEpoch == 0 && cs.MithrilAggregateVerificationKey == "" && cs.MithrilProtocolParametersHash == "" {
@@ -126,6 +144,9 @@ func (cs *ClientState) applyMithrilStakeCertificates(ctx Context, cdc StateCodec
 	}
 	for _, distribution := range distributions {
 		clientStore.Set(mithrilStakeRootKey(cs.VerificationGeneration, distribution.LeaderEpoch()), []byte(distribution.MerkleRoot))
+		// CheckForMisbehaviour found any accepted table for this epoch equal
+		// to the certified one, which now supersedes it.
+		clientStore.Delete(acceptedStakeRootKey(cs.VerificationGeneration, distribution.LeaderEpoch()))
 		ctx.emitEvent("mithril_stake_certified",
 			newEventAttribute("leader_epoch", strconv.FormatUint(distribution.LeaderEpoch(), 10)),
 			newEventAttribute("merkle_root", distribution.MerkleRoot),
@@ -161,16 +182,23 @@ func requireCertifiedStake(clientStore storetypes.KVStore, generation, epoch uin
 // relayer re-establishes any it had beyond the substitute's anchor by
 // submitting those certificates again. Roots both clients certified for the
 // same epoch describe the same Cardano stake, so they must agree.
-func recoveredMithrilRoots(subject *ClientState, subjectStore storetypes.KVStore, substitute *ClientState, substituteStore storetypes.KVStore, checkpointEpoch uint64) ([]certifiedStakeRoot, error) {
+//
+// It also returns the substitute's accepted roots for epochs after its anchor
+// up to its checkpoint. The replacement's history relies on those tables, so
+// a late certificate must still be able to disprove them.
+func recoveredMithrilRoots(subject *ClientState, subjectStore storetypes.KVStore, substitute *ClientState, substituteStore storetypes.KVStore, checkpointEpoch uint64) ([]certifiedStakeRoot, []certifiedStakeRoot, error) {
 	anchor, ok := substitute.mithrilAnchor()
 	if !ok {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if held, ok := subject.mithrilAnchor(); ok && held.Epoch == anchor.Epoch && held != anchor {
-		return nil, fmt.Errorf("subject and substitute hold different Mithril anchors for epoch %d", anchor.Epoch)
+		return nil, nil, fmt.Errorf("subject and substitute hold different Mithril anchors for epoch %d", anchor.Epoch)
 	}
 	if anchor.Epoch > checkpointEpoch && anchor.Epoch-checkpointEpoch > maxRecoveredMithrilRoots {
-		return nil, fmt.Errorf("substitute's Mithril anchor is more than %d epochs ahead of its checkpoint", maxRecoveredMithrilRoots)
+		return nil, nil, fmt.Errorf("substitute's Mithril anchor is more than %d epochs ahead of its checkpoint", maxRecoveredMithrilRoots)
+	}
+	if checkpointEpoch > anchor.Epoch && checkpointEpoch-anchor.Epoch > maxRecoveredAcceptedRoots {
+		return nil, nil, fmt.Errorf("substitute's Mithril anchor is more than %d epochs behind its checkpoint", maxRecoveredAcceptedRoots)
 	}
 	var roots []certifiedStakeRoot
 	for epoch := checkpointEpoch + 1; epoch <= anchor.Epoch; epoch++ {
@@ -179,37 +207,43 @@ func recoveredMithrilRoots(subject *ClientState, subjectStore storetypes.KVStore
 			continue
 		}
 		if held := subjectStore.Get(mithrilStakeRootKey(subject.VerificationGeneration, epoch)); held != nil && !bytes.Equal(held, root) {
-			return nil, fmt.Errorf("subject and substitute certified different epoch %d stake distributions", epoch)
+			return nil, nil, fmt.Errorf("subject and substitute certified different epoch %d stake distributions", epoch)
 		}
 		roots = append(roots, certifiedStakeRoot{Epoch: epoch, Root: string(root)})
 	}
-	return roots, nil
+	var accepted []certifiedStakeRoot
+	for epoch := anchor.Epoch + 1; epoch <= checkpointEpoch; epoch++ {
+		if root := substituteStore.Get(acceptedStakeRootKey(substitute.VerificationGeneration, epoch)); root != nil {
+			accepted = append(accepted, certifiedStakeRoot{Epoch: epoch, Root: string(root)})
+		}
+	}
+	return roots, accepted, nil
 }
 
 // mithrilStakeConflict reports whether verified certificates certify a stake
-// distribution that differs from an epoch table the client already activated.
-// That table is then proven wrong, so the certificates are misbehaviour.
-func (cs ClientState) mithrilStakeConflict(ctx Context, msg *MithrilStakeCertificates) bool {
+// distribution that differs from a table the client accepted under the
+// response window. That table is then proven wrong, so the certificates are
+// misbehaviour. The accepted root outlives the activated table's retention.
+func (cs ClientState) mithrilStakeConflict(clientStore storetypes.KVStore, msg *MithrilStakeCertificates) bool {
 	_, distributions, err := cs.extendMithrilAnchor(msg)
 	if err != nil {
 		return false
 	}
-	shared, err := ctx.snapshotStore()
-	if err != nil {
-		return false
-	}
 	for _, distribution := range distributions {
-		raw := shared.Get(activatedEpochKey(&cs, distribution.LeaderEpoch()))
-		if len(raw) == 0 {
-			continue
-		}
-		var table activatedEpochTable
-		if err := decodeBoundedRecord(raw, &table); err != nil {
-			return false
-		}
-		if table.MithrilRoot != distribution.MerkleRoot {
+		accepted := clientStore.Get(acceptedStakeRootKey(cs.VerificationGeneration, distribution.LeaderEpoch()))
+		if accepted != nil && string(accepted) != distribution.MerkleRoot {
 			return true
 		}
 	}
 	return false
+}
+
+// recordAcceptedStake keeps the Mithril root of a table activated before
+// Mithril certified its epoch.
+func recordAcceptedStake(clientStore storetypes.KVStore, generation, epoch uint64, root string) error {
+	if root == "" {
+		return fmt.Errorf("accepted epoch %d table has no Mithril root", epoch)
+	}
+	clientStore.Set(acceptedStakeRootKey(generation, epoch), []byte(root))
+	return nil
 }
