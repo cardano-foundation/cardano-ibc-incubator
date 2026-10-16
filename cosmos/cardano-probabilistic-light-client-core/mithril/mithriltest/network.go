@@ -10,13 +10,14 @@ import (
 
 	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/mithril"
 	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/mithril/crypto"
+	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/mithril/mithriltest/signing"
 )
 
 // Network is one epoch's Mithril signers.
 type Network struct {
 	params  crypto.StmParameters
-	signers []*crypto.StmSigner
-	clerk   *crypto.StmClerk
+	signers []*signing.StmSigner
+	clerk   *signing.StmClerk
 	// AggregateVerificationKey is hex-encoded JSON, as Mithril publishes it.
 	AggregateVerificationKey string
 	ProtocolParametersHash   string
@@ -25,21 +26,21 @@ type Network struct {
 // NewNetwork registers one signer per stake with small test parameters.
 func NewNetwork(stakes ...uint64) (*Network, error) {
 	params := crypto.StmParameters{K: 5, M: 50, PhiF: 0.8}
-	registration := &crypto.KeyReg{Keys: map[*crypto.VerificationKey]crypto.Stake{}}
-	initializers := make([]*crypto.StmInitializer, 0, len(stakes))
+	registration := &signing.KeyReg{Keys: map[*crypto.VerificationKey]crypto.Stake{}}
+	initializers := make([]*signing.StmInitializer, 0, len(stakes))
 	for _, stake := range stakes {
-		initializer, err := new(crypto.StmInitializer).Setup(&params, crypto.Stake(stake))
+		initializer, err := new(signing.StmInitializer).Setup(&params, crypto.Stake(stake))
 		if err != nil {
 			return nil, err
 		}
-		registration.Keys[initializer.Pk.VK] = crypto.Stake(stake)
+		registration.Keys[initializer.Pk] = crypto.Stake(stake)
 		initializers = append(initializers, initializer)
 	}
 	closed, err := registration.Close()
 	if err != nil {
 		return nil, err
 	}
-	network := &Network{params: params, clerk: crypto.FromRegistration(&params, closed)}
+	network := &Network{params: params, clerk: signing.FromRegistration(&params, closed)}
 	for _, initializer := range initializers {
 		signer, err := initializer.NewSigner(closed)
 		if err != nil {

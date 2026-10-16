@@ -582,11 +582,24 @@ function assertThinAdapters() {
   }
 }
 
+function assertMithrilAuditBoundary() {
+  for (const dir of [coreDir, v8Dir, v10Dir]) {
+    for (const file of listFiles(dir, f => f.endsWith(".go"))) {
+      if (file.endsWith("_test.go")) continue;
+      if (dir === coreDir && file.startsWith("mithril/mithriltest/")) continue;
+      if (/"github\.com\/cardano-foundation\/cardano-ibc-incubator\/cosmos\/cardano-probabilistic-light-client-core\/mithril\/mithriltest(?:\/[^"\n]*)?"/.test(read(path.join(dir, file)))) {
+        throw new Error(`${path.relative(root, path.join(dir, file))} imports Mithril certificate-generation support into production verification`);
+      }
+    }
+  }
+}
+
 try {
   assertModuleTargets();
   assertSharedCoreExtraction();
   assertFileInventory();
   assertThinAdapters();
+  assertMithrilAuditBoundary();
   assertPublicIdentity();
   assertCoreSourceParity();
   assertAdapterBoundaries();

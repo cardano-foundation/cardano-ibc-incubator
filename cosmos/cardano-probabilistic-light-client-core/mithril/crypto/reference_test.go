@@ -2,6 +2,7 @@ package crypto
 
 import (
 	"compress/gzip"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"math"
@@ -137,6 +138,28 @@ func TestUpstreamAggregatesVerifyAndLostIndicesAreRejected(t *testing.T) {
 			require.Greater(t, len(signature.Indexes), len(party.Sig.Indexes))
 			forged.Signatures[0] = StmSigRegParty{Sig: &signature, RegParty: party.RegParty}
 			require.ErrorContains(t, forged.Verify(message, &avk, params), "lottery check failed")
+		})
+	}
+}
+
+func TestCommitmentMessageEncodingMatchesUpstream(t *testing.T) {
+	for _, reference := range loadReferenceCases(t) {
+		t.Run(reference.Name, func(t *testing.T) {
+			var key StmAggrVerificationKey
+			decodeHexJSON(t, reference.AggregateVerificationKey, &key)
+			var aggregate StmAggrSig
+			decodeHexJSON(t, reference.Aggregate.MultiSignature, &aggregate)
+			message, err := hex.DecodeString(reference.Message)
+			require.NoError(t, err)
+			signatures, keys, err := aggregate.PreliminaryVerify(message, &key, &StmParameters{K: reference.Params.K, M: reference.Params.M, PhiF: reference.Params.PhiF})
+			require.NoError(t, err)
+			// Check the upstream BLS signature directly so lottery or Merkle
+			// rejection cannot hide a different message encoding.
+			signed := append(append([]byte(nil), message...), key.MTCommitment.Root...)
+			require.NoError(t, new(Signature).VerifyAggregate(signed, keys, signatures))
+			withCount := binary.BigEndian.AppendUint64(append([]byte(nil), message...), key.MTCommitment.NrLeaves)
+			withCount = append(withCount, key.MTCommitment.Root...)
+			require.Error(t, new(Signature).VerifyAggregate(withCount, keys, signatures))
 		})
 	}
 }

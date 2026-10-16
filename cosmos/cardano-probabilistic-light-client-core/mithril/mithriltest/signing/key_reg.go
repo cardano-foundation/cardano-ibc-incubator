@@ -1,11 +1,9 @@
-package crypto
+package signing
 
 import (
 	"fmt"
 	"sync"
 )
-
-type RegParty = MTLeaf
 
 type KeyReg struct {
 	mu   sync.RWMutex
@@ -18,8 +16,7 @@ type ClosedKeyReg struct {
 	MerkleTree *MerkleTree
 }
 
-// Finalize the key registration.
-// This function disables `KeyReg::register`, consumes the instance of `self`, and returns a `ClosedKeyReg`.
+// Close builds the local registration and Merkle tree used by the signers.
 func (kr *KeyReg) Close() (*ClosedKeyReg, error) {
 	kr.mu.Lock()
 	defer kr.mu.Unlock()
@@ -33,11 +30,10 @@ func (kr *KeyReg) Close() (*ClosedKeyReg, error) {
 			return nil, fmt.Errorf("total stake overflow")
 		}
 		totalStake = newStake
-		regParties = append(regParties, RegParty{vk, stake})
+		regParties = append(regParties, RegParty{VerificationKey: vk, Stake: stake})
 	}
 
-	// Sort regParties if necessary. Go does not have a sort functionality for custom structs out-of-the-box like Rust.
-	// You would need to implement sort.Interface or use sort.Slice with a custom less function.
+	// The same local registration order is used by the signers and the tree.
 
 	merkleTree, err := Create(regParties)
 	if err != nil {
@@ -47,6 +43,6 @@ func (kr *KeyReg) Close() (*ClosedKeyReg, error) {
 	return &ClosedKeyReg{
 		RegParties: regParties,
 		TotalStake: totalStake,
-		MerkleTree: merkleTree, // Assuming a constructor function for MerkleTree
+		MerkleTree: merkleTree,
 	}, nil
 }
