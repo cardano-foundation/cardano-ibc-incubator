@@ -46,6 +46,7 @@ const sharedSourceFiles = [
   "keys.go",
   "misbehavour.go",
   "mithril_bootstrap_test.go",
+  "mithril_epoch_release_test.go",
   "mithril_stake.go",
   "mithril_stake_test.go",
   "packet_state.go",

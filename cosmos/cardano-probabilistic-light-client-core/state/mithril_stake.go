@@ -8,6 +8,7 @@ import (
 
 	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
+	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/mithril"
 )
 
@@ -143,6 +144,18 @@ func (cs *ClientState) applyMithrilStakeCertificates(ctx Context, cdc StateCodec
 		panic(err)
 	}
 	for _, distribution := range distributions {
+		accepted := clientStore.Get(acceptedStakeRootKey(cs.VerificationGeneration, distribution.LeaderEpoch()))
+		if accepted != nil && string(accepted) != distribution.MerkleRoot {
+			// The admission decorator calls UpdateState without checking for
+			// misbehaviour. Keep contradictory certificates admissible without
+			// changing state. The keeper's committed path performs the freeze.
+			return nil
+		}
+	}
+	for _, distribution := range distributions {
+		if err := cs.releaseCertifiedEpoch(ctx, clientStore, distribution.LeaderEpoch(), distribution.MerkleRoot); err != nil {
+			panic(err)
+		}
 		clientStore.Set(mithrilStakeRootKey(cs.VerificationGeneration, distribution.LeaderEpoch()), []byte(distribution.MerkleRoot))
 		// CheckForMisbehaviour found any accepted table for this epoch equal
 		// to the certified one, which now supersedes it.
@@ -158,6 +171,69 @@ func (cs *ClientState) applyMithrilStakeCertificates(ctx Context, cdc StateCodec
 	if err := writeClientState(ctx, cdc, clientStore, cs); err != nil {
 		panic(err)
 	}
+	return nil
+}
+
+// A matching certificate can replace the remaining stake challenge wait with
+// the certificate transaction's cutoff. Receipts keep their original history.
+// Recovery and host resumption have independent waits that this cannot shorten.
+func (cs *ClientState) releaseCertifiedEpoch(ctx Context, private storetypes.KVStore, epoch uint64, root string) error {
+	accepted := private.Get(acceptedStakeRootKey(cs.VerificationGeneration, epoch))
+	if accepted == nil {
+		return nil
+	}
+	if string(accepted) != root {
+		return fmt.Errorf("Mithril certificate contradicts the accepted epoch %d table", epoch)
+	}
+	now := ctx.BlockTime().UnixNano()
+	if now <= 0 {
+		return fmt.Errorf("Mithril certification requires a positive host time")
+	}
+	challenge := cs.epochChallenge(epoch)
+	if challenge == nil || challenge.UsableAfterUnixNs <= uint64(now) {
+		return nil
+	}
+	shared, err := ctx.snapshotStore()
+	if err != nil {
+		return err
+	}
+	key := activatedEpochKey(cs, epoch)
+	raw := shared.Get(key)
+	if len(raw) == 0 {
+		// A recovery carries accepted roots for later contradiction checks,
+		// but its new generation does not inherit stake proposals.
+		return nil
+	}
+	if len(raw) > MaxClientBytes {
+		return fmt.Errorf("oversized epoch proposal")
+	}
+	var proposal activatedEpochTable
+	if err := decodeBoundedRecord(raw, &proposal); err != nil {
+		return err
+	}
+	if proposal.Table.Epoch != epoch || proposal.MithrilRoot != root || proposal.Deadline != challenge.UsableAfterUnixNs {
+		return fmt.Errorf("certified epoch %d proposal disagrees with the pending table", epoch)
+	}
+	deadlineKey := proofEpochDeadlineKey(cs, epoch)
+	indexed := shared.Get(deadlineKey)
+	if len(indexed) != 8 || binary.BigEndian.Uint64(indexed) != proposal.Deadline {
+		return fmt.Errorf("certified epoch %d has an inconsistent proof deadline", epoch)
+	}
+	proposal.Deadline = uint64(now)
+	raw, err = cbor.Encode(proposal)
+	if err != nil {
+		return err
+	}
+	shared.Set(key, raw)
+	// Only verified certification of this exact installed table may shorten
+	// the index. Ordinary writes still enforce deadline immutability.
+	shared.Set(deadlineKey, binary.BigEndian.AppendUint64(nil, uint64(now)))
+	challenge.UsableAfterUnixNs = uint64(now)
+	ctx.emitEvent("probabilistic_epoch_context_certified",
+		newEventAttribute("epoch", strconv.FormatUint(epoch, 10)),
+		newEventAttribute("usable_after_unix_ns", strconv.FormatInt(now, 10)),
+		newEventAttribute("receipt_id", fmt.Sprintf("%x", proposal.Receipt)),
+	)
 	return nil
 }
 
