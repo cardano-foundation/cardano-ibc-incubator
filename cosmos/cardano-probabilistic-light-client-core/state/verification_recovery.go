@@ -261,7 +261,7 @@ func (cs *ClientState) ContinueMaintenance(ctx Context, cdc StateCodec, private 
 	case ObservationContinueRecovery:
 		err = cs.continueRecovery(ctx, cdc, private, shared)
 	case ObservationCleanup:
-		if err := cleanupRetainedVerification(ctx, shared, private, cs); err != nil {
+		if err := cleanupRetainedVerification(ctx, cdc, shared, private, cs); err != nil {
 			return err
 		}
 		scope, scopeErr := verificationScope(cs)
