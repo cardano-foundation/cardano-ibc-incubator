@@ -7,7 +7,7 @@ values, modeled networks, and clean-state requirement.
 `caribic` is a local CLI used to bootstrap, run, and validate the Cardano <-> IBC bridge demo environment in this repo. For those familiar with Hermes, caribic cli also wraps that interface with equivalent commands that allow manual interaction with the relayer. The expected workflow is that keys would be addded to hermes via caribic, i.e, either you can enter via I/O when prompted, or refer to a mnemonic file as prompted, but there is no need to manually configure hermes. 
 
 > [!NOTE]
-> `caribic start network` also starts a Mithril aggregator and two Mithril signers for the local network. Public networks use the public Mithril aggregators and run no Mithril containers.
+> `caribic start network` also starts a Mithril aggregator and two Mithril signers for the local network. A new network's clock is fast-forwarded through its first five epochs, so Mithril has certified the stake a client bootstraps from when startup returns. Public networks use the public Mithril aggregators and run no Mithril containers.
 
 ## Build and run
 

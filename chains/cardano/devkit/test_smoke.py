@@ -60,6 +60,22 @@ class MithrilTests(unittest.TestCase):
             responses["http://aggregator/certificates"] = [{"hash": "genesis"}]
             self.assertEqual(verify_mithril(self.runtime(3))["certificates"], 1)
 
+    def test_from_epoch_five_a_client_can_bootstrap(self):
+        artifact = "http://aggregator/artifact/cardano-stake-distribution/epoch/"
+        responses = {"http://aggregator/signers/registered/latest": {"registrations": [{}, {}]},
+                     "http://aggregator/certificates": [{"hash": "genesis"}], artifact + "3": {"epoch": 3}}
+
+        def http(url):
+            if url not in responses:
+                raise OSError("404 Not Found")
+            return responses[url]
+
+        with patch("smoke.http", side_effect=http):
+            with self.assertRaisesRegex(RuntimeError, "not certified the epoch 4 stake distribution"):
+                verify_mithril(self.runtime(6))
+            responses[artifact + "4"] = {"epoch": 4}
+            self.assertEqual(verify_mithril(self.runtime(6))["certified_stake_epochs"], [3, 4])
+
 
 class LedgerRetentionTests(unittest.TestCase):
     def test_exported_byron_and_shelley_both_require_the_full_query_window(self):

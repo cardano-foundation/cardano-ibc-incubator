@@ -23,6 +23,8 @@ def configure_relative_clock(node, directory, offset):
 class MigrationRuntime(profile.Runtime):
     def __init__(self, root, project, offset, epoch_length, ogmios_port, kupo_port, existing=False, host_data=False, pool_aging=False):
         super().__init__(root)
+        # The rehearsal steps its own clock file, so it skips the Mithril fast-forward.
+        self.mithril_fast_forward = False
         self.project = project
         self.compose_file = root / 'compose.json'
         if existing:

@@ -7,6 +7,11 @@ x-node: &node
   entrypoint: [sh, /profile/entrypoint.sh]
   environment: &node-environment
     DEVKIT_CLOCK_OFFSET: ${DEVKIT_CLOCK_OFFSET:-+0s}
+    # The nodes share one clock file, so a new network's clock can be stepped
+    # forward through the epochs Mithril needs. Producers also connect to
+    # each other directly, so a step can't leave one on a fork.
+    DEVKIT_CLOCK_FILE: /devkit-clock/clock.rc
+    DEVKIT_FULL_MESH: "true"
     DEVKIT_PEER: "true"
     yaci_store_enabled: "false"
     ogmios_enabled: "false"
@@ -78,6 +83,7 @@ services:
       - "127.0.0.1:${DEVKIT_KUPO_PORT:-11442}:1442"
     volumes:
       - cluster-data:/clusters
+      - ${DEVKIT_CLOCK_DIR:?Missing DevKit clock directory}:/devkit-clock:ro
       - genesis-data:/export
       - bootstrap-data:/bootstrap:ro
   producer-2:
@@ -90,6 +96,7 @@ services:
         aliases: [producer-2.local]
     volumes:
       - producer-2-data:/clusters
+      - ${DEVKIT_CLOCK_DIR:?Missing DevKit clock directory}:/devkit-clock:ro
       - bootstrap-data:/bootstrap:ro
   producer-3:
     <<: *node
@@ -101,6 +108,7 @@ services:
         aliases: [producer-3.local]
     volumes:
       - producer-3-data:/clusters
+      - ${DEVKIT_CLOCK_DIR:?Missing DevKit clock directory}:/devkit-clock:ro
       - bootstrap-data:/bootstrap:ro
   producer-4:
     <<: *node
@@ -112,6 +120,7 @@ services:
         aliases: [producer-4.local]
     volumes:
       - producer-4-data:/clusters
+      - ${DEVKIT_CLOCK_DIR:?Missing DevKit clock directory}:/devkit-clock:ro
       - bootstrap-data:/bootstrap:ro
   producer-5:
     <<: *node
@@ -123,6 +132,7 @@ services:
         aliases: [producer-5.local]
     volumes:
       - producer-5-data:/clusters
+      - ${DEVKIT_CLOCK_DIR:?Missing DevKit clock directory}:/devkit-clock:ro
       - bootstrap-data:/bootstrap:ro
   nonce:
     <<: *node
