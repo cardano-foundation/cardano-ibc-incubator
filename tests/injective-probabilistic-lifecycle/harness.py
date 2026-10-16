@@ -111,9 +111,9 @@ class Node:
         ibc = genesis["app_state"]["ibc"]["client_genesis"]
         if "*" not in ibc["params"]["allowed_clients"]:
             ibc["params"]["allowed_clients"].append("08-cardano-probabilistic")
-        ibc["clients"] = bootstrap.get("clients", [bootstrap["client"]])
-        ibc["clients_consensus"] = bootstrap.get("consensuses", [bootstrap["consensus"]])
-        ibc["clients_metadata"] = bootstrap.get("metadatas", [bootstrap["metadata"]])
+        ibc["clients"] = bootstrap["clients"] if "clients" in bootstrap else [bootstrap["client"]]
+        ibc["clients_consensus"] = bootstrap["consensuses"] if "consensuses" in bootstrap else [bootstrap["consensus"]]
+        ibc["clients_metadata"] = bootstrap["metadatas"] if "metadatas" in bootstrap else [bootstrap["metadata"]]
         ibc["next_client_sequence"] = str(len(ibc["clients"]))
         # The capacity runs do not need governance. Lifecycle uses the captured public period.
         if "gov" in genesis["app_state"]:

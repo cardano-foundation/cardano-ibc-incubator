@@ -1,0 +1,24 @@
+# syntax=docker/dockerfile:1
+ARG INJECTIVE_BUILDER_IMAGE=local/injective-bounded-verification-builder
+ARG INJECTIVE_IMAGE=local/injective-bounded-verification
+FROM ${INJECTIVE_BUILDER_IMAGE} AS builder
+COPY injective-source.tar /tmp/injective-source.tar
+RUN rm -rf /injective && mkdir /injective && \
+    tar -xf /tmp/injective-source.tar -C /injective && rm /tmp/injective-source.tar
+WORKDIR /injective
+COPY cosmos /readiness/cosmos
+COPY patch.sh /readiness/patch.sh
+RUN sh /readiness/patch.sh /injective /readiness
+COPY probe /injective/injective-chain/modules/cardano-probabilistic-light-client/readinessprobe
+RUN find injective-chain/modules/cardano-probabilistic-light-client/readinessprobe -name '*.go' \
+    -exec sed -i 's#github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core#github.com/InjectiveLabs/injective-core/injective-chain/modules/cardano-probabilistic-light-client/internal/core#g' {} +
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    GOTOOLCHAIN=go1.26.9 GOWORK=off GOMEMLIMIT=2GiB go mod tidy && \
+    GOTOOLCHAIN=go1.26.9 GOWORK=off GOMEMLIMIT=2GiB go build -p 2 -mod=readonly -o /usr/local/bin/injectived ./cmd/injectived && \
+    GOTOOLCHAIN=go1.26.9 GOWORK=off GOMEMLIMIT=2GiB go build -p 2 -mod=readonly -o /usr/local/bin/cardano-release-probe ./injective-chain/modules/cardano-probabilistic-light-client/readinessprobe
+FROM ${INJECTIVE_IMAGE} AS node
+COPY --from=builder /usr/local/bin/injectived /usr/local/bin/injectived
+FROM node AS probe
+COPY --from=builder /usr/local/bin/cardano-release-probe /usr/local/bin/cardano-release-probe
+ENTRYPOINT ["cardano-release-probe"]

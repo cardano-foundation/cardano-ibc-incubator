@@ -1,0 +1,34 @@
+{
+  "purpose": "Local integration rehearsal. This is not an approved production parameter manifest.",
+  "injective_tag": "v1.18.0-1770939123",
+  "injective_commit": "6632cef271f7482f39f9c5d4b085adc1370e8b7e",
+  "comet_clock": "unmodified",
+  "destination": {
+    "chain_id": "injective-777",
+    "transaction_gas_limit": 75000000,
+    "block_gas_limit": 150000000,
+    "block_max_bytes": 4194304,
+    "hermes_gas_multiplier": 1.8,
+    "hermes_max_transaction_bytes": 900000,
+    "hermes_event_source": { "mode": "pull", "interval": "100ms" },
+    "expedited_governance_seconds": 300
+  },
+  "source": {
+    "history": "locally signed synthetic blocks with fixture transactions",
+    "mithril": "local test signers. No public-network trust anchor is used.",
+    "slot_seconds": 1,
+    "epoch_slots": 20000,
+    "active_slot_coefficient_numerator": 1,
+    "active_slot_coefficient_denominator": 2,
+    "stake_rows": 13,
+    "extra_retained_certificate_counters": 40,
+    "initial_checkpoint_age_hours": 36,
+    "trusting_period_hours": 48
+  },
+  "unverified_production_gates": [
+    "The actual deployment release candidate and approved production parameters",
+    "A real Cardano ledger and history index with the production Mithril trust anchor",
+    "Natural expiry of an uncertified allocation after six hours of credited host progress",
+    "A live binary upgrade across different application versions"
+  ]
+}
