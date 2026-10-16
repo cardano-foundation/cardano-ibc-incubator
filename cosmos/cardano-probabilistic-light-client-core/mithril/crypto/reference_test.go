@@ -141,6 +141,58 @@ func TestUpstreamAggregatesVerifyAndLostIndicesAreRejected(t *testing.T) {
 	}
 }
 
+// A repeated index is rejected before any lottery evaluation, so repeating a
+// winning index can't multiply the verification cost. A losing index claimed
+// twice fails as repeated, not at the lottery.
+func TestRepeatedIndicesAreRejectedBeforeTheLottery(t *testing.T) {
+	reference := loadReferenceCases(t)[0]
+	var avk StmAggrVerificationKey
+	decodeHexJSON(t, reference.AggregateVerificationKey, &avk)
+	message, err := hex.DecodeString(reference.Message)
+	require.NoError(t, err)
+	params := &StmParameters{K: reference.Params.K, M: reference.Params.M, PhiF: reference.Params.PhiF}
+	require.Less(t, params.PhiF, 1.0)
+	var aggregate StmAggrSig
+	decodeHexJSON(t, reference.Aggregate.MultiSignature, &aggregate)
+	party := aggregate.Signatures[0]
+	msgp := avk.MTCommitment.ConcatWithMsg(message)
+	claimed := map[Index]bool{}
+	for _, signature := range aggregate.Signatures {
+		for _, index := range signature.Sig.Indexes {
+			claimed[index] = true
+		}
+	}
+	lost := Index(0)
+	for ; uint64(lost) <= params.M; lost++ {
+		ev, err := party.Sig.Sigma.Eval(msgp, lost)
+		require.NoError(t, err)
+		if !claimed[lost] && !EvLtPhi(params.PhiF, ev, party.RegParty.Stake, avk.TotalStake) {
+			break
+		}
+	}
+	require.LessOrEqual(t, uint64(lost), params.M)
+
+	claim := func(indexes ...Index) StmAggrSig {
+		forged := aggregate
+		forged.Signatures = append([]StmSigRegParty(nil), aggregate.Signatures...)
+		signature := *party.Sig
+		signature.Indexes = append(append([]Index(nil), party.Sig.Indexes...), indexes...)
+		forged.Signatures[0] = StmSigRegParty{Sig: &signature, RegParty: party.RegParty}
+		return forged
+	}
+	forged := claim(lost, lost)
+	require.ErrorContains(t, forged.Verify(message, &avk, params), "indices are not unique")
+	won := party.Sig.Indexes[0]
+	repeated := make([]Index, 250_000)
+	for i := range repeated {
+		repeated[i] = won
+	}
+	forged = claim(repeated...)
+	require.ErrorContains(t, forged.Verify(message, &avk, params), "indices are not unique")
+	forged = claim(lost, Index(params.M+1))
+	require.ErrorContains(t, forged.Verify(message, &avk, params), "index out of bound")
+}
+
 // exactThreshold returns floor(2^512 * (1 - exp(w*c))), the lottery boundary
 // for the binary64 c the verifier uses, computed to 1024 bits.
 func exactThreshold(phiF float64, stake, total Stake) *big.Int {
