@@ -230,6 +230,9 @@ func pinObservationSession(store storetypes.KVStore, cs *ClientState, id []byte,
 			return err
 		}
 	}
+	if err := pinSnapshotObject(store, session.Working.Scope, objectReceipt, optionalDigest(session.OriginalReceipt), append(bytes.Clone(owner), 7)); err != nil {
+		return err
+	}
 	return pinSnapshotObject(store, session.Working.Scope, objectBody, optionalDigest(session.PendingBody), append(bytes.Clone(owner), 6))
 }
 func releaseObservationSession(store storetypes.KVStore, cs *ClientState, id []byte, session *observationSession) error {
@@ -244,6 +247,9 @@ func releaseObservationSession(store storetypes.KVStore, cs *ClientState, id []b
 		if err := NewSnapshotMap(store, session.Working.Scope, pin.Kind).Pin(append(bytes.Clone(owner), pin.Role), SnapshotRoot{}); err != nil {
 			return err
 		}
+	}
+	if err := pinSnapshotObject(store, session.Working.Scope, objectReceipt, [32]byte{}, append(bytes.Clone(owner), 7)); err != nil {
+		return err
 	}
 	return pinSnapshotObject(store, session.Working.Scope, objectBody, [32]byte{}, append(bytes.Clone(owner), 6))
 }

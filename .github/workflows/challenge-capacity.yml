@@ -57,7 +57,7 @@ jobs:
         working-directory: cosmos/cardano-probabilistic-light-client-core
         env:
           GOWORK: off
-        run: go test ./state -run 'TestSnapshotCheckpoint|TestSnapshotStaging|TestSnapshotProposal|TestFailedSnapshotRecovery|TestSnapshotRecoveryRechecks|TestCrossLanguageObservation|TestMaximumObservationFitsResponseWindow' -count=1 -v
+        run: go test ./state -run 'TestSnapshotCheckpoint|TestSnapshotStaging|TestSnapshotProposal|TestFailedSnapshotRecovery|TestSnapshotRecoveryRechecks|TestCrossLanguageObservation|TestMaximumObservationFitsResponseWindow|TestRetainedReceipt|TestAlternativeRetainsEvidence' -count=1 -v
       - name: Build the destination image with the measured dependencies
         run: >-
           docker compose -f chains/cosmos/docker-compose.yml

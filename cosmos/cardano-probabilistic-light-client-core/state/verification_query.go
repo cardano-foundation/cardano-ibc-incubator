@@ -53,7 +53,7 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 		return json.Marshal(session)
 	}
 	if request.Kind == 9 {
-		receipt, err := loadVerifiedObservation(store, client, request.ReceiptId)
+		receipt, err := loadRetainedObservation(store, client, request.ReceiptId)
 		if err != nil {
 			return nil, err
 		}
@@ -81,6 +81,14 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 		if request.Limit == 0 || request.Limit > 128 || len(request.After) > 32 {
 			return nil, fmt.Errorf("receipt query exceeds its page bound")
 		}
+		scope, err := verificationScope(client)
+		if err != nil {
+			return nil, err
+		}
+		latest, err := loadVerificationCheckpoint(store, scope, client.CheckpointReference)
+		if err != nil {
+			return nil, err
+		}
 		prefix := retentionKey(client, 2, nil)
 		start := prefix
 		if len(request.After) > 0 {
@@ -96,22 +104,22 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 			}
 			page.Next = bytes.Clone(id)
 			visited++
-			receipt, err := loadVerifiedObservation(store, client, id)
+			receipt, err := loadRetainedObservation(store, client, id)
 			if err != nil {
 				return nil, err
 			}
-			indexed := store.Get(retentionKey(client, 3, binary.BigEndian.AppendUint64(nil, receipt.AnchorHeight)))
-			if len(indexed) > 0 {
-				var retained retainedVerification
-				if err := decodeBoundedRecord(indexed, &retained); err != nil {
-					return nil, err
-				}
-				if bytes.Equal(retained.Reference, receipt.AnchorReference[:]) {
-					page.Records = append(page.Records, struct {
-						ID      []byte
-						Receipt *verifiedObservation
-					}{bytes.Clone(id), receipt})
-				}
+			// The current settled ancestry authenticates accepted observations
+			// after their ordinary checkpoint indexes have been pruned. It also
+			// prevents unaccepted alternative forks from appearing as originals.
+			hash, found, err := NewSnapshotMap(store, scope, snapshotSettledHistory).Lookup(latest.SettledHistory, binary.BigEndian.AppendUint64(nil, receipt.AnchorHeight))
+			if err != nil {
+				return nil, err
+			}
+			if found && bytes.Equal(hash, receipt.AnchorHash[:]) {
+				page.Records = append(page.Records, struct {
+					ID      []byte
+					Receipt *verifiedObservation
+				}{bytes.Clone(id), receipt})
 			}
 		}
 		return json.Marshal(page)
@@ -131,6 +139,16 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 		}{progress.Sequence, progress.Frontier.Rows})
 	}
 	ref := request.CheckpointReference
+	if len(request.ReceiptId) != 0 {
+		receipt, err := loadRetainedObservation(store, client, request.ReceiptId)
+		if err != nil {
+			return nil, err
+		}
+		if len(ref) != 0 && !bytes.Equal(ref, receipt.BaseReference) {
+			return nil, fmt.Errorf("receipt only authorizes its exact historical base")
+		}
+		ref = receipt.BaseReference
+	}
 	if len(ref) == 0 {
 		ref = client.CheckpointReference
 	}
@@ -142,7 +160,7 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 	if err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(ref, client.CheckpointReference) {
+	if !bytes.Equal(ref, client.CheckpointReference) && len(request.ReceiptId) == 0 {
 		owned := store.Get(retentionKey(client, 3, binary.BigEndian.AppendUint64(nil, checkpoint.Height)))
 		var retained retainedVerification
 		if len(owned) == 0 {

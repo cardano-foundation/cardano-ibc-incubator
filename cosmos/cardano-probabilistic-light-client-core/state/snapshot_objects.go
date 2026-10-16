@@ -94,6 +94,11 @@ func registerSnapshotObject(store storetypes.KVStore, scope [32]byte, kind byte,
 		if err := pinSnapshotObject(store, scope, objectCheckpoint, receipt.AnchorReference, append(bytes.Clone(owner), 2)); err != nil {
 			return err
 		}
+		if len(receipt.OriginalReceipt) != 0 {
+			if err := pinSnapshotObject(store, scope, objectReceipt, [32]byte(receipt.OriginalReceipt), append(bytes.Clone(owner), 4)); err != nil {
+				return err
+			}
+		}
 		return NewSnapshotMap(store, scope, snapshotStake).Pin(append(bytes.Clone(owner), 3), receipt.Table.Root)
 	case objectBody:
 		return nil
@@ -167,6 +172,9 @@ func collectSnapshotObjects(store storetypes.KVStore, scope [32]byte, kind byte,
 				return 0, err
 			}
 		case objectReceipt:
+			if err := pinSnapshotObject(store, scope, objectReceipt, [32]byte{}, append(bytes.Clone(owner), 4)); err != nil {
+				return 0, err
+			}
 			for role := byte(1); role <= 2; role++ {
 				if err := pinSnapshotObject(store, scope, objectCheckpoint, [32]byte{}, append(bytes.Clone(owner), role)); err != nil {
 					return 0, err

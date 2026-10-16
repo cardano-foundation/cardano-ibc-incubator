@@ -18,6 +18,7 @@ type verifiedObservation struct {
 	Generation                        uint64
 	Scope                             [32]byte
 	BaseReference                     []byte
+	OriginalReceipt                   []byte
 	AnchorReference                   [32]byte
 	AnchorHeight                      uint64
 	AnchorHash                        [32]byte
@@ -58,6 +59,32 @@ func loadVerifiedObservation(store storetypes.KVStore, cs *ClientState, id []byt
 		return nil, fmt.Errorf("receipt cannot be reused under a different client, generation or policy")
 	}
 	return &receipt, nil
+}
+
+func loadRetainedObservation(store storetypes.KVStore, cs *ClientState, id []byte) (*verifiedObservation, error) {
+	receipt, err := loadVerifiedObservation(store, cs, id)
+	if err != nil {
+		return nil, err
+	}
+	refs := store.Get(objectKey("objectRefs", receipt.Scope, objectReceipt, [32]byte(id)))
+	if len(refs) != 8 || binary.BigEndian.Uint64(refs) == 0 {
+		return nil, fmt.Errorf("verified observation is no longer retained")
+	}
+	return receipt, nil
+}
+
+func retainVerifiedObservation(store storetypes.KVStore, cs *ClientState, receipt *verifiedObservation, id []byte) error {
+	anchor, err := loadVerificationCheckpoint(store, receipt.Scope, receipt.AnchorReference[:])
+	if err != nil {
+		return err
+	}
+	if err := pinVerificationCheckpoint(store, anchor, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 3, id)); err != nil {
+		return err
+	}
+	if err := pinSnapshotObject(store, receipt.Scope, objectReceipt, [32]byte(id), namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 9, id)); err != nil {
+		return err
+	}
+	return retainVerification(store, cs, 2, id, nil, receipt.AnchorHeight, retentionDeadline(cs, receipt.VerifiedAt))
 }
 func saveVerifiedObservation(store storetypes.KVStore, receipt *verifiedObservation) ([32]byte, error) {
 	raw, err := cbor.Encode(receipt)
@@ -112,18 +139,12 @@ func completeObservation(ctx Context, store storetypes.KVStore, cs *ClientState,
 	if now <= 0 {
 		return [32]byte{}, fmt.Errorf("invalid receipt completion time")
 	}
-	receipt := &verifiedObservation{Version: VerificationPolicyVersion, Namespace: bytes.Clone(cs.StorageNamespace), Generation: cs.VerificationGeneration, Scope: session.Anchor.Scope, BaseReference: bytes.Clone(session.BaseReference), AnchorReference: anchorRef, AnchorHeight: session.Anchor.Height, AnchorHash: session.Anchor.BlockHash, SettledHistory: session.Anchor.SettledHistory, Table: session.Table, TableMithrilRoot: session.TableMithrilRoot, TableNonce: bytes.Clone(session.TableNonce), InputDigest: session.ExpectedDigest, Blocks: session.BlockCount, Descendants: uint32(descendants), QualifiedPools: session.QualifiedCount, QualifiedStakeBps: bps, IsCheckpoint: session.IsCheckpoint, VerifiedAt: uint64(now)}
+	receipt := &verifiedObservation{Version: VerificationPolicyVersion, Namespace: bytes.Clone(cs.StorageNamespace), Generation: cs.VerificationGeneration, Scope: session.Anchor.Scope, BaseReference: bytes.Clone(session.BaseReference), OriginalReceipt: bytes.Clone(session.OriginalReceipt), AnchorReference: anchorRef, AnchorHeight: session.Anchor.Height, AnchorHash: session.Anchor.BlockHash, SettledHistory: session.Anchor.SettledHistory, Table: session.Table, TableMithrilRoot: session.TableMithrilRoot, TableNonce: bytes.Clone(session.TableNonce), InputDigest: session.ExpectedDigest, Blocks: session.BlockCount, Descendants: uint32(descendants), QualifiedPools: session.QualifiedCount, QualifiedStakeBps: bps, IsCheckpoint: session.IsCheckpoint, VerifiedAt: uint64(now)}
 	id, err := saveVerifiedObservation(store, receipt)
 	if err != nil {
 		return [32]byte{}, err
 	}
-	if err := pinVerificationCheckpoint(store, session.Anchor, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 3, id[:])); err != nil {
-		return [32]byte{}, err
-	}
-	if err := pinSnapshotObject(store, session.Anchor.Scope, objectReceipt, id, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 9, id[:])); err != nil {
-		return [32]byte{}, err
-	}
-	if err := retainVerification(store, cs, 2, id[:], nil, receipt.AnchorHeight, retentionDeadline(cs, receipt.VerifiedAt)); err != nil {
+	if err := retainVerifiedObservation(store, cs, receipt, id[:]); err != nil {
 		return [32]byte{}, err
 	}
 	session.Complete = true
@@ -222,6 +243,9 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 			receipt.Deadline = deadline
 			accepted, err := saveVerifiedObservation(store, receipt)
 			if err != nil {
+				return nil, err
+			}
+			if err := retainVerifiedObservation(store, cs, receipt, accepted[:]); err != nil {
 				return nil, err
 			}
 			if err := pinSnapshotObject(store, receipt.Scope, objectReceipt, accepted, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 6, binary.BigEndian.AppendUint64(nil, receipt.Table.Epoch))); err != nil {

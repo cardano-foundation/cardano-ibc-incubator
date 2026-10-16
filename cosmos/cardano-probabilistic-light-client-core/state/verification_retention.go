@@ -103,6 +103,12 @@ func cleanupRetainedVerification(ctx Context, shared, private storetypes.KVStore
 			}
 			shared.Delete(observationSessionKey(old.StorageNamespace, gen, id))
 		case 2:
+			// Keep discovery and query authorization while another session,
+			// proposal or completed alternative still needs this receipt.
+			refs := shared.Get(objectKey("objectRefs", scope, objectReceipt, [32]byte(id)))
+			if !discarded && len(refs) == 8 && binary.BigEndian.Uint64(refs) > 1 {
+				continue
+			}
 			if err := pinSnapshotObject(shared, scope, objectReceipt, [32]byte{}, namespaceOwner(old.StorageNamespace, gen, 9, id)); err != nil {
 				return err
 			}
