@@ -48,23 +48,23 @@ func TestRetainedReceiptAuthorizesHistoricalBase(t *testing.T) {
 	for i := 0; i < 64; i++ {
 		require.NoError(t, f.client.ContinueMaintenance(f.ctx, f.cdc, f.private, ObservationCleanup))
 	}
-	require.Empty(t, f.shared.Get(retentionKey(f.client, 3, binary.BigEndian.AppendUint64(nil, checkpoint.Height))))
+	require.Empty(t, f.shared.Get(retentionKey(f.client, RetainCheckpoint, binary.BigEndian.AppendUint64(nil, checkpoint.Height))))
 	_, err = loadVerifiedObservation(f.shared, f.client, original)
 	require.NoError(t, err, "receipt remains retained after the base index expires")
 	_, err = loadVerificationCheckpoint(f.shared, checkpoint.Scope, base)
 	require.NoError(t, err, "receipt ownership keeps the base bytes alive")
-	request := &QueryVerificationRequest{Namespace: f.client.StorageNamespace, Generation: f.client.VerificationGeneration, Kind: 0, CheckpointReference: base, ReceiptId: original}
+	request := &QueryVerificationRequest{Namespace: f.client.StorageNamespace, Generation: f.client.VerificationGeneration, Kind: uint32(QueryCheckpoint), CheckpointReference: base, ReceiptId: original}
 	raw, err := QueryVerification(f.ctx, f.cdc, request)
 	require.NoError(t, err)
 	var metadata verificationMetadata
 	require.NoError(t, json.Unmarshal(raw, &metadata))
 	require.Equal(t, base, metadata.Reference)
-	for kind := uint32(1); kind <= 7; kind++ {
-		request.Kind, request.Limit = kind, 128
+	for _, kind := range []QueryKind{QueryEffectiveBindings, QueryStake, QuerySettlementCredit, QueryPoolProduction, QueryCertificateCounters, QueryRegistrations, QueryMarkBindings} {
+		request.Kind, request.Limit = uint32(kind), 128
 		_, err = QueryVerification(f.ctx, f.cdc, request)
 		require.NoError(t, err, "historical page kind %d", kind)
 	}
-	request.Kind = 0
+	request.Kind = uint32(QueryCheckpoint)
 	request.CheckpointReference = f.client.CheckpointReference
 	_, err = QueryVerification(f.ctx, f.cdc, request)
 	require.ErrorContains(t, err, "exact historical base")
@@ -119,9 +119,9 @@ func TestAlternativeRetainsEvidenceAcrossCleanupAndRestart(t *testing.T) {
 	f.shared = restored
 	f.ctx.Snapshots = func() (storetypes.KVStore, error) { return f.shared, nil }
 	f.client, _ = GetClientState(f.private, f.cdc)
-	_, err = QueryVerification(f.ctx, f.cdc, &QueryVerificationRequest{Namespace: f.client.StorageNamespace, Generation: f.client.VerificationGeneration, Kind: 0, CheckpointReference: base, ReceiptId: original})
+	_, err = QueryVerification(f.ctx, f.cdc, &QueryVerificationRequest{Namespace: f.client.StorageNamespace, Generation: f.client.VerificationGeneration, Kind: uint32(QueryCheckpoint), CheckpointReference: base, ReceiptId: original})
 	require.NoError(t, err)
-	page, err := QueryVerification(f.ctx, f.cdc, &QueryVerificationRequest{Namespace: f.client.StorageNamespace, Generation: f.client.VerificationGeneration, Kind: 12, Limit: 128})
+	page, err := QueryVerification(f.ctx, f.cdc, &QueryVerificationRequest{Namespace: f.client.StorageNamespace, Generation: f.client.VerificationGeneration, Kind: uint32(QueryReceipts), Limit: 128})
 	require.NoError(t, err)
 	var listed struct{ Records []struct{ ID []byte } }
 	require.NoError(t, json.Unmarshal(page, &listed))
@@ -147,7 +147,7 @@ func TestAlternativeRetainsEvidenceAcrossCleanupAndRestart(t *testing.T) {
 	conflict, err := f.client.verifiedReceiptConflict(f.ctx, f.private, &Misbehaviour{VerifiedObservation_1: original, VerifiedObservation_2: session.Receipt})
 	require.NoError(t, err)
 	require.True(t, conflict)
-	page, err = QueryVerification(f.ctx, f.cdc, &QueryVerificationRequest{Namespace: f.client.StorageNamespace, Generation: f.client.VerificationGeneration, Kind: 12, Limit: 128})
+	page, err = QueryVerification(f.ctx, f.cdc, &QueryVerificationRequest{Namespace: f.client.StorageNamespace, Generation: f.client.VerificationGeneration, Kind: uint32(QueryReceipts), Limit: 128})
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(page, &listed))
 	for _, record := range listed.Records {

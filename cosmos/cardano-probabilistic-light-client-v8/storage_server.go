@@ -10,6 +10,25 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
+// QueryKind names the numeric selectors accepted by Verification.
+type QueryKind = state.QueryKind
+
+const (
+	QueryCheckpoint          = state.QueryCheckpoint
+	QueryEffectiveBindings   = state.QueryEffectiveBindings
+	QueryStake               = state.QueryStake
+	QuerySettlementCredit    = state.QuerySettlementCredit
+	QueryPoolProduction      = state.QueryPoolProduction
+	QueryCertificateCounters = state.QueryCertificateCounters
+	QueryRegistrations       = state.QueryRegistrations
+	QueryMarkBindings        = state.QueryMarkBindings
+	QuerySession             = state.QuerySession
+	QueryReceipt             = state.QueryReceipt
+	QueryEpochProposals      = state.QueryEpochProposals
+	QueryBootstrapProgress   = state.QueryBootstrapProgress
+	QueryReceipts            = state.QueryReceipts
+)
+
 type SnapshotStoreProvider interface {
 	ClientStore(sdk.Context, string) storetypes.KVStore
 }

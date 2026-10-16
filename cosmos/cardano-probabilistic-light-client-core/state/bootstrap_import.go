@@ -162,7 +162,7 @@ func (cs *ClientState) initializeClientState(ctx Context, cdc StateCodec, privat
 		return err
 	}
 	shared.Set(bootstrapProgressKey(cs), raw)
-	if err := NewSnapshotMap(shared, scope, snapshotBootstrapFrontier).Pin(namespaceOwner(cs.StorageNamespace, 1, 7, nil), progress.Frontier); err != nil {
+	if err := NewSnapshotMap(shared, scope, snapshotBootstrapFrontier).Pin(namespaceOwner(cs.StorageNamespace, 1, OwnerBootstrap, nil), progress.Frontier); err != nil {
 		return err
 	}
 	if err := writeClientState(ctx, cdc, private, cs); err != nil {
@@ -247,7 +247,7 @@ func (cs *ClientState) continueBootstrap(ctx Context, cdc StateCodec, private, s
 				return err
 			}
 			if expected.Depth == 0 {
-				if err := m.Pin(namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 7, append([]byte{page.Kind}, hash[:]...)), expected.Root); err != nil {
+				if err := m.Pin(namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerBootstrap, append([]byte{page.Kind}, hash[:]...)), expected.Root); err != nil {
 					return err
 				}
 			}
@@ -305,7 +305,7 @@ func (cs *ClientState) continueBootstrap(ctx Context, cdc StateCodec, private, s
 		if !bytes.Equal(ref[:], cs.CheckpointReference) {
 			return fmt.Errorf("bootstrap checkpoint commitment changed")
 		}
-		if err := pinVerificationCheckpoint(shared, progress.Manifest.Checkpoint, namespaceOwner(cs.StorageNamespace, 1, 1, nil)); err != nil {
+		if err := pinVerificationCheckpoint(shared, progress.Manifest.Checkpoint, namespaceOwner(cs.StorageNamespace, 1, OwnerCurrentCheckpoint, nil)); err != nil {
 			return err
 		}
 		private.Set(ownedCheckpointKey(1, progress.Manifest.Checkpoint.Height), ref[:])
@@ -313,7 +313,7 @@ func (cs *ClientState) continueBootstrap(ctx Context, cdc StateCodec, private, s
 			return err
 		}
 		for _, root := range checkpointRoots(progress.Manifest.Checkpoint, progress.Manifest.Packet) {
-			if err := NewSnapshotMap(shared, scope, root.Kind).Pin(namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 7, append([]byte{root.Kind}, root.Root.Hash[:]...)), SnapshotRoot{}); err != nil {
+			if err := NewSnapshotMap(shared, scope, root.Kind).Pin(namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerBootstrap, append([]byte{root.Kind}, root.Root.Hash[:]...)), SnapshotRoot{}); err != nil {
 				return err
 			}
 		}
@@ -333,7 +333,7 @@ func (cs *ClientState) continueBootstrap(ctx Context, cdc StateCodec, private, s
 		return err
 	}
 	shared.Set(bootstrapProgressKey(cs), raw)
-	return frontier.Pin(namespaceOwner(cs.StorageNamespace, 1, 7, nil), progress.Frontier)
+	return frontier.Pin(namespaceOwner(cs.StorageNamespace, 1, OwnerBootstrap, nil), progress.Frontier)
 }
 func packetObjectDigest(scope [32]byte, raw []byte) [32]byte {
 	return sha256.Sum256(append(append([]byte("cardano-ibc.packet-snapshot/v2\x00"), scope[:]...), raw...))

@@ -101,7 +101,7 @@ func TestSharedSnapshotOwnershipAcrossClients(t *testing.T) {
 	require.NoError(t, err)
 	mapStore := NewSnapshotMap(shared, checkpoint.Scope, snapshotRegistry)
 	// Dropping one owner's root must not delete the second client's pages.
-	require.NoError(t, mapStore.Pin(append(namespaceOwner(a.StorageNamespace, a.VerificationGeneration, 1, nil), 1), SnapshotRoot{}))
+	require.NoError(t, mapStore.Pin(append(namespaceOwner(a.StorageNamespace, a.VerificationGeneration, OwnerCurrentCheckpoint, nil), checkpointOwnerRegistrations), SnapshotRoot{}))
 	for i := 0; i < 8; i++ {
 		_, err = mapStore.Collect(8)
 		require.NoError(t, err)

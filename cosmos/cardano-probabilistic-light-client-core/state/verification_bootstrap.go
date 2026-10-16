@@ -262,18 +262,29 @@ func pinCheckpointContents(store storetypes.KVStore, checkpoint *verificationChe
 	if checkpoint.Registry.Effective.Bindings {
 		effectiveKind = snapshotBindings
 	}
-	for _, entry := range []pin{{snapshotRegistry, 1, checkpoint.Registry.Records}, {snapshotRegistry, 2, SnapshotRoot{}}, {snapshotBindings, 2, SnapshotRoot{}}, {snapshotRegistry, 3, SnapshotRoot{}}, {snapshotBindings, 3, SnapshotRoot{}}, {snapshotStake, 4, checkpoint.Stake.Root}, {snapshotCredit, 5, checkpoint.Credit}, {snapshotProduction, 6, checkpoint.Production}, {snapshotCounters, 7, checkpoint.Counters}, {snapshotSettledHistory, 8, checkpoint.SettledHistory}} {
-		if entry.role == 2 && entry.kind == markKind {
+	for _, entry := range []pin{
+		{snapshotRegistry, checkpointOwnerRegistrations, checkpoint.Registry.Records},
+		{snapshotRegistry, checkpointOwnerMarkBindings, SnapshotRoot{}},
+		{snapshotBindings, checkpointOwnerMarkBindings, SnapshotRoot{}},
+		{snapshotRegistry, checkpointOwnerEffectiveBindings, SnapshotRoot{}},
+		{snapshotBindings, checkpointOwnerEffectiveBindings, SnapshotRoot{}},
+		{snapshotStake, checkpointOwnerStake, checkpoint.Stake.Root},
+		{snapshotCredit, checkpointOwnerCredit, checkpoint.Credit},
+		{snapshotProduction, checkpointOwnerProduction, checkpoint.Production},
+		{snapshotCounters, checkpointOwnerCounters, checkpoint.Counters},
+		{snapshotSettledHistory, checkpointOwnerSettledHistory, checkpoint.SettledHistory},
+	} {
+		if entry.role == checkpointOwnerMarkBindings && entry.kind == markKind {
 			entry.root = checkpoint.Registry.Mark.Root
 		}
-		if entry.role == 3 && entry.kind == effectiveKind {
+		if entry.role == checkpointOwnerEffectiveBindings && entry.kind == effectiveKind {
 			entry.root = checkpoint.Registry.Effective.Root
 		}
 		if err := NewSnapshotMap(store, checkpoint.Scope, entry.kind).Pin(append(bytes.Clone(owner), entry.role), entry.root); err != nil {
 			return err
 		}
 	}
-	return pinSnapshotObject(store, checkpoint.Scope, objectPacket, checkpoint.PacketReference, append(bytes.Clone(owner), 23))
+	return pinSnapshotObject(store, checkpoint.Scope, objectPacket, checkpoint.PacketReference, append(bytes.Clone(owner), checkpointOwnerPacket))
 }
 
 func pinVerificationCheckpoint(store storetypes.KVStore, checkpoint *verificationCheckpoint, owner []byte) error {
@@ -288,7 +299,7 @@ func pinVerificationCheckpoint(store storetypes.KVStore, checkpoint *verificatio
 			hash = candidate
 		}
 	}
-	if err := pinSnapshotObject(store, checkpoint.Scope, objectCheckpoint, hash, append(bytes.Clone(owner), 24)); err != nil {
+	if err := pinSnapshotObject(store, checkpoint.Scope, objectCheckpoint, hash, append(bytes.Clone(owner), checkpointOwnerRecord)); err != nil {
 		return err
 	}
 	if hash != [32]byte{} {

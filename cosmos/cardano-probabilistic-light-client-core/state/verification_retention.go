@@ -19,11 +19,11 @@ type retainedVerification struct {
 func retentionPrefix(namespace []byte) []byte {
 	return append([]byte("snapshots/v2/retention/"), namespace...)
 }
-func retentionKey(cs *ClientState, class byte, id []byte) []byte {
-	return append(append(binary.BigEndian.AppendUint64(retentionPrefix(cs.StorageNamespace), cs.VerificationGeneration), class), id...)
+func retentionKey(cs *ClientState, kind RetentionKind, id []byte) []byte {
+	return append(append(binary.BigEndian.AppendUint64(retentionPrefix(cs.StorageNamespace), cs.VerificationGeneration), byte(kind)), id...)
 }
-func retainVerification(store storetypes.KVStore, cs *ClientState, class byte, id, reference []byte, height, expires uint64) error {
-	key := retentionKey(cs, class, id)
+func retainVerification(store storetypes.KVStore, cs *ClientState, kind RetentionKind, id, reference []byte, height, expires uint64) error {
+	key := retentionKey(cs, kind, id)
 	raw, err := cbor.Encode(retainedVerification{expires, bytes.Clone(reference), height})
 	if err != nil {
 		return err
@@ -47,10 +47,10 @@ func retentionDeadline(cs *ClientState, now uint64) uint64 {
 }
 func retainCheckpoint(store storetypes.KVStore, cs *ClientState, cp *verificationCheckpoint, reference []byte) error {
 	id := binary.BigEndian.AppendUint64(nil, cp.Height)
-	if err := pinVerificationCheckpoint(store, cp, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 5, id)); err != nil {
+	if err := pinVerificationCheckpoint(store, cp, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerRetainedCheckpoint, id)); err != nil {
 		return err
 	}
-	return retainVerification(store, cs, 3, id, reference, cp.Height, retentionDeadline(cs, cp.Timestamp))
+	return retainVerification(store, cs, RetainCheckpoint, id, reference, cp.Height, retentionDeadline(cs, cp.Timestamp))
 }
 func cleanupRetainedVerification(ctx Context, cdc StateCodec, shared, private storetypes.KVStore, cs *ClientState) error {
 	scope, err := verificationScope(cs)
@@ -80,20 +80,20 @@ func cleanupRetainedVerification(ctx Context, cdc StateCodec, shared, private st
 			return fmt.Errorf("invalid retention index")
 		}
 		gen := binary.BigEndian.Uint64(record.Key[len(prefix):])
-		class := record.Key[len(prefix)+8]
+		kind := RetentionKind(record.Key[len(prefix)+8])
 		id := record.Key[len(prefix)+9:]
 		var retained retainedVerification
 		if _, err := cbor.Decode(record.Value, &retained); err != nil {
 			return err
 		}
 		discarded := gen < cs.VerificationGeneration
-		if gen > cs.VerificationGeneration || (!discarded && class != 1 && retained.Expires > uint64(now)) {
+		if gen > cs.VerificationGeneration || (!discarded && kind != RetainSession && retained.Expires > uint64(now)) {
 			continue
 		}
 		old := *cs
 		old.VerificationGeneration = gen
-		switch class {
-		case 1:
+		switch kind {
+		case RetainSession:
 			session, err := loadObservationSession(shared, &old, id)
 			if err != nil {
 				return err
@@ -111,24 +111,24 @@ func cleanupRetainedVerification(ctx Context, cdc StateCodec, shared, private st
 				return err
 			}
 			shared.Delete(observationSessionKey(old.StorageNamespace, gen, id))
-		case 2:
+		case RetainReceipt:
 			// Keep discovery and query authorization while another session,
 			// proposal or completed alternative still needs this receipt.
 			refs := shared.Get(objectKey("objectRefs", scope, objectReceipt, [32]byte(id)))
 			if !discarded && len(refs) == 8 && binary.BigEndian.Uint64(refs) > 1 {
 				continue
 			}
-			if err := pinSnapshotObject(shared, scope, objectReceipt, [32]byte{}, namespaceOwner(old.StorageNamespace, gen, 9, id)); err != nil {
+			if err := pinSnapshotObject(shared, scope, objectReceipt, [32]byte{}, namespaceOwner(old.StorageNamespace, gen, OwnerRetainedReceipt, id)); err != nil {
 				return err
 			}
-			if err := pinVerificationCheckpoint(shared, &verificationCheckpoint{Scope: scope}, namespaceOwner(old.StorageNamespace, gen, 3, id)); err != nil {
+			if err := pinVerificationCheckpoint(shared, &verificationCheckpoint{Scope: scope}, namespaceOwner(old.StorageNamespace, gen, OwnerReceiptCheckpoint, id)); err != nil {
 				return err
 			}
-		case 3:
+		case RetainCheckpoint:
 			if !discarded && (retained.Height == cs.LatestCheckpointHeight.RevisionHeight || retained.Height == cs.LatestHeight.RevisionHeight) {
 				continue
 			}
-			if err := pinVerificationCheckpoint(shared, &verificationCheckpoint{Scope: scope}, namespaceOwner(old.StorageNamespace, gen, 5, id)); err != nil {
+			if err := pinVerificationCheckpoint(shared, &verificationCheckpoint{Scope: scope}, namespaceOwner(old.StorageNamespace, gen, OwnerRetainedCheckpoint, id)); err != nil {
 				return err
 			}
 			private.Delete(ownedCheckpointKey(gen, retained.Height))
@@ -145,12 +145,12 @@ func cleanupRetainedVerification(ctx Context, cdc StateCodec, shared, private st
 					deleteConsensusMetadata(private, height)
 				}
 			}
-		case 4:
+		case RetainEpochProposal:
 			epoch := binary.BigEndian.Uint64(id)
 			if !discarded && epoch > cs.CurrentEpoch {
 				continue
 			}
-			if err := pinSnapshotObject(shared, scope, objectReceipt, [32]byte{}, namespaceOwner(old.StorageNamespace, gen, 6, id)); err != nil {
+			if err := pinSnapshotObject(shared, scope, objectReceipt, [32]byte{}, namespaceOwner(old.StorageNamespace, gen, OwnerEpochProposal, id)); err != nil {
 				return err
 			}
 			shared.Delete(activatedEpochKey(&old, epoch))

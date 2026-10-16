@@ -174,8 +174,8 @@ func (d *boundedDriver) state(id string) *lc.ClientState {
 	}
 	return clienttypes.MustUnmarshalClientState(d.encoding.Codec, q.Value).(*lc.ClientState)
 }
-func (d *boundedDriver) verification(cs *lc.ClientState, kind uint32, id []byte) map[string]json.RawMessage {
-	request := &lc.QueryVerificationRequest{Namespace: cs.StorageNamespace, Generation: cs.VerificationGeneration, Kind: kind, SessionId: id}
+func (d *boundedDriver) verification(cs *lc.ClientState, kind lc.QueryKind, id []byte) map[string]json.RawMessage {
+	request := &lc.QueryVerificationRequest{Namespace: cs.StorageNamespace, Generation: cs.VerificationGeneration, Kind: uint32(kind), SessionId: id}
 	response := &lc.QueryVerificationResponse{}
 	d.query("/ibc.lightclients.probabilistic.v1.Query/Verification", request, response)
 	var value map[string]json.RawMessage
@@ -289,7 +289,7 @@ func (d *boundedDriver) stage(id string, header *lc.ProbabilisticHeader, origina
 	must(err)
 	for _, step := range steps {
 		if step.ObservationChunk.Operation != 1 {
-			progress := d.verification(d.state(id), 8, session)
+			progress := d.verification(d.state(id), lc.QuerySession, session)
 			var sequence uint32
 			must(json.Unmarshal(progress["Sequence"], &sequence))
 			if step.ObservationChunk.Sequence <= sequence {
@@ -306,13 +306,13 @@ func (d *boundedDriver) stage(id string, header *lc.ProbabilisticHeader, origina
 	if d.discardAttacker != nil && len(original) > 0 {
 		d.rejectSessionDiscard(id, session)
 	}
-	state := d.verification(d.state(id), 8, session)
+	state := d.verification(d.state(id), lc.QuerySession, session)
 	var receipt []byte
 	must(json.Unmarshal(state["Receipt"], &receipt))
 	return receipt
 }
 func (d *boundedDriver) activate(id string, session []byte, label string) {
-	state := d.verification(d.state(id), 8, session)
+	state := d.verification(d.state(id), lc.QuerySession, session)
 	var sequence uint32
 	must(json.Unmarshal(state["Sequence"], &sequence))
 	message, err := clienttypes.NewMsgUpdateClient(id, &lc.ProbabilisticHeader{ObservationChunk: &lc.ObservationChunk{Operation: 7, SessionId: session, Sequence: sequence + 1}}, d.address)
@@ -443,12 +443,12 @@ func boundedRun(encoding injcodec.EncodingConfig, key *ethsecp256k1.PrivKey, add
 			must(err)
 			d.send("abandoned-session-start", message)
 		}
-		progress, err := json.Marshal(d.verification(d.state(control), 8, session))
+		progress, err := json.Marshal(d.verification(d.state(control), lc.QuerySession, session))
 		must(err)
 		d.as(d.discardAttacker, func() {
 			d.send("cleanup-preserves-active-session", &lc.MsgContinueClient{ClientId: control, Signer: d.address, Operation: 9})
 		})
-		retained, err := json.Marshal(d.verification(d.state(control), 8, session))
+		retained, err := json.Marshal(d.verification(d.state(control), lc.QuerySession, session))
 		must(err)
 		if !bytesEqual(progress, retained) {
 			panic("permissionless cleanup changed an active session")
@@ -628,7 +628,7 @@ func (d *boundedDriver) rejectTransaction(label string, message sdk.Msg, expecte
 }
 
 func (d *boundedDriver) rejectSessionDiscard(id string, session []byte) {
-	progress := d.verification(d.state(id), 8, session)
+	progress := d.verification(d.state(id), lc.QuerySession, session)
 	before, err := json.Marshal(progress)
 	must(err)
 	var sequence uint32
@@ -638,7 +638,7 @@ func (d *boundedDriver) rejectSessionDiscard(id string, session []byte) {
 		must(err)
 		d.rejectTransaction(fmt.Sprintf("reject-active-session-discard-%d", sequence), message, "live observation", true)
 	})
-	after, err := json.Marshal(d.verification(d.state(id), 8, session))
+	after, err := json.Marshal(d.verification(d.state(id), lc.QuerySession, session))
 	must(err)
 	if !bytesEqual(before, after) {
 		panic("rejected discard changed the challenger's persisted progress")
@@ -648,7 +648,7 @@ func (d *boundedDriver) rejectSessionDiscard(id string, session []byte) {
 
 func (d *boundedDriver) requireSessionMissing(id string, session []byte) {
 	cs := d.state(id)
-	request := &lc.QueryVerificationRequest{Namespace: cs.StorageNamespace, Generation: cs.VerificationGeneration, Kind: 8, SessionId: session}
+	request := &lc.QueryVerificationRequest{Namespace: cs.StorageNamespace, Generation: cs.VerificationGeneration, Kind: uint32(lc.QuerySession), SessionId: session}
 	raw, err := request.Marshal()
 	must(err)
 	response, err := d.client.Query(context.Background(), &abci.QueryRequest{Path: "/ibc.lightclients.probabilistic.v1.Query/Verification", Data: raw})
@@ -660,8 +660,8 @@ func (d *boundedDriver) requireSessionMissing(id string, session []byte) {
 
 func (d *boundedDriver) checkExpiredSessionCleanup(id string, challengeSession, abandonedSession []byte) {
 	control := lc.ModuleName + "-1"
-	challenge := d.verification(d.state(id), 8, challengeSession)
-	abandoned := d.verification(d.state(control), 8, abandonedSession)
+	challenge := d.verification(d.state(id), lc.QuerySession, challengeSession)
+	abandoned := d.verification(d.state(control), lc.QuerySession, abandonedSession)
 	var challengeExpiry, abandonedExpiry uint64
 	var sequence uint32
 	must(json.Unmarshal(challenge["ExpiresAt"], &challengeExpiry))

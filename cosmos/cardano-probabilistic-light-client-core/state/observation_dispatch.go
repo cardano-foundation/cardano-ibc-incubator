@@ -28,7 +28,7 @@ func operationDigest(header *ProbabilisticHeader) ([32]byte, error) {
 	if err != nil {
 		return [32]byte{}, err
 	}
-	if len(raw) > MaxOperationSignedBytes-20000 {
+	if len(raw) > MaxOperationSignedBytes-BoundedMessageEnvelopeBytes {
 		return [32]byte{}, fmt.Errorf("bounded message exceeds the transport allowance")
 	}
 	return sha256.Sum256(raw), nil
@@ -133,7 +133,7 @@ func (cs *ClientState) verifyObservationOperation(ctx Context, cdc StateCodec, p
 				err = releaseObservationSession(shared, cs, chunk.SessionId, session)
 				if err == nil {
 					shared.Delete(observationSessionKey(cs.StorageNamespace, cs.VerificationGeneration, chunk.SessionId))
-					shared.Delete(retentionKey(cs, 1, chunk.SessionId))
+					shared.Delete(retentionKey(cs, RetainSession, chunk.SessionId))
 				}
 			default:
 				err = fmt.Errorf("invalid observation phase")
@@ -216,45 +216,49 @@ func (cs *ClientState) consumeObservationResult(ctx Context, cdc StateCodec, pri
 	return heights
 }
 func pinObservationSession(store storetypes.KVStore, cs *ClientState, id []byte, session *observationSession) error {
-	owner := namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 4, id)
-	if err := pinVerificationCheckpoint(store, &session.Working, append(bytes.Clone(owner), 1)); err != nil {
+	owner := namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerSession, id)
+	if err := pinVerificationCheckpoint(store, &session.Working, append(bytes.Clone(owner), sessionOwnerWorking)); err != nil {
 		return err
 	}
 	if session.Anchor != nil {
-		if err := pinVerificationCheckpoint(store, session.Anchor, append(bytes.Clone(owner), 2)); err != nil {
+		if err := pinVerificationCheckpoint(store, session.Anchor, append(bytes.Clone(owner), sessionOwnerAnchor)); err != nil {
 			return err
 		}
 	}
 	for _, pin := range []struct {
 		Kind, Role byte
 		Root       SnapshotRoot
-	}{{snapshotStake, 3, session.Table.Root}, {snapshotCredit, 4, session.NextCredit}, {snapshotQualified, 5, session.Qualified}} {
+	}{{snapshotStake, sessionOwnerStake, session.Table.Root}, {snapshotCredit, sessionOwnerCredit, session.NextCredit}, {snapshotQualified, sessionOwnerQualified, session.Qualified}} {
 		if err := NewSnapshotMap(store, session.Working.Scope, pin.Kind).Pin(append(bytes.Clone(owner), pin.Role), pin.Root); err != nil {
 			return err
 		}
 	}
-	if err := pinSnapshotObject(store, session.Working.Scope, objectReceipt, optionalDigest(session.OriginalReceipt), append(bytes.Clone(owner), 7)); err != nil {
+	if err := pinSnapshotObject(store, session.Working.Scope, objectReceipt, optionalDigest(session.OriginalReceipt), append(bytes.Clone(owner), sessionOwnerOriginalReceipt)); err != nil {
 		return err
 	}
-	return pinSnapshotObject(store, session.Working.Scope, objectBody, optionalDigest(session.PendingBody), append(bytes.Clone(owner), 6))
+	return pinSnapshotObject(store, session.Working.Scope, objectBody, optionalDigest(session.PendingBody), append(bytes.Clone(owner), sessionOwnerPendingBody))
 }
 func releaseObservationSession(store storetypes.KVStore, cs *ClientState, id []byte, session *observationSession) error {
 	empty := verificationCheckpoint{Scope: session.Working.Scope}
-	for _, owner := range [][]byte{namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 2, id), append(namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 4, id), 1), append(namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 4, id), 2)} {
+	for _, owner := range [][]byte{
+		namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerSessionBase, id),
+		append(namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerSession, id), sessionOwnerWorking),
+		append(namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerSession, id), sessionOwnerAnchor),
+	} {
 		if err := pinVerificationCheckpoint(store, &empty, owner); err != nil {
 			return err
 		}
 	}
-	owner := namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 4, id)
-	for _, pin := range []struct{ Kind, Role byte }{{snapshotStake, 3}, {snapshotCredit, 4}, {snapshotQualified, 5}} {
+	owner := namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerSession, id)
+	for _, pin := range []struct{ Kind, Role byte }{{snapshotStake, sessionOwnerStake}, {snapshotCredit, sessionOwnerCredit}, {snapshotQualified, sessionOwnerQualified}} {
 		if err := NewSnapshotMap(store, session.Working.Scope, pin.Kind).Pin(append(bytes.Clone(owner), pin.Role), SnapshotRoot{}); err != nil {
 			return err
 		}
 	}
-	if err := pinSnapshotObject(store, session.Working.Scope, objectReceipt, [32]byte{}, append(bytes.Clone(owner), 7)); err != nil {
+	if err := pinSnapshotObject(store, session.Working.Scope, objectReceipt, [32]byte{}, append(bytes.Clone(owner), sessionOwnerOriginalReceipt)); err != nil {
 		return err
 	}
-	return pinSnapshotObject(store, session.Working.Scope, objectBody, [32]byte{}, append(bytes.Clone(owner), 6))
+	return pinSnapshotObject(store, session.Working.Scope, objectBody, [32]byte{}, append(bytes.Clone(owner), sessionOwnerPendingBody))
 }
 func (cs *ClientState) verifiedReceiptConflict(ctx Context, clientStore storetypes.KVStore, msg *Misbehaviour) (bool, error) {
 	if msg == nil || len(msg.VerifiedObservation_1) != 32 || len(msg.VerifiedObservation_2) != 32 || msg.ProbabilisticHeader1 != nil || msg.ProbabilisticHeader2 != nil {
@@ -292,7 +296,7 @@ func pinPacketContents(store storetypes.KVStore, scope, ref [32]byte, owner []by
 	for _, pin := range []struct {
 		Kind, Role byte
 		Root       SnapshotRoot
-	}{{snapshotPacketLanes, 20, packet.Lanes}, {snapshotPacketInputs, 21, packet.Inputs}, {snapshotPacketRoutes, 22, packet.Routes}} {
+	}{{snapshotPacketLanes, packetOwnerLanes, packet.Lanes}, {snapshotPacketInputs, packetOwnerInputs, packet.Inputs}, {snapshotPacketRoutes, packetOwnerRoutes, packet.Routes}} {
 		if err := NewSnapshotMap(store, scope, pin.Kind).Pin(append(bytes.Clone(owner), pin.Role), pin.Root); err != nil {
 			return err
 		}

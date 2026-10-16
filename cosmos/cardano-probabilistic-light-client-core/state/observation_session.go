@@ -82,7 +82,7 @@ func (h ProbabilisticHeader) validateObservationChunk() error {
 	if h.AnchorBlock != nil || len(h.BridgeBlocks) > 0 || len(h.DescendantBlocks) > 0 || h.NewEpochContext != nil {
 		return fmt.Errorf("bounded operations cannot carry logical observation fields")
 	}
-	if len(chunk.Blocks) > maxObservationBlocksPerStep || len(chunk.StakeRows) > maxObservationRowsPerStep*36 || len(chunk.Objects) > MaxOperationSignedBytes-20000 {
+	if len(chunk.Blocks) > maxObservationBlocksPerStep || len(chunk.StakeRows) > maxObservationRowsPerStep*36 || len(chunk.Objects) > MaxOperationSignedBytes-BoundedMessageEnvelopeBytes {
 		return fmt.Errorf("observation chunk exceeds its operation bound")
 	}
 	if len(chunk.OtherReceipt) != 0 || (chunk.Operation != ObservationBegin &&
@@ -288,7 +288,7 @@ func beginObservation(ctx Context, store storetypes.KVStore, private storetypes.
 	} else {
 		session.CreditReady = true
 	}
-	if err := pinVerificationCheckpoint(store, base, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 2, id[:])); err != nil {
+	if err := pinVerificationCheckpoint(store, base, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerSessionBase, id[:])); err != nil {
 		return zero, err
 	}
 	if len(session.OriginalReceipt) != 0 {
@@ -299,11 +299,11 @@ func beginObservation(ctx Context, store storetypes.KVStore, private storetypes.
 		if err := retainVerifiedObservation(store, cs, original, session.OriginalReceipt); err != nil {
 			return zero, err
 		}
-		if err := pinSnapshotObject(store, scope, objectReceipt, [32]byte(session.OriginalReceipt), append(namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 4, id[:]), 7)); err != nil {
+		if err := pinSnapshotObject(store, scope, objectReceipt, [32]byte(session.OriginalReceipt), append(namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerSession, id[:]), sessionOwnerOriginalReceipt)); err != nil {
 			return zero, err
 		}
 	}
-	if err := retainVerification(store, cs, 1, id[:], nil, 0, session.ExpiresAt); err != nil {
+	if err := retainVerification(store, cs, RetainSession, id[:], nil, 0, session.ExpiresAt); err != nil {
 		return zero, err
 	}
 	if err := saveObservationSession(store, cs, id[:], session); err != nil {
