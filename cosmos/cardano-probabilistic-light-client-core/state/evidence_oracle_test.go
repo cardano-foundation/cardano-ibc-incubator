@@ -893,28 +893,28 @@ func verifyBridgeContinuity(
 func (cs *ClientState) computeHeaderSecurityMetrics(
 	header *authenticatedProbabilisticHeader,
 	epochContext *EpochContext,
-) (uint64, uint64, uint64, error) {
+) (uint64, uint64, error) {
 	seenPools := make(map[string]struct{})
 	qualifiedUniquePools := uint64(0)
 	qualifiedUniqueStake := new(big.Rat)
 	totalActiveStake := uint64(0)
 	if header == nil || header.anchorPoolRegistry == nil {
-		return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "authenticated anchor pool registry is missing")
+		return 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "authenticated anchor pool registry is missing")
 	}
 	registeredPools, err := poolBindingMap(header.anchorPoolRegistry.Effective)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, err
 	}
 	if err := verifyStakeTablePoolBindings(epochContext, header.anchorPoolRegistry); err != nil {
-		return 0, 0, 0, err
+		return 0, 0, err
 	}
 
 	if epochContext == nil {
-		return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "anchor epoch context must be present")
+		return 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "anchor epoch context must be present")
 	}
 
 	if len(epochContext.StakeDistribution) == 0 {
-		return 0, 0, 0, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d stake distribution must not be empty", epochContext.Epoch)
+		return 0, 0, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d stake distribution must not be empty", epochContext.Epoch)
 	}
 
 	for _, entry := range epochContext.StakeDistribution {
@@ -923,7 +923,7 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 		}
 		nextTotalActiveStake, ok := checkedAddStake(totalActiveStake, entry.Stake)
 		if !ok {
-			return 0, 0, 0, errorsmod.Wrapf(
+			return 0, 0, errorsmod.Wrapf(
 				ErrInvalidCurrentEpoch,
 				"epoch %d stake distribution total overflows uint64",
 				epochContext.Epoch,
@@ -932,25 +932,25 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 		totalActiveStake = nextTotalActiveStake
 	}
 	if totalActiveStake == 0 {
-		return 0, 0, 0, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d stake distribution must have positive total stake", epochContext.Epoch)
+		return 0, 0, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d stake distribution must have positive total stake", epochContext.Epoch)
 	}
 
 	if header == nil || header.anchorBlock == nil {
-		return 0, 0, 0, errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated anchor block missing")
+		return 0, 0, errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated anchor block missing")
 	}
 	poolRegistrationCutoffSlot, err := cs.poolRegistrationCutoffSlotExclusive(header.anchorBlock.slot)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, err
 	}
 
 	credits, err := currentSettlementCredits(header.anchorSettlementCredit, epochContext)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, err
 	}
 
 	production, err := productionRecordMap(header.anchorPoolProduction, epochContext.Epoch)
 	if err != nil {
-		return 0, 0, 0, err
+		return 0, 0, err
 	}
 
 	anchorEpoch := header.anchorBlock.epoch
@@ -958,16 +958,16 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 	prevHeight := header.anchorBlock.height
 	for _, block := range header.descendantBlocks {
 		if block == nil {
-			return 0, 0, 0, errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated descendant block missing")
+			return 0, 0, errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated descendant block missing")
 		}
 		if block.prevHash != prevHash {
-			return 0, 0, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "descendant chain is not contiguous at block %s", block.hash)
+			return 0, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "descendant chain is not contiguous at block %s", block.hash)
 		}
 		if block.height != prevHeight+1 {
-			return 0, 0, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "descendant height gap at block %s", block.hash)
+			return 0, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "descendant height gap at block %s", block.hash)
 		}
 		if block.epoch < anchorEpoch || (block.epoch != anchorEpoch && (anchorEpoch == ^uint64(0) || block.epoch != anchorEpoch+1)) {
-			return 0, 0, 0, errorsmod.Wrapf(
+			return 0, 0, errorsmod.Wrapf(
 				ErrInvalidCurrentEpoch,
 				"descendant block %d must remain in accepted epoch %d, got %d",
 				block.height,
@@ -988,7 +988,7 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 				}
 				eligible, err := poolRegisteredBeforeCutoff(poolRegistrationCutoffSlot, registeredPools[poolID])
 				if err != nil {
-					return 0, 0, 0, err
+					return 0, 0, err
 				}
 				observed := production[poolID]
 				if eligible && observed != nil && observed.CompletedEpochsBitmap != 0 {
@@ -1000,7 +1000,7 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 							prevHash, prevHeight = block.hash, block.height
 							continue
 						}
-						return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "qualified producer missing from stake table")
+						return 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "qualified producer missing from stake table")
 					}
 					qualifiedUniquePools++
 					if header.settlementStakeLimits != nil {
@@ -1022,8 +1022,7 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 
 	qualifiedUniqueStakeBps := settlementCreditBps(qualifiedUniqueStake)
 
-	score := cs.computeSecurityScore(uint64(len(header.descendantBlocks)), qualifiedUniquePools, qualifiedUniqueStakeBps)
-	return qualifiedUniquePools, qualifiedUniqueStakeBps, score, nil
+	return qualifiedUniquePools, qualifiedUniqueStakeBps, nil
 }
 
 type headerAuthenticator func(

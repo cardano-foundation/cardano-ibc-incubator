@@ -608,7 +608,7 @@ func TestComputeHeaderSecurityMetricsRejectsEmptyEpochStakeDistribution(t *testi
 	authenticatedHeader.anchorPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
 	authenticatedHeader.anchorSettlementCredit = &SettlementCreditState{Epoch: epochContext.Epoch}
 	authenticatedHeader.anchorPoolProduction = &PoolProductionHistory{Epoch: epochContext.Epoch}
-	_, _, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
+	_, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
 	require.ErrorContains(t, err, "stake distribution must not be empty")
 }
 
@@ -653,7 +653,7 @@ func TestComputeHeaderSecurityMetricsExcludesPoolsRegisteredAfterCutoff(t *testi
 	authenticatedHeader.anchorPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
 	authenticatedHeader.anchorSettlementCredit = mustTestSettlementCredit(epochContext)
 	authenticatedHeader.anchorPoolProduction = testPoolProduction(epochContext)
-	qualifiedUniquePools, qualifiedUniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
+	qualifiedUniquePools, qualifiedUniqueStakeBps, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
 
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), qualifiedUniquePools)
@@ -694,7 +694,7 @@ func TestComputeHeaderSecurityMetricsIgnoresPoolRegistrationCutoffEnv(t *testing
 	authenticatedHeader.anchorPoolRegistry = testPoolRegistry(epochContext.Epoch, epochContext.StakeDistribution)
 	authenticatedHeader.anchorSettlementCredit = mustTestSettlementCredit(epochContext)
 	authenticatedHeader.anchorPoolProduction = testPoolProduction(epochContext)
-	qualifiedUniquePools, qualifiedUniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
+	qualifiedUniquePools, qualifiedUniqueStakeBps, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
 
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), qualifiedUniquePools)
@@ -730,7 +730,7 @@ func TestComputeHeaderSecurityMetricsFailsClosedWhenRegistrationIsMissing(t *tes
 	}
 
 	authenticatedHeader.anchorPoolRegistry = testPoolRegistry(epochContext.Epoch, nil)
-	_, _, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
+	_, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
 
 	require.ErrorContains(t, err, "no authenticated effective registration")
 }

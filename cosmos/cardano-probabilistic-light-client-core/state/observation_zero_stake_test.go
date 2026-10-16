@@ -96,7 +96,7 @@ func TestSnapshotCrossEpochZeroStakeProducer(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, attachPoolProduction(auth, trusted))
 			require.NoError(t, attachSettlementCredit(auth, trusted, contexts))
-			pools, credit, _, err := fixture.Client.computeHeaderSecurityMetrics(auth, fixture.Client.EpochContexts[0])
+			pools, credit, err := fixture.Client.computeHeaderSecurityMetrics(auth, fixture.Client.EpochContexts[0])
 			require.NoError(t, err)
 			require.Equal(t, receipt.QualifiedPools, pools)
 			require.Equal(t, receipt.QualifiedStakeBps, credit)

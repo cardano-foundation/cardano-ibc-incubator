@@ -27,40 +27,6 @@ func checkedAddStake(current, addition uint64) (uint64, bool) {
 	return sum, carry == 0
 }
 
-func (cs *ClientState) computeSecurityScore(depth, qualifiedUniquePools, qualifiedUniqueStakeBps uint64) uint64 {
-	depthScore := minBps(depth, DefaultThresholdDepth)
-	poolsScore := minBps(qualifiedUniquePools, DefaultThresholdUniquePools)
-	qualifiedStakeScore := minBps(qualifiedUniqueStakeBps, DefaultThresholdUniqueStakeBps)
-	return min(
-		(DefaultDepthWeightBps*depthScore+
-			DefaultPoolsWeightBps*poolsScore+
-			DefaultStakeWeightBps*qualifiedStakeScore)/10_000,
-		10_000,
-	)
-}
-
-func minBps(value, target uint64) uint64 {
-	if target == 0 {
-		return 10_000
-	}
-	if value >= target {
-		return 10_000
-	}
-
-	// value is below target, so the quotient is below 10,000 and fits in
-	// uint64. Div64 therefore receives a high word smaller than its divisor.
-	high, low := bits.Mul64(value, 10_000)
-	quotient, _ := bits.Div64(high, low, target)
-	return quotient
-}
-
-func min(a, b uint64) uint64 {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func (cs *ClientState) UpdateState(ctx Context, cdc StateCodec, clientStore storetypes.KVStore, clientMsg any) []HeightValue {
 	if err := cs.Validate(); err != nil {
 		panic(err)

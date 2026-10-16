@@ -319,7 +319,7 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 	var heights []HeightValue
 	if !receipt.IsCheckpoint {
 		cs.LatestHeight = NewHeight(0, anchor.Height)
-		consensus := &ConsensusState{Timestamp: anchor.Timestamp, IbcStateRoot: bytes.Clone(anchor.HostRoot[:]), AcceptedBlockHash: hex.EncodeToString(anchor.BlockHash[:]), AcceptedEpoch: anchor.Epoch, UniquePoolsCount: receipt.QualifiedPools, UniqueStakeBps: receipt.QualifiedStakeBps, SecurityScoreBps: cs.computeSecurityScore(uint64(receipt.Descendants), receipt.QualifiedPools, receipt.QualifiedStakeBps), VerificationGeneration: cs.VerificationGeneration, CheckpointReference: bytes.Clone(receipt.AnchorReference[:]), PacketStateReference: bytes.Clone(anchor.PacketReference[:])}
+		consensus := &ConsensusState{Timestamp: anchor.Timestamp, IbcStateRoot: bytes.Clone(anchor.HostRoot[:]), AcceptedBlockHash: hex.EncodeToString(anchor.BlockHash[:]), AcceptedEpoch: anchor.Epoch, UniquePoolsCount: receipt.QualifiedPools, UniqueStakeBps: receipt.QualifiedStakeBps, SecurityScoreBps: legacyAcceptedSecurityScoreBps, VerificationGeneration: cs.VerificationGeneration, CheckpointReference: bytes.Clone(receipt.AnchorReference[:]), PacketStateReference: bytes.Clone(anchor.PacketReference[:])}
 		if len(cdc.EncodeConsensus(consensus)) > MaxConsensusBytes {
 			return nil, fmt.Errorf("consensus exceeds its bounded record size")
 		}

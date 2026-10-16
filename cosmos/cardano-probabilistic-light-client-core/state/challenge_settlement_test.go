@@ -63,7 +63,7 @@ func TestHistoricalChallengeCreditMatchesHermesGatewayRequest(t *testing.T) {
 				previous = hash
 			}
 			require.NoError(t, attachPoolProduction(header, &trustedBlockState{epoch: fixture.Epoch, poolProduction: history}))
-			count, credit, _, err := newProbabilisticTestClientState().computeHeaderSecurityMetrics(header, context)
+			count, credit, err := newProbabilisticTestClientState().computeHeaderSecurityMetrics(header, context)
 			require.NoError(t, err)
 			require.Equal(t, test.credit, credit)
 			require.Equal(t, test.settles, uint64(len(test.producers)) >= DefaultThresholdDepth && count >= DefaultThresholdUniquePools && credit >= DefaultThresholdUniqueStakeBps)
