@@ -88,15 +88,15 @@ func TestPendingStakeWindowPausesAcrossHostInterruption(t *testing.T) {
 	cs := &ClientState{StorageNamespace: make([]byte, 32), VerificationGeneration: 1}
 	shared := dbadapter.Store{DB: dbm.NewMemDB()}
 	require.NoError(t, startStakeWindow(ctx, shared, cs, 8))
-	// Eleven hours of actual host progress have elapsed before a two-hour halt.
-	progress.ObservationTime = uint64(11 * time.Hour)
-	progress.TimeUnixNs = uint64(start.Add(11 * time.Hour).UnixNano())
+	// Five hours of actual host progress have elapsed before a two-hour halt.
+	progress.ObservationTime = uint64(5 * time.Hour)
+	progress.TimeUnixNs = uint64(start.Add(5 * time.Hour).UnixNano())
 	ctx.Height++
-	ctx.Time = start.Add(13 * time.Hour)
+	ctx.Time = start.Add(7 * time.Hour)
 	progress, err = AdvanceHostProgress(ctx, progress)
 	require.NoError(t, err)
-	require.Equal(t, uint64(11*time.Hour), progress.ObservationTime)
-	require.Greater(t, uint64(ctx.Time.UnixNano()), uint64(start.Add(12*time.Hour).UnixNano()))
+	require.Equal(t, uint64(5*time.Hour), progress.ObservationTime)
+	require.Greater(t, uint64(ctx.Time.UnixNano()), uint64(start.Add(SharedSnapshotChallengePeriod).UnixNano()))
 	require.NoError(t, VerifyHostWindow(ctx, 1, progress), "old usable state has no new window")
 	require.ErrorIs(t, verifyStakeWindow(shared, cs, 8, progress), ErrEpochContextPending)
 	// Snapshot export/import preserves the unfinished target. The adapter exports
@@ -107,14 +107,14 @@ func TestPendingStakeWindowPausesAcrossHostInterruption(t *testing.T) {
 	require.NoError(t, ImportSnapshotGenesis(restored, exported))
 	shared = restored
 	require.ErrorIs(t, verifyStakeWindow(shared, cs, 8, progress), ErrEpochContextPending)
-	// A second interruption does not restart the twelve-hour budget.
+	// A second interruption does not restart the six-hour budget.
 	for i := 0; i < 360; i++ {
 		ctx.Height++
 		ctx.Time = ctx.Time.Add(HostBlockGapTolerance)
 		progress, err = AdvanceHostProgress(ctx, progress)
 		require.NoError(t, err)
 	}
-	require.Equal(t, uint64(12*time.Hour), progress.ObservationTime)
+	require.Equal(t, uint64(SharedSnapshotChallengePeriod), progress.ObservationTime)
 	require.ErrorIs(t, verifyStakeWindow(shared, cs, 8, progress), ErrEpochContextPending)
 	ctx.Height++
 	ctx.Time = ctx.Time.Add(time.Hour)

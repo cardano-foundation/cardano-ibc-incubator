@@ -1,6 +1,6 @@
 # Cardano Probabilistic Light Client Core
 
-Only snapshot storage version `2` is supported. Inline records and single-transaction observations are rejected. The [storage and verification design](../../docs/probabilistic-bounded-verification.md) describes the bounded operations and twelve-hour response window.
+Only snapshot storage version `2` is supported. Inline records and single-transaction observations are rejected. The [storage and verification design](../../docs/probabilistic-bounded-verification.md) describes the bounded operations and six-hour response window.
 
 This module contains shared Cardano/probabilistic verification logic used by the `ibc-go` versioned adapters:
 
@@ -39,7 +39,7 @@ Staged activation emits `probabilistic_activation_result` with the session ID, s
 
 The logical workload supports 4,000 stake rows, 128 headers and at most 97 full bodies. Each body is at most 96 KiB and each header-only witness is at most 1,100 bytes. Execution is split into bounded operations with a target of 900,000 signed bytes and 36 million gas per transaction. Public client records are at most 4 KiB and consensus records at most 1 KiB. Canonical stake segments prevent valid fragmentation from exhausting the session budget. Exact retries and rejected no-op transitions do not consume another submitter's progress.
 
-A verified future table without Mithril certification starts a twelve-hour response window. A matching verified certificate received during that window ends the remaining stake wait at its transaction's host time. Activation and proofs still require a completed block after that cutoff. A contradicting certificate freezes the client. Host interruptions pause only unfinished uncertified stake windows. They do not restart elapsed challenge time or impose a new wait on certified or already cleared allocations. Bootstrap is Mithril-certified. Authorized recovery adopts an already usable substitute without starting a new stake window.
+A verified future table without Mithril certification starts a six-hour response window. A matching verified certificate received during that window ends the remaining stake wait at its transaction's host time. Activation and proofs still require a completed block after that cutoff. A contradicting certificate freezes the client. Host interruptions pause only unfinished uncertified stake windows. They do not restart elapsed challenge time or impose a new wait on certified or already cleared allocations. Bootstrap is Mithril-certified. Authorized recovery adopts an already usable substitute without starting a new stake window.
 
 Native cryptography, qualification and nonce regressions also use an independent batch oracle in test code. It has no client update, initialization, storage or recovery implementation. Production authentication runs only through bounded observations.
 

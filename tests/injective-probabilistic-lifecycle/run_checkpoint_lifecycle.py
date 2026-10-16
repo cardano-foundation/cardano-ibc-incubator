@@ -126,8 +126,9 @@ def main():
     def windows():
         current = state()
         deadline = max([now()]+[int(context['usable_after_unix_ns']) for context in current.get('epoch_context_challenges',[])])
-        # Host continuity also needs twelve committed hours after importing/restarting.
-        advance(max(deadline+10**9,now()+12*3600*10**9+10**9))
+        # Bootstrap and recovery have their own committed cutoffs. A restart
+        # does not create another stake challenge window.
+        advance(deadline+10**9)
 
     def recover(which, proposal):
         send('recover-'+which)

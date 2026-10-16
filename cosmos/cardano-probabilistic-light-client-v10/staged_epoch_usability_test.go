@@ -50,7 +50,7 @@ func TestAppFollowingEpochActivationRequiresCommittedCutoffBlock(t *testing.T) {
 	private := ctx.KVStore(privateKey)
 	client, _, err := initializeTrusted(t, ctx, cdc, private, history.Client, history.Consensus)
 	require.NoError(t, err)
-	ctx = ctx.WithBlockTime(start.Add(12*time.Hour + time.Second))
+	ctx = ctx.WithBlockTime(start.Add(EpochContextChallengePeriod + time.Second))
 	base := append([]byte(nil), client.CheckpointReference...)
 	stage := func(branch string, original []byte) ([]byte, *ProbabilisticHeader) {
 		t.Helper()

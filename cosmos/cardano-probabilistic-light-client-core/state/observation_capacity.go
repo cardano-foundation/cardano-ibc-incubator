@@ -17,9 +17,11 @@ const MaxVerificationWorkGas = MaxOperationGas - 10000000
 // Canonical table batches and bounded certificate continuations keep even
 // single-header block uploads below this limit. The capacity regression counts
 // BEGIN, completion, activation and freeze transactions against the host window.
+// This safety cap also applies to bootstrap imports. The response budget uses
+// the tighter maximum number of authentic observation operations.
 const MaxObservationSteps = uint32(4096)
-const SharedSnapshotChallengePeriod = 12 * time.Hour
-const SupportedInclusionTimePerStep = 10 * time.Second
+const SharedSnapshotChallengePeriod = 6 * time.Hour
+const SupportedInclusionTimePerStep = 8 * time.Second
 const SupportedDetectionAndPreparationTime = 30 * time.Minute
 
 func sharedSnapshotChallengeDeadline(ctx Context) (uint64, error) {
