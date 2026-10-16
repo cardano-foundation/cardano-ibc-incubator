@@ -131,6 +131,12 @@ func TestStakeOmissionExpiresAndRecoversThroughAuthority(t *testing.T) {
 		return record.Sequence, record.Receipt
 	}
 	stage := func(h *ProbabilisticHeader, original []byte) []byte {
+		// Source blocks keep arriving independently of the challenge duration.
+		// Observe this header after its settlement evidence exists.
+		latest := time.Unix(0, int64(h.DescendantBlocks[len(h.DescendantBlocks)-1].Timestamp))
+		if latest.After(ctx.BlockTime()) {
+			ctx = ctx.WithBlockTime(latest)
+		}
 		planner := *client(subjectID)
 		if len(original) > 0 {
 			planner.CheckpointReference = base

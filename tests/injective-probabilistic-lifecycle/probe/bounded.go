@@ -404,7 +404,7 @@ func boundedRun(encoding injcodec.EncodingConfig, key *ethsecp256k1.PrivKey, add
 		panic("host continuity hooks must be installed")
 	}
 	// Certified bootstrap has only its own commitment cutoff. A destination
-	// interruption cannot introduce a separate twelve-hour host deadline.
+	// interruption cannot introduce a separate six-hour host deadline.
 	d.until(before.EpochContextChallenges[0].UsableAfterUnixNs)
 	if raw, err := os.ReadFile(filepath.Join(dir, "headers.json")); err == nil {
 		var headers map[string]*lc.ProbabilisticHeader

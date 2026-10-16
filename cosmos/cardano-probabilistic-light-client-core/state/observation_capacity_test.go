@@ -16,10 +16,11 @@ func TestMaximumObservationFitsResponseWindow(t *testing.T) {
 	verification := 2*tableSteps + MaxHeaderBlocks + (MaxBridgeBlocks+1)*(certificateSteps-1)
 	forward := 1 + verification + 1 + 2   // BEGIN, verification, COMPLETE, two activations
 	challenge := 1 + verification + 1 + 1 // BEGIN, verification, COMPLETE, freeze
+	require.Equal(t, 6*time.Hour, SharedSnapshotChallengePeriod)
 	require.Equal(t, 2427, forward)
 	require.Equal(t, 2426, challenge)
 	require.LessOrEqual(t, uint32(forward-1), MaxObservationSteps)
 	require.LessOrEqual(t, uint32(challenge-2), MaxObservationSteps)
 	require.LessOrEqual(t, time.Duration(forward)*SupportedInclusionTimePerStep+SupportedDetectionAndPreparationTime, SharedSnapshotChallengePeriod)
-	require.LessOrEqual(t, time.Duration(MaxObservationSteps)*SupportedInclusionTimePerStep+SupportedDetectionAndPreparationTime, SharedSnapshotChallengePeriod)
+	require.LessOrEqual(t, time.Duration(challenge)*SupportedInclusionTimePerStep+SupportedDetectionAndPreparationTime, SharedSnapshotChallengePeriod)
 }

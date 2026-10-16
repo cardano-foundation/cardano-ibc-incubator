@@ -54,7 +54,7 @@ func TestAppLateMithrilCertificateReleasesPendingEpoch(t *testing.T) {
 	private := ctx.KVStore(key)
 	client, _, err := initializeTrusted(t, ctx, cdc, private, history.Client, history.Consensus)
 	require.NoError(t, err)
-	ctx = ctx.WithBlockTime(start.Add(12*time.Hour + time.Second))
+	ctx = ctx.WithBlockTime(start.Add(EpochContextChallengePeriod + time.Second))
 	steps, id, err := BuildObservationPlan(client, header, nil, uint64(len(history.Client.EpochStakeDistribution)), 4)
 	require.NoError(t, err)
 	for _, step := range steps {

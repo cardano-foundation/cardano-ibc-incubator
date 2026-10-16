@@ -1,6 +1,6 @@
 ## Probabilistic Light Client Design
 
-The client has one storage format. Small public records refer to shared authenticated snapshots and verification runs through bounded transactions. The wire marker is `storage_version = 2`. The former inline format is removed and version `0` is rejected. See [the storage and verification design](probabilistic-bounded-verification.md) for the resource bounds and twelve-hour response window.
+The client has one storage format. Small public records refer to shared authenticated snapshots and verification runs through bounded transactions. The wire marker is `storage_version = 2`. The former inline format is removed and version `0` is rejected. See [the storage and verification design](probabilistic-bounded-verification.md) for the resource bounds and six-hour response window.
 
 Author: Julius Tranquilli, https://github.com/floor-licker
 
@@ -208,9 +208,9 @@ The Gateway:
 
 ### New Client
 
-Use the ordinary Hermes client creation command. Gateway prepares initial state at the requested Cardano height or its current indexed point. That point must contain the bridge instance's HostState UTxO. The operator trusts the configured node and history providers for initialization. Hermes submits `MsgCreateClient` and automatically finishes the bounded imports. No bootstrap file is required. The creation records contain references only and pending imports resume at the same checkpoint. The final import certifies the bootstrap table with Mithril. Proof use requires a completed host block after that commitment cutoff without a twelve-hour stake challenge.
+Use the ordinary Hermes client creation command. Gateway prepares initial state at the requested Cardano height or its current indexed point. That point must contain the bridge instance's HostState UTxO. The operator trusts the configured node and history providers for initialization. Hermes submits `MsgCreateClient` and automatically finishes the bounded imports. No bootstrap file is required. The creation records contain references only and pending imports resume at the same checkpoint. The final import certifies the bootstrap table with Mithril. Proof use requires a completed host block after that commitment cutoff without a six-hour stake challenge.
 
-An observation may cross one epoch boundary from its trusted checkpoint. A future table without matching Mithril certification starts a twelve-hour response window when its verified receipt is activated. Until that window and a subsequent committed host block have passed, an observation using that epoch cannot advance the checkpoint or publish a proof root. Qualification remains positioned at the anchor. Temporary descendants advance working verification state only. The committed checkpoint retains the anchor's nonce, registry, production and certificate counters.
+An observation may cross one epoch boundary from its trusted checkpoint. A future table without matching Mithril certification starts a six-hour response window when its verified receipt is activated. Until that window and a subsequent committed host block have passed, an observation using that epoch cannot advance the checkpoint or publish a proof root. Qualification remains positioned at the anchor. Temporary descendants advance working verification state only. The committed checkpoint retains the anchor's nonce, registry, production and certificate counters.
 
 The client derives a block's epoch from its signed slot and the stored current
 epoch boundaries. Those boundaries provide the network's epoch length and slot
@@ -266,7 +266,7 @@ change.
 
 ## Epoch Context Challenge Window
 
-Only an uncertified stake distribution starts the twelve-hour response window. It budgets bounded evidence verification and challenge submission. Repeated proposals do not reset it. Host interruptions pause the unfinished window without resetting elapsed observation time. They do not impose another wait on certified or already cleared allocations. Both activation and proof verification require a completed host block after the allocation's own cutoff. A matching Mithril certificate removes any remaining stake wait. Bootstrap requires certification. Authorized recovery adopts a usable substitute without starting a new stake window.
+Only an uncertified stake distribution starts the six-hour response window. It budgets bounded evidence verification and challenge submission. Repeated proposals do not reset it. Host interruptions pause the unfinished window without resetting elapsed observation time. They do not impose another wait on certified or already cleared allocations. Both activation and proof verification require a completed host block after the allocation's own cutoff. A matching Mithril certificate removes any remaining stake wait. Bootstrap requires certification. Authorized recovery adopts a usable substitute without starting a new stake window.
 
 Hermes checks the exact requested proof root before waiting for an epoch proposal. A retained root waits only for its own epoch. A new observation waits for its base epoch and any new table used by its settlement descendants. An unrelated future proposal does not delay packet or handshake proofs or checkpoint refresh. Generation checks, host continuity and connection delays still apply.
 
@@ -282,7 +282,7 @@ unsigned part of an epoch table. Every client starts from a stake table that
 Mithril certified. Afterwards a Cardano stake distribution certified by Mithril
 outranks an uploaded stake table. Once one is recorded for an epoch, that
 epoch's table must equal it and needs no response window. Until then the
-uploaded table and its 12-hour response window apply. Every existing check
+uploaded table and its 6-hour response window apply. Every existing check
 stays in place.
 
 The anchor is three client-state fields, trusted at bootstrap like the
@@ -361,7 +361,7 @@ session first activates a new epoch's table:
   it. The table is then authenticated, so its deadline is the activation time
   and it becomes usable after the next committed host block. The host
   resumption guard still applies.
-- Otherwise the table gets the usual 12-hour response window, and the client
+- Otherwise the table gets the usual 6-hour response window, and the client
   records the table's Mithril root as accepted for that epoch.
 
 A certificate can arrive after a table was activated under the response window,

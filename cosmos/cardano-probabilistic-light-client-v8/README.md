@@ -89,7 +89,7 @@ go get github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probab
 
 ## Epoch challenge deployment
 
-Only an uncertified stake distribution starts a twelve-hour challenge window.
+Only an uncertified stake distribution starts a six-hour challenge window.
 A matching Mithril certificate removes that wait. Host interruptions pause an
 unfinished window without restarting elapsed time or re-locking usable roots.
 Bootstrap requires Mithril certification. Authorized recovery adopts a usable

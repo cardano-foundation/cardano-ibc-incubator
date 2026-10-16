@@ -124,7 +124,7 @@ func stageSnapshotChallenge(t *testing.T, ctx sdk.Context, cdc codec.BinaryCodec
 	ctx = withTestHostProgress(ctx.WithBlockTime(time.Unix(0, int64(history.Consensus.Timestamp))))
 	client, _, err := initializeTrusted(t, ctx, cdc, private, history.Client, history.Consensus)
 	require.NoError(t, err)
-	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(12*time.Hour + time.Second))
+	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(EpochContextChallengePeriod + time.Second))
 	reload := func() {
 		var found bool
 		client, found = getClientState(private, cdc)

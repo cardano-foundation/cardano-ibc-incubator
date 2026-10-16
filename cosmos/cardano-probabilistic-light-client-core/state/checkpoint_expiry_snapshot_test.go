@@ -138,7 +138,7 @@ func TestSnapshotStagingCannotReservePermissionPastCheckpointExpiry(t *testing.T
 
 func TestSnapshotProposalResponseWindowMustFitRemainingCheckpointLifetime(t *testing.T) {
 	f := newSnapshotExpiryFixture(t)
-	f.ctx.Time = f.start.Add(37 * time.Hour)
+	f.ctx.Time = f.start.Add(f.client.TrustingPeriod - SharedSnapshotChallengePeriod + time.Hour)
 	plan := f.stage(t, f.evidence.Header, nil)
 	require.Equal(t, Active, f.client.Status(f.ctx, f.private, f.cdc))
 	before := f.client.LatestCheckpointTimestamp

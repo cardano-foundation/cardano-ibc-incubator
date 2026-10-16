@@ -216,7 +216,7 @@ func TestCertifiedStakeNeedsNoResponseWindow(t *testing.T) {
 	require.Equal(t, uint64(proposedAt.UnixNano()), a.client.epochChallenge(a.table.Epoch).UsableAfterUnixNs)
 	require.Equal(t, tableRoot(t, a.table), a.proposal(t).MithrilRoot)
 
-	// The table is usable after the next committed block, not twelve hours later.
+	// The table is usable after the next committed block, not six hours later.
 	require.NoError(t, a.activateAt(t, proposedAt.Add(time.Second)))
 	require.NotEqual(t, a.base, a.client.CheckpointReference)
 }
