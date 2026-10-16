@@ -2,6 +2,8 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { resolve } from 'node:path';
 import { QueryIBCHeaderRequest, QueryIBCHeaderResponse } from '@cardano-ibc/proto-types/build/ibc/core/types/v1/query';
+import { QueryNewClientRequest, QueryNewClientResponse, QueryLatestHeightRequest, QueryLatestHeightResponse } from '@cardano-ibc/proto-types/ibc/core/client/v1/query';
+import { QueryMithrilStakeCertificatesRequest, QueryMithrilStakeCertificatesResponse } from '@cardano-ibc/proto-types/ibc/core/types/v1/query';
 import * as grpc from '@grpc/grpc-js';
 import { Cbor, CborArray, CborBytes, CborUInt } from '@harmoniclabs/cbor';
 import { createPacketStateMock } from '../../shared/testing/packet-state-test-mock';
@@ -14,6 +16,7 @@ import {
   ProbabilisticHeader,
   ProbabilisticBlock,
   EpochContext,
+  ConsensusState,
 } from '@cardano-ibc/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic';
 import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
@@ -22,6 +25,15 @@ import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-p
 import { DenomTraceService } from '../services/denom-trace.service';
 import { HistoryService } from '../services/history.service';
 import { bech32 } from 'bech32';
+import { queryPraosNoncesAtPoint } from '../../shared/helpers/ogmios';
+import { MithrilService } from '../../shared/modules/mithril/mithril.service';
+import { HttpService } from '@nestjs/axios';
+import { productionAtAnchor } from '../services/pool-production';
+
+jest.mock('../../shared/helpers/ogmios', () => ({
+  ...jest.requireActual('../../shared/helpers/ogmios'),
+  queryPraosNoncesAtPoint: jest.fn(),
+}));
 
 // Settlement fixtures begin after more than six months of registration history.
 const MATURE_POOL_SLOT = 20_000_000n;
@@ -1152,13 +1164,16 @@ describe('bounded boundary workload', () => {
       '$1"$2"',
     );
     const later = JSON.parse(sourceText).Later;
+    const honestBlocks = blocks;
+    const honestContexts = contexts;
     let switched = false;
     const selectBranch = () => {
-      if (process.env.CHECKPOINT_GATEWAY_WITNESS === '1' && existsSync(`${root}/witness-fork`) && !switched) {
-        blocks = later.Blocks.map((block: any) => ProbabilisticBlock.fromJSON(block));
-        contexts = [client.epoch_contexts[0], ...later.Contexts.map((context: any) => EpochContext.fromJSON(context))];
+      const fork = process.env.CHECKPOINT_GATEWAY_WITNESS === '1' && existsSync(`${root}/witness-fork`);
+      if (fork !== switched) {
+        blocks = fork ? later.Blocks.map((block: any) => ProbabilisticBlock.fromJSON(block)) : honestBlocks;
+        contexts = fork ? [client.epoch_contexts[0], ...later.Contexts.map((context: any) => EpochContext.fromJSON(context))] : honestContexts;
         records = recordsFor(blocks);
-        switched = true;
+        switched = fork;
       }
     };
     const trusted = {
@@ -1218,11 +1233,51 @@ describe('bounded boundary workload', () => {
     );
     const get = (service as any).configService.get as jest.Mock;
     const fallback = get.getMockImplementation()!;
-    get.mockImplementation((key) =>
-      key === 'cardanoRandomnessStabilisationWindowSlots'
-        ? String(client.randomness_stabilisation_window_slots)
-        : fallback(key),
-    );
+    const readiness = process.env.READINESS_MITHRIL_ENDPOINT;
+    const values: Record<string, unknown> = {
+      cardanoRandomnessStabilisationWindowSlots: String(client.randomness_stabilisation_window_slots),
+    };
+    if (readiness) {
+      const raw = JSON.parse(sourceText);
+      const consensus = ConsensusState.fromJSON(raw.Consensus);
+      Object.assign(values, {
+        mithrilEndpoint: readiness,
+        cardanoChainId: client.chain_id,
+        cardanoClientTrustingPeriodSeconds: 172800,
+        cardanoClientMaxClockDriftSeconds: Number(client.max_clock_drift!.seconds),
+        deployment: {
+          packetState: { state: { scriptHash: Buffer.from(client.packet_lane_policy_id).toString('hex') } },
+          hostStateNFT: { policyId: Buffer.from(client.host_state_nft_policy_id).toString('hex'), name: Buffer.from(client.host_state_nft_token_name).toString('hex') },
+        },
+      });
+      Object.assign(historyServiceMock, {
+        findInitialPoolRegistryAtBlock: jest.fn().mockResolvedValue(client.latest_checkpoint_pool_registry),
+      });
+      historyServiceMock.findObservedPoolProductionAtBlock.mockImplementation(async (point) =>
+        point.height === 966 ? client.latest_checkpoint_pool_production : productionAtAnchor(
+          client, records.filter((block: any) => block.height < point.height), point,
+        ),
+      );
+      historyServiceMock.findOperationalCertificateCountersAtBlock.mockResolvedValue(new Map(
+        client.latest_checkpoint_operational_certificate_counters.map((row) => [bech32.encode('pool', bech32.toWords(row.pool_id)), row.sequence_number]),
+      ));
+      jest.mocked(queryPraosNoncesAtPoint).mockResolvedValue(client.latest_checkpoint_nonce_state as never);
+      lucidServiceMock.LucidImporter.SLOT_CONFIG_NETWORK.Preview = {
+        zeroTime: Number(client.system_start_unix_ns / 1_000_000n),
+        slotLength: Number(client.slot_length_ns / 1_000_000n),
+      };
+      lucidServiceMock.decodeDatum.mockResolvedValue({ state: { ibc_state_root: Buffer.from(consensus.ibc_state_root).toString('hex') } });
+      (service as any).packetState.snapshot.mockResolvedValue(consensus.packet_state_snapshot);
+      const initialHeader = Cbor.encode(new CborArray([new CborArray([
+        new CborUInt(966), new CborUInt(trusted.slotNo), new CborBytes(client.latest_checkpoint_nonce_state!.last_applied_block_nonce),
+      ])])).toBuffer();
+      miniProtocalsServiceMock.fetchBlockCbor.mockResolvedValue(Buffer.alloc(0));
+      miniProtocalsServiceMock.extractBlockHeaderCbor.mockImplementation((body, hash) =>
+        hash === trusted.hash ? initialHeader : MiniProtocalsService.prototype.extractBlockHeaderCbor(body, hash),
+      );
+    }
+    get.mockImplementation((key) => values[key] ?? fallback(key));
+    if (readiness) (service as any).mithrilService = new MithrilService(new HttpService(), (service as any).configService);
     const server = new grpc.Server();
     const method = {
       path: '/ibc.core.types.v1.Query/IBCHeader',
@@ -1234,8 +1289,29 @@ describe('bounded boundary workload', () => {
       responseDeserialize: (bytes: Buffer) => QueryIBCHeaderResponse.decode(bytes),
     };
     server.addService(
-      { IBCHeader: method },
       {
+        IBCHeader: method,
+        LatestHeight: { ...method, path: '/ibc.core.client.v1.Query/LatestHeight', requestSerialize: (v: any) => Buffer.from(QueryLatestHeightRequest.encode(v).finish()), requestDeserialize: (v: Buffer) => QueryLatestHeightRequest.decode(v), responseSerialize: (v: any) => Buffer.from(QueryLatestHeightResponse.encode(v).finish()), responseDeserialize: (v: Buffer) => QueryLatestHeightResponse.decode(v) },
+        NewClient: { ...method, path: '/ibc.core.client.v1.Query/NewClient', requestSerialize: (v: any) => Buffer.from(QueryNewClientRequest.encode(v).finish()), requestDeserialize: (v: Buffer) => QueryNewClientRequest.decode(v), responseSerialize: (v: any) => Buffer.from(QueryNewClientResponse.encode(v).finish()), responseDeserialize: (v: Buffer) => QueryNewClientResponse.decode(v) },
+        MithrilStakeCertificates: { ...method, path: '/ibc.core.types.v1.Query/MithrilStakeCertificates', requestSerialize: (v: any) => Buffer.from(QueryMithrilStakeCertificatesRequest.encode(v).finish()), requestDeserialize: (v: Buffer) => QueryMithrilStakeCertificatesRequest.decode(v), responseSerialize: (v: any) => Buffer.from(QueryMithrilStakeCertificatesResponse.encode(v).finish()), responseDeserialize: (v: Buffer) => QueryMithrilStakeCertificatesResponse.decode(v) },
+      },
+      {
+        LatestHeight: async (_call: any, callback: any) => {
+          try { callback(null, visible() === 966 ? { height: 966n } : await service.latestCertifiedHeight()); }
+          catch (error) { callback({ code: grpc.status.FAILED_PRECONDITION, message: String(error) }); }
+        },
+        NewClient: async (call: any, callback: any) => {
+          try {
+            if (!readiness) throw new Error('Readiness bootstrap is not configured');
+            appendFileSync(`${root}/bootstrap-requests.jsonl`, JSON.stringify({ sequence: call.request.initialization_sequence, height: String(call.request.height) }) + '\n');
+            if (call.request.initialization_sequence > 2 && existsSync(`${root}/pause-bootstrap`)) throw new Error('Interrupted bootstrap fixture');
+            callback(null, await service.queryNewClient(call.request));
+          } catch (error) { callback({ code: grpc.status.FAILED_PRECONDITION, message: String(error) }); }
+        },
+        MithrilStakeCertificates: async (call: any, callback: any) => {
+          try { callback(null, await service.queryMithrilStakeCertificates(call.request)); }
+          catch (error) { callback({ code: grpc.status.FAILED_PRECONDITION, message: String(error) }); }
+        },
         IBCHeader: async (call: any, callback: any) => {
           try {
             selectBranch();

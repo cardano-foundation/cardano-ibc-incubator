@@ -174,6 +174,14 @@ func acceptanceSourceWithActivity(t *testing.T, root, receiver string, export, i
 		request["SlotLengthNs"] = uint64(time.Second)
 		fixtureName = "native-idle.json.gz"
 	}
+	if os.Getenv("LIVE_READINESS_PROFILE") == "1" {
+		request["SlotLengthNs"] = uint64(time.Second)
+		request["EpochLengthSlots"] = uint64(20000)
+		request["ActiveSlotCoefficientNumerator"] = uint64(1)
+		request["ActiveSlotCoefficientDenominator"] = uint64(2)
+		request["RetainedCounterRows"] = uint64(40)
+		request["RenewOperationalCertificates"] = true
+	}
 	acceptanceWriteJSON(t, input, request)
 	var history acceptanceHistory
 	if export || os.Getenv("UPDATE_NATIVE_RECOVERY_FIXTURE") == "1" {
@@ -219,6 +227,11 @@ func acceptanceSourceWithActivity(t *testing.T, root, receiver string, export, i
 	// signatures are unchanged. Host challenge periods use real committed time.
 	newest := history.Honest.Blocks[len(history.Honest.Blocks)-1].Timestamp
 	delta := time.Now().Add(-5*time.Minute).UnixNano() - int64(newest)
+	if age := os.Getenv("CHECKPOINT_INITIAL_AGE"); age != "" {
+		duration, err := time.ParseDuration(age)
+		require.NoError(t, err)
+		delta = time.Now().Add(-duration).UnixNano() - int64(history.Consensus.Timestamp)
+	}
 	history.Client.SystemStartUnixNs = uint64(int64(history.Client.SystemStartUnixNs) + delta)
 	history.Client.LatestCheckpointTimestamp = uint64(int64(history.Client.LatestCheckpointTimestamp) + delta)
 	history.Consensus.Timestamp = uint64(int64(history.Consensus.Timestamp) + delta)
@@ -240,6 +253,7 @@ func TestExportInjectiveLifecycleHistory(t *testing.T) {
 	}
 	require.NoError(t, os.MkdirAll(root, 0700))
 	history := acceptanceSourceForReceiver(t, root, receiver, true)
+	acceptanceExportGatewayHistory(t, root, history)
 	headers := map[string]*ProbabilisticHeader{}
 	for _, step := range []struct {
 		name, branch    string
@@ -250,7 +264,7 @@ func TestExportInjectiveLifecycleHistory(t *testing.T) {
 	acceptanceWriteJSON(t, filepath.Join(root, "headers.json"), headers)
 	channelProof, _ := acceptanceProof(t, acceptanceChannelValues(t), "channelEnds/ports/transfer/channels/channel-0")
 	acceptanceWriteJSON(t, filepath.Join(root, "channel-proof.json"), map[string]any{"proof": channelProof})
-	for _, point := range []struct{ anchor, count uint64 }{{967, 1}, {1001, 2}, {1032, 2}, {1063, 3}, {1094, 4}, {1125, 5}} {
+	for _, point := range []struct{ anchor, count uint64 }{{966, 1}, {967, 1}, {1001, 2}, {1032, 2}, {1063, 3}, {1094, 4}, {1125, 5}} {
 		for sequence := uint64(1); sequence <= point.count; sequence++ {
 			proof, _ := acceptanceProof(t, acceptanceLaneValuesForReceiver(t, point.count, receiver), acceptanceCommitmentKey(sequence))
 			acceptanceWriteJSON(t, filepath.Join(root, fmt.Sprintf("packet-%d-%d.json", point.anchor, sequence)), map[string]any{"packet": acceptancePacketForReceiver(sequence, receiver), "proof_commitment": proof, "proof_height": NewHeight(0, point.anchor), "signer": receiver})
@@ -258,6 +272,7 @@ func TestExportInjectiveLifecycleHistory(t *testing.T) {
 	}
 	acceptanceWriteJSON(t, filepath.Join(root, "fixture-metadata.json"), map[string]any{"receiver": receiver, "trusted_height": history.Client.LatestCheckpointHeight, "scope": "Native signed Cardano fixture bodies and headers for a disposable Injective node"})
 }
+
 func acceptanceHeader(t *testing.T, history acceptanceHistory, branch string, trusted, anchor uint64) *ProbabilisticHeader {
 	return acceptanceSourceHeader(t, history, branch, trusted, anchor, false)
 }
@@ -323,22 +338,7 @@ func TestExportIdleCheckpointHistory(t *testing.T) {
 		receiver = acceptanceAddress("operator").String()
 	}
 	history := acceptanceSourceWithActivity(t, root, receiver, os.Getenv("UPDATE_NATIVE_RECOVERY_FIXTURE") != "1", true)
-	clientBytes, err := history.Client.Marshal()
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(filepath.Join(root, "source-client.pb"), clientBytes, 0600))
-	exportedBlocks := []map[string]any{}
-	for _, block := range history.Honest.Blocks {
-		raw, err := block.Marshal()
-		require.NoError(t, err)
-		exportedBlocks = append(exportedBlocks, map[string]any{"height": block.Height.RevisionHeight, "protobuf": hex.EncodeToString(raw)})
-	}
-	exportedContexts := []string{}
-	for _, context := range history.Honest.Contexts {
-		raw, err := context.Marshal()
-		require.NoError(t, err)
-		exportedContexts = append(exportedContexts, hex.EncodeToString(raw))
-	}
-	acceptanceWriteJSON(t, filepath.Join(root, "gateway-history.json"), map[string]any{"blocks": exportedBlocks, "contexts": exportedContexts})
+	acceptanceExportGatewayHistory(t, root, history)
 	channelProof, _ := acceptanceProof(t, acceptanceChannelValues(t), "channelEnds/ports/transfer/channels/channel-0")
 	acceptanceWriteJSON(t, filepath.Join(root, "channel-proof.json"), map[string]any{"proof": channelProof})
 
@@ -360,6 +360,26 @@ func TestExportIdleCheckpointHistory(t *testing.T) {
 			acceptanceWriteJSON(t, filepath.Join(root, fmt.Sprintf("packet-%d-%d.json", point.height, seq)), map[string]any{"packet": acceptancePacketForReceiver(seq, receiver), "proof_commitment": proof, "proof_height": NewHeight(0, point.height), "signer": receiver})
 		}
 	}
+}
+
+func acceptanceExportGatewayHistory(t *testing.T, root string, history acceptanceHistory) {
+	t.Helper()
+	clientBytes, err := history.Client.Marshal()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(root, "source-client.pb"), clientBytes, 0600))
+	exportedBlocks := []map[string]any{}
+	for _, block := range history.Honest.Blocks {
+		raw, err := block.Marshal()
+		require.NoError(t, err)
+		exportedBlocks = append(exportedBlocks, map[string]any{"height": block.Height.RevisionHeight, "protobuf": hex.EncodeToString(raw)})
+	}
+	exportedContexts := []string{}
+	for _, context := range history.Honest.Contexts {
+		raw, err := context.Marshal()
+		require.NoError(t, err)
+		exportedContexts = append(exportedContexts, hex.EncodeToString(raw))
+	}
+	acceptanceWriteJSON(t, filepath.Join(root, "gateway-history.json"), map[string]any{"blocks": exportedBlocks, "contexts": exportedContexts})
 }
 
 // Export proofs and later signed headers without regenerating or shifting the

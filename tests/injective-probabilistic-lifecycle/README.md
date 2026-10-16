@@ -1,5 +1,7 @@
 The probabilistic client has one storage format. The native replay verifies bounded transactions against the pinned Injective application and captured destination limits. Historical reports under `evidence/` show why the removed inline implementation could not fit those limits. That implementation is no longer selectable or executable.
 
+The [live readiness rehearsal](READINESS.md) adds real CometBFT RPC, Hermes signing and event collection to the native application run. Its local parameter profile and remaining production gates are recorded separately from the controlled-clock evidence below.
+
 The snapshot format has a bounded execution replay. Its [recorded results](evidence/bounded-results.json) use the same pinned native `InjectiveApp` and captured gas parameters. A separate socket ABCI process executes the actual application with persistent stores and a controlled clock. The source CLI does not support standalone ABCI. This replay therefore does not measure public CometBFT inclusion or elapsed detection time. It uses seven days of source trust for the deliberately sparse synthetic Cardano history.
 
 Prepare the native graph with the bounded helper target. `prepare.sh` still builds `injectived`. The bounded helper constructs that same native application for the controlled-clock replay.

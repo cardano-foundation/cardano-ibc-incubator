@@ -114,6 +114,11 @@ func shift(f *fixture) {
 }
 
 func writeTx(cdc codec.Codec, directory, name string, message proto.Message) {
+	packed, err := cdctypes.NewAnyWithValue(message)
+	must(err)
+	raw, err := packed.Marshal()
+	must(err)
+	must(os.WriteFile(filepath.Join(directory, name+".any"), raw, 0600))
 	write(filepath.Join(directory, name+".json"), map[string]any{"body": map[string]any{"messages": []json.RawMessage{anyJSON(cdc, message)}, "memo": "Injective local release test", "timeout_height": "0", "extension_options": []any{}, "non_critical_extension_options": []any{}}, "auth_info": map[string]any{"signer_infos": []any{}, "fee": map[string]any{"amount": []any{}, "gas_limit": "0", "payer": "", "granter": ""}}, "signatures": []any{}})
 }
 
@@ -168,7 +173,7 @@ func main() {
 		checkpointPlan(encoding, address)
 		return
 	}
-	if os.Args[1] == "checkpoint-prepare" {
+	if os.Args[1] == "checkpoint-prepare" || os.Args[1] == "readiness-prepare" {
 		checkpointPrepare(encoding, address)
 		return
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/InjectiveLabs/injective-core/injective-chain/crypto/ethsecp256k1"
@@ -44,6 +45,9 @@ func checkpointPrepare(encoding injcodec.EncodingConfig, address string) {
 	ms := store.NewCommitMultiStore(database, log.NewNopLogger(), metrics.NewNoOpMetrics())
 	ms.MountStoreWithDB(lc.SharedStoreKey, storetypes.StoreTypeIAVL, database)
 	keys := []*storetypes.KVStoreKey{storetypes.NewKVStoreKey("subject"), storetypes.NewKVStoreKey("control")}
+	if os.Args[1] == "readiness-prepare" {
+		keys = nil // Client creation and imports must go through Hermes and the keeper.
+	}
 	for _, key := range keys {
 		ms.MountStoreWithDB(key, storetypes.StoreTypeIAVL, database)
 	}
@@ -72,7 +76,16 @@ func checkpointPrepare(encoding injcodec.EncodingConfig, address string) {
 	must(json.Unmarshal(raw, &channelProof))
 	writeTx(encoding.Codec, dir, "channel-init", channeltypes.NewMsgChannelOpenInit("transfer", "ics20-1", channeltypes.UNORDERED, []string{"connection-0"}, "transfer", address))
 	writeTx(encoding.Codec, dir, "channel-ack", channeltypes.NewMsgChannelOpenAck("transfer", "channel-0", "channel-0", "ics20-1", channelProof.Proof, clienttypes.NewHeight(0, 966), address))
-	for _, name := range []string{"packet-966-1", "packet-1125-2"} {
+	packetNames := []string{"packet-966-1", "packet-1125-2"}
+	if os.Args[1] == "readiness-prepare" {
+		packetNames = nil
+		files, err := filepath.Glob(filepath.Join(dir, "packet-*.json"))
+		must(err)
+		for _, file := range files {
+			packetNames = append(packetNames, strings.TrimSuffix(filepath.Base(file), ".json"))
+		}
+	}
+	for _, name := range packetNames {
 		var packet channeltypes.MsgRecvPacket
 		raw, err = os.ReadFile(filepath.Join(dir, name+".json"))
 		must(err)
@@ -91,8 +104,13 @@ func checkpointPrepare(encoding injcodec.EncodingConfig, address string) {
 		proposal, err := govtypes.NewMsgSubmitProposal([]sdk.Msg{recovery}, deposit, address, "", "Recover idle Cardano client", "Disposable native checkpoint lifecycle", true)
 		must(err)
 		writeTx(encoding.Codec, dir, "recover-"+name, proposal)
-		writeTx(encoding.Codec, dir, "vote-"+name, govtypes.NewMsgVote(sdk.MustAccAddressFromBech32(address), uint64(i+1), govtypes.OptionYes, ""))
+		proposalID := uint64(i + 1)
+		if os.Args[1] == "readiness-prepare" {
+			proposalID = 1
+		}
+		writeTx(encoding.Codec, dir, "vote-"+name, govtypes.NewMsgVote(sdk.MustAccAddressFromBech32(address), proposalID, govtypes.OptionYes, ""))
 	}
+	writeTx(encoding.Codec, dir, "continue-recovery", &lc.MsgContinueClient{ClientId: lc.ModuleName + "-0", Signer: address, Operation: 12})
 	write(filepath.Join(dir, "bootstrap.json"), map[string]any{"connection": connectiontypes.NewIdentifiedConnection("connection-0", connection), "clients": clients, "consensuses": consensuses, "metadatas": metadatas, "operator": address, "shared_objects": json.RawMessage(shared)})
 }
 
