@@ -25,6 +25,15 @@ pub(crate) async fn run(
     network: Option<&str>,
 ) -> Result<(), String> {
     let options = LightClientTestOptions::resolve(scenario, chain, network)?;
+    if matches!(
+        scenario,
+        LightClientTest::ChallengeRecovery | LightClientTest::DeadlineOrdering
+    ) {
+        return run_native_acceptance(project_root_path, &options);
+    }
+    if scenario == LightClientTest::SoftwareUpgrade {
+        return run_software_upgrade(project_root_path, &options);
+    }
     let relayer_path = project_root_path.join("relayer");
     let relayer_was_running = matches!(
         start::check_health_target(project_root_path, HealthTarget::Core(CoreServiceId::Hermes)),
@@ -91,6 +100,17 @@ impl LightClientTestOptions {
         }
 
         let network = network.unwrap_or("v8-classic");
+        if matches!(
+            scenario,
+            LightClientTest::ChallengeRecovery
+                | LightClientTest::SoftwareUpgrade
+                | LightClientTest::DeadlineOrdering
+        ) && network != "v8-classic"
+        {
+            return Err(
+                "This acceptance scenario requires the local v8-classic destination profile".into(),
+            );
+        }
         if cosmos_profiles::semantics(network)? != IbcSemantics::Classic {
             return Err(format!(
                 "Profile '{network}' uses IBC v2 semantics; recover-client testing currently requires v8-classic or v10-classic"
@@ -111,6 +131,11 @@ fn run_recover_client(
 ) -> Result<(), String> {
     match options.scenario {
         LightClientTest::RecoverClient => {}
+        LightClientTest::ChallengeRecovery
+        | LightClientTest::SoftwareUpgrade
+        | LightClientTest::DeadlineOrdering => {
+            unreachable!("dispatched before live route setup")
+        }
     }
 
     logger::log(&format!(
@@ -183,6 +208,143 @@ fn run_recover_client(
     logger::log(&format!(
         "PASS: recover-client preserved the {} Classic route",
         options.network
+    ));
+    Ok(())
+}
+
+// The acceptance binary owns an isolated host and watcher. It never takes over
+// the user's Hermes daemon or rewrites their Gateway configuration.
+fn run_native_acceptance(
+    project_root: &Path,
+    options: &LightClientTestOptions,
+) -> Result<(), String> {
+    let deadlines = options.scenario == LightClientTest::DeadlineOrdering;
+    let scenario = if deadlines {
+        "deadline-ordering"
+    } else {
+        "challenge-recovery"
+    };
+    let artifacts = project_root.join(".caribic/test-artifacts").join(format!(
+        "{scenario}-{}-{}",
+        Utc::now().format("%Y%m%dT%H%M%S%.3fZ"),
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&artifacts)
+        .map_err(|error| format!("Could not create acceptance artifacts: {error}"))?;
+    logger::log(&format!(
+        "Running {} {scenario} acceptance with real host deadlines.",
+        options.network
+    ));
+    logger::log(&format!(
+        "Persistent host, watcher cursor and evidence: {}",
+        artifacts.display()
+    ));
+    let status = Command::new("go")
+        .args([
+            "test",
+            ".",
+            "-run",
+            if deadlines {
+                "^TestCaribicV8DeadlineOrdering$"
+            } else {
+                "^TestCaribicV8ChallengeRecovery$"
+            },
+            "-v",
+            "-count=1",
+            "-timeout=20m",
+        ])
+        .current_dir(project_root.join("cosmos/cardano-probabilistic-light-client-v8"))
+        .arg(if deadlines {
+            "-parallel=5"
+        } else {
+            "-parallel=1"
+        })
+        .env(
+            if deadlines {
+                "CARIBIC_V8_DEADLINES"
+            } else {
+                "CARIBIC_V8_ACCEPTANCE"
+            },
+            "1",
+        )
+        .env("CARIBIC_ACCEPTANCE_ARTIFACTS", &artifacts)
+        .stdin(Stdio::null())
+        .status()
+        .map_err(|error| format!("Could not run local v8 acceptance: {error}"))?;
+    if !status.success() {
+        return Err(format!(
+            "{scenario} acceptance failed ({status}). Evidence: {}",
+            artifacts.display()
+        ));
+    }
+    logger::log(&format!(
+        "PASS: {scenario} acceptance. Evidence: {}",
+        artifacts.display()
+    ));
+    Ok(())
+}
+
+fn run_software_upgrade(
+    project_root: &Path,
+    options: &LightClientTestOptions,
+) -> Result<(), String> {
+    let artifacts = project_root.join(".caribic/test-artifacts").join(format!(
+        "software-upgrade-{}-{}",
+        Utc::now().format("%Y%m%dT%H%M%S%.3fZ"),
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&artifacts)
+        .map_err(|error| format!("Could not create upgrade artifacts: {error}"))?;
+    logger::log(&format!(
+        "Running {} software upgrade through governance, the scheduled halt and host replacement.",
+        options.network
+    ));
+    logger::log("The verifier comes from this checkout in both applications. This does not migrate an older verifier release.");
+    logger::log(&format!(
+        "Host binaries, database and evidence: {}",
+        artifacts.display()
+    ));
+    let module = project_root.join("cosmos/cardano-probabilistic-light-client-v8");
+    let before = artifacts.join("host-before");
+    let after = artifacts.join("host-after");
+    for (binary, successor) in [(&before, false), (&after, true)] {
+        let mut build = Command::new("go");
+        build.args(["test", "-c", "-o"]).arg(binary);
+        if successor {
+            build.arg("-tags=caribic_v8_upgrade");
+        }
+        let status = build
+            .current_dir(&module)
+            .stdin(Stdio::null())
+            .status()
+            .map_err(|error| format!("Could not build v8 upgrade host: {error}"))?;
+        if !status.success() {
+            return Err(format!("Could not build {} ({status})", binary.display()));
+        }
+    }
+    let status = Command::new(&after)
+        .args([
+            "-test.run=^TestCaribicV8SoftwareUpgrade$",
+            "-test.v",
+            "-test.timeout=20m",
+        ])
+        .current_dir(&module)
+        .env("CARIBIC_V8_SOFTWARE_UPGRADE", "1")
+        .env("CARIBIC_ACCEPTANCE_ARTIFACTS", &artifacts)
+        .env("CARIBIC_UPGRADE_BEFORE", &before)
+        .env("CARIBIC_UPGRADE_AFTER", &after)
+        .stdin(Stdio::null())
+        .status()
+        .map_err(|error| format!("Could not run v8 software upgrade: {error}"))?;
+    if !status.success() {
+        return Err(format!(
+            "Software upgrade failed ({status}). Evidence: {}",
+            artifacts.display()
+        ));
+    }
+    logger::log(&format!(
+        "PASS: upgraded host resumed authenticated packets on its retained route. Evidence: {}",
+        artifacts.display()
     ));
     Ok(())
 }
@@ -348,6 +510,57 @@ fn recreate_gateway(project_root_path: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::process::Command;
+
+    #[test]
+    fn challenge_recovery_accepts_only_the_measured_v8_profile() {
+        assert!(
+            LightClientTestOptions::resolve(LightClientTest::ChallengeRecovery, None, None).is_ok()
+        );
+        for profile in ["v10-classic", "v10-v2", "unknown"] {
+            assert!(LightClientTestOptions::resolve(
+                LightClientTest::ChallengeRecovery,
+                None,
+                Some(profile)
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn deadline_ordering_accepts_only_the_local_v8_profile() {
+        assert!(
+            LightClientTestOptions::resolve(LightClientTest::DeadlineOrdering, None, None).is_ok()
+        );
+        for profile in ["v10-classic", "v10-v2", "unknown"] {
+            assert!(LightClientTestOptions::resolve(
+                LightClientTest::DeadlineOrdering,
+                None,
+                Some(profile)
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn software_upgrade_accepts_only_the_local_v8_profile() {
+        assert!(
+            LightClientTestOptions::resolve(LightClientTest::SoftwareUpgrade, None, None).is_ok()
+        );
+        for profile in ["v10-classic", "v10-v2", "unknown"] {
+            assert!(LightClientTestOptions::resolve(
+                LightClientTest::SoftwareUpgrade,
+                None,
+                Some(profile)
+            )
+            .is_err());
+        }
+        assert!(LightClientTestOptions::resolve(
+            LightClientTest::SoftwareUpgrade,
+            Some(OptionalChainId::Osmosis),
+            None
+        )
+        .is_err());
+    }
 
     #[test]
     fn recover_client_defaults_to_v8_classic() {

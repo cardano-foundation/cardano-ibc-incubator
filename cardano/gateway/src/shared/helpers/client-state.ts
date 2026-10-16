@@ -48,7 +48,7 @@ export function normalizeClientStateFromDatum(clientState: ClientState): ClientS
      * the default upgrade module, upgrade_path should be []string{"upgrade",
      * "upgradedIBCState"}`
      */
-    upgrade_path: [],
+    upgrade_path: clientState.upgradePath.map(convertHex2String),
     // /** allow_update_after_expiry is deprecated */
     // /** @deprecated */
     // allow_update_after_expiry: boolean;
@@ -93,6 +93,7 @@ function convertProofSpec(proofSpec: ProofSpec) {
     },
     max_depth: Number(proofSpec.max_depth),
     min_depth: Number(proofSpec.min_depth),
+    prehash_key_before_comparison: proofSpec.prehash_key_before_comparison,
   };
 }
 // Convert client state operator to a structured ClientState object for submit on cardano
@@ -105,9 +106,9 @@ export function initializeClientState(clientStateMsg: ClientStateTendermint): Cl
       numerator: clientStateMsg.trust_level.numerator,
       denominator: clientStateMsg.trust_level.denominator,
     },
-    trustingPeriod: clientStateMsg.trusting_period.seconds * 10n ** 9n,
-    unbondingPeriod: clientStateMsg.unbonding_period.seconds * 10n ** 9n,
-    maxClockDrift: clientStateMsg.max_clock_drift.seconds * 10n ** 9n,
+    trustingPeriod: clientStateMsg.trusting_period.seconds * 10n ** 9n + BigInt(clientStateMsg.trusting_period.nanos),
+    unbondingPeriod: clientStateMsg.unbonding_period.seconds * 10n ** 9n + BigInt(clientStateMsg.unbonding_period.nanos),
+    maxClockDrift: clientStateMsg.max_clock_drift.seconds * 10n ** 9n + BigInt(clientStateMsg.max_clock_drift.nanos),
     frozenHeight: {
       revisionNumber: clientStateMsg.frozen_height.revision_number,
       revisionHeight: clientStateMsg.frozen_height.revision_height,
@@ -117,6 +118,7 @@ export function initializeClientState(clientStateMsg: ClientStateTendermint): Cl
       revisionHeight: clientStateMsg.latest_height.revision_height,
     },
     proofSpecs: convertToProofType(clientStateMsg.proof_specs),
+    upgradePath: clientStateMsg.upgrade_path.map(convertString2Hex),
   };
 
   return clientState;

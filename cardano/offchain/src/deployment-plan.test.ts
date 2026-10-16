@@ -250,3 +250,28 @@ for (const splitRequired of [false, true]) {
     assertEquals(submissions, 0);
   });
 }
+
+Deno.test("channel upgrade deployment fixture pins its applied validators", async () => {
+  const pins = JSON.parse(
+    Deno.readTextFileSync(
+      new URL(
+        "../../../tests/ibc-state-commitment/channel-upgrade-deployment.json",
+        import.meta.url,
+      ),
+    ),
+  );
+  const plan = await loadDeploymentPlan(lucidLoader, inputs);
+  const validators = [
+    plan.spendingChannel.base,
+    ...Object.values(plan.spendingChannel.referredScripts).filter(({ title }) =>
+      title.includes("chan_upgrade")
+    ),
+    plan.hostState,
+    plan.verifyProof,
+  ];
+  assertEquals(pins.schema_version, 6);
+  assertEquals(
+    Object.fromEntries(validators.map(({ title, hash }) => [title, hash])),
+    pins.validators,
+  );
+});

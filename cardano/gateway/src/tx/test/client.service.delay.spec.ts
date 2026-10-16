@@ -36,6 +36,7 @@ function initialDatum(): ClientDatum {
     token: { policyId: '11'.repeat(28), name: '01' },
     state: {
       clientState: {
+        upgradePath: [],
         chainId: Buffer.from('delay-0').toString('hex'),
         trustLevel: { numerator: 1n, denominator: 3n },
         trustingPeriod: 1_000_000_000_000n,
@@ -74,7 +75,7 @@ async function context(input?: ClientDatum) {
   const hostDatum: HostStateDatum = {
     nft_policy: '22'.repeat(28),
     deployer: '33'.repeat(28),
-    control: { port_registry: new Map(), shutdown: 'Active', live_clients: input ? 1n : 0n, live_connections: 0n, live_channels: 0n },
+    control: { port_registry: new Map(), shutdown: 'Active', live_clients: input ? 1n : 0n, live_connections: 0n, live_channels: 0n, last_heartbeat_time: 0n },
     state: {
       version: 1n,
       ibc_state_root: tree.getRoot(),

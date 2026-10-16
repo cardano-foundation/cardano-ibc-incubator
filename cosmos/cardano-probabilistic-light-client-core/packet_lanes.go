@@ -149,8 +149,8 @@ func VerifyPacketLaneNonMembership(root PacketLaneRoot, height uint64, key []byt
 }
 
 func validatePacketLanePath(path []*ics23.InnerOp) error {
-	if len(path) != 64 {
-		return fmt.Errorf("packet lane proof requires 64 inner operations")
+	if len(path) != 64 && len(path) != 65 {
+		return fmt.Errorf("packet lane proof requires 64 tree operations and at most one bucket descriptor")
 	}
 	for _, op := range path {
 		if op == nil || op.Hash != ics23.HashOp_SHA256 {

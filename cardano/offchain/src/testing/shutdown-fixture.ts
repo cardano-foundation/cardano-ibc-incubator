@@ -117,6 +117,7 @@ export async function shutdownFixture(
   }
   const recoverClient = validator("recover_client.recover_client.withdraw", [
     hostPolicy,
+    "00".repeat(28),
   ]);
   recoverClient.address = validatorToRewardAddress("Custom", {
     type: "PlutusV3",
@@ -286,6 +287,7 @@ export async function shutdownFixture(
       live_clients: 1n,
       live_connections: 1n,
       live_channels: 1n,
+      last_heartbeat_time: 0n,
     },
   };
   const hostUtxo = seed(host.address, {
@@ -343,6 +345,7 @@ export async function shutdownFixture(
       record(fromText("transfer"), fromText("channel-0")),
       [fromText("connection-0")],
       fromText("ics20-1"),
+      0n,
     ),
     BigInt(shape.settledPackets + 1),
     1n,
@@ -362,6 +365,7 @@ export async function shutdownFixture(
     ),
     record(0n, 0n),
     record(0n, 0n),
+    new Constr(0, [new Constr(1, []), new Constr(1, []), 0n]),
   );
   const channel = seed(
     spendChannel.address,

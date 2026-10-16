@@ -3,11 +3,13 @@ use cardano/assets.{PolicyId}
 use cardano/transaction.{Transaction}
 use ibc/client/ics_007_tendermint_client/client_datum
 use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
+use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  BatchVerifyMembership, BatchVerifyMembershipAndNonMembership, VerifyMembership,
-  VerifyMembershipParams, VerifyNonMembership, VerifyNonMembershipParams,
-  VerifyProofEnvelope,
+  BatchVerifyMembership, BatchVerifyMembershipAndNonMembership,
+  VerifyClientUpgrade, VerifyMembership, VerifyMembershipParams,
+  VerifyNonMembership, VerifyNonMembershipParams, VerifyProofEnvelope,
 }
+use ibc/client/ics_007_tendermint_client/upgrade
 use ibc/utils/validator_utils
 
 validator verify_proof {
@@ -32,6 +34,20 @@ validator verify_proof {
       )
 
     when redeemer.proof is {
+      VerifyClientUpgrade { input, output, upgrade: upgrade_data } -> and {
+          redeemer.history_witness == None,
+          upgrade.verify(
+            input,
+            output,
+            upgrade_data,
+            validator_utils.get_tx_valid_to(transaction.validity_range) * 1_000_000,
+          ),
+          consensus_history.insert(
+            input.history_root,
+            consensus_history.from_client(input),
+            upgrade_data.history_siblings,
+          ) == output.history_root,
+        }
       VerifyMembership {
         cs,
         cons_state,

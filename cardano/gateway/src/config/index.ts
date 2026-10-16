@@ -1,3 +1,4 @@
+import { MIN_CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS } from './constant.config';
 import { Network } from '@lucid-evolution/lucid';
 import { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 
@@ -136,6 +137,8 @@ interface Config {
   cardanoEpochLength: number;
   cardanoClientTrustingPeriodSeconds: number;
   cardanoClientMaxClockDriftSeconds: number;
+  cardanoRandomnessStabilisationWindowSlots?: string;
+  cardanoPoolRegistryCheckpointFile?: string;
   cardanoStabilityCheckpointMaxBridgeBlocks: number;
   cardanoStabilityCheckpointMaxHeaderBytes: number;
   cardanoEpochParamsEndpoint?: string;
@@ -165,6 +168,15 @@ export default (): Partial<Config> => {
     validatePublicNetworkStabilityConfig(cardanoNetwork, cardanoEpochParamsEndpoint);
   }
 
+  const cardanoClientTrustingPeriodSeconds = Number(process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS || 86_400);
+  if (
+    cardanoLightClientMode === 'stake-weighted-stability' &&
+    (!Number.isSafeInteger(cardanoClientTrustingPeriodSeconds) ||
+      cardanoClientTrustingPeriodSeconds < MIN_CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS)
+  ) {
+    throw new Error('CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS must be at least 86400 for six-hour HostState heartbeats');
+  }
+
   return {
     ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
     ogmiosApiKey: process.env.OGMIOS_API_KEY,
@@ -184,16 +196,18 @@ export default (): Partial<Config> => {
     cardanoEpochLength: Number(
       process.env.CARDANO_EPOCH_LENGTH || defaultEpochLength(process.env.CARDANO_NETWORK_MAGIC),
     ),
-    cardanoClientTrustingPeriodSeconds: Number(process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS || 86_400),
+    cardanoRandomnessStabilisationWindowSlots: process.env.CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS,
+    cardanoPoolRegistryCheckpointFile: process.env.CARDANO_POOL_REGISTRY_CHECKPOINT_FILE,
+    cardanoClientTrustingPeriodSeconds,
     cardanoClientMaxClockDriftSeconds: positiveGoDurationSecondsEnv(
       'CARDANO_CLIENT_MAX_CLOCK_DRIFT_SECONDS',
       10,
     ),
     cardanoStabilityCheckpointMaxBridgeBlocks: Number(
-      process.env.CARDANO_STABILITY_CHECKPOINT_MAX_BRIDGE_BLOCKS || 32,
+      process.env.CARDANO_STABILITY_CHECKPOINT_MAX_BRIDGE_BLOCKS || 96,
     ),
     cardanoStabilityCheckpointMaxHeaderBytes: Number(
-      process.env.CARDANO_STABILITY_CHECKPOINT_MAX_HEADER_BYTES || 768 * 1024,
+      process.env.CARDANO_STABILITY_CHECKPOINT_MAX_HEADER_BYTES || 5 * 1024 * 1024 / 2,
     ),
     cardanoEpochParamsEndpoint,
     cardanoLocalEpochContextEndpoint: cardanoNetwork === 'Custom'

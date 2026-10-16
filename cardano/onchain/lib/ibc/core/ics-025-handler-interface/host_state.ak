@@ -17,7 +17,9 @@ use aiken/builtin
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script, VerificationKeyHash}
+use aiken/interval.{Finite}
 use aiken/primitive/bytearray
+use cardano/transaction.{ValidityRange}
 use ibc/auth.{AuthToken}
 
 // Empty ICS-23 Merkle tree root (32 bytes of zeros)
@@ -69,6 +71,8 @@ pub type ShutdownState {
   ShuttingDown { initiated_at: Int, grace_period_end: Int }
 }
 
+// Frozen public commitment primitive. Keep its fields and order unchanged.
+// Put private metadata in a separate type. See docs/cardano-commitment-codec.md.
 /// The immutable authority registered for a bound IBC port.
 ///
 /// Callback validators use this record to distinguish the real application
@@ -91,6 +95,8 @@ pub type HostStateControl {
   live_clients: Int,
   live_connections: Int,
   live_channels: Int,
+  // Preserved by all ordinary operations. Only a bounded heartbeat may advance it.
+  last_heartbeat_time: Int,
 }
 
 /// HostState represents the canonical IBC host state on Cardano
@@ -169,6 +175,7 @@ pub fn is_initialized_valid(
     control.live_clients == 0,
     control.live_connections == 0,
     control.live_channels == 0,
+    control.last_heartbeat_time == 0,
     state.ibc_state_root == empty_ibc_state_root,
     control.shutdown == Active,
     nft_policy == expected_nft_policy,
@@ -340,19 +347,33 @@ pub fn validate_update_only_root(
   )
 }
 
-/// Validate a liveness heartbeat which advances the HostState UTxO without
-/// changing any committed IBC state.
-///
-/// A heartbeat is deliberately narrower than a normal root update: it may only
-/// increment the version and advance the monitoring timestamp. In particular,
-/// it cannot be used during shutdown or to alter the IBC root, counters, ports,
-/// NFT identity, or deployer authority.
-pub fn validate_heartbeat(old: HostStateDatum, new: HostStateDatum) -> Bool {
+/// A heartbeat preserves all committed IBC state and pays for its own transaction.
+/// Only its version, monitoring timestamp and protected heartbeat clock advance.
+/// Finite ledger bounds prevent forged timestamps from bypassing the cooldown or
+/// postponing the next heartbeat indefinitely. Other operations preserve this clock.
+pub fn validate_heartbeat(
+  old: HostStateDatum,
+  new: HostStateDatum,
+  validity_range: ValidityRange,
+) -> Bool {
+  expect Finite(valid_from) = validity_range.lower_bound.bound_type
+  expect Finite(valid_to) = validity_range.upper_bound.bound_type
+  let previous = old.control.last_heartbeat_time
+  let timed_old =
+    HostStateDatum {
+      ..old,
+      control: HostStateControl { ..old.control, last_heartbeat_time: valid_to },
+    }
   and {
-    validate_update_only_root(old, new),
     old.control.shutdown |> is_active,
+    previous >= 0,
+    valid_from >= 0,
+    valid_to > valid_from,
+    valid_to - valid_from <= heartbeat_max_validity_ms,
+    previous == 0 || valid_from >= previous + heartbeat_interval_ms,
+    validate_update_only_root(timed_old, new),
     new.state.ibc_state_root == old.state.ibc_state_root,
-    new.state.last_update_time > old.state.last_update_time,
+    new.state.last_update_time == valid_to,
   }
 }
 
@@ -385,6 +406,7 @@ pub fn validate_retire_state(
     },
     new_control.port_registry == old_control.port_registry,
     new_control.shutdown == old_control.shutdown,
+    new_control.last_heartbeat_time == old_control.last_heartbeat_time,
     when kind is {
       0 -> and {
           old_control.live_clients > 0,
@@ -467,3 +489,17 @@ pub fn validate_finalize_shutdown(
     !pairs.has_key(datum.control.port_registry, "transfer"),
   }
 }
+
+/// Permissionless heartbeats may spend the shared HostState at most every six hours.
+pub const heartbeat_interval_ms = 21_600_000
+
+pub const heartbeat_max_validity_ms = 120_000
+/// Order byte-string map keys for `pairs.insert_by_ascending_key` using the
+/// order required by canonical CBOR.
+///
+/// Canonical CBOR sorts map keys by the length of their encoded form before
+/// comparing the encoded bytes. Since both keys are byte strings, comparing
+/// their payload lengths first and their bytes second produces that same order.
+/// Equal keys return `Greater` because `validate_bind_port` rejects duplicates
+/// and the insertion helper performs its own equality check.
+/// This branch-minimal specialization protects the near-limit HostState reference-script budget.

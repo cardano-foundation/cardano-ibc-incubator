@@ -93,20 +93,20 @@ func AdvancePacketStateSnapshot(previous PacketStateSnapshot, blocks [][]byte, l
 			}
 			continued := map[string]bool{}
 			hostContinued := false
-			for outputIndex, output := range tx.Produced() {
+			for outputIndex, output := range utxoOutputs(tx.Produced()) {
 				assets := output.Assets()
 				if assets == nil {
 					continue
 				}
-				if assets.Asset(ledger.NewBlake2b224(hostPolicy), hostName) != 0 {
-					if !hostSpent || hostContinued || assets.Asset(ledger.NewBlake2b224(hostPolicy), hostName) != 1 || output.Datum() == nil {
+				if !assetQuantityEquals(assets.Asset(ledger.NewBlake2b224(hostPolicy), hostName), 0) {
+					if !hostSpent || hostContinued || !assetQuantityEquals(assets.Asset(ledger.NewBlake2b224(hostPolicy), hostName), 1) || output.Datum() == nil {
 						return PacketStateSnapshot{}, fmt.Errorf("invalid HostState continuation")
 					}
 					root, err := ExtractIbcStateRootFromHostStateDatum(output.Datum().Cbor(), hostPolicy)
 					if err != nil {
 						return PacketStateSnapshot{}, err
 					}
-					next.HostRoot, next.HostTxHash, next.HostOutputIndex = root, tx.Hash(), uint32(outputIndex)
+					next.HostRoot, next.HostTxHash, next.HostOutputIndex = root, tx.Hash().String(), uint32(outputIndex)
 					hostContinued = true
 				}
 				for _, nameBytes := range assets.Assets(ledger.NewBlake2b224(lanePolicy)) {
@@ -125,7 +125,7 @@ func AdvancePacketStateSnapshot(previous PacketStateSnapshot, blocks [][]byte, l
 					if err != nil || !bytes.Equal(expected, nameBytes) {
 						return PacketStateSnapshot{}, fmt.Errorf("lane identity does not match datum")
 					}
-					if assets.Asset(ledger.NewBlake2b224(lanePolicy), nameBytes) != 1 || continued[name] {
+					if !assetQuantityEquals(assets.Asset(ledger.NewBlake2b224(lanePolicy), nameBytes), 1) || continued[name] {
 						return PacketStateSnapshot{}, fmt.Errorf("duplicate lane continuation")
 					}
 					state, err := decodePacketLaneRoot(output.Datum().Cbor(), block.BlockNumber(), string(datum.Port), string(datum.Channel), datum.Lane, datum.LaneCount)
@@ -136,10 +136,10 @@ func AdvancePacketStateSnapshot(previous PacketStateSnapshot, blocks [][]byte, l
 						if _, consumed := spent[name]; !consumed || state.Version != old.State.Version+1 || state.LaneCount != old.State.LaneCount {
 							return PacketStateSnapshot{}, fmt.Errorf("lane update skips its live predecessor")
 						}
-					} else if state.Version != 0 || tx.AssetMint() == nil || tx.AssetMint().Asset(ledger.NewBlake2b224(lanePolicy), nameBytes) != 1 {
+					} else if state.Version != 0 || tx.AssetMint() == nil || !assetQuantityEquals(tx.AssetMint().Asset(ledger.NewBlake2b224(lanePolicy), nameBytes), 1) {
 						return PacketStateSnapshot{}, fmt.Errorf("untracked lane must start at authenticated issuance")
 					}
-					next.Lanes[name] = TrackedPacketLane{State: state, TxHash: tx.Hash(), OutputIndex: uint32(outputIndex)}
+					next.Lanes[name] = TrackedPacketLane{State: state, TxHash: tx.Hash().String(), OutputIndex: uint32(outputIndex)}
 					continued[name] = true
 				}
 			}
@@ -149,7 +149,7 @@ func AdvancePacketStateSnapshot(previous PacketStateSnapshot, blocks [][]byte, l
 			for name := range spent {
 				if !continued[name] {
 					nameBytes, err := hex.DecodeString(name)
-					if err != nil || tx.AssetMint() == nil || tx.AssetMint().Asset(ledger.NewBlake2b224(lanePolicy), nameBytes) != -1 {
+					if err != nil || tx.AssetMint() == nil || !assetQuantityEquals(tx.AssetMint().Asset(ledger.NewBlake2b224(lanePolicy), nameBytes), -1) {
 						return PacketStateSnapshot{}, fmt.Errorf("missing lane continuation or authenticated retirement")
 					}
 					// Block authentication and phase-2 validity establish execution of
@@ -158,7 +158,7 @@ func AdvancePacketStateSnapshot(previous PacketStateSnapshot, blocks [][]byte, l
 				}
 			}
 		}
-		next.Height, next.BlockHash = block.BlockNumber(), block.Hash()
+		next.Height, next.BlockHash = block.BlockNumber(), block.Hash().String()
 	}
 	for name, lane := range next.Lanes {
 		lane.State.Height = next.Height

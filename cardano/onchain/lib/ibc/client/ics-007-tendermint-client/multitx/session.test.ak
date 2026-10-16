@@ -330,6 +330,7 @@ fn live_client() -> ClientDatum {
     token: client_token(),
     state: ClientDatumState {
       client_state: ClientState {
+        upgrade_path: [],
         chain_id: "testchain2-1",
         trust_level: unchecked_rational.new(1, 3),
         trusting_period: 1_209_600_000_000_000,

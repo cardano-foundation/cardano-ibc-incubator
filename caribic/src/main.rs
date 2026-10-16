@@ -35,6 +35,12 @@ enum DemoType {
 pub(crate) enum LightClientTest {
     /// Recover an expired probabilistic client through the ibc-go governance authority path
     RecoverClient,
+    /// Challenge and recover a probabilistic client on an isolated persistent v8 validator
+    ChallengeRecovery,
+    /// Upgrade the local v8 host through governance and resume packets on its retained route
+    SoftwareUpgrade,
+    /// Stop a real v8 host across its deadline and test both committed transaction orderings
+    DeadlineOrdering,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
@@ -541,6 +547,28 @@ mod cli_tests {
         let result = Args::try_parse_from(["caribic", "test", "--tests", "9-13", "--light-client"]);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn software_upgrade_is_a_focused_light_client_scenario() {
+        let args = Args::try_parse_from([
+            "caribic",
+            "test",
+            "--light-client",
+            "software-upgrade",
+            "--chain",
+            "cosmos",
+            "--network",
+            "v8-classic",
+        ])
+        .expect("software-upgrade arguments should parse");
+        assert!(matches!(
+            args.command,
+            Commands::Test {
+                light_client: Some(LightClientTest::SoftwareUpgrade),
+                ..
+            }
+        ));
     }
 
     #[test]

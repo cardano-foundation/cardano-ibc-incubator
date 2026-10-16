@@ -170,6 +170,7 @@ fn validate_chan_open_confirm_proof(
       counterparty: expected_counterparty,
       connection_hops: counterparty_hops,
       version: channel_datum.state.channel.version,
+      upgrade_sequence: 0,
     }
 
   let verify_proof_redeemer =

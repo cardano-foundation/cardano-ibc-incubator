@@ -18,6 +18,7 @@ class MsgChannelOpenInitMockBuilder {
         ordering: 1,
         state: 0,
         version: '',
+        upgrade_sequence: 0n,
       },
       port_id: 'bank',
       signer: 'addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m',

@@ -1,5 +1,7 @@
 use ibc/core/ics_024_host_requirements/validate
 
+// Frozen public commitment primitive. Keep its fields and order unchanged.
+// Put private metadata in a separate type. See docs/cardano-commitment-codec.md.
 /// ChannelCounterparty defines a channel end counterparty
 pub type ChannelCounterparty {
   /// port on the counterparty chain which owns the other end of the channel.

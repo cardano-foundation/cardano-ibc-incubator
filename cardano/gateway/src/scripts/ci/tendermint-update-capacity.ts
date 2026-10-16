@@ -378,6 +378,7 @@ async function encodeRepresentativeDatums(
   const clientDatum: ClientDatum = {
     state: {
       clientState: {
+        upgradePath: [],
         chainId: header.signedHeader.header.chainId,
         trustLevel: { numerator: 1n, denominator: 3n },
         trustingPeriod: 1_209_600_000_000_000n,
@@ -410,7 +411,7 @@ async function encodeRepresentativeDatums(
     },
     nft_policy: HOST_STATE_POLICY_ID,
     deployer: 'f6'.repeat(28),
-    control: { port_registry: new Map(), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n },
+    control: { port_registry: new Map(), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n, last_heartbeat_time: 0n },
   };
 
   return {

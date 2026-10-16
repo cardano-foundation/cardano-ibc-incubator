@@ -175,6 +175,7 @@ fn finalization_burn_with_counts(
       nft_policy: mock.host_state_nft_policy_id,
       deployer: "deployer",
       control: HostStateControl {
+        last_heartbeat_time: 0,
         port_registry: [
           Pair(
             "transfer",

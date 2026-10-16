@@ -60,7 +60,7 @@ The following IBC features are not currently supported by the Cardano bridge pat
 
 ### Channel Upgrades
 
-Existing channels should be treated as fixed once established. If channel parameters need to change, the practical path is to open a new channel and migrate application routing to that new channel rather than attempting an in-place channel upgrade handshake. Note that this affects token redemption and lifecycle. This is something that is planned to be addressed prior to main net launch.
+A transfer channel can move to a replacement connection with an ICS-04 upgrade, which keeps its identifiers, vouchers and escrow. See [Channel upgrades](docs/channel-upgrades.md). Other parameters stay fixed: a different version or ordering still needs a new channel and migrated application routing, which affects token redemption and lifecycle. The upgrade requires a fresh deployment and has not yet run against a live counterparty.
 
 `ibc-go` v8.1.0 introduced channel upgradability. Compatible applications could change the channel version, ordering, or connection without replacing the channel. Upstream v10 later removed channel upgradability and ICS-29 fee middleware. Support on a Cosmos counterparty therefore depends on its version and application stack. See the [v8.1 migration guide](https://github.com/cosmos/ibc-go/blob/main/docs/docs/05-migrations/12-v8-to-v8_1.md) and [v10 changelog](https://github.com/cosmos/ibc-go/blob/v10.2.0/CHANGELOG.md).
 
@@ -80,7 +80,11 @@ therefore requires a fresh bridge deployment and new channels. Existing
 Channel and HostState UTxOs cannot be migrated to the new validator addresses
 in place.
 
-Adding channel upgrades here would require a compatible counterparty implementation. A newer `ibc-go` version does not by itself imply support for that handshake.
+Channel upgrades require a compatible counterparty implementation. A newer `ibc-go` version does not by itself imply support for that handshake.
+
+The probabilistic clients already verify the Cardano records that a connection-hop upgrade needs. `ibc-go` v8 verifies every upgrade step through the channel's existing connection, so the client being replaced must understand these records before it is deployed. Cardano channel ends may append `upgrade_sequence` and use the FLUSHING and FLUSHCOMPLETE states. Upgrade and error records use `ibc-go`'s `channelUpgrades` paths. [`channel-upgrade.json`](tests/ibc-state-commitment/channel-upgrade.json) fixes these encodings. A five-field channel end only proves upgrade sequence zero. The v10 client verifies upgradable channel ends without comparing the sequence, because v10 has none.
+
+`ibc-go` v8.7.0 treats a counterparty as already upgraded only if its own new connection ID equals the counterparty's ID for that connection. Cardano and a Cosmos chain use different IDs, so a Cosmos channel end in FLUSHCOMPLETE can still time out after Cardano has opened with the new connection. Cardano therefore opens only after its counterparty.
 
 ### ICS-29 Fee Middleware
 
@@ -109,6 +113,12 @@ The Cheqd integration uses a separate asynchronous query design. It sends query 
 Adding another counterparty requires compatible host wiring, allowed query paths, and application-specific data handling. The packet transport can be reused. Each integration still needs testing on the intended route, and the asynchronous query support does not implement the Hermes ICS-31 interface.
 
 ### Client Upgrade
+
+The Aiken Tendermint client hosted on Cardano now has a proof-backed upgrade path for both client deployments. It requires a fresh deployment and further live-chain testing and security review.
+
+Hermes submits the upgrade with `hermes upgrade client` once the counterparty has halted at the upgrade height. After an upgrade that changes the chain ID, Hermes needs a chain entry and keys for the new chain ID to keep relaying.
+
+An upgrade requires an active client. If the client expires before the upgrade is submitted, the fallback is authority-controlled recovery. As in ibc-go, the substitute may track a renamed chain and use its own trusting period, and the recovered client adopts both. Every other client parameter must match. Requiring the same chain ID would not limit the authority, because anyone can create a substitute client that claims any chain ID.
 
 Standard IBC client-state upgrades through `MsgUpgradeClient` are not currently supported for the Cardano light client: both the [v8](cosmos/cardano-probabilistic-light-client-v8/upgrade.go) and [v10](cosmos/cardano-probabilistic-light-client-v10/upgrade.go) adapters reject `VerifyUpgradeAndUpdateState`.
 
@@ -237,6 +247,10 @@ Cross-chain latency is therefore driven by block depth, distinct-pool and stake-
 
 The stake-weighted stability client relies on an epoch context containing stake weights, VRF key hashes, nonce, KES settings, and epoch slot bounds. It does not independently authenticate that context as the canonical Cardano epoch context. A first context that passes the consistency and header checks can still contain incorrect information.
 
-A later header that passes verification but carries a different context for the same stored epoch is [treated as misbehaviour](cosmos/cardano-probabilistic-light-client-v10/misbehaviour_handle.go) and freezes the client. Detecting a bad first context therefore depends on an honest relayer or observer obtaining the real data and getting verifiable conflicting evidence included on the counterparty chain.
+Each newly introduced epoch context now has a **three-minute challenge window**, starting from the Cosmos block timestamp that includes its first verified update. Membership and non-membership proofs against that epoch's roots are rejected until the deadline. Same-epoch updates do not reset the timer. Bootstrap and authority-controlled recovery also assign fresh three-minute deadlines. See [epoch challenge operation and limitations](docs/probabilistic-light-client.md#epoch-context-challenge-window).
 
-Freezing prevents further use of the client. It does not reverse operations already processed using an accepted root. For example, if a transfer was processed using a root accepted with an incorrect epoch context, a later freeze cannot undo that transfer. Detecting a contradiction does not make the first accepted context trustworthy.
+A later header that passes verification but carries a different context for the same stored epoch is [treated as misbehaviour](cosmos/cardano-probabilistic-light-client-v10/misbehaviour_handle.go) and freezes the client. The verifier retains the pre-proposal checkpoint, including rootless checkpoints and their operational-certificate counters, so advancing into a pending epoch cannot remove the trust anchor needed for competing rollover evidence. A pending epoch cannot roll over again before its window elapses.
+
+This mitigates the first-submitter race only if an independent honest observer obtains qualifying evidence and gets it included before proof use. Three minutes is an operational choice, not a proven response bound: a qualifying challenge still requires at least 24 descendants plus the pool and stake thresholds, which can take longer. Fabricated conflicting evidence can also halt an honest client; the verifier cannot adjudicate which context is authentic. The initial bootstrap checkpoint remains trusted because there is no earlier authenticated checkpoint with which to challenge its origin. These limitations leave the authenticity gap in #715 unresolved.
+
+Freezing prevents further use of the client. It does not reverse operations already processed using an accepted root. A challenge included after proof use cannot undo a transfer. Detecting a contradiction, or observing no challenge for three minutes, does not make the context cryptographically authentic.

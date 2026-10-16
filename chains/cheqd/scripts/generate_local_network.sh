@@ -34,9 +34,10 @@ app_toml = node_home / "config" / "app.toml"
 config_toml = node_home / "config" / "config.toml"
 genesis_json = node_home / "config" / "genesis.json"
 
-# cheqd mainnet capacity snapshot, observed 2026-08-27.
-BLOCK_MAX_BYTES = '3000000'
-BLOCK_MAX_GAS = '30000000'
+# Byte and gas capacity for local probabilistic-client updates.
+# These larger limits require a separate upgrade on a production destination.
+BLOCK_MAX_BYTES = '16777216'
+BLOCK_MAX_GAS = '600000000'
 EVIDENCE_MAX_AGE_NUM_BLOCKS = '25920'
 EVIDENCE_MAX_AGE_DURATION = '259200000000000'
 EVIDENCE_MAX_BYTES = '5000'
@@ -44,8 +45,8 @@ STAKING_UNBONDING_TIME = '1210000s'
 STAKING_MAX_VALIDATORS = 125
 STAKING_MAX_ENTRIES = 7
 STAKING_HISTORICAL_ENTRIES = 10000
-MEMPOOL_MAX_TX_BYTES = 1048576
-RPC_MAX_BODY_BYTES = 4000000
+MEMPOOL_MAX_TX_BYTES = 12582912
+RPC_MAX_BODY_BYTES = 20000000
 
 app = app_toml.read_text()
 app = re.sub(r'minimum-gas-prices = ".*?"', 'minimum-gas-prices = "50ncheq"', app)
@@ -53,6 +54,9 @@ app = re.sub(r'enable = false', 'enable = true', app, count=1)
 app = re.sub(r'swagger = false', 'swagger = true', app)
 app = re.sub(r'enabled-unsafe-cors = false', 'enabled-unsafe-cors = true', app)
 app = re.sub(r'address = "tcp://localhost:1317"', 'address = "tcp://0.0.0.0:1317"', app)
+app, grpc_replacements = re.subn(r'^max-recv-msg-size = .*$', 'max-recv-msg-size = 16777216', app, count=1, flags=re.MULTILINE)
+if grpc_replacements != 1:
+    raise RuntimeError('could not set gRPC receive limit in cheqd app.toml')
 app_toml.write_text(app)
 
 config = config_toml.read_text()

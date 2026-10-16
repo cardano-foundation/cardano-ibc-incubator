@@ -175,6 +175,7 @@ fake_subject_status() {
     echo Active
   else
     record_event "state subject-expired"
+    : >"$FAKE_STATE_DIR/subject-expired"
     echo Expired
   fi
 }
@@ -324,7 +325,58 @@ fake_direct_transfer() {
   echo "Direct Cardano-to-${COSMOS_PROFILE} Classic transfer completed."
 }
 
+fake_deno() {
+  while [[ "${1:-}" != "snapshot" && "${1:-}" != "assert-increase" ]]; do
+    (( $# > 0 )) || return 1
+    shift
+  done
+  if [[ "$1" == "assert-increase" ]]; then
+    record_event "escrow assert-increase"
+    jq -ne --argjson before "$2" --argjson after "$3" --argjson amount "$4" '
+      $before.output != $after.output
+        and $before.shardToken == $after.shardToken
+        and (($after.escrowedAmount | tonumber) - ($before.escrowedAmount | tonumber) == $amount)
+    ' >/dev/null || { echo "Unexpected escrow increase" >&2; return 1; }
+    return 0
+  fi
+  [[ -f "$FAKE_STATE_DIR/subject-expired" ]] || return 1
+  local output=pre-transfer amount=12345 reserve=2000000 datum=pre-datum phase=before
+  if [[ -f "$FAKE_STATE_DIR/post-forward" ]]; then
+    phase=transfer
+    # Simulate one stale index observation before the replacement appears.
+    if [[ -f "$FAKE_STATE_DIR/escrow-indexed" ]]; then
+      output=post-transfer
+      amount=24690
+      datum=post-datum
+    else
+      : >"$FAKE_STATE_DIR/escrow-indexed"
+    fi
+  elif [[ -f "$FAKE_STATE_DIR/recovered" ]]; then
+    phase=recovery
+  fi
+  if [[ -f "$FAKE_STATE_DIR/timeout-complete" ]]; then phase=timeout; fi
+  record_event "escrow snapshot $phase"
+  case "${FAKE_ESCROW_FAILURE:-}:$phase" in
+    missing:before) echo 'Expected exactly one escrow shard, found 0' >&2; return 1 ;;
+    malformed:before) echo '{}'; return 0 ;;
+    identity:recovery) output=unexpected-output ;;
+    assets:recovery) reserve=1999999 ;;
+    datum:recovery) datum=changed-datum ;;
+    increase:transfer) [[ "$output" == "pre-transfer" ]] || amount=24691 ;;
+    timeout:timeout) output=unexpected-timeout-output ;;
+  esac
+  jq -cn --arg output "$output" --arg amount "$amount" --arg reserve "$reserve" --arg datum "$datum" '
+    {output: $output, address: "transfer-address", shardToken: "shard-token",
+     asset: "mock-token", channel: "channel-0", denom: "mock-token", datum: $datum,
+     escrowedAmount: $amount, assets: {"mock-token": $amount, lovelace: $reserve, "shard-token": "1"}}
+  '
+}
+
 case "$(basename "$0")" in
+  fake-deno)
+    fake_deno "$@"
+    exit $?
+    ;;
   fake-hermes)
     fake_hermes "$@"
     exit $?
@@ -346,9 +398,12 @@ recovery_script="$script_dir/run_light_client_recovery.sh"
 fake_hermes_bin="$test_dir/fake-hermes"
 fake_simd_bin="$test_dir/fake-simd"
 fake_direct_script="$test_dir/fake-direct-token-swap"
+fake_deno_bin="$test_dir/fake-deno"
+printf '{}\n' >"$test_dir/handler.json"
 ln -s "$script_dir/$(basename "$0")" "$fake_hermes_bin"
 ln -s "$script_dir/$(basename "$0")" "$fake_simd_bin"
 ln -s "$script_dir/$(basename "$0")" "$fake_direct_script"
+ln -s "$script_dir/$(basename "$0")" "$fake_deno_bin"
 
 run_recovery() {
   local profile="$1"
@@ -358,6 +413,9 @@ run_recovery() {
     HERMES_BIN="$fake_hermes_bin" \
     SIMD_BIN="$fake_simd_bin" \
     DIRECT_TOKEN_SWAP_SCRIPT="$fake_direct_script" \
+    DENO_BIN="$fake_deno_bin" \
+    HANDLER_JSON="$test_dir/handler.json" \
+    ESCROW_READER_SCRIPT="$script_dir/../../../cardano/offchain/scripts/recovery-escrow.ts" \
     COSMOS_PROFILE="$profile" \
     CARDANO_CHAIN_ID="cardano-devnet" \
     COSMOS_CHAIN_ID="$chain_id" \
@@ -384,6 +442,7 @@ run_recovery() {
     FAKE_UNKNOWN_SUBSTITUTE_UPDATE="${FAKE_UNKNOWN_SUBSTITUTE_UPDATE:-0}" \
     FAKE_HANG_SIMD="${FAKE_HANG_SIMD:-0}" \
     FAKE_LATE_MARKER="${FAKE_LATE_MARKER:-}" \
+    FAKE_ESCROW_FAILURE="${FAKE_ESCROW_FAILURE:-}" \
     bash "$recovery_script"
 }
 
@@ -416,9 +475,13 @@ run_success_case() {
   assert_order "state substitute-updated" "state timeout-pending"
   assert_order "state timeout-pending" "state subject-expired"
   assert_order "state subject-expired" "simd tx ibc client recover-client"
+  assert_order "escrow snapshot before" "simd tx ibc client recover-client"
   assert_order "simd tx gov vote 1" "state proposal-passed"
   assert_order "state proposal-passed" "state post-forward-membership"
   assert_order "state post-forward-membership" "state timeout-complete"
+  assert_order "escrow snapshot recovery" "state post-forward-membership"
+  assert_order "escrow assert-increase" "state timeout-complete"
+  assert_order "state timeout-complete" "escrow snapshot timeout"
   if grep -qF "update client --host-chain ${chain_id} --client 08-cardano-probabilistic-0" "$FAKE_EVENT_LOG"; then
     echo "The orchestration directly updated the subject instead of using a packet proof." >&2
     return 1
@@ -427,6 +490,30 @@ run_success_case() {
 
 run_success_case v8-classic v8-classic-1
 run_success_case v10-classic v10-classic-1
+
+for failure in missing malformed identity assets datum increase timeout; do
+  FAKE_STATE_DIR="$test_dir/escrow-$failure-state"
+  FAKE_EVENT_LOG="$test_dir/escrow-$failure.log"
+  FAKE_ESCROW_FAILURE="$failure"
+  mkdir -p "$FAKE_STATE_DIR"
+  if escrow_failure_output="$(run_recovery v10-classic v10-classic-1 2>&1)"; then
+    echo "Recovery unexpectedly accepted escrow failure: $failure" >&2
+    exit 1
+  fi
+  case "$failure" in
+    missing) expected='Expected exactly one escrow shard' ;;
+    malformed) expected='Malformed Cardano escrow snapshot' ;;
+    identity|assets|datum) expected='Recovery changed the Cardano escrow' ;;
+    increase) expected='Unexpected escrow increase' ;;
+    timeout) expected='timeout changed Cardano escrow' ;;
+  esac
+  grep -qF "$expected" <<<"$escrow_failure_output" || {
+    printf '%s\n' "$escrow_failure_output" >&2
+    exit 1
+  }
+  if grep -qF 'Light-client recovery completed' <<<"$escrow_failure_output"; then exit 1; fi
+done
+unset FAKE_ESCROW_FAILURE
 
 FAKE_STATE_DIR="$test_dir/proposal-failure-state"
 FAKE_EVENT_LOG="$test_dir/proposal-failure.log"

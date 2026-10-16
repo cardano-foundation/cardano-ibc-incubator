@@ -1,14 +1,8 @@
 package probabilistic
 
 import (
-	"bytes"
-	probabilisticcore "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	"time"
 
-	errorsmod "cosmossdk.io/errors"
-	cmttypes "github.com/cometbft/cometbft/types"
-
-	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 )
 
@@ -27,21 +21,5 @@ func (cs ConsensusState) GetTime() time.Time {
 }
 
 func (cs ConsensusState) ValidateBasic() error {
-	if cs.Timestamp == 0 {
-		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, "timestamp must be a positive Unix time")
-	}
-	if cmttypes.ValidateHash(cs.IbcStateRoot) != nil {
-		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, "ibc_state_root must be a 32-byte hash")
-	}
-	if cs.AcceptedBlockHash == "" {
-		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, "accepted_block_hash must be set")
-	}
-	snapshot, err := probabilisticcore.DecodePacketStateSnapshot(cs.PacketStateSnapshot)
-	if err != nil {
-		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, err.Error())
-	}
-	if snapshot.BlockHash != cs.AcceptedBlockHash || !bytes.Equal(snapshot.HostRoot, cs.IbcStateRoot) {
-		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, "packet snapshot does not match consensus commitment")
-	}
-	return nil
+	return adapterError(toCoreConsensusState(&cs).ValidateBasic())
 }

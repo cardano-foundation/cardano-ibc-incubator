@@ -1,0 +1,242 @@
+[
+  {
+    "name": "ordinary",
+    "system_start_unix_ns": "1577836800000000000",
+    "slot_length_ns": "1000000000",
+    "anchor_slot": "213885296",
+    "anchor_timestamp_unix_ns": "1791722096000000000",
+    "cutoff_utc": "2026-04-11T12:34:56+00:00",
+    "expected_cutoff_slot": "198074096",
+    "registration_slots": [
+      "198074095",
+      "198074096",
+      "198074097"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 3333
+  },
+  {
+    "name": "non-leap February clamp",
+    "system_start_unix_ns": "1577836800000000000",
+    "slot_length_ns": "1",
+    "anchor_slot": "210342896123456789",
+    "anchor_timestamp_unix_ns": "1788179696123456789",
+    "cutoff_utc": "2026-02-28T12:34:56+00:00",
+    "expected_cutoff_slot": "194445296123456789",
+    "registration_slots": [
+      "194445296123456788",
+      "194445296123456789",
+      "194445296123456790"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 3333
+  },
+  {
+    "name": "leap February clamp",
+    "system_start_unix_ns": "1577836800000000000",
+    "slot_length_ns": "1",
+    "anchor_slot": "147270896987654321",
+    "anchor_timestamp_unix_ns": "1725107696987654321",
+    "cutoff_utc": "2024-02-29T12:34:56+00:00",
+    "expected_cutoff_slot": "131373296987654321",
+    "registration_slots": [
+      "131373296987654320",
+      "131373296987654321",
+      "131373296987654322"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 3333
+  },
+  {
+    "name": "30-day month clamp",
+    "system_start_unix_ns": "1577836800000000000",
+    "slot_length_ns": "1000000000",
+    "anchor_slot": "197164799",
+    "anchor_timestamp_unix_ns": "1775001599000000000",
+    "cutoff_utc": "2025-09-30T23:59:59+00:00",
+    "expected_cutoff_slot": "181439999",
+    "registration_slots": [
+      "181439998",
+      "181439999",
+      "181440000"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 3333
+  },
+  {
+    "name": "year boundary",
+    "system_start_unix_ns": "1577836800000000000",
+    "slot_length_ns": "1000000000",
+    "anchor_slot": "191980800",
+    "anchor_timestamp_unix_ns": "1769817600000000000",
+    "cutoff_utc": "2025-07-31T00:00:00+00:00",
+    "expected_cutoff_slot": "176083200",
+    "registration_slots": [
+      "176083199",
+      "176083200",
+      "176083201"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 3333
+  },
+  {
+    "name": "six months is not 180 days",
+    "system_start_unix_ns": "1577836800000000000",
+    "slot_length_ns": "1000000000",
+    "anchor_slot": "205027200",
+    "anchor_timestamp_unix_ns": "1782864000000000000",
+    "cutoff_utc": "2026-01-01T00:00:00+00:00",
+    "expected_cutoff_slot": "189388800",
+    "registration_slots": [
+      "189388799",
+      "189388800",
+      "189388801"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 3333
+  },
+  {
+    "name": "newer pool identities become eligible",
+    "system_start_unix_ns": "1577836800000000000",
+    "slot_length_ns": "1000000000",
+    "anchor_slot": "340070400",
+    "anchor_timestamp_unix_ns": "1917907200000000000",
+    "cutoff_utc": "2030-04-11T00:00:00+00:00",
+    "expected_cutoff_slot": "324259200",
+    "registration_slots": [
+      "324259199",
+      "324259200",
+      "324259201"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 3333
+  },
+  {
+    "name": "non-leap century",
+    "system_start_unix_ns": "1577836800000000000",
+    "slot_length_ns": "1000000000",
+    "anchor_slot": "2545516800",
+    "anchor_timestamp_unix_ns": "4123353600000000000",
+    "cutoff_utc": "2100-02-28T00:00:00+00:00",
+    "expected_cutoff_slot": "2529619200",
+    "registration_slots": [
+      "2529619199",
+      "2529619200",
+      "2529619201"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 3333
+  },
+  {
+    "name": "leap century beyond int64 nanoseconds",
+    "system_start_unix_ns": "1577836800000000000",
+    "slot_length_ns": "1",
+    "anchor_slot": "12012669296123456789",
+    "anchor_timestamp_unix_ns": "13590506096123456789",
+    "cutoff_utc": "2400-02-29T12:34:56+00:00",
+    "expected_cutoff_slot": "11996771696123456789",
+    "registration_slots": [
+      "11996771696123456788",
+      "11996771696123456789",
+      "11996771696123456790"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 3333
+  },
+  {
+    "name": "cutoff between three-second slots",
+    "system_start_unix_ns": "1577836800000000000",
+    "slot_length_ns": "3000000000",
+    "anchor_slot": "71295098",
+    "anchor_timestamp_unix_ns": "1791722094000000000",
+    "cutoff_utc": "2026-04-11T12:34:54+00:00",
+    "expected_cutoff_slot": "66024698",
+    "registration_slots": [
+      "66024697",
+      "66024698",
+      "66024699"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 3333
+  },
+  {
+    "name": "young network",
+    "system_start_unix_ns": "1577836800000000000",
+    "slot_length_ns": "1000000000",
+    "anchor_slot": "2678400",
+    "anchor_timestamp_unix_ns": "1580515200000000000",
+    "cutoff_utc": "2019-08-01T00:00:00+00:00",
+    "expected_cutoff_slot": "0",
+    "registration_slots": [
+      "0",
+      "0",
+      "1"
+    ],
+    "expected_pools": 0,
+    "expected_credit_bps": 0
+  },
+  {
+    "name": "cutoff exactly at system start",
+    "system_start_unix_ns": "1577836800000000000",
+    "slot_length_ns": "1000000000",
+    "anchor_slot": "15724800",
+    "anchor_timestamp_unix_ns": "1593561600000000000",
+    "cutoff_utc": "2020-01-01T00:00:00+00:00",
+    "expected_cutoff_slot": "0",
+    "registration_slots": [
+      "0",
+      "0",
+      "1"
+    ],
+    "expected_pools": 0,
+    "expected_credit_bps": 0
+  },
+  {
+    "name": "cutoff one slot after system start",
+    "system_start_unix_ns": "1577836800000000000",
+    "slot_length_ns": "1000000000",
+    "anchor_slot": "15724801",
+    "anchor_timestamp_unix_ns": "1593561601000000000",
+    "cutoff_utc": "2020-01-01T00:00:01+00:00",
+    "expected_cutoff_slot": "1",
+    "registration_slots": [
+      "0",
+      "1",
+      "2"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 3333
+  },
+  {
+    "name": "cutoff before Unix epoch",
+    "system_start_unix_ns": "1",
+    "slot_length_ns": "1",
+    "anchor_slot": "999999999",
+    "anchor_timestamp_unix_ns": "1000000000",
+    "cutoff_utc": "1969-07-01T00:00:01+00:00",
+    "expected_cutoff_slot": "0",
+    "registration_slots": [
+      "0",
+      "0",
+      "1"
+    ],
+    "expected_pools": 0,
+    "expected_credit_bps": 0
+  },
+  {
+    "name": "largest uint64 timestamp",
+    "system_start_unix_ns": "1577836800000000000",
+    "slot_length_ns": "1",
+    "anchor_slot": "16868907273709551615",
+    "anchor_timestamp_unix_ns": "18446744073709551615",
+    "cutoff_utc": "2554-01-21T23:34:33+00:00",
+    "expected_cutoff_slot": "16853268873709551615",
+    "registration_slots": [
+      "16853268873709551614",
+      "16853268873709551615",
+      "16853268873709551616"
+    ],
+    "expected_pools": 1,
+    "expected_credit_bps": 3333
+  }
+]

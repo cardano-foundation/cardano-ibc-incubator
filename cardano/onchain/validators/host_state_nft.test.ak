@@ -52,6 +52,7 @@ fn test_host_datum() -> HostStateDatum {
     nft_policy: test_policy_id(),
     deployer: "deployer",
     control: HostStateControl {
+      last_heartbeat_time: 0,
       port_registry: [],
       shutdown: Active,
       live_clients: 0,

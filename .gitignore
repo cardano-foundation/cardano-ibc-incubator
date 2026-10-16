@@ -83,3 +83,4 @@ studies/cardano_probabilistic_finality/out*/
 
 # Generated Aiken execution-budget report
 /aiken-check.json
+.caribic/test-artifacts/

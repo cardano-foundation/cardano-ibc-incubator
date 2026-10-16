@@ -23,7 +23,7 @@ function manifest(): BridgeManifest {
   });
 
   return {
-    schema_version: 5,
+    schema_version: 6,
     packet_state: {
       format: 'packet-lanes-v1',
       lane_count: 16,
@@ -69,6 +69,9 @@ function manifest(): BridgeManifest {
           prune_packet_history: referredValidator('prune'),
           send_packet: referredValidator('send'),
           timeout_packet: referredValidator('timeout'),
+          chan_upgrade: referredValidator('upgrade'),
+          chan_upgrade_handshake: referredValidator('upgrade-handshake'),
+          chan_upgrade_finish: referredValidator('upgrade-finish'),
         },
       },
       spend_transfer_module: validator('transfer'),

@@ -17,9 +17,9 @@ import (
 	// not to protobuf bytes. The light client is responsible for bridging that
 	// encoding difference during verification.
 	cardanodatum "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-mithril-light-client-v10/cardanodatum"
+	codec "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/commitmentcodec"
 
 	proto "github.com/cosmos/gogoproto/proto"
-	gogotypes "github.com/cosmos/gogoproto/types"
 	connectiontypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
@@ -35,6 +35,7 @@ var (
 
 // VerifyIbcStateMembership verifies a Gateway-provided proof for `key -> value`
 // against an authenticated `ibc_state_root`.
+// Packet receipts support only VerifyIbcStateNonMembership under the current codec.
 //
 // This verifier mirrors the on-chain commitment scheme in:
 // `cardano/onchain/lib/ibc/core/ics-025-handler-interface/ibc_state_commitment.ak`.
@@ -43,13 +44,19 @@ var (
 //   - Non-empty leaves commit to both sha256(key) and sha256(value).
 //   - The key also determines the path:
 //     we derive a 64-bit path selector from the first 8 bytes of sha256(key).
-//   - The proof path is always 64 steps (fixed-depth binary tree).
+//   - The path has 64 tree steps and an optional initial collision bucket descriptor.
 //
 // Proof encoding:
 //   - Preferred: standard protobuf `MerkleProof` bytes (IBC / ICS-23).
 //   - Backwards-compatible: the Gateway currently returns a JSON-encoded proof with
 //     the same logical fields (key/value + 64 sibling hashes encoded as InnerOps).
 func VerifyIbcStateMembership(root []byte, key []byte, value []byte, proofBytes []byte) error {
+	// Cardano commits an empty receipt bytestring, not ibc-go's 0x01 sentinel.
+	// Reject before the raw-byte equality shortcut as well as semantic comparison.
+	if strings.HasPrefix(string(key), "receipts/ports/") {
+		return fmt.Errorf("packet receipt membership is unsupported: only non-membership proofs are supported")
+	}
+
 	exist, err := decodeExistenceProof(proofBytes)
 	if err != nil {
 		return err
@@ -65,15 +72,12 @@ func VerifyIbcStateMembership(root []byte, key []byte, value []byte, proofBytes 
 	//
 	// If the proof carries a value, we (a) semantically compare it to the expected protobuf
 	// value, and (b) use the proof’s value bytes as the committed leaf when recomputing the root.
-	if len(exist.Value) > 0 && !bytes.Equal(exist.Value, value) {
-		if err := verifyCardanoValueMatchesExpected(key, value, exist.Value); err != nil {
-			return err
-		}
-	}
-
 	committedValue := value
 	if len(exist.Value) > 0 {
 		committedValue = exist.Value
+	}
+	if err := verifyCardanoValueMatchesExpected(key, value, committedValue); err != nil {
+		return err
 	}
 
 	computed, err := computeRootFromProofPath(key, committedValue, exist.Path)
@@ -97,10 +101,11 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 		if err := proto.Unmarshal(expectedValue, &expected); err != nil {
 			return fmt.Errorf("failed to decode expected ConnectionEnd protobuf: %w", err)
 		}
-		var committed cardanodatum.ConnectionEndDatum
-		if err := cbor.Unmarshal(committedValue, &committed); err != nil {
+		decoded, err := codec.DecodeConnectionEnd(committedValue)
+		if err != nil {
 			return fmt.Errorf("failed to decode committed ConnectionEnd CBOR: %w", err)
 		}
+		committed := cardanodatum.ConnectionEndDatum(decoded)
 		if err := committed.Cmp(expected); err != nil {
 			return err
 		}
@@ -115,10 +120,9 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 		//  1) unwrap the Any from the expected IBC store value
 		//  2) decode the inner Tendermint ClientState protobuf
 		//  3) semantically compare it with the committed CBOR datum
-		var expectedAny gogotypes.Any
-		innerExpectedValue := expectedValue
-		if err := proto.Unmarshal(expectedValue, &expectedAny); err == nil && len(expectedAny.Value) > 0 {
-			innerExpectedValue = expectedAny.Value
+		innerExpectedValue, err := codec.ExpectedTendermintValue(expectedValue, "/ibc.lightclients.tendermint.v1.ClientState")
+		if err != nil {
+			return err
 		}
 
 		var expected tmtypes.ClientState
@@ -136,20 +140,20 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 
 	case strings.HasPrefix(keyStr, "clients/") && strings.Contains(keyStr, "/consensusStates/"):
 		// Consensus states are also stored as a protobuf `Any` value in the IBC store.
-		var expectedAny gogotypes.Any
-		innerExpectedValue := expectedValue
-		if err := proto.Unmarshal(expectedValue, &expectedAny); err == nil && len(expectedAny.Value) > 0 {
-			innerExpectedValue = expectedAny.Value
+		innerExpectedValue, err := codec.ExpectedTendermintValue(expectedValue, "/ibc.lightclients.tendermint.v1.ConsensusState")
+		if err != nil {
+			return err
 		}
 
 		var expected tmtypes.ConsensusState
 		if err := proto.Unmarshal(innerExpectedValue, &expected); err != nil {
 			return fmt.Errorf("failed to decode expected Tendermint ConsensusState protobuf: %w", err)
 		}
-		var committed cardanodatum.ConsensusStateDatum
-		if err := cbor.Unmarshal(committedValue, &committed); err != nil {
+		decoded, err := codec.DecodeConsensusState(committedValue)
+		if err != nil {
 			return fmt.Errorf("failed to decode committed Tendermint ConsensusState CBOR: %w", err)
 		}
+		committed := cardanodatum.ConsensusStateDatum(decoded)
 		if err := committed.Cmp(&expected); err != nil {
 			return err
 		}
@@ -160,31 +164,26 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 		if err := proto.Unmarshal(expectedValue, &expected); err != nil {
 			return fmt.Errorf("failed to decode expected Channel protobuf: %w", err)
 		}
-		var committed cardanodatum.ChannelDatum
-		if err := cbor.Unmarshal(committedValue, &committed); err != nil {
+		decoded, err := codec.DecodeChannel(committedValue)
+		if err != nil {
 			return fmt.Errorf("failed to decode committed Channel CBOR: %w", err)
 		}
+		committed := cardanodatum.ChannelDatum(decoded)
 		if err := committed.Cmp(expected); err != nil {
 			return err
 		}
 		return nil
 
+	case strings.HasPrefix(keyStr, "nextSequenceRecv/ports/"):
+		return codec.CompareNextSequenceRecv(committedValue, expectedValue)
+
 	case strings.HasPrefix(keyStr, "commitments/ports/"),
-		strings.HasPrefix(keyStr, "acks/ports/"),
-		strings.HasPrefix(keyStr, "receipts/ports/"),
-		strings.HasPrefix(keyStr, "nextSequenceRecv/ports/"):
-		// Packet commitments / acknowledgements / receipts are stored on Cosmos chains
+		strings.HasPrefix(keyStr, "acks/ports/"):
+		// Packet commitments and acknowledgements are stored on Cosmos chains
 		// as raw bytes (not protobuf-encoded). Cardano commits to the CBOR-serialised
 		// Plutus `ByteArray` for these values, so we need to unwrap the committed
 		// CBOR bytestring and compare the underlying bytes.
-		var committedBytes []byte
-		if err := cbor.Unmarshal(committedValue, &committedBytes); err != nil {
-			return fmt.Errorf("failed to decode committed packet bytes CBOR: %w", err)
-		}
-		if !bytes.Equal(committedBytes, expectedValue) {
-			return fmt.Errorf("existence proof value mismatch")
-		}
-		return nil
+		return codec.ComparePacketBytes(committedValue, expectedValue)
 	}
 
 	return fmt.Errorf("existence proof value mismatch")
@@ -208,6 +207,13 @@ func VerifyIbcStateNonMembership(root []byte, key []byte, proofBytes []byte) err
 		return fmt.Errorf("non-existence proof missing left existence proof")
 	}
 
+	if len(nonexist.Left.Key) > 0 && !bytes.Equal(nonexist.Left.Key, key) {
+		return fmt.Errorf("non-existence proof left key mismatch")
+	}
+	if nonexist.Right != nil {
+		return fmt.Errorf("sparse non-existence proof must not have a right existence proof")
+	}
+
 	// The Gateway models absence as membership of an empty value.
 	if len(nonexist.Left.Value) != 0 {
 		return fmt.Errorf("non-existence proof left value must be empty")
@@ -226,11 +232,22 @@ func VerifyIbcStateNonMembership(root []byte, key []byte, proofBytes []byte) err
 }
 
 func computeRootFromProofPath(key []byte, value []byte, path []*ics23.InnerOp) ([]byte, error) {
+	current := leafHash(key, value)
+	if len(path) == 65 {
+		descriptor := path[0]
+		if descriptor == nil || descriptor.Hash != ics23.HashOp_SHA256 || len(descriptor.Suffix) != 0 {
+			return nil, fmt.Errorf("invalid collision bucket operation")
+		}
+		var err error
+		current, err = collisionBucketLeaf(key, value, descriptor.Prefix)
+		if err != nil {
+			return nil, err
+		}
+		path = path[1:]
+	}
 	if len(path) != 64 {
 		return nil, fmt.Errorf("unexpected proof path length: %d", len(path))
 	}
-
-	current := leafHash(key, value)
 
 	keyHash := sha256.Sum256(key)
 	index := binary.BigEndian.Uint64(keyHash[0:8])
@@ -257,7 +274,54 @@ func computeRootFromProofPath(key []byte, value []byte, path []*ics23.InnerOp) (
 	return current, nil
 }
 
+// Collision bucket descriptors precede the 64 ordinary sparse-tree operations.
+// Every entry is a full SHA-256 key digest followed by a nonempty value digest.
+// The old singleton commitment is retained when a bucket shrinks to one entry.
+func collisionBucketLeaf(key, value, encoded []byte) ([]byte, error) {
+	if len(encoded) < 65 || encoded[0] != 0x02 || (len(encoded)-1)%64 != 0 {
+		return nil, fmt.Errorf("invalid collision bucket encoding")
+	}
+	requested := sha256.Sum256(key)
+	valueDigest := sha256.Sum256(value)
+	found := false
+	var previous []byte
+	for offset := 1; offset < len(encoded); offset += 64 {
+		entryKey := encoded[offset : offset+32]
+		entryValue := encoded[offset+32 : offset+64]
+		if !bytes.Equal(entryKey[:8], requested[:8]) {
+			return nil, fmt.Errorf("collision bucket entry belongs to a different path")
+		}
+		if previous != nil && bytes.Compare(previous, entryKey) >= 0 {
+			return nil, fmt.Errorf("collision bucket keys must be strictly ordered")
+		}
+		if bytes.Equal(entryValue, emptyValueHash[:]) {
+			return nil, fmt.Errorf("collision bucket contains an empty value")
+		}
+		if bytes.Equal(entryKey, requested[:]) {
+			found = true
+			if len(value) == 0 || !bytes.Equal(entryValue, valueDigest[:]) {
+				return nil, fmt.Errorf("collision bucket value mismatch")
+			}
+		}
+		previous = entryKey
+	}
+	if len(value) > 0 && !found {
+		return nil, fmt.Errorf("collision bucket is missing the requested key")
+	}
+	if len(encoded) == 65 {
+		preimage := append([]byte{0}, encoded[1:]...)
+		digest := sha256.Sum256(preimage)
+		return digest[:], nil
+	}
+	digest := sha256.Sum256(encoded)
+	return digest[:], nil
+}
+
 func childOrderingFromInnerOp(direction uint64, op *ics23.InnerOp) (left []byte, right []byte, err error) {
+	if op == nil || (op.Hash != ics23.HashOp_NO_HASH && op.Hash != ics23.HashOp_SHA256) {
+		return nil, nil, fmt.Errorf("invalid inner hash operation")
+	}
+
 	// Expected encoding:
 	// - left child:  sha256(0x01 || current || sibling) => prefix=0x01, suffix=sibling
 	// - right child: sha256(0x01 || sibling || current) => prefix=0x01||sibling, suffix=""

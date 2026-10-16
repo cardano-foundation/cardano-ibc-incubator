@@ -7,7 +7,7 @@ use crate::chains::hermes_support::{
     self, HermesAddressType, HermesCosmosChainProfile, HermesEventSource, HermesGasPrice,
     HermesTrustThreshold,
 };
-use crate::chains::network_limits::{HERMES_CONSERVATIVE_MAX_TX_SIZE, INJECTIVE_MAX_TX_GAS};
+use crate::chains::network_limits::{LOCAL_MAX_TX_GAS, LOCAL_MAX_TX_SIZE};
 use crate::process::hermes::HermesCli;
 
 pub(super) fn sync_profile_with_hermes(
@@ -65,14 +65,14 @@ fn hermes_profile(
         address_type: Some(HermesAddressType::Cosmos),
         store_prefix: "ibc",
         default_gas: 5_000_000,
-        max_gas: INJECTIVE_MAX_TX_GAS,
+        max_gas: LOCAL_MAX_TX_GAS,
         gas_price: HermesGasPrice {
             price: "0.0025",
             denom: "stake",
         },
         gas_multiplier: "1.8",
         max_msg_num: 20,
-        max_tx_size: HERMES_CONSERVATIVE_MAX_TX_SIZE,
+        max_tx_size: LOCAL_MAX_TX_SIZE,
         clock_drift: if synchronized_clock { "20s" } else { "8760h" },
         max_block_time: "10s",
         trusting_period: "10days",
@@ -160,17 +160,18 @@ mod tests {
     use crate::chains::cosmos_profiles::config::CosmosTestProfile;
 
     #[test]
-    fn classic_profiles_allow_bounded_cardano_headers_below_the_node_limit() {
-        const LOCAL_SIMD_MAX_TX_BYTES: u64 = 1_048_576;
+    fn classic_profiles_allow_catch_up_headers_within_local_limits() {
+        const LOCAL_SIMD_MAX_TX_BYTES: u64 = 12 * 1_048_576;
 
         let setup_script = include_str!("../../../../chains/cosmos/scripts/setup_profile.sh");
-        assert!(setup_script.contains("MAX_TX_BYTES=1048576"));
+        assert!(setup_script.contains("MAX_TX_BYTES=12582912"));
 
         for test_profile in [CosmosTestProfile::V8Classic, CosmosTestProfile::V10Classic] {
             let profile = hermes_profile(*test_profile.config(), false);
-            assert_eq!(profile.max_tx_size, HERMES_CONSERVATIVE_MAX_TX_SIZE);
-            assert_eq!(profile.max_gas, INJECTIVE_MAX_TX_GAS);
-            assert!(profile.max_tx_size < LOCAL_SIMD_MAX_TX_BYTES);
+            assert_eq!(profile.max_tx_size, LOCAL_MAX_TX_SIZE);
+            assert_eq!(profile.max_gas, LOCAL_MAX_TX_GAS);
+            assert!(profile.max_tx_size > 5 * 1_048_576);
+            assert!(profile.max_tx_size <= LOCAL_SIMD_MAX_TX_BYTES);
         }
     }
 

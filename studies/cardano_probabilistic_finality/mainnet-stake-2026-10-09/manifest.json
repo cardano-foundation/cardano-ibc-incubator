@@ -1,0 +1,63 @@
+{
+  "network": "mainnet",
+  "source": "https://api.koios.rest/api/v1/",
+  "tip_at_start": {
+    "hash": "b7a9260a5abc2db8bc3048bd1e67c94c2e7b53b3ec2d80e123b8572ba0f000f7",
+    "epoch_no": 660,
+    "era": "Conway",
+    "abs_slot": 200022583,
+    "epoch_slot": 265783,
+    "block_height": 14047950,
+    "block_no": 14047950,
+    "block_time": 1791588874
+  },
+  "analysis_first_epoch": 558,
+  "analysis_last_epoch": 658,
+  "lookback_first_epoch": 538,
+  "history_lag_epochs": 1,
+  "enumerated_pools": 6167,
+  "queried_pools": 3228,
+  "excluded_pools": 2939,
+  "exclusion": "Only currently retired pools with latest reported retirement before lookback_first_epoch minus two. Total reconciliation is required before treating absent rows as zero.",
+  "snapshot_semantics": "Effective election stake. epoch_stake at epoch E is populated from mark in E-1, which becomes set in E. API source code and db-sync extraction code are pinned in sources.json.",
+  "native_node_comparison": "No independently operated historical mainnet node available. This dataset is provider reported. Code-level epoch alignment and exact total reconciliation are recorded separately.",
+  "ordered_block_sampling": "Eleven epochs chosen every ten epochs from the first transition, plus the last analysis epoch. All blocks in each sampled epoch are requested.",
+  "daily_request_budget_for_this_script": 4500,
+  "stake_total_mismatches": [],
+  "pool_history_rows": 330851,
+  "pool_update_rows": 40679,
+  "sampled_block_epochs": [
+    559,
+    569,
+    579,
+    589,
+    599,
+    609,
+    619,
+    629,
+    639,
+    649,
+    658
+  ],
+  "block_rows": 233711,
+  "new_http_requests": 2797,
+  "collection_finished_utc": "2026-10-09T23:57:20.398771+00:00",
+  "tip_at_end": {
+    "epoch_no": 660,
+    "hash": "be5d7f4fa65433d271afcca2a94f8851f1737ab5cd431b15a429eac7ce3eb68e",
+    "block_height": 14048004,
+    "block_time": 1791590237
+  },
+  "cached_koios_responses_including_supplements": 3531,
+  "cached_koios_responses_by_endpoint": {
+    "pool_history": 3231,
+    "pool_list": 7,
+    "blocks": 242,
+    "pool_updates": 41,
+    "pool_delegators_history": 6,
+    "epoch_info": 2,
+    "tip": 2
+  },
+  "registration_api_count_expected": 40679,
+  "optional_concentration_examples": 3
+}

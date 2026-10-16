@@ -79,6 +79,15 @@ function buildHandlerJsonDeployment() {
           prune_packet_history: { scriptHash: 'prune-hash', refUtxo: { txHash: 'prune-tx', outputIndex: 10 } },
           send_packet: { scriptHash: 'send-hash', refUtxo: { txHash: 'send-tx', outputIndex: 8 } },
           timeout_packet: { scriptHash: 'timeout-hash', refUtxo: { txHash: 'timeout-tx', outputIndex: 9 } },
+          chan_upgrade: { scriptHash: 'upgrade-hash', refUtxo: { txHash: 'upgrade-tx', outputIndex: 11 } },
+          chan_upgrade_handshake: {
+            scriptHash: 'upgrade-handshake-hash',
+            refUtxo: { txHash: 'upgrade-handshake-tx', outputIndex: 12 },
+          },
+          chan_upgrade_finish: {
+            scriptHash: 'upgrade-finish-hash',
+            refUtxo: { txHash: 'upgrade-finish-tx', outputIndex: 13 },
+          },
         },
       },
       spendTraceRegistry: buildValidator('spendTraceRegistry'),
@@ -211,7 +220,7 @@ console.log(JSON.stringify(smokeManifest()))`,
     });
 
     expect(loaded.bridgeManifest).toMatchObject({
-      schema_version: 5,
+      schema_version: 6,
       consensus_history_format: CONSENSUS_HISTORY_FORMAT,
       deployment_id: 'cardano-devnet:host-policy.host-token',
       deployed_at: '2026-04-01T12:34:56.000Z',
@@ -498,7 +507,7 @@ console.log(JSON.stringify(smokeManifest()))`,
         ...legacy.bridgeManifest,
         schema_version: 3,
       }),
-    ).toThrow('Invalid bridge config: "schema_version" must be 5');
+    ).toThrow('Invalid bridge config: "schema_version" must be 6');
   });
 
   it('accepts legacy voucher_metadata validator payloads and normalizes them to address-only', () => {
@@ -510,7 +519,7 @@ console.log(JSON.stringify(smokeManifest()))`,
 
     const legacyManifest = {
       ...current.bridgeManifest,
-      schema_version: 5,
+      schema_version: 6,
       validators: {
         ...current.bridgeManifest.validators,
         voucher_metadata: {

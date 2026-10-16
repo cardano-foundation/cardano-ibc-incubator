@@ -16,6 +16,7 @@ class ClientDatumMockBuilder {
       history_root: '00'.repeat(32),
       state: {
         clientState: {
+          upgradePath: [],
           chainId: '73696465636861696e',
           trustLevel: { numerator: 1n, denominator: 3n },
           trustingPeriod: 86400000000000n,

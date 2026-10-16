@@ -7,6 +7,7 @@ import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { encodeVerifyProofRedeemer } from '../../shared/types/connection/verify-proof-redeemer';
 import { TimeoutOnClosePacketOperator, TimeoutPacketOperator } from '../dto';
 import { PacketService } from '../packet.service';
+import { Channel as CardanoChannel } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
 
 jest.mock('../../shared/types/connection/verify-proof-redeemer', () => {
   const actual = jest.requireActual('../../shared/types/connection/verify-proof-redeemer');
@@ -51,6 +52,7 @@ function createService(ordering: 'Ordered' | 'Unordered', state: 'Open' | 'Close
         },
         connection_hops: [convertString2Hex('connection-0')],
         version: convertString2Hex('ics20-1'),
+        upgrade_sequence: 1n,
       },
       next_sequence_send: 3n,
       next_sequence_recv: 1n,
@@ -75,7 +77,8 @@ function createService(ordering: 'Ordered' | 'Unordered', state: 'Open' | 'Close
   const consensusHeight = { ...proofHeight };
   const clientDatum = {
     state: {
-      clientState: { latestHeight: proofHeight, proofSpecs: [] },
+      clientState: {
+    upgradePath: [], latestHeight: proofHeight, proofSpecs: [] },
       consensusStates: new Map([
         [
           consensusHeight,
@@ -211,7 +214,12 @@ describe('PacketService timeout builders', () => {
 
   it('uses both memberships for ordered timeout on close and preserves an already Closed channel', async () => {
     const { service, lucidService, channelDatum, operator } = createService('Ordered', 'Close');
-    const timeoutOnCloseOperator: TimeoutOnClosePacketOperator = { ...operator, proofClose };
+    // A cancelled counterparty upgrade leaves the closed end at a later sequence.
+    const timeoutOnCloseOperator: TimeoutOnClosePacketOperator = {
+      ...operator,
+      proofClose,
+      counterpartyUpgradeSequence: 2n,
+    };
 
     await service.buildUnsignedTimeoutOnClosePacketTx(timeoutOnCloseOperator, 'addr_test1relayer');
 
@@ -223,6 +231,7 @@ describe('PacketService timeout builders', () => {
         proof_close: proofClose,
         proof_height: proofHeight,
         next_sequence_recv: 1n,
+        counterparty_upgrade_sequence: 2n,
       },
     });
     const updatedDatum = encodedValue(lucidService, 'channel');
@@ -241,6 +250,7 @@ describe('PacketService timeout builders', () => {
         key_path: [convertString2Hex('ibc'), convertString2Hex('channelEnds/ports/transfer/channels/channel-9')],
       },
     });
+    expect(CardanoChannel.decode(Buffer.from(closedChannelMembership.value, 'hex')).upgrade_sequence).toBe(2n);
     expect(lucidService.createUnsignedTimeoutPacketUnescrowTx.mock.calls[0][0]).toMatchObject({
       timeoutPacketPolicyId: 'timeout-policy',
       encodedVerifyProofRedeemer: 'encoded-verify-proof',
@@ -249,7 +259,11 @@ describe('PacketService timeout builders', () => {
 
   it('uses closed membership and receipt nonmembership for unordered timeout on close before expiry', async () => {
     const { service, lucidService, operator } = createService('Unordered');
-    const timeoutOnCloseOperator: TimeoutOnClosePacketOperator = { ...operator, proofClose };
+    const timeoutOnCloseOperator: TimeoutOnClosePacketOperator = {
+      ...operator,
+      proofClose,
+      counterpartyUpgradeSequence: 1n,
+    };
 
     await service.buildUnsignedTimeoutOnClosePacketTx(timeoutOnCloseOperator, 'addr_test1relayer');
 

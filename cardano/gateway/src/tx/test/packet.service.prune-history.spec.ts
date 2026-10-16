@@ -53,6 +53,7 @@ function createService(ordering: 'Unordered' | 'Ordered' | 'None' = 'Unordered')
   const clientDatum = {
     state: {
       clientState: {
+        upgradePath: [],
         chainId: convertString2Hex('counterparty'),
         trustLevel: { numerator: 1n, denominator: 3n },
         trustingPeriod: 100n,

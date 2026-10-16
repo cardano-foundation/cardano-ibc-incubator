@@ -170,7 +170,8 @@ class ProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             runtime = Runtime(Path(folder))
             genesis = {"byron": {"startTime": 1767139200},
-                       "shelley": {"systemStart": "2025-12-31T00:00:00Z", "networkMagic": 42, "epochLength": 5000}}
+                       "shelley": {"systemStart": "2025-12-31T00:00:00Z", "networkMagic": 42, "epochLength": 5000,
+                                   "securityParam": 2, "activeSlotsCoeff": 0.25}}
             def export_id():
                 (runtime.state / "clock-offset").write_text("-123s")
                 with patch("profile.http", side_effect=lambda url: genesis[url.rsplit("/", 1)[-1]]):
@@ -184,6 +185,7 @@ class ProfileTests(unittest.TestCase):
                 self.assertFalse(any(key.startswith("HISTORY_DB_") for key in values))
                 containers = dict(line.split("=", 1) for line in (runtime.state / "container-endpoints.env").read_text().splitlines())
                 self.assertEqual(containers["GATEWAY_DB_HOST"], "gateway-db")
+                self.assertEqual(values["CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS"], "32")
                 return values["CARDANO_LOCAL_NETWORK_ID"]
             first = export_id()
             self.assertEqual(export_id(), first)

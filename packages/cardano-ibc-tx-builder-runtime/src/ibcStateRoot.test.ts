@@ -5,6 +5,8 @@ import {
   encodeClientStateValue,
   encodeConsensusStateValue,
   encodeChannelEndValue,
+  encodeChannelUpgradeErrorValue,
+  encodeChannelUpgradeValue,
   IbcTreeStateStore,
   StaleIbcTreeStateError,
   type IbcTreeHostStateRef,
@@ -63,6 +65,7 @@ function gate() {
 
 function sampleClientState(latestHeight: bigint) {
   return {
+    upgradePath: [],
     chainId: Buffer.from('chain-1').toString('hex'),
     trustLevel: { numerator: 1n, denominator: 3n },
     trustingPeriod: 1_000n,
@@ -231,6 +234,20 @@ describe('shared IBC state root updates', () => {
     assert.equal(store.getCurrentRoot(), update.newRoot);
   });
 
+  it('keeps both revisions when an upgrade resets the height', async () => {
+    const created = store.computeRootWithCreateClientUpdate(
+      emptyRoot, '07-tendermint-0', Buffer.from('01', 'hex'), Buffer.from('02', 'hex'), '0-1',
+    );
+    await commitLive(store, readers, created);
+    const upgraded = store.computeRootWithUpdateClientUpdate(
+      created.newRoot, '07-tendermint-0', Buffer.from('03', 'hex'), [],
+      { height: '1-1', value: Buffer.from('04', 'hex') },
+    );
+    await commitLive(store, readers, upgraded, 2);
+    assert.equal(store.getCurrentTree().get('clients/07-tendermint-0/consensusStates/0-1')?.toString('hex'), '02');
+    assert.equal(store.getCurrentTree().get('clients/07-tendermint-0/consensusStates/1-1')?.toString('hex'), '04');
+  });
+
   it('does not change confirmed state when pruning missing packet history fails', () => {
     assert.throws(() => store.computeRootWithPrunePacketHistoryUpdate(
       emptyRoot, 'transfer', 'channel-0', 7n, 'Unordered',
@@ -240,12 +257,12 @@ describe('shared IBC state root updates', () => {
 });
 
 describe('deployment-bound tree stores', () => {
-  async function historyFixture() {
+  async function historyFixture(resetHeight = false) {
     const policyId = '11'.repeat(28);
     const clientToken = { policyId, name: `${'aa'.repeat(24)}30` };
-    const latestHeight = { revisionNumber: 0n, revisionHeight: 8n };
+    const latestHeight = { revisionNumber: resetHeight ? 1n : 0n, revisionHeight: resetHeight ? 7n : 8n };
     const olderHeight = { revisionNumber: 0n, revisionHeight: 7n };
-    const clientState = sampleClientState(8n);
+    const clientState = { ...sampleClientState(latestHeight.revisionHeight), latestHeight };
     const latest = { clientToken, height: latestHeight, consensusState: sampleConsensusState('22'), processedTime: 2000n, processedHeight: 20n };
     const older = { ...latest, height: olderHeight, consensusState: sampleConsensusState('33'), processedTime: 1900n, processedHeight: 19n };
     const records = await Promise.all([older, latest].map(async (datum) => ({
@@ -256,7 +273,7 @@ describe('deployment-bound tree stores', () => {
       state: { clientState, consensusStates: new Map([[latestHeight, latest.consensusState]]) },
     };
     const clientValue = await encodeClientStateValue(clientState, Lucid);
-    const h = new Lucid.Constr(0, [0n, 8n]);
+    const h = new Lucid.Constr(0, [latestHeight.revisionNumber, latestHeight.revisionHeight]);
     const encodedClient = Lucid.Data.to(new Lucid.Constr(0, [
       new Lucid.Constr(0, [
         Lucid.Data.from(clientValue), new Map([[h, Lucid.Data.from(records[1].consensusValue)]]),
@@ -267,7 +284,7 @@ describe('deployment-bound tree stores', () => {
     const clientUtxo = { ...hostRef(10), address: 'addr_test1_client', datum: encodedClient, assets: { [policyId + clientToken.name]: 1n } };
     const expected = new ICS23MerkleTree();
     expected.set('clients/07-tendermint-0/clientState', clientValue);
-    for (const entry of records) expected.set(`clients/07-tendermint-0/consensusStates/${entry.datum.height.revisionHeight}`, entry.consensusValue);
+    for (const entry of records) expected.set(`clients/07-tendermint-0/consensusStates/${entry.datum.height.revisionNumber}-${entry.datum.height.revisionHeight}`, entry.consensusValue);
     const readers = emptyReaders();
     readers.kupo.queryAllClientUtxos = async () => [clientUtxo];
     readers.lucid.consensusHistoryRecords = async (client) => {
@@ -290,8 +307,19 @@ describe('deployment-bound tree stores', () => {
     const fixture = await historyFixture();
     const rebuilt = await fixture.makeStore().rebuildTreeFromChain();
     assert.equal(rebuilt.root, fixture.expected.getRoot());
-    assert.equal(rebuilt.tree.get('clients/07-tendermint-0/consensusStates/7')?.toString('hex'), fixture.records[0].consensusValue);
-    assert.equal(rebuilt.tree.get('clients/07-tendermint-0/consensusStates/8')?.toString('hex'), fixture.records[1].consensusValue);
+    assert.equal(rebuilt.tree.get('clients/07-tendermint-0/consensusStates/0-7')?.toString('hex'), fixture.records[0].consensusValue);
+    assert.equal(rebuilt.tree.get('clients/07-tendermint-0/consensusStates/0-8')?.toString('hex'), fixture.records[1].consensusValue);
+  });
+
+  it('rebuilds distinct leaves for the same height in different revisions', async () => {
+    const fixture = await historyFixture(true);
+    const rebuilt = await fixture.makeStore().rebuildTreeFromChain();
+    assert.equal(rebuilt.root, fixture.expected.getRoot());
+    for (const [index, revision] of [0, 1].entries()) {
+      const key = `clients/07-tendermint-0/consensusStates/${revision}-7`;
+      assert.equal(rebuilt.tree.get(key)?.toString('hex'), fixture.records[index].consensusValue);
+      assert.equal(rebuilt.tree.verifyProof(rebuilt.tree.generateProof(key)), true);
+    }
   });
 
   it('rejects foreign-client, duplicate, missing and corrupted recovered records', async () => {
@@ -700,5 +728,45 @@ describe('guarded tree publication', () => {
     readers.setLive(pending.newRoot, hostRef(1));
     assert.equal((await pending.commit(hostRef(1))).published, false);
     assert.equal(store.getCurrentRoot(), emptyRoot);
+  });
+});
+
+describe('channel upgrade commitment values', () => {
+  const hex = (text: string) => Buffer.from(text).toString('hex');
+  const channel = {
+    state: 'Open', ordering: 'Unordered',
+    counterparty: { port_id: hex('transfer'), channel_id: hex('channel-2') },
+    connection_hops: [hex('connection-0')], version: hex('ics20-1'),
+  };
+  const legacyChannel =
+    'd8799fd87c80d87a80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d30ff4769637332302d31ff';
+
+  it('keeps the committed five-field channel without an upgrade sequence', async () => {
+    assert.equal(await encodeChannelEndValue(channel, Lucid), legacyChannel);
+  });
+
+  it('appends the upgrade sequence and places flushing states after the current states', async () => {
+    const withSequence = (state: string, sequence: string) =>
+      legacyChannel.replace(/^d8799fd87c80/, `d8799f${state}`).replace(/ff$/, `${sequence}ff`);
+    assert.equal(await encodeChannelEndValue({ ...channel, upgrade_sequence: 0n }, Lucid), withSequence('d87c80', '00'));
+    assert.equal(await encodeChannelEndValue({ ...channel, state: 'Flushing', upgrade_sequence: 3n }, Lucid), withSequence('d87e80', '03'));
+    assert.equal(
+      await encodeChannelEndValue({ ...channel, state: 'FlushComplete', upgrade_sequence: 2n ** 32n }, Lucid),
+      withSequence('d87f80', '1b0000000100000000'),
+    );
+  });
+
+  it('encodes upgrade and error records as Aiken records', async () => {
+    const fields = { ordering: 'Unordered', connection_hops: [hex('connection-1')], version: hex('ics20-1') };
+    assert.equal(
+      await encodeChannelUpgradeValue({
+        fields, timeout: { height: { revisionNumber: 0n, revisionHeight: 0n }, timestamp: 0n }, next_sequence_send: 0n,
+      }, Lucid),
+      'd8799fd8799fd87a809f4c636f6e6e656374696f6e2d31ff4769637332302d31ffd8799fd8799f0000ff00ff00ff',
+    );
+    assert.equal(
+      await encodeChannelUpgradeErrorValue({ sequence: 3n, message: hex('upgrade timed out') }, Lucid),
+      `d8799f0351${hex('upgrade timed out')}ff`,
+    );
   });
 });

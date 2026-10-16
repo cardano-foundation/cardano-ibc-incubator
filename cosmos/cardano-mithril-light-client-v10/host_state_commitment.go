@@ -2,6 +2,7 @@ package mithril
 
 import (
 	"fmt"
+	"math/big"
 	"strings"
 
 	"github.com/blinklabs-io/gouroboros/ledger"
@@ -38,7 +39,7 @@ func (cs ClientState) ExtractIbcStateRootFromHostStateTx(header *MithrilHeader) 
 		return nil, fmt.Errorf("failed to decode HostState tx body: %w", err)
 	}
 
-	if strings.ToLower(txBody.Hash()) != strings.ToLower(header.HostStateTxHash) {
+	if strings.ToLower(txBody.Id().String()) != strings.ToLower(header.HostStateTxHash) {
 		return nil, fmt.Errorf("HostState tx body hash mismatch")
 	}
 
@@ -59,7 +60,7 @@ func (cs ClientState) ExtractIbcStateRootFromHostStateTx(header *MithrilHeader) 
 
 	policy := ledger.NewBlake2b224(cs.HostStateNftPolicyId)
 	amount := assets.Asset(policy, cs.HostStateNftTokenName)
-	if amount != 1 {
+	if amount == nil || amount.Cmp(big.NewInt(1)) != 0 {
 		return nil, fmt.Errorf("HostState output does not contain the expected HostState NFT")
 	}
 

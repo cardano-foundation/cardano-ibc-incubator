@@ -172,7 +172,7 @@ Deno.test("shutdown blocks user deposits even when an escrow has enough ADA to p
 Deno.test("shutdown rejects outstanding channel packets before reclaiming dependencies", async () => {
   const f = await fixture();
   const raw = Data.from(f.channel.datum!);
-  const state = datumFields(datumFields(raw, 3)[0], 9);
+  const state = datumFields(datumFields(raw, 3)[0], 10);
   state[4] = new Map([[1n, "00".repeat(32)]]);
   f.channel.datum = encode(raw);
   const groups = await scanDeploymentState(f.lucid, f.deployment);

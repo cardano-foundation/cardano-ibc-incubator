@@ -648,6 +648,10 @@ jobs:
         working-directory: cardano/offchain
         run: deno task test:consensus-history-index
 
+      - name: Test recovery escrow observations
+        working-directory: cardano/offchain
+        run: deno task test:recovery-escrow
+
   migration-assurance:
     name: Cardano Migration Assurance
     if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
@@ -1149,13 +1153,12 @@ jobs:
       - name: Setup Go for ICS-20 vectors
         uses: actions/setup-go@v7
         with:
-          go-version: "1.25.13"
+          go-version-file: cosmos/cardano-probabilistic-light-client-v8/go.mod
           cache-dependency-path: |
             cosmos/cardano-probabilistic-light-client-v8/go.sum
             cosmos/cardano-mithril-light-client-v10/go.sum
 
       - name: Setup Aiken
-        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         uses: aiken-lang/setup-aiken@v1
         with:
           version: v1.1.24
@@ -1175,6 +1178,11 @@ jobs:
         env:
           WIRE_SCHEMA_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
         run: node scripts/ci/check-aiken-wire-schema.mjs check --base-ref "${WIRE_SCHEMA_BASE_REF}"
+
+      - name: Check frozen commitment codec vectors
+        run: |
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime
+          node tests/ibc-state-commitment/generate-codec.mjs --check
 
       - name: Check pinned ICS-20 JSON vectors
         run: node tests/ics20-json-vectors/generate.mjs --check
@@ -1219,13 +1227,23 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
-          go-version: "1.25.13"
+          go-version-file: cosmos/cardano-probabilistic-light-client-core/go.mod
           cache-dependency-path: ${{ matrix.module.path }}/go.sum
 
       - name: Test
         env:
           GOWORK: off
         run: go test ./...
+
+      # gouroboros decoders panicked on malformed relayer block bytes before
+      # v0.205.4 (#687). Fuzzing catches a regression after an upgrade.
+      - name: Fuzz Cardano block decoding
+        if: matrix.module.name == 'core'
+        env:
+          GOWORK: off
+        run: |
+          go test -run '^$' -fuzz '^FuzzDecodeLedgerBlock$' -fuzztime 60s .
+          go test -run '^$' -fuzz '^FuzzDecodeLedgerHeader$' -fuzztime 30s .
 
       - name: Vet non-generated packages
         env:
@@ -1252,8 +1270,17 @@ jobs:
         with:
           node-version: 22
 
-      - name: Check v8/v10 parity
-        run: node scripts/ci/check-light-client-parity.mjs
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: cosmos/cardano-probabilistic-light-client-core/go.mod
+          cache: false
+
+      - name: Check v8/v10 parity and adapter boundaries
+        run: |
+          node scripts/ci/generate-light-client-models.mjs --check
+          node scripts/ci/check-light-client-parity.mjs
+          node --test scripts/ci/check-light-client-parity.test.mjs
 
   rust:
     name: Rust

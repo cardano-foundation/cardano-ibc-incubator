@@ -9,7 +9,7 @@ profiles:
       version: 8.7.0
       ref: v8.7.0
       commit: 53eaba19375dab0145509af101dbce193284ec5d
-      go_image: golang:1.21-alpine3.18
+      go_image: golang:1.26.9-alpine
     semantics: classic
     chain_id: v8-classic-1
     image: local:cardano-ibc-v8-classic
@@ -25,7 +25,7 @@ profiles:
       version: 10.2.0
       ref: v10.2.0
       commit: e120ef5d4778c3e659ce57b59f028b250be5bb2e
-      go_image: golang:1.23.8-alpine
+      go_image: golang:1.26.9-alpine
     semantics: classic
     chain_id: v10-classic-1
     image: local:cardano-ibc-v10-classic
@@ -41,7 +41,7 @@ profiles:
       version: 10.2.0
       ref: v10.2.0
       commit: e120ef5d4778c3e659ce57b59f028b250be5bb2e
-      go_image: golang:1.23.8-alpine
+      go_image: golang:1.26.9-alpine
     semantics: v2
     chain_id: v10-v2-1
     image: local:cardano-ibc-v10-v2

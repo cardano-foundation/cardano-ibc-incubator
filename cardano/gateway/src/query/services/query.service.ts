@@ -1,3 +1,11 @@
+import { bootstrapSettlementCredit } from './settlement-credit';
+import { Cbor, CborArray, CborBytes, CborSimple } from '@harmoniclabs/cbor';
+import {
+  loadTrustedPoolRegistryCheckpoint,
+  loadTrustedPoolProductionCheckpoint,
+  withAuthenticatedPoolBindings,
+} from './pool-registry-checkpoint';
+import { queryPraosNoncesAtPoint } from '../../shared/helpers/ogmios';
 import { packetLane, packetLaneTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
 import { PacketStateService, latestPacketProofHeight } from './packet-state.service';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
@@ -32,6 +40,9 @@ import {
   ConsensusState as ConsensusStateProbabilistic,
   EpochContext as ProbabilisticEpochContext,
   OperationalCertificateCounter,
+  PraosNonceState,
+  PoolRegistryState,
+  PoolProductionHistory,
   ProbabilisticBlock,
   ProbabilisticHeader,
   StakeDistributionEntry,
@@ -91,6 +102,7 @@ import {
   normalizeTxsResultFromClientDatum,
   normalizeTxsResultFromConnDatum,
   normalizeTxsResultFromChannelRedeemer,
+  normalizeTxsResultFromChannelUpgrade,
   normalizeTxsResultFromModuleRedeemer,
   normalizeTxsResultFromRecvPacketSuccessAcknowledgement,
 } from '@shared/helpers/block-results';
@@ -372,7 +384,7 @@ export class QueryService {
     const expectedPolicyId = deploymentConfig.validators.mintTendermintUpdateSession?.scriptHash;
     if (!expectedPolicyId) return null;
     const isStagedAction = (decoded: SpendMultitxClientRedeemer): boolean => {
-      if (typeof decoded === 'string') return false;
+      if (typeof decoded === 'string') return decoded === 'UpgradeClient';
       if ('RecoverClient' in decoded) {
         return (
           decoded.RecoverClient.substituteToken.policyId.toLowerCase() ===
@@ -710,11 +722,61 @@ export class QueryService {
       throw new GrpcInternalException('Cardano chain ID is not configured');
     }
 
+    const registryFile = this.configService.get<string>('cardanoPoolRegistryCheckpointFile');
+    let poolRegistry: PoolRegistryState | undefined;
+    let poolProduction: PoolProductionHistory | undefined;
     const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
       historyService: this.historyService,
       height: BigInt(height),
       logger: this.logger,
+      resolveProductionHistory: (block) => {
+        if (!registryFile) throw new GrpcFailedPreconditionException('Trusted production bootstrap is unavailable');
+        try {
+          poolProduction = loadTrustedPoolProductionCheckpoint(registryFile, {
+            chainId: cardanoChainId,
+            height: BigInt(block.height),
+            slot: block.slotNo,
+            hash: block.hash,
+            epoch: BigInt(block.epochNo),
+          });
+          return poolProduction;
+        } catch (error) {
+          throw new GrpcFailedPreconditionException(`Production bootstrap failed: ${error.message}`);
+        }
+      },
+      resolvePoolBindings: (block, entries) => {
+        if (!registryFile) {
+          throw new GrpcFailedPreconditionException(
+            'Configure CARDANO_POOL_REGISTRY_CHECKPOINT_FILE from authenticated history or an explicitly trusted checkpoint',
+          );
+        }
+        try {
+          poolRegistry = loadTrustedPoolRegistryCheckpoint(registryFile, {
+            chainId: cardanoChainId,
+            height: BigInt(block.height),
+            slot: block.slotNo,
+            hash: block.hash,
+            epoch: BigInt(block.epochNo),
+          });
+          const bindings = new Map(poolRegistry.effective.map((binding) => [binding.pool_id, binding]));
+          return entries.map((entry) => {
+            const binding = bindings.get(entry.poolId);
+            if (!binding) throw new Error(`Pool ${entry.poolId} has no authenticated effective registration`);
+            return {
+              ...entry,
+              vrfKeyHash: Buffer.from(binding.vrf_key_hash).toString('hex'),
+              firstRegistrationSlot: binding.first_registration_slot,
+            };
+          });
+        } catch (error) {
+          throw new GrpcFailedPreconditionException(`Pool registry bootstrap failed: ${error.message}`);
+        }
+      },
     });
+
+    if (!poolRegistry) {
+      throw new GrpcFailedPreconditionException('Authenticated bootstrap pool registry is unavailable');
+    }
 
     const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(stabilityEvidence.anchorHeight);
     if (!hostStateUtxo?.datum) {
@@ -728,13 +790,47 @@ export class QueryService {
     const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
     const hostStateRootBytes = Buffer.from(hostStateDatum.state.ibc_state_root, 'hex');
     const stabilitySlotTiming = this.getStabilitySlotTiming(stabilityEvidence.anchorBlock);
-    const currentEpochContext = this.toStabilityEpochContext(
-      Number(stabilityEvidence.anchorEpoch),
-      stabilityEvidence.epochStakeDistribution,
-      stabilityEvidence.epochVerificationContext,
+    const currentEpochContext = withAuthenticatedPoolBindings(
+      this.toStabilityEpochContext(
+        Number(stabilityEvidence.anchorEpoch),
+        stabilityEvidence.epochStakeDistribution,
+        stabilityEvidence.epochVerificationContext,
+      ),
+      poolRegistry,
     );
 
+    const window = this.configService.get<string>('cardanoRandomnessStabilisationWindowSlots');
+    if (!window || !/^[1-9][0-9]*$/.test(window) || BigInt(window) > (1n << 64n) - 1n) {
+      throw new GrpcFailedPreconditionException(
+        'Configure CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS from the network protocol rules',
+      );
+    }
+    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    if (!ogmiosEndpoint) throw new GrpcFailedPreconditionException('Ogmios endpoint is required for Praos bootstrap');
+    const nodeNonces = await queryPraosNoncesAtPoint(ogmiosEndpoint, {
+      slot: stabilityEvidence.anchorBlock.slotNo,
+      hash: stabilityEvidence.anchorBlock.hash,
+    });
+    const rawBlock = await this.miniProtocalsService.fetchBlockCbor(stabilityEvidence.anchorBlock);
+    const header = Cbor.parse(
+      this.miniProtocalsService.extractBlockHeaderCbor(rawBlock, stabilityEvidence.anchorBlock.hash),
+    );
+    const previousHash =
+      header instanceof CborArray && header.array[0] instanceof CborArray ? header.array[0].array[2] : undefined;
+    const genesisParent = previousHash instanceof CborSimple && previousHash.simple === null;
+    if (!genesisParent && (!(previousHash instanceof CborBytes) || previousHash.buffer.length !== 32)) {
+      throw new GrpcFailedPreconditionException('Bootstrap header previous-block hash is unavailable');
+    }
+    const nonceState = PraosNonceState.fromPartial({
+      ...nodeNonces,
+      last_applied_block_nonce: previousHash instanceof CborBytes ? previousHash.buffer : new Uint8Array(),
+    });
+    if (!Buffer.from(nonceState.epoch_nonce).equals(Buffer.from(currentEpochContext.epoch_nonce))) {
+      throw new GrpcFailedPreconditionException('Bootstrap node nonce disagrees with epoch context');
+    }
+
     const clientStateProbabilistic: ClientStateProbabilistic = {
+      storage_version: 0, verification_generation: 0n, checkpoint_reference: new Uint8Array(), storage_namespace: new Uint8Array(), bootstrap_objects: new Uint8Array(), bootstrap_pending: false,
       chain_id: cardanoChainId,
       latest_height: {
         revision_number: 0n,
@@ -767,6 +863,15 @@ export class QueryService {
       system_start_unix_ns: stabilitySlotTiming.systemStartUnixNs,
       slot_length_ns: stabilitySlotTiming.slotLengthNs,
       epoch_contexts: [currentEpochContext],
+      latest_checkpoint_nonce_state: nonceState,
+      latest_checkpoint_pool_registry: poolRegistry,
+      latest_checkpoint_pool_production: poolProduction,
+      latest_checkpoint_settlement_credit: bootstrapSettlementCredit(
+        BigInt(stabilityEvidence.anchorEpoch),
+        stabilityEvidence.epochStakeDistribution,
+      ),
+      randomness_stabilisation_window_slots: BigInt(window),
+      epoch_context_challenges: [], // Assigned by the Cosmos host during Initialize.
       active_slot_coefficient_numerator: stabilityEvidence.epochVerificationContext.activeSlotCoefficientNumerator,
       active_slot_coefficient_denominator: stabilityEvidence.epochVerificationContext.activeSlotCoefficientDenominator,
       latest_checkpoint_height: {
@@ -786,6 +891,11 @@ export class QueryService {
     };
 
     const consensusStateProbabilistic: ConsensusStateProbabilistic = {
+      verification_generation: 0n, checkpoint_reference: new Uint8Array(), packet_state_reference: new Uint8Array(),
+      nonce_state: nonceState,
+      pool_registry: poolRegistry,
+      pool_production: poolProduction,
+      settlement_credit: clientStateProbabilistic.latest_checkpoint_settlement_credit,
       packet_state_snapshot: await this.packetState.snapshot(stabilityEvidence.anchorHeight),
       timestamp: stabilityEvidence.anchorBlock.timestampUnixNs,
       ibc_state_root: hostStateRootBytes,
@@ -900,16 +1010,12 @@ export class QueryService {
           `Consensus-state history for client ${clientId} failed authentication`,
         );
       }
-      // Public paths contain revision height only. Bind the revision to the
-      // selected client datum and exclude records newer than that datum.
-      if (
-        record.height.revisionNumber !== latestHeight.revisionNumber ||
-        compareConsensusHeights(record.height, latestHeight) > 0
-      )
-        continue;
+      // Public paths carry the full revision height, so records archived before
+      // a revision upgrade stay queryable. Exclude records newer than the datum.
+      if (compareConsensusHeights(record.height, latestHeight) > 0) continue;
       const key = consensusHeightKey(record.height);
       if (requestedKey && key !== requestedKey) continue;
-      const pathHeight = record.height.revisionHeight.toString();
+      const pathHeight = `${record.height.revisionNumber}-${record.height.revisionHeight}`;
       const path = `clients/07-tendermint-${clientId}/consensusStates/${pathHeight}`;
       const committedValue = proofContext.tree.get(path);
       if (!committedValue || committedValue.length === 0) {
@@ -1148,7 +1254,7 @@ export class QueryService {
       value: ConsensusStateTendermint.encode(consensusStateTendermint).finish(),
     };
     // Generate ICS-23 proof from the IBC state tree.
-    const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${record.height.revisionHeight}`;
+    const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${record.height.revisionNumber}-${record.height.revisionHeight}`;
 
     await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
     const tree = proofContext.tree;
@@ -1597,6 +1703,13 @@ export class QueryService {
           if (spendRedeemer.hasOwnProperty('ChanCloseConfirm')) {
             txsResult.events[0].type = EVENT_TYPE_CHANNEL.CLOSE_CONFIRM;
           }
+          if (typeof spendRedeemer === 'object' && 'ChanUpgrade' in spendRedeemer) {
+            txsResult.events = normalizeTxsResultFromChannelUpgrade(
+              spendRedeemer.ChanUpgrade,
+              channelDatumDecoded,
+              currentChannelId,
+            ).events;
+          }
           break;
         }
         default:
@@ -1635,7 +1748,9 @@ export class QueryService {
           const stagedRedeemer = await this.findStagedClientRedeemer(clientUtxo, clientDatum, redeemers);
           let stagedHeader: TendermintHeader | null = null;
           let spendClientRedeemerData: SpendClientRedeemer | undefined;
-          if (stagedRedeemer && typeof stagedRedeemer !== 'string') {
+          if (stagedRedeemer === 'UpgradeClient') {
+            spendClientRedeemerData = 'UpgradeClient';
+          } else if (stagedRedeemer && typeof stagedRedeemer !== 'string') {
             if ('RecoverClient' in stagedRedeemer) {
               spendClientRedeemerData = {
                 RecoverClient: {
@@ -2260,7 +2375,16 @@ export class QueryService {
   }
 
   async queryStabilityIBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse> {
-    const { height, trusted_height: trustedHeight } = request;
+    const { trusted_height: trustedHeight } = request;
+    const maintenance = request.checkpoint_only && request.height === 0n;
+    let height = request.height;
+    if (maintenance) {
+      const tip = await this.historyService.findLatestBlock();
+      if (!tip || BigInt(tip.height) <= trustedHeight + 24n) {
+        return {};
+      }
+      height = BigInt(tip.height) - 24n;
+    }
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
@@ -2268,8 +2392,48 @@ export class QueryService {
       throw new GrpcInvalidArgumentException('Invalid argument: "trusted_height" must be provided');
     }
     const effectiveTrustedHeight = this.normalizeStabilityTrustedHeight(BigInt(trustedHeight), BigInt(height));
+    let settlementCreditClient: ClientStateProbabilistic | undefined;
+    if (request.probabilistic_client_state?.length) {
+      try {
+        settlementCreditClient = ClientStateProbabilistic.decode(request.probabilistic_client_state);
+        const checkpoint = settlementCreditClient.latest_checkpoint_height ?? settlementCreditClient.latest_height;
+        if (
+          !checkpoint ||
+          checkpoint.revision_height !== effectiveTrustedHeight ||
+          !settlementCreditClient.latest_checkpoint_settlement_credit ||
+          !settlementCreditClient.latest_checkpoint_pool_production
+        ) {
+          throw new Error('Destination client checkpoint does not match trusted_height');
+        }
+      } catch (error) {
+        throw new GrpcInvalidArgumentException(`Invalid settlement credit query context: ${error.message}`);
+      }
+    }
 
-    const stabilityHeader = await this.buildBoundedStabilityHeader(effectiveTrustedHeight, BigInt(height));
+    if (request.checkpoint_only && !settlementCreditClient) {
+      throw new GrpcInvalidArgumentException(
+        'Historical destination client context is required for challenge evidence',
+      );
+    }
+
+    // A challenger must be able to authenticate the actual block at a claimed
+    // height even when that block contains no HostState transaction.
+    let stabilityHeader: ProbabilisticHeader;
+    if (request.checkpoint_only) {
+      stabilityHeader = await this.buildBoundedStabilityHeader(
+        effectiveTrustedHeight,
+        BigInt(height),
+        settlementCreditClient,
+        !maintenance,
+        maintenance,
+      );
+    } else {
+      stabilityHeader = await this.buildBoundedStabilityHeader(
+        effectiveTrustedHeight,
+        BigInt(height),
+        settlementCreditClient,
+      );
+    }
 
     return {
       header: {
@@ -2279,7 +2443,13 @@ export class QueryService {
     };
   }
 
-  private async buildBoundedStabilityHeader(trustedHeight: bigint, targetHeight: bigint): Promise<ProbabilisticHeader> {
+  private async buildBoundedStabilityHeader(
+    trustedHeight: bigint,
+    targetHeight: bigint,
+    settlementCreditClient?: ClientStateProbabilistic,
+    challenge = false,
+    maintenance = false,
+  ): Promise<ProbabilisticHeader> {
     const targetDistance = targetHeight - trustedHeight;
     if (targetDistance <= 0n) {
       throw new GrpcInvalidArgumentException(
@@ -2289,12 +2459,13 @@ export class QueryService {
 
     const maxBridgeBlocks = this.getStabilityCheckpointMaxBridgeBlocks();
     const maxHeaderBytes = this.getStabilityCheckpointMaxHeaderBytes();
+    const staged = settlementCreditClient?.storage_version === 2;
     const maxAdvance = BigInt(maxBridgeBlocks) + 1n;
     let candidateDistance = targetDistance < maxAdvance ? targetDistance : maxAdvance;
 
     while (candidateDistance >= 1n) {
       const candidateHeight = trustedHeight + candidateDistance;
-      const isCheckpoint = candidateHeight < targetHeight;
+      const isCheckpoint = challenge || maintenance || candidateHeight < targetHeight;
 
       let stabilityEvidence: StakeWeightedStabilityHeaderEvidence;
       try {
@@ -2302,10 +2473,11 @@ export class QueryService {
           historyService: this.historyService,
           height: candidateHeight,
           trustedHeight,
+          settlementCreditClient,
           logger: this.logger,
         });
       } catch (error) {
-        if (isCheckpoint && candidateDistance > 1n && this.isRecoverableCheckpointCandidateError(error)) {
+        if (candidateDistance > 1n && this.isRecoverableCheckpointCandidateError(error)) {
           candidateDistance -= 1n;
           continue;
         }
@@ -2313,8 +2485,16 @@ export class QueryService {
       }
 
       const stabilityHeader = await this.buildStabilityHeader(stabilityEvidence, isCheckpoint);
+      if (challenge && !staged && !stabilityEvidence.nextEpochContext) {
+        stabilityHeader.new_epoch_context = this.toStabilityEpochContext(
+          Number(stabilityEvidence.anchorEpoch),
+          stabilityEvidence.epochStakeDistribution,
+          stabilityEvidence.epochVerificationContext,
+        );
+      }
       const encodedHeaderBytes = ProbabilisticHeader.encode(stabilityHeader).finish().length;
-      if (encodedHeaderBytes <= maxHeaderBytes) {
+      const capacityError = this.stabilityHeaderCapacityError(stabilityHeader, !challenge, staged);
+      if ((staged || encodedHeaderBytes <= maxHeaderBytes) && !capacityError) {
         if (isCheckpoint) {
           this.logger.log(
             `Returning rootless stability checkpoint ${trustedHeight.toString()} -> ${stabilityEvidence.anchorHeight.toString()} while catching up to ${targetHeight.toString()} (${encodedHeaderBytes} bytes)`,
@@ -2331,7 +2511,7 @@ export class QueryService {
         throw new GrpcFailedPreconditionException(
           gatewayGrpcError(
             GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_ACCEPTED,
-            `Even the smallest stability update from height ${trustedHeight.toString()} is ${encodedHeaderBytes} bytes, above the configured ${maxHeaderBytes}-byte checkpoint limit`,
+            `Even the smallest stability update from height ${trustedHeight.toString()} cannot reserve challenge capacity: ${capacityError ?? `${encodedHeaderBytes} bytes exceeds the ${maxHeaderBytes}-byte checkpoint limit`}`,
             {
               trustedHeight: trustedHeight.toString(),
               targetHeight: targetHeight.toString(),
@@ -2342,9 +2522,17 @@ export class QueryService {
         );
       }
 
+      const fullBodyBytes = [
+        stabilityHeader.anchor_block!,
+        ...stabilityHeader.bridge_blocks,
+        ...stabilityHeader.descendant_blocks,
+      ].reduce((sum, block) => sum + block.block_cbor.length, 0);
+      const byteRatio = capacityError?.startsWith('cross-epoch body bytes')
+        ? (1536 * 1024) / fullBodyBytes
+        : maxHeaderBytes / encodedHeaderBytes;
       const proportionalDistance = Math.max(
         1,
-        Math.floor((Number(candidateDistance) * maxHeaderBytes) / encodedHeaderBytes),
+        Math.min(Math.floor(Number(candidateDistance) * byteRatio), 128 - stabilityHeader.descendant_blocks.length),
       );
       candidateDistance = BigInt(Math.min(Number(candidateDistance - 1n), proportionalDistance));
     }
@@ -2384,8 +2572,13 @@ export class QueryService {
       }),
     );
 
-    const newEpochContext =
-      stabilityEvidence.anchorEpoch !== stabilityEvidence.trustedEpoch
+    const newEpochContext = stabilityEvidence.nextEpochContext
+      ? this.toStabilityEpochContext(
+          Number(stabilityEvidence.anchorEpoch) + 1,
+          stabilityEvidence.nextEpochContext.stakeDistribution,
+          stabilityEvidence.nextEpochContext.verificationContext,
+        )
+      : stabilityEvidence.anchorEpoch !== stabilityEvidence.trustedEpoch
         ? this.toStabilityEpochContext(
             Number(stabilityEvidence.anchorEpoch),
             stabilityEvidence.epochStakeDistribution,
@@ -2430,19 +2623,42 @@ export class QueryService {
   }
 
   private getStabilityCheckpointMaxBridgeBlocks(): number {
-    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxBridgeBlocks') ?? 32;
+    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxBridgeBlocks') ?? 96;
     if (!Number.isSafeInteger(value) || value < 0) {
       throw new GrpcInternalException('Invalid Cardano stability checkpoint bridge-block limit');
     }
-    return value;
+    return Math.min(value, 96);
   }
 
   private getStabilityCheckpointMaxHeaderBytes(): number {
-    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxHeaderBytes') ?? 768 * 1024;
+    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxHeaderBytes') ?? (5 * 1024 * 1024) / 2;
     if (!Number.isSafeInteger(value) || value <= 0) {
       throw new GrpcInternalException('Invalid Cardano stability checkpoint header-size limit');
     }
-    return value;
+    return Math.min(value, (5 * 1024 * 1024) / 2);
+  }
+
+  private stabilityHeaderCapacityError(header: ProbabilisticHeader, forward = true, staged = false): string | undefined {
+    if (header.bridge_blocks.length > 96 || 1 + header.bridge_blocks.length + header.descendant_blocks.length > 128) {
+      return 'block count exceeds the challenge capacity bound';
+    }
+    if ((header.new_epoch_context?.stake_distribution.length ?? 0) > 4000) {
+      return 'stake table exceeds the challenge capacity bound';
+    }
+    const blocks = [...header.bridge_blocks, header.anchor_block!, ...header.descendant_blocks];
+    if (
+      forward &&
+      !staged &&
+      header.new_epoch_context &&
+      header.new_epoch_context.epoch > header.anchor_block!.epoch &&
+      blocks.reduce((sum, block) => sum + block.block_cbor.length, 0) > 1536 * 1024
+    ) {
+      return 'cross-epoch body bytes exceed the reserved challenge capacity';
+    }
+    if (blocks.some((block) => block.block_cbor.length > 96 * 1024 || block.header_cbor.length > 1100)) {
+      return 'block witness exceeds the challenge capacity bound';
+    }
+    return undefined;
   }
 
   private isRecoverableCheckpointCandidateError(error: unknown): boolean {
@@ -2578,6 +2794,12 @@ export class QueryService {
       currentEpochEndSlotExclusive: bigint;
     },
   ): ProbabilisticEpochContext {
+    const missingRegistration = stakeDistribution.find((entry) => entry.firstRegistrationSlot == null);
+    if (missingRegistration) {
+      throw new GrpcFailedPreconditionException(
+        `First registration slot unavailable for pool ${missingRegistration.poolId} in epoch ${epoch}`,
+      );
+    }
     return {
       epoch: BigInt(epoch),
       stake_distribution: stakeDistribution.map(
@@ -2585,7 +2807,10 @@ export class QueryService {
           pool_id: entry.poolId,
           stake: this.toProtoUint64(entry.stake, `stake_distribution[${entry.poolId}].stake`),
           vrf_key_hash: Buffer.from(entry.vrfKeyHash, 'hex'),
-          first_registration_slot: entry.firstRegistrationSlot ?? 0n,
+          first_registration_slot: this.toProtoUint64(
+            entry.firstRegistrationSlot!,
+            `stake_distribution[${entry.poolId}].first_registration_slot`,
+          ),
           relative_stake_numerator: this.toProtoUint64(
             entry.relativeStakeNumerator,
             `stake_distribution[${entry.poolId}].relative_stake_numerator`,

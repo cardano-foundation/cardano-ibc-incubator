@@ -104,7 +104,9 @@ export interface MsgUpgradeClient {
  * @package ibc.core.client.v1
  * @see proto type: ibc.core.client.v1.MsgUpgradeClientResponse
  */
-export interface MsgUpgradeClientResponse {}
+export interface MsgUpgradeClientResponse {
+  unsigned_tx?: Any;
+}
 /**
  * MsgSubmitMisbehaviour defines an sdk.Msg type that submits Evidence for
  * light client misbehaviour.
@@ -561,7 +563,9 @@ export const MsgUpgradeClient = {
   },
 };
 function createBaseMsgUpgradeClientResponse(): MsgUpgradeClientResponse {
-  return {};
+  return {
+    unsigned_tx: undefined,
+  };
 }
 /**
  * MsgUpgradeClientResponse defines the Msg/UpgradeClient response type.
@@ -571,7 +575,10 @@ function createBaseMsgUpgradeClientResponse(): MsgUpgradeClientResponse {
  */
 export const MsgUpgradeClientResponse = {
   typeUrl: "/ibc.core.client.v1.MsgUpgradeClientResponse",
-  encode(_: MsgUpgradeClientResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(message: MsgUpgradeClientResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(10).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): MsgUpgradeClientResponse {
@@ -581,6 +588,9 @@ export const MsgUpgradeClientResponse = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -588,16 +598,24 @@ export const MsgUpgradeClientResponse = {
     }
     return message;
   },
-  fromJSON(_: any): MsgUpgradeClientResponse {
+  fromJSON(object: any): MsgUpgradeClientResponse {
     const obj = createBaseMsgUpgradeClientResponse();
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
     return obj;
   },
-  toJSON(_: MsgUpgradeClientResponse): unknown {
+  toJSON(message: MsgUpgradeClientResponse): unknown {
     const obj: any = {};
+    message.unsigned_tx !== undefined &&
+      (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<MsgUpgradeClientResponse>, I>>(_: I): MsgUpgradeClientResponse {
+  fromPartial<I extends Exact<DeepPartial<MsgUpgradeClientResponse>, I>>(
+    object: I,
+  ): MsgUpgradeClientResponse {
     const message = createBaseMsgUpgradeClientResponse();
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
     return message;
   },
 };

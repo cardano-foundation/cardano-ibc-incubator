@@ -422,6 +422,7 @@ export async function accountingFixture(seedNumber = 462, options: {
     record(fromText("transfer"), fromText("channel-7")),
     [fromText("connection-0")],
     fromText("ics20-1"),
+    0n,
   );
   const channelDatum = record(
     record(
@@ -434,6 +435,7 @@ export async function accountingFixture(seedNumber = 462, options: {
       new Map(),
       record(0n, 0n),
       record(0n, 0n),
+      new Constr(0, [new Constr(1, []), new Constr(1, []), 0n]),
     ),
     fromText("transfer"),
     record(plan.mintChannel.hash, channelName),
@@ -505,6 +507,7 @@ export async function accountingFixture(seedNumber = 462, options: {
       live_clients: 0n,
       live_connections: 0n,
       live_channels: channelCount,
+      last_heartbeat_time: 0n,
     },
   };
   const hostUnit = plan.hostNft.hash + fromText("ibc_host_state");
