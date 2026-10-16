@@ -78,13 +78,13 @@ func retainVerifiedObservation(store storetypes.KVStore, cs *ClientState, receip
 	if err != nil {
 		return err
 	}
-	if err := pinVerificationCheckpoint(store, anchor, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 3, id)); err != nil {
+	if err := pinVerificationCheckpoint(store, anchor, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerReceiptCheckpoint, id)); err != nil {
 		return err
 	}
-	if err := pinSnapshotObject(store, receipt.Scope, objectReceipt, [32]byte(id), namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 9, id)); err != nil {
+	if err := pinSnapshotObject(store, receipt.Scope, objectReceipt, [32]byte(id), namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerRetainedReceipt, id)); err != nil {
 		return err
 	}
-	return retainVerification(store, cs, 2, id, nil, receipt.AnchorHeight, retentionDeadline(cs, receipt.VerifiedAt))
+	return retainVerification(store, cs, RetainReceipt, id, nil, receipt.AnchorHeight, retentionDeadline(cs, receipt.VerifiedAt))
 }
 func saveVerifiedObservation(store storetypes.KVStore, receipt *verifiedObservation) ([32]byte, error) {
 	raw, err := cbor.Encode(receipt)
@@ -247,7 +247,7 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 			if err := retainVerifiedObservation(store, cs, receipt, accepted[:]); err != nil {
 				return nil, err
 			}
-			if err := pinSnapshotObject(store, receipt.Scope, objectReceipt, accepted, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 6, binary.BigEndian.AppendUint64(nil, receipt.Table.Epoch))); err != nil {
+			if err := pinSnapshotObject(store, receipt.Scope, objectReceipt, accepted, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerEpochProposal, binary.BigEndian.AppendUint64(nil, receipt.Table.Epoch))); err != nil {
 				return nil, err
 			}
 			proposal := activatedEpochTable{receipt.Table, bytes.Clone(receipt.TableNonce), deadline, bytes.Clone(accepted[:]), bytes.Clone(receipt.BaseReference), receipt.TableMithrilRoot}
@@ -256,7 +256,7 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 				return nil, err
 			}
 			store.Set(key, raw)
-			if err := retainVerification(store, cs, 4, binary.BigEndian.AppendUint64(nil, receipt.Table.Epoch), accepted[:], 0, retentionDeadline(cs, receipt.ActivatedAt)); err != nil {
+			if err := retainVerification(store, cs, RetainEpochProposal, binary.BigEndian.AppendUint64(nil, receipt.Table.Epoch), accepted[:], 0, retentionDeadline(cs, receipt.ActivatedAt)); err != nil {
 				return nil, err
 			}
 			cs.EpochContextChallenges = append(cs.EpochContextChallenges, &EpochContextChallenge{Epoch: receipt.Table.Epoch, UsableAfterUnixNs: deadline})
@@ -289,7 +289,7 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 		// place this allocation or its dependent roots back into quarantine.
 		store.Delete(stakeWindowKey(cs, proposal.Table.Epoch))
 	}
-	if err := pinVerificationCheckpoint(store, anchor, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 1, nil)); err != nil {
+	if err := pinVerificationCheckpoint(store, anchor, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerCurrentCheckpoint, nil)); err != nil {
 		return nil, err
 	}
 	private.Set(ownedCheckpointKey(cs.VerificationGeneration, anchor.Height), receipt.AnchorReference[:])

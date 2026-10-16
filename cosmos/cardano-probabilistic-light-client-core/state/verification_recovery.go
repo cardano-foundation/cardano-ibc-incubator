@@ -77,8 +77,11 @@ func (cs *ClientState) beginRecovery(ctx Context, cdc StateCodec, private, subst
 	if proof.Height != substitute.LatestHeight.RevisionHeight || proof.Timestamp != consensus.Timestamp || proof.BlockHash != mustBlockHash(consensus.AcceptedBlockHash) || !bytes.Equal(proof.HostRoot[:], consensus.IbcStateRoot) || !bytes.Equal(proof.PacketReference[:], consensus.PacketStateReference) {
 		return fmt.Errorf("substitute consensus does not match its authenticated checkpoint")
 	}
-	for role, checkpoint := range []*verificationCheckpoint{replacement, proof} {
-		if err := pinVerificationCheckpoint(shared, checkpoint, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 8, []byte{byte(role)})); err != nil {
+	for _, pin := range []struct {
+		Role       byte
+		Checkpoint *verificationCheckpoint
+	}{{recoveryOwnerCheckpoint, replacement}, {recoveryOwnerProofCheckpoint, proof}} {
+		if err := pinVerificationCheckpoint(shared, pin.Checkpoint, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerRecovery, []byte{pin.Role})); err != nil {
 			return err
 		}
 	}
@@ -203,7 +206,7 @@ func (cs *ClientState) activateRecovery(ctx Context, cdc StateCodec, private, sh
 	if recovery.Consensus.AcceptedEpoch != replacement.CurrentEpoch {
 		replacement.EpochContextChallenges = append(replacement.EpochContextChallenges, &EpochContextChallenge{Epoch: recovery.Consensus.AcceptedEpoch, UsableAfterUnixNs: replacement.EpochContextChallenges[0].UsableAfterUnixNs})
 	}
-	if err := pinVerificationCheckpoint(shared, recovery.Checkpoint, namespaceOwner(replacement.StorageNamespace, replacement.VerificationGeneration, 1, nil)); err != nil {
+	if err := pinVerificationCheckpoint(shared, recovery.Checkpoint, namespaceOwner(replacement.StorageNamespace, replacement.VerificationGeneration, OwnerCurrentCheckpoint, nil)); err != nil {
 		return err
 	}
 	for _, checkpoint := range []*verificationCheckpoint{recovery.Checkpoint, recovery.ProofCheckpoint} {
@@ -229,12 +232,12 @@ func (cs *ClientState) activateRecovery(ctx Context, cdc StateCodec, private, sh
 	if err := writeClientState(ctx, cdc, private, &replacement); err != nil {
 		return err
 	}
-	for role := byte(0); role < 2; role++ {
-		if err := pinVerificationCheckpoint(shared, &verificationCheckpoint{Scope: recovery.Checkpoint.Scope}, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 8, []byte{role})); err != nil {
+	for _, role := range []byte{recoveryOwnerCheckpoint, recoveryOwnerProofCheckpoint} {
+		if err := pinVerificationCheckpoint(shared, &verificationCheckpoint{Scope: recovery.Checkpoint.Scope}, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerRecovery, []byte{role})); err != nil {
 			return err
 		}
 	}
-	if err := pinVerificationCheckpoint(shared, &verificationCheckpoint{Scope: recovery.Checkpoint.Scope}, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 1, nil)); err != nil {
+	if err := pinVerificationCheckpoint(shared, &verificationCheckpoint{Scope: recovery.Checkpoint.Scope}, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerCurrentCheckpoint, nil)); err != nil {
 		return err
 	}
 	shared.Delete(recoveryPreparationKey(cs))

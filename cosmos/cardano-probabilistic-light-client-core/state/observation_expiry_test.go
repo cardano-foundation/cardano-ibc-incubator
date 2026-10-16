@@ -67,7 +67,7 @@ func TestObservationExpiryPausesAndRemainsBounded(t *testing.T) {
 				}
 			}
 			require.False(t, f.shared.Has(observationSessionKey(f.client.StorageNamespace, f.client.VerificationGeneration, plan.SessionID[:])))
-			require.False(t, f.shared.Has(retentionKey(f.client, 1, plan.SessionID[:])))
+			require.False(t, f.shared.Has(retentionKey(f.client, RetainSession, plan.SessionID[:])))
 		})
 	}
 }

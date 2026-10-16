@@ -278,7 +278,7 @@ func TestObservationDiscardRequiresExpiry(t *testing.T) {
 			require.ErrorContains(t, f.client.VerifyClientMessage(f.ctx, f.cdc, f.private, plan.Steps[2]), "observation session has expired")
 			runObservationStep(t, f.ctx, f.cdc, f.private, f.client, discard)
 			require.False(t, f.shared.Has(observationSessionKey(f.client.StorageNamespace, f.client.VerificationGeneration, plan.SessionID[:])))
-			require.False(t, f.shared.Has(retentionKey(f.client, 1, plan.SessionID[:])))
+			require.False(t, f.shared.Has(retentionKey(f.client, RetainSession, plan.SessionID[:])))
 			_, _, err = currentVerificationCheckpoint(f.ctx, f.client)
 			require.NoError(t, err, "discard must preserve the client's committed checkpoint")
 		})
@@ -302,7 +302,7 @@ func TestObservationCleanupPreservesActiveSessions(t *testing.T) {
 	f.ctx.Time = f.ctx.Time.Add(time.Nanosecond)
 	require.NoError(t, f.client.ContinueMaintenance(f.ctx, f.cdc, f.private, ObservationCleanup))
 	require.False(t, f.shared.Has(observationSessionKey(f.client.StorageNamespace, f.client.VerificationGeneration, plan.SessionID[:])))
-	require.False(t, f.shared.Has(retentionKey(f.client, 1, plan.SessionID[:])))
+	require.False(t, f.shared.Has(retentionKey(f.client, RetainSession, plan.SessionID[:])))
 	_, _, err = currentVerificationCheckpoint(f.ctx, f.client)
 	require.NoError(t, err)
 }

@@ -41,25 +41,26 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 	if len(raw) == 0 || len(raw) > MaxClientBytes {
 		return nil, fmt.Errorf("client namespace does not exist")
 	}
+	queryKind := QueryKind(request.Kind)
 	client := cdc.DecodeClient(raw)
 	if client.VerificationGeneration != request.Generation {
 		return nil, fmt.Errorf("query references a discarded verification generation")
 	}
-	if request.Kind == 8 {
+	if queryKind == QuerySession {
 		session, err := loadObservationSession(store, client, request.SessionId)
 		if err != nil {
 			return nil, err
 		}
 		return json.Marshal(session)
 	}
-	if request.Kind == 9 {
+	if queryKind == QueryReceipt {
 		receipt, err := loadRetainedObservation(store, client, request.ReceiptId)
 		if err != nil {
 			return nil, err
 		}
 		return json.Marshal(receipt)
 	}
-	if request.Kind == 10 {
+	if queryKind == QueryEpochProposals {
 		var epochs []*activatedEpochTable
 		for _, deadline := range client.EpochContextChallenges {
 			raw := store.Get(activatedEpochKey(client, deadline.Epoch))
@@ -77,7 +78,7 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 		}
 		return json.Marshal(epochs)
 	}
-	if request.Kind == 12 {
+	if queryKind == QueryReceipts {
 		if request.Limit == 0 || request.Limit > 128 || len(request.After) > 32 {
 			return nil, fmt.Errorf("receipt query exceeds its page bound")
 		}
@@ -89,7 +90,7 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 		if err != nil {
 			return nil, err
 		}
-		prefix := retentionKey(client, 2, nil)
+		prefix := retentionKey(client, RetainReceipt, nil)
 		start := prefix
 		if len(request.After) > 0 {
 			start = append(append(bytes.Clone(prefix), request.After...), 0)
@@ -124,7 +125,7 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 		}
 		return json.Marshal(page)
 	}
-	if request.Kind == 11 {
+	if queryKind == QueryBootstrapProgress {
 		raw := store.Get(bootstrapProgressKey(client))
 		var progress bootstrapProgress
 		if len(raw) == 0 || len(raw) > maxSessionBytes {
@@ -161,7 +162,7 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 		return nil, err
 	}
 	if !bytes.Equal(ref, client.CheckpointReference) && len(request.ReceiptId) == 0 {
-		owned := store.Get(retentionKey(client, 3, binary.BigEndian.AppendUint64(nil, checkpoint.Height)))
+		owned := store.Get(retentionKey(client, RetainCheckpoint, binary.BigEndian.AppendUint64(nil, checkpoint.Height)))
 		var retained retainedVerification
 		if len(owned) == 0 {
 			return nil, fmt.Errorf("historical checkpoint is not owned by this verification generation")
@@ -173,7 +174,7 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 			return nil, fmt.Errorf("historical checkpoint reference is not authenticated by this generation")
 		}
 	}
-	if request.Kind == 0 {
+	if queryKind == QueryCheckpoint {
 		return json.Marshal(verificationMetadata{Reference: bytes.Clone(ref), Generation: client.VerificationGeneration, Height: checkpoint.Height, Slot: checkpoint.Slot, Epoch: checkpoint.Epoch, Timestamp: checkpoint.Timestamp, BlockHash: hex.EncodeToString(checkpoint.BlockHash[:]), Nonce: clonePraosNonceState(checkpoint.Nonce), TotalStake: checkpoint.Stake.Total, StakeRows: checkpoint.Stake.Root.Rows})
 	}
 	if request.Limit == 0 || request.Limit > maxObservationRowsPerStep || len(request.After) > SnapshotKeyBytes {
@@ -181,32 +182,32 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 	}
 	var kind byte
 	var root SnapshotRoot
-	switch request.Kind {
-	case 1:
+	switch queryKind {
+	case QueryEffectiveBindings:
 		kind = snapshotRegistry
 		root = checkpoint.Registry.Effective.Root
 		if checkpoint.Registry.Effective.Bindings {
 			kind = snapshotBindings
 		}
-	case 2:
+	case QueryStake:
 		kind = snapshotStake
 		root = checkpoint.Stake.Root
-	case 3:
+	case QuerySettlementCredit:
 		kind = snapshotCredit
 		root = checkpoint.Credit
-	case 4:
+	case QueryPoolProduction:
 		kind = snapshotProduction
 		root = checkpoint.Production
-	case 6:
+	case QueryRegistrations:
 		kind = snapshotRegistry
 		root = checkpoint.Registry.Records
-	case 7:
+	case QueryMarkBindings:
 		kind = snapshotRegistry
 		root = checkpoint.Registry.Mark.Root
 		if checkpoint.Registry.Mark.Bindings {
 			kind = snapshotBindings
 		}
-	case 5:
+	case QueryCertificateCounters:
 		kind = snapshotCounters
 		root = checkpoint.Counters
 	default:
@@ -215,10 +216,10 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 	page := verificationPage{Records: []any{}, Total: root.Rows, Epoch: checkpoint.Epoch, TotalStake: checkpoint.Stake.Total}
 	_, err = NewSnapshotMap(store, scope, kind).Visit(root, request.After, int(request.Limit), func(key, value []byte) error {
 		page.Next = bytes.Clone(key)
-		switch request.Kind {
-		case 1, 7:
+		switch queryKind {
+		case QueryEffectiveBindings, QueryMarkBindings:
 			projection := checkpoint.Registry.Effective
-			if request.Kind == 7 {
+			if queryKind == QueryMarkBindings {
 				projection = checkpoint.Registry.Mark
 			}
 			binding, found, err := lookupBinding(store, scope, projection, key)
@@ -228,7 +229,7 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 			if found {
 				page.Records = append(page.Records, binding)
 			}
-		case 2:
+		case QueryStake:
 			if len(value) != 8 {
 				return fmt.Errorf("invalid sealed stake record")
 			}
@@ -238,7 +239,7 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 			}
 			amount := binary.BigEndian.Uint64(value)
 			page.Records = append(page.Records, &StakeDistributionEntry{PoolId: pool, Stake: amount, RelativeStakeNumerator: amount, RelativeStakeDenominator: checkpoint.Stake.Total})
-		case 3:
+		case QuerySettlementCredit:
 			ratio, err := decodeCredit(value)
 			if err != nil {
 				return err
@@ -248,13 +249,13 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 				return err
 			}
 			page.Records = append(page.Records, &PoolSettlementCredit{PoolId: pool, Numerator: ratio.Num().Bytes(), Denominator: ratio.Denom().Bytes()})
-		case 4:
+		case QueryPoolProduction:
 			production, err := lookupProduction(store, scope, root, key, checkpoint.Epoch)
 			if err != nil {
 				return err
 			}
 			page.Records = append(page.Records, production)
-		case 6:
+		case QueryRegistrations:
 			record, _, err := lookupRegistration(store, scope, checkpoint.Registry, key)
 			if err != nil {
 				return err
@@ -264,7 +265,7 @@ func QueryVerification(ctx Context, cdc StateCodec, request *QueryVerificationRe
 				return err
 			}
 			page.Records = append(page.Records, &PoolRegistrationRecord{Registration: &PoolRegistrationBinding{PoolId: name, VrfKeyHash: bytes.Clone(record.VRF[:]), FirstRegistrationSlot: record.FirstSlot}, Registered: record.Registered, PendingVrfKeyHash: bytes.Clone(record.PendingVRF), PendingEffectiveEpoch: record.PendingEpoch, RetirementEpoch: record.RetirementEpoch})
-		case 5:
+		case QueryCertificateCounters:
 			if len(value) != 8 {
 				return fmt.Errorf("invalid sealed counter")
 			}

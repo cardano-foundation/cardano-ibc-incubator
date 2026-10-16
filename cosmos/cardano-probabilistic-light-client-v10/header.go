@@ -32,7 +32,7 @@ func (h ProbabilisticHeader) GetTime() time.Time {
 
 
 func (h ProbabilisticHeader) ValidateBasic() error {
-	if h.Size() > state.MaxOperationSignedBytes-20000 {
+	if h.Size() > state.MaxOperationSignedBytes-state.BoundedMessageEnvelopeBytes {
 		return fmt.Errorf("bounded client message exceeds the transport budget")
 	}
 	return adapterError(toCoreProbabilisticHeader(&h).ValidateBasic())

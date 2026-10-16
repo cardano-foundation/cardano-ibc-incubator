@@ -88,18 +88,18 @@ func registerSnapshotObject(store storetypes.KVStore, scope [32]byte, kind byte,
 		if _, err := cbor.Decode(store.Get(key), &receipt); err != nil {
 			return err
 		}
-		if err := pinSnapshotObject(store, scope, objectCheckpoint, [32]byte(receipt.BaseReference), append(bytes.Clone(owner), 1)); err != nil {
+		if err := pinSnapshotObject(store, scope, objectCheckpoint, [32]byte(receipt.BaseReference), append(bytes.Clone(owner), receiptOwnerBase)); err != nil {
 			return err
 		}
-		if err := pinSnapshotObject(store, scope, objectCheckpoint, receipt.AnchorReference, append(bytes.Clone(owner), 2)); err != nil {
+		if err := pinSnapshotObject(store, scope, objectCheckpoint, receipt.AnchorReference, append(bytes.Clone(owner), receiptOwnerAnchor)); err != nil {
 			return err
 		}
 		if len(receipt.OriginalReceipt) != 0 {
-			if err := pinSnapshotObject(store, scope, objectReceipt, [32]byte(receipt.OriginalReceipt), append(bytes.Clone(owner), 4)); err != nil {
+			if err := pinSnapshotObject(store, scope, objectReceipt, [32]byte(receipt.OriginalReceipt), append(bytes.Clone(owner), receiptOwnerOriginalReceipt)); err != nil {
 				return err
 			}
 		}
-		return NewSnapshotMap(store, scope, snapshotStake).Pin(append(bytes.Clone(owner), 3), receipt.Table.Root)
+		return NewSnapshotMap(store, scope, snapshotStake).Pin(append(bytes.Clone(owner), receiptOwnerStake), receipt.Table.Root)
 	case objectBody:
 		return nil
 	default:
@@ -172,15 +172,15 @@ func collectSnapshotObjects(store storetypes.KVStore, scope [32]byte, kind byte,
 				return 0, err
 			}
 		case objectReceipt:
-			if err := pinSnapshotObject(store, scope, objectReceipt, [32]byte{}, append(bytes.Clone(owner), 4)); err != nil {
+			if err := pinSnapshotObject(store, scope, objectReceipt, [32]byte{}, append(bytes.Clone(owner), receiptOwnerOriginalReceipt)); err != nil {
 				return 0, err
 			}
-			for role := byte(1); role <= 2; role++ {
+			for _, role := range []byte{receiptOwnerBase, receiptOwnerAnchor} {
 				if err := pinSnapshotObject(store, scope, objectCheckpoint, [32]byte{}, append(bytes.Clone(owner), role)); err != nil {
 					return 0, err
 				}
 			}
-			if err := NewSnapshotMap(store, scope, snapshotStake).Pin(append(bytes.Clone(owner), 3), SnapshotRoot{}); err != nil {
+			if err := NewSnapshotMap(store, scope, snapshotStake).Pin(append(bytes.Clone(owner), receiptOwnerStake), SnapshotRoot{}); err != nil {
 				return 0, err
 			}
 		}

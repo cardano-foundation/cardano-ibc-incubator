@@ -97,7 +97,7 @@ func (m *MithrilStakeCertificates) ValidateBasic() error {
 		total += len(certificate)
 	}
 	// The message must fit the transport budget of a bounded operation.
-	if total > MaxOperationSignedBytes-20000 {
+	if total > MaxOperationSignedBytes-BoundedMessageEnvelopeBytes {
 		return errorsmod.Wrap(ErrInvalidHeader, "Mithril certificates exceed the transport budget")
 	}
 	return nil

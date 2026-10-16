@@ -18,9 +18,9 @@ func (ctx Context) snapshotStore() (storetypes.KVStore, error) {
 func namespaceKey(namespace []byte) []byte {
 	return append([]byte("snapshots/v2/clients/"), namespace...)
 }
-func namespaceOwner(namespace []byte, generation uint64, role byte, id []byte) []byte {
+func namespaceOwner(namespace []byte, generation uint64, role OwnerKind, id []byte) []byte {
 	raw := binary.BigEndian.AppendUint64(bytes.Clone(namespace), generation)
-	raw = append(raw, role)
+	raw = append(raw, byte(role))
 	return append(raw, id...)
 }
 func generationKey() []byte { return []byte("verificationGeneration") }
@@ -162,7 +162,7 @@ func InitializeFromTrustedCheckpoint(ctx Context, cdc StateCodec, private storet
 	if err := thin.certifyBootstrapStake(ctx, private, store, checkpoint.Scope, checkpoint.Stake.Root, mithrilCertificate); err != nil {
 		return nil, nil, err
 	}
-	if err := pinVerificationCheckpoint(store, checkpoint, namespaceOwner(thin.StorageNamespace, thin.VerificationGeneration, 1, nil)); err != nil {
+	if err := pinVerificationCheckpoint(store, checkpoint, namespaceOwner(thin.StorageNamespace, thin.VerificationGeneration, OwnerCurrentCheckpoint, nil)); err != nil {
 		return nil, nil, err
 	}
 	private.Set(ownedCheckpointKey(thin.VerificationGeneration, checkpoint.Height), reference[:])

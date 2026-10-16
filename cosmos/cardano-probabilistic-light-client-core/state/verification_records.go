@@ -18,6 +18,9 @@ const VerificationPolicyVersion uint32 = 1
 const MaxClientBytes = 4096
 const MaxConsensusBytes = 1024
 const MaxOperationSignedBytes = 900000
+
+// BoundedMessageEnvelopeBytes reserves transport space around a client message.
+const BoundedMessageEnvelopeBytes = 20_000
 const MaxOperationGas = uint64(36000000)
 const MaxRetainedPoolIdentities = uint64(65536)
 
