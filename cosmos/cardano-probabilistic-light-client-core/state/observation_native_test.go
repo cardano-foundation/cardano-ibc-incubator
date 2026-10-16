@@ -233,6 +233,7 @@ func TestStagingRetriesAndOrderingDoNotChangeDeadlines(t *testing.T) {
 	cdc := jsonTestCodec{}
 	client, _, err := initializeTrusted(t, ctx, cdc, private, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
+	ctx.HostProgress = testHostProgress
 	plan, err := BuildObservationPlan(client, fixture.Header, nil, 13, 4)
 	require.NoError(t, err)
 	runObservationStep(t, ctx, cdc, private, client, plan.Steps[0])
@@ -329,6 +330,7 @@ func TestNativeReceiptsIgnoreDifferentTemporaryTails(t *testing.T) {
 	cdc := jsonTestCodec{}
 	client, _, err := initializeTrusted(t, ctx, cdc, private, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
+	ctx.HostProgress = testHostProgress
 	receipts := [][]byte{}
 	for _, header := range []*ProbabilisticHeader{&earlier, fixture.Fork} {
 		plan, err := BuildObservationPlan(client, header, nil, 13, 4)

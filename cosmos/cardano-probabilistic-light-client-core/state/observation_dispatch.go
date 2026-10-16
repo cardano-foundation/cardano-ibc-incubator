@@ -92,13 +92,16 @@ func (cs *ClientState) verifyObservationOperation(ctx Context, cdc StateCodec, p
 			if session.Sequence == ^uint32(0) || chunk.Sequence != session.Sequence+1 || chunk.Sequence > MaxObservationSteps {
 				return fmt.Errorf("observation chunk is reordered or does not match the last accepted step")
 			}
-			now := ctx.BlockTime().UnixNano()
-			if now <= 0 || (chunk.Operation != ObservationDiscard && uint64(now) >= session.ExpiresAt) {
+			expired, err := session.expired(ctx)
+			if err != nil {
+				return err
+			}
+			if chunk.Operation != ObservationDiscard && expired {
 				return fmt.Errorf("observation session has expired")
 			}
-			if chunk.Operation == ObservationDiscard && uint64(now) < session.ExpiresAt {
+			if chunk.Operation == ObservationDiscard && !expired {
 				// Public sessions have no signer owner. Cancellation must not
-				// erase another relayer's progress before the fixed expiry.
+				// erase another relayer's progress during its observation budget.
 				return fmt.Errorf("a live observation cannot be discarded by another submitter")
 			}
 			if (chunk.Operation == ObservationAppendStake || chunk.Operation == ObservationAppendBlocks) && stepDigest != session.InputDigest {

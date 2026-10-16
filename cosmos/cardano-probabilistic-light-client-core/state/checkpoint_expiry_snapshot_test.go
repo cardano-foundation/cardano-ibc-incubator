@@ -130,7 +130,17 @@ func TestSnapshotStagingCannotReservePermissionPastCheckpointExpiry(t *testing.T
 	header.DescendantBlocks = header.DescendantBlocks[:24]
 	plan := f.stage(t, header, nil)
 	activate := f.activation(t, plan)
+	previous := testHostProgress(f.ctx)
+	f.ctx.Height++
 	f.ctx.Time = f.start.Add(48 * time.Hour)
+	progress, err := AdvanceHostProgress(f.ctx, previous)
+	require.NoError(t, err)
+	f.ctx.HostProgress = func(Context) *HostProgress { return progress }
+	session, err := loadObservationSession(f.shared, f.client, plan.SessionID[:])
+	require.NoError(t, err)
+	expired, err := session.expired(f.ctx)
+	require.NoError(t, err)
+	require.False(t, expired, "a halt preserves the session budget but cannot preserve Cardano trust")
 	require.Equal(t, Expired, f.client.Status(f.ctx, f.private, f.cdc))
 	require.ErrorIs(t, f.client.VerifyClientMessage(f.ctx, f.cdc, f.private, activate), ErrTrustingPeriodExpired)
 	require.Equal(t, uint64(966), f.client.LatestCheckpointHeight.RevisionHeight)

@@ -62,6 +62,7 @@ const sharedSourceFiles = [
   "recovery_invalidation_test.go",
   "shared_snapshots_test.go",
   "staged_epoch_usability_test.go",
+  "staged_session_expiry_test.go",
   "staged_session_safety_test.go",
   "state_machine.go",
   "storage_server.go",

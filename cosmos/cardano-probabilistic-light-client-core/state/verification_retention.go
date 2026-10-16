@@ -87,7 +87,7 @@ func cleanupRetainedVerification(ctx Context, cdc StateCodec, shared, private st
 			return err
 		}
 		discarded := gen < cs.VerificationGeneration
-		if !discarded && (retained.Expires > uint64(now) || gen > cs.VerificationGeneration) {
+		if gen > cs.VerificationGeneration || (!discarded && class != 1 && retained.Expires > uint64(now)) {
 			continue
 		}
 		old := *cs
@@ -97,6 +97,15 @@ func cleanupRetainedVerification(ctx Context, cdc StateCodec, shared, private st
 			session, err := loadObservationSession(shared, &old, id)
 			if err != nil {
 				return err
+			}
+			if !discarded {
+				expired, err := session.expired(ctx)
+				if err != nil {
+					return err
+				}
+				if !expired {
+					continue
+				}
 			}
 			if err := releaseObservationSession(shared, &old, id, session); err != nil {
 				return err
