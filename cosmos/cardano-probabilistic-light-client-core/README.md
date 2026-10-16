@@ -25,12 +25,12 @@ Pool identities, VRF bindings and registration ages come from the independent re
 
 A false table can omit a registered producer absent from its admission evidence and block later canonical progress. The supported fallback is an explicitly trusted substitute and authority recovery once the subject expires. Failed continuations and historical alternatives do not renew the committed checkpoint's lifetime. The bounded recovery sequence and its authority and timing assumptions are described in [the storage and verification design](../../docs/probabilistic-bounded-verification.md). Both SDK adapters test admission of the false table, the genuine omitted producer, same-ancestry disagreement, expiry and recovery on the original channel.
 
-The repository builds against the local core through `replace` directives. Before publishing new adapter versions, publish a core version containing `state` and update both adapters to require that version. The existing `v0.1.5` release does not contain the new package.
+The repository builds against the local core through `replace` directives. Publish a core version before the adapter versions that require it. The v8 `v0.1.8` and v10 `v0.1.5` adapters require core `v0.1.6`.
 
 Release tags for this nested module use the module directory prefix, for example:
 
 ```text
-cosmos/cardano-probabilistic-light-client-core/v0.1.5
+cosmos/cardano-probabilistic-light-client-core/v0.1.6
 ```
 
 Hermes stages logical evidence from Gateway against pinned destination checkpoints. A completed observation produces an immutable receipt. Challenges submit two verified receipt references. They never reverify two full observations in one transaction. Snapshot-backed proofs reject discarded recovery generations immediately.

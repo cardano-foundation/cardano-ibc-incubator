@@ -77,14 +77,14 @@ to Cardano's `consensusStates/<revisionHeight>` format.
 Because this is a nested Go module, release tags must be prefixed with the module directory:
 
 ```text
-cosmos/cardano-probabilistic-light-client-v8/v0.1.7
-cosmos/cardano-probabilistic-light-client-core/v0.1.5
+cosmos/cardano-probabilistic-light-client-v8/v0.1.8
+cosmos/cardano-probabilistic-light-client-core/v0.1.6
 ```
 
 Consumers can then require it with:
 
 ```sh
-go get github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8@v0.1.7
+go get github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8@v0.1.8
 ```
 
 ## Epoch challenge deployment
