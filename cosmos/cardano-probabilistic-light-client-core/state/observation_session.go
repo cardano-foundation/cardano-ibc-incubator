@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/big"
 	"sort"
 	"time"
@@ -63,11 +64,14 @@ type observationSession struct {
 	IsCheckpoint                             bool
 	Isolated                                 bool
 	HostTxHash                               string
-	CreatedAt, ExpiresAt                     uint64
-	Sequence                                 uint32
-	LastStepDigest                           [32]byte
-	Complete                                 bool
-	Receipt                                  []byte
+	// ExpiresAt is the earliest wall-clock cutoff. Clock-bound sessions expire
+	// only after their fixed observation-clock budget has elapsed.
+	CreatedAt, ExpiresAt                    uint64
+	ExpiryClockID, ExpiresAtObservationTime uint64
+	Sequence                                uint32
+	LastStepDigest                          [32]byte
+	Complete                                bool
+	Receipt                                 []byte
 }
 
 func (h ProbabilisticHeader) validateObservationChunk() error {
@@ -185,6 +189,24 @@ func saveObservationSession(store storetypes.KVStore, cs *ClientState, id []byte
 	return nil
 }
 
+func (session *observationSession) expired(ctx Context) (bool, error) {
+	now := ctx.BlockTime().UnixNano()
+	if now <= 0 {
+		return false, fmt.Errorf("invalid observation host time")
+	}
+	// Sessions created before observation-clock expiry retain their original
+	// wall-clock limit. New sessions have a fixed budget that pauses on halts.
+	if session.ExpiryClockID == 0 {
+		return uint64(now) >= session.ExpiresAt, nil
+	}
+	progress, err := hostProgress(ctx)
+	if err != nil {
+		return false, err
+	}
+	// A replacement clock cannot authorize continuations from the lost clock.
+	return progress.ClockID != session.ExpiryClockID || progress.ObservationTime >= session.ExpiresAtObservationTime, nil
+}
+
 func beginObservation(ctx Context, store storetypes.KVStore, private storetypes.KVStore, cs *ClientState, chunk *ObservationChunk) ([32]byte, error) {
 	var zero [32]byte
 	scope, err := verificationScope(cs)
@@ -236,7 +258,16 @@ func beginObservation(ctx Context, store storetypes.KVStore, private storetypes.
 	if raw := store.Get(observationSessionKey(cs.StorageNamespace, cs.VerificationGeneration, id[:])); len(raw) > 0 {
 		return id, nil
 	}
+	progress, err := hostProgress(ctx)
+	if err != nil {
+		return zero, err
+	}
+	if progress.ObservationTime > math.MaxUint64-uint64(observationSessionLifetime) {
+		return zero, fmt.Errorf("observation expiry overflows the host observation clock")
+	}
 	session := &observationSession{Version: VerificationPolicyVersion, Namespace: bytes.Clone(cs.StorageNamespace), Generation: cs.VerificationGeneration, BaseReference: bytes.Clone(chunk.BaseCheckpointReference), OriginalReceipt: bytes.Clone(chunk.OriginalReceipt), AnchorHeight: chunk.AnchorHeight, BlockCount: chunk.BlockCount, Working: *base, IsCheckpoint: chunk.IsCheckpoint, Isolated: chunk.Isolated, HostTxHash: chunk.HostStateTxHash, CreatedAt: uint64(now), ExpiresAt: uint64(now + int64(observationSessionLifetime)), QualifiedDenominator: []byte{1}}
+	session.ExpiryClockID = progress.ClockID
+	session.ExpiresAtObservationTime = progress.ObservationTime + uint64(observationSessionLifetime)
 	session.Working.Nonce = clonePraosNonceState(base.Nonce)
 	copy(session.ExpectedDigest[:], chunk.EvidenceDigest)
 	session.InputDigest = session.ExpectedDigest
