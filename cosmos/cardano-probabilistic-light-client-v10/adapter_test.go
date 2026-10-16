@@ -294,9 +294,9 @@ func withTestHostProgress(ctx sdk.Context) sdk.Context {
 	}))
 }
 
-// Only explicitly trusted test genesis gets an elapsed host bootstrap window.
-func seedAcceptanceHostProgress(ctx sdk.Context, key *storetypes.KVStoreKey) {
-	ctx.KVStore(key).Set(hostProgressKey, encodeHostProgress(&state.HostProgress{Height: 0, TimeUnixNs: uint64(ctx.BlockTime().UnixNano() - 1), PreviousTimeUnixNs: uint64(ctx.BlockTime().UnixNano() - 2), ClockID: 1, ObservationTime: uint64(ctx.BlockTime().UnixNano() - 1), PreviousObservationTime: uint64(ctx.BlockTime().UnixNano() - 2)}))
+// Seed the test genesis with its previously committed observation clock.
+func seedAcceptanceHostProgress(ctx sdk.Context, _ *storetypes.KVStoreKey) {
+	ctx.KVStore(SharedStoreKey).Set(hostProgressKey, encodeHostProgress(&state.HostProgress{Height: 0, TimeUnixNs: uint64(ctx.BlockTime().UnixNano() - 1), PreviousTimeUnixNs: uint64(ctx.BlockTime().UnixNano() - 2), ClockID: 1, ObservationTime: uint64(ctx.BlockTime().UnixNano() - 1), PreviousObservationTime: uint64(ctx.BlockTime().UnixNano() - 2)}))
 }
 
 // installTestCheckpoint prepares explicit trusted fixture data using the same

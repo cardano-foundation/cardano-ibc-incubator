@@ -85,10 +85,16 @@ func TestSnapshotHostReplacementDoesNotStartChallengeWindow(t *testing.T) {
 	InstallHostLiveness(host)
 	_, err := host.begin(ctx)
 	require.NoError(t, err)
-	progress := decodeHostProgress(store.Get(hostProgressKey))
+	progress := decodeHostProgress(ctx.KVStore(SharedStoreKey).Get(hostProgressKey))
 	require.NotNil(t, progress)
 	require.Equal(t, uint64(now.UnixNano()), progress.ClockID)
 	require.Zero(t, progress.ObservationTime)
+	// The host clock is part of the same module export as pending stake targets.
+	raw, err := state.ExportSnapshotGenesis(ctx.KVStore(SharedStoreKey))
+	require.NoError(t, err)
+	restored := dbadapter.Store{DB: dbm.NewMemDB()}
+	require.NoError(t, state.ImportSnapshotGenesis(restored, raw))
+	require.Equal(t, progress, decodeHostProgress(restored.Get(hostProgressKey)))
 	require.Equal(t, encodeHostProgress(previous), store.Get([]byte("probabilisticHost/continuity")))
 	later := coreContext(ctx.WithBlockTime(now.Add(3*time.Minute + time.Second)))
 	progress.TimeUnixNs = uint64(later.BlockTime().UnixNano())

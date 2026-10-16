@@ -99,8 +99,8 @@ func TestPendingStakeWindowPausesAcrossHostInterruption(t *testing.T) {
 	require.Greater(t, uint64(ctx.Time.UnixNano()), uint64(start.Add(12*time.Hour).UnixNano()))
 	require.NoError(t, VerifyHostWindow(ctx, 1, progress), "old usable state has no new window")
 	require.ErrorIs(t, verifyStakeWindow(shared, cs, 8, progress), ErrEpochContextPending)
-	// Snapshot export/import preserves the unfinished target. The host clock
-	// lives in the host IBC store and is reloaded unchanged after restart.
+	// Snapshot export/import preserves the unfinished target. The adapter exports
+	// the host clock in the same module and reloads it unchanged after restart.
 	exported, err := ExportSnapshotGenesis(shared)
 	require.NoError(t, err)
 	restored := dbadapter.Store{DB: dbm.NewMemDB()}

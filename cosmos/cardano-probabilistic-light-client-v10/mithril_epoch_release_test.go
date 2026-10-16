@@ -112,7 +112,7 @@ func TestAppLateMithrilCertificateReleasesPendingEpoch(t *testing.T) {
 			require.NoError(t, err)
 			current := func() sdk.Context {
 				return app.NewUncachedContext(false, cmtproto.Header{ChainID: chainID, Height: app.LastBlockHeight(), Time: now}).WithValue(hostProgressContextKey{}, hostProgressProvider(func(current sdk.Context) *state.HostProgress {
-					return decodeHostProgress(current.KVStore(app.GetKey(exported.StoreKey)).Get(hostProgressKey))
+					return decodeHostProgress(current.KVStore(SharedStoreKey).Get(hostProgressKey))
 				}))
 			}
 			installed := func() *ClientState {

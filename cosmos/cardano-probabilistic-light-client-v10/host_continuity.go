@@ -8,8 +8,8 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-var hostProgressKey = []byte("probabilisticHost/v2/continuity")
-var previousHostProgressKey = []byte("probabilisticHost/v2/previousContinuity")
+var hostProgressKey = []byte("snapshots/v2/host/continuity")
+var previousHostProgressKey = []byte("snapshots/v2/host/previousContinuity")
 
 type hostProgressContextKey struct{}
 type hostProgressProvider func(sdk.Context) *state.HostProgress
@@ -28,8 +28,8 @@ type HostApplication interface {
 // Interrupted intervals do not advance an unfinished stake response window.
 // The ante wrapper only supplies evidence. It never prevents challenges executing.
 func InstallHostLiveness(app HostApplication) {
-	key := app.GetKey("ibc")
-	if key == nil || app.AnteHandler() == nil {
+	key := SharedStoreKey
+	if app.GetKey("ibc") == nil || app.AnteHandler() == nil {
 		panic("probabilistic host requires IBC store and ante handler")
 	}
 	app.SetBeginBlocker(func(ctx sdk.Context) (sdk.BeginBlock, error) {
@@ -94,9 +94,10 @@ func decodeHostProgress(data []byte) *state.HostProgress {
 	return &state.HostProgress{Height: int64(binary.BigEndian.Uint64(data)), TimeUnixNs: binary.BigEndian.Uint64(data[8:]), PreviousTimeUnixNs: binary.BigEndian.Uint64(data[16:]), ClockID: binary.BigEndian.Uint64(data[24:]), ObservationTime: binary.BigEndian.Uint64(data[32:]), PreviousObservationTime: binary.BigEndian.Uint64(data[40:])}
 }
 func hostProgressEvidence(ctx sdk.Context) *state.HostProgress {
-	var progress *state.HostProgress
 	if provider, ok := ctx.Value(hostProgressContextKey{}).(hostProgressProvider); ok {
-		progress = provider(ctx)
+		return provider(ctx)
 	}
-	return progress
+	// Queries read the clock at their committed height. Transactions use the
+	// immutable ante snapshot above. The module exports both clock records.
+	return decodeHostProgress(ctx.KVStore(SharedStoreKey).Get(hostProgressKey))
 }
