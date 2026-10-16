@@ -52,7 +52,7 @@ func retainCheckpoint(store storetypes.KVStore, cs *ClientState, cp *verificatio
 	}
 	return retainVerification(store, cs, 3, id, reference, cp.Height, retentionDeadline(cs, cp.Timestamp))
 }
-func cleanupRetainedVerification(ctx Context, shared, private storetypes.KVStore, cs *ClientState) error {
+func cleanupRetainedVerification(ctx Context, cdc StateCodec, shared, private storetypes.KVStore, cs *ClientState) error {
 	scope, err := verificationScope(cs)
 	if err != nil {
 		return err
@@ -123,12 +123,18 @@ func cleanupRetainedVerification(ctx Context, shared, private storetypes.KVStore
 				return err
 			}
 			private.Delete(ownedCheckpointKey(gen, retained.Height))
-			if !discarded {
-				height := NewHeight(0, retained.Height)
-				private.Delete(consensusStateKey(height))
-				private.Delete(ProcessedTimeKey(height))
-				private.Delete(ProcessedHeightKey(height))
-				private.Delete(IterationKey(height))
+			height := NewHeight(0, retained.Height)
+			// Normal queries hide discarded generations. Read the stored record
+			// directly so cleanup can preserve a replacement at the same height.
+			if raw := private.Get(consensusStateKey(height)); len(raw) > 0 {
+				consensus, err := cdc.DecodeConsensus(raw)
+				if err != nil {
+					return err
+				}
+				if consensus != nil && consensus.VerificationGeneration == gen {
+					deleteConsensusState(private, height)
+					deleteConsensusMetadata(private, height)
+				}
 			}
 		case 4:
 			epoch := binary.BigEndian.Uint64(id)
