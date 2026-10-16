@@ -351,7 +351,9 @@ An observation session uploads a new epoch's stake rows in Mithril's pool ID
 order, the order of the canonical bech32 identifiers. As it seals the table,
 the client builds Mithril's Merkle root from the pool IDs and lovelace stakes,
 keeping only the mountain range's peaks. The receipt and the activated epoch
-table record that root. When a session first activates a new epoch's table:
+table record that root. A table that differs from a root Mithril has already
+certified for its epoch does not seal, so no receipt can rely on it. When a
+session first activates a new epoch's table:
 
 - If a certified root is recorded for that epoch, the table's root must equal
   it. The table is then authenticated, so its deadline is the activation time
@@ -370,6 +372,13 @@ the window stays, because installed proof deadlines are immutable within a
 generation. An accepted root lives until a certificate for its epoch is applied,
 or with its generation if Mithril never certifies that epoch, at one small
 record per epoch.
+
+Mithril's authority also bounds misbehaviour evidence. A receipt whose table
+differs from a root Mithril has certified for its epoch cannot serve as
+evidence, whenever the certificate arrived, so an alternative history built on
+a disproved table cannot freeze a client whose installed table Mithril
+certified. If instead the client's own installed table is the disproved one,
+the certificate itself freezes the client.
 
 Certificates cost 2,000,000 gas each. A message carries up to eight, of at most
 512 KiB each and 880,000 bytes together, the transport budget of an observation
