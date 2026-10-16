@@ -828,26 +828,32 @@ func Setup(publicSigners []struct {
 
 // Preliminary verification that checks whether indices are unique and the quorum is achieved.
 func (cv *CoreVerifier) PreliminaryVerify(totalStake Stake, signatures []StmSigRegParty, parameters *StmParameters, msg []byte) error {
+	// Bounds and uniqueness are checked before any lottery evaluation, which
+	// is costly. Otherwise each copy of a repeated winning index would cost an
+	// evaluation, and a certificate could repeat one index hundreds of
+	// thousands of times. This way at most M+1 indices reach the lottery. The
+	// accepted signatures are the same as mithril-stm's.
 	uniqueIndices := make(map[Index]struct{})
-	nrIndices := 0
-
 	for _, sigReg := range signatures {
-		if err := sigReg.Sig.CheckIndices(parameters, sigReg.RegParty.Stake, msg, totalStake); err != nil {
-			return err
-		}
 		for _, index := range sigReg.Sig.Indexes {
+			if uint64(index) > parameters.M {
+				return fmt.Errorf("index out of bound")
+			}
+			if _, repeated := uniqueIndices[index]; repeated {
+				return fmt.Errorf("indices are not unique")
+			}
 			uniqueIndices[index] = struct{}{}
-			nrIndices += 1
 		}
-	}
-
-	if nrIndices != len(uniqueIndices) {
-		return fmt.Errorf("indices are not unique")
 	}
 	if uint64(len(uniqueIndices)) < parameters.K {
 		return fmt.Errorf("no quorum: %d < %d", len(uniqueIndices), parameters.K)
 	}
 
+	for _, sigReg := range signatures {
+		if err := sigReg.Sig.CheckIndices(parameters, sigReg.RegParty.Stake, msg, totalStake); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
