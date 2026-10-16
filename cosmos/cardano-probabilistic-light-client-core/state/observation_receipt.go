@@ -212,6 +212,8 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 				// Mithril authenticates this table, so it needs no response
 				// window. It becomes usable after the next committed block.
 				deadline = uint64(ctx.BlockTime().UnixNano())
+			} else if err := recordAcceptedStake(private, cs.VerificationGeneration, receipt.Table.Epoch, receipt.TableMithrilRoot); err != nil {
+				return nil, err
 			}
 			if cs.TrustingPeriod <= 0 || live.Timestamp > ^uint64(0)-uint64(cs.TrustingPeriod) || live.Timestamp+uint64(cs.TrustingPeriod) <= deadline {
 				return nil, fmt.Errorf("proposal must leave its entire response window inside the client's trusting period")

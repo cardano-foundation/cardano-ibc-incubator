@@ -357,13 +357,19 @@ table record that root. When a session first activates a new epoch's table:
   it. The table is then authenticated, so its deadline is the activation time
   and it becomes usable after the next committed host block. The host
   resumption guard still applies.
-- Otherwise the table gets the usual 12-hour response window.
+- Otherwise the table gets the usual 12-hour response window, and the client
+  records the table's Mithril root as accepted for that epoch.
 
-A certificate can arrive after a table was activated under the response window.
-If its distribution differs from that table, the table is proven wrong:
-`CheckForMisbehaviour` reports the certificates and the keeper freezes the
-client. If it agrees, the window stays, because installed proof deadlines are
-immutable within a generation.
+A certificate can arrive after a table was activated under the response window,
+for example when a relayer catches up on several epochs of certificates. It is
+checked against the accepted root rather than the activated table, which
+retention cleanup deletes. If its distribution differs, the table is proven
+wrong: `CheckForMisbehaviour` reports the certificates and the keeper freezes
+the client. If it agrees, the certified root supersedes the accepted one, and
+the window stays, because installed proof deadlines are immutable within a
+generation. An accepted root lives until a certificate for its epoch is applied,
+or with its generation if Mithril never certifies that epoch, at one small
+record per epoch.
 
 Certificates cost 2,000,000 gas each. A message carries up to eight, of at most
 512 KiB each and 880,000 bytes together, the transport budget of an observation
@@ -406,10 +412,12 @@ refuses to propose a stake table that differs from a distribution Mithril has
 certified for its epoch, because the client would reject or freeze on it.
 
 Recovery adopts the substitute's Mithril state.
-- **What carries over.** The substitute's anchor, and the roots it certified for
-  epochs after its checkpoint, are pinned when the authority approves the
-  recovery. Activation installs them in the new verification generation. Those
-  are the roots the replacement's next rollovers need.
+- **What carries over.** The substitute's anchor, the roots it certified for
+  epochs after its checkpoint, and its accepted roots for epochs after its
+  anchor up to its checkpoint are pinned when the authority approves the
+  recovery. Activation installs them in the new verification generation. The
+  replacement's next rollovers need the certified roots, and its history relies
+  on the accepted tables, which late certificates must still be able to disprove.
 - **What stays behind.** Certified roots are kept per generation. The subject's
   roots stay with its old generation and are not trusted afterwards. A relayer
   re-establishes any beyond the substitute's anchor by submitting those
@@ -417,7 +425,8 @@ Recovery adopts the substitute's Mithril state.
 - **When recovery is refused:**
   - subject and substitute certified different distributions for one epoch;
   - they hold different anchors for one epoch;
-  - the substitute's anchor is more than eight epochs ahead of its checkpoint.
+  - the substitute's anchor is more than eight epochs ahead of its checkpoint,
+    or more than 64 epochs behind it.
 - **Trust configuration.** Every client is created anchored. Recovery still
   refuses a subject or substitute without an anchor, so it cannot remove
   Mithril-certified stake.

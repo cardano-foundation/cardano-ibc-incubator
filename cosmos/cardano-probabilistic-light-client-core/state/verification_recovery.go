@@ -22,6 +22,7 @@ type recoveryPreparation struct {
 	Cursor          []byte
 	Checked         uint64
 	MithrilRoots    []certifiedStakeRoot
+	AcceptedRoots   []certifiedStakeRoot
 }
 
 func recoveryPreparationKey(cs *ClientState) []byte {
@@ -78,11 +79,11 @@ func (cs *ClientState) beginRecovery(ctx Context, cdc StateCodec, private, subst
 	}
 	// Only this step can read the substitute's store, so its certified roots
 	// are pinned here with its anchor and installed together at activation.
-	mithrilRoots, err := recoveredMithrilRoots(cs, private, substitute, substitutePrivate, replacement.Epoch)
+	mithrilRoots, acceptedRoots, err := recoveredMithrilRoots(cs, private, substitute, substitutePrivate, replacement.Epoch)
 	if err != nil {
 		return err
 	}
-	recovery := &recoveryPreparation{Generation: cs.VerificationGeneration, Subject: subject, Replacement: substitute, Checkpoint: replacement, ProofCheckpoint: proof, Consensus: consensus, MithrilRoots: mithrilRoots}
+	recovery := &recoveryPreparation{Generation: cs.VerificationGeneration, Subject: subject, Replacement: substitute, Checkpoint: replacement, ProofCheckpoint: proof, Consensus: consensus, MithrilRoots: mithrilRoots, AcceptedRoots: acceptedRoots}
 	raw, err := cbor.Encode(recovery)
 	if err != nil {
 		return err
@@ -207,6 +208,9 @@ func (cs *ClientState) activateRecovery(ctx Context, cdc StateCodec, private, sh
 	}
 	for _, root := range recovery.MithrilRoots {
 		private.Set(mithrilStakeRootKey(replacement.VerificationGeneration, root.Epoch), []byte(root.Root))
+	}
+	for _, root := range recovery.AcceptedRoots {
+		private.Set(acceptedStakeRootKey(replacement.VerificationGeneration, root.Epoch), []byte(root.Root))
 	}
 	consensus := *recovery.Consensus
 	consensus.VerificationGeneration = replacement.VerificationGeneration
