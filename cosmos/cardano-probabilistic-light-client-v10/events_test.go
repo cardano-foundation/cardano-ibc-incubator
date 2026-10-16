@@ -100,6 +100,7 @@ func TestLightClientModuleRecoverClientUsesPrefixedClientStores(t *testing.T) {
 		123456789,
 	)
 
+	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(2 * time.Nanosecond))
 	require.NoError(t, module.RecoverClient(ctx, subjectClientID, substituteClientID))
 
 	recovered, found := getClientState(subjectStore, cdc)

@@ -43,11 +43,18 @@ func (cs ClientState) verifyEpochUsable(ctx Context, epoch uint64) error {
 	if ctx.BlockTime().UnixNano() < 0 || uint64(ctx.BlockTime().UnixNano()) <= challenge.UsableAfterUnixNs {
 		return errorsmod.Wrapf(ErrEpochContextPending, "epoch %d is pending until Unix nanoseconds %d", epoch, challenge.UsableAfterUnixNs)
 	}
-	ctx.RequiredResponseWindow = SharedSnapshotChallengePeriod
-	if ctx.VerifyHostUsability == nil {
-		return errorsmod.Wrap(ErrEpochContextPending, "host continuity tracking is missing")
+	progress, err := hostProgress(ctx)
+	if err != nil {
+		return err
 	}
-	return ctx.VerifyHostUsability(ctx, challenge.UsableAfterUnixNs)
+	shared, err := ctx.snapshotStore()
+	if err != nil {
+		return err
+	}
+	if err := verifyStakeWindow(shared, &cs, epoch, progress); err != nil {
+		return err
+	}
+	return VerifyHostWindow(ctx, challenge.UsableAfterUnixNs, progress)
 }
 
 func (cs ClientState) VerifyEpochUsable(ctx Context, epoch uint64) error {

@@ -5,84 +5,135 @@ import (
 	"testing"
 	"time"
 
+	"cosmossdk.io/store/dbadapter"
+	dbm "github.com/cosmos/cosmos-db"
 	"github.com/stretchr/testify/require"
 )
 
-func TestHostInterruptionStartsFreshWindow(t *testing.T) {
+func TestHostInterruptionDoesNotQuarantineUsableState(t *testing.T) {
 	start := time.Unix(1_700_000_000, 0)
 	ctx := Context{Height: 100_000, Time: start}
-	old := &HostProgress{Height: ctx.Height - 1, TimeUnixNs: uint64(start.Add(-time.Second).UnixNano()), ResumeUsableAfterUnixNs: 1}
+	old := &HostProgress{Height: ctx.Height - 1, TimeUnixNs: uint64(start.Add(-time.Second).UnixNano()), ClockID: 1, ObservationTime: 123}
 	for _, test := range []struct {
 		name     string
 		previous *HostProgress
 	}{
 		{"missing", nil},
-		{"halt after many blocks", &HostProgress{Height: ctx.Height - 1, TimeUnixNs: uint64(start.Add(-HostBlockGapTolerance - time.Nanosecond).UnixNano()), ResumeUsableAfterUnixNs: 1}},
-		{"missed block hook", &HostProgress{Height: ctx.Height - 2, TimeUnixNs: old.TimeUnixNs, ResumeUsableAfterUnixNs: 1}},
-		{"clock went backwards", &HostProgress{Height: ctx.Height - 1, TimeUnixNs: uint64(start.Add(time.Second).UnixNano()), ResumeUsableAfterUnixNs: 1}},
-		{"invalid deadline", &HostProgress{Height: ctx.Height - 1, TimeUnixNs: old.TimeUnixNs}},
+		{"halt", &HostProgress{Height: ctx.Height - 1, TimeUnixNs: uint64(start.Add(-time.Hour).UnixNano()), ClockID: 1, ObservationTime: 123}},
+		{"missed hook", &HostProgress{Height: ctx.Height - 2, TimeUnixNs: old.TimeUnixNs, ClockID: 1, ObservationTime: 123}},
+		{"clock backwards", &HostProgress{Height: ctx.Height - 1, TimeUnixNs: uint64(start.Add(time.Second).UnixNano()), ClockID: 1, ObservationTime: 123}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			p, err := AdvanceHostProgress(ctx, test.previous)
 			require.NoError(t, err)
-			require.Equal(t, uint64(start.Add(SharedSnapshotChallengePeriod).UnixNano()), p.ResumeUsableAfterUnixNs)
-			require.ErrorIs(t, VerifyHostWindow(ctx, 1, p), ErrEpochContextPending)
+			if test.previous != nil {
+				require.Equal(t, test.previous.ObservationTime, p.ObservationTime)
+			}
+			if test.previous != nil && test.previous.TimeUnixNs < p.TimeUnixNs {
+				require.NoError(t, VerifyHostWindow(ctx, 1, p), "a halt cannot re-lock an old usable root")
+			} else {
+				require.ErrorIs(t, VerifyHostWindow(ctx, 1, p), ErrEpochContextPending)
+			}
 		})
 	}
-	// Equal to the explicit tolerance remains continuous. Ordinary blocks never
-	// shorten a previous quarantine and do not depend on a client update arriving.
 	old.TimeUnixNs = uint64(start.Add(-HostBlockGapTolerance).UnixNano())
-	old.ResumeUsableAfterUnixNs = uint64(start.Add(time.Minute).UnixNano())
 	p, err := AdvanceHostProgress(ctx, old)
 	require.NoError(t, err)
-	require.Equal(t, old.ResumeUsableAfterUnixNs, p.ResumeUsableAfterUnixNs)
+	require.Equal(t, old.ObservationTime+uint64(HostBlockGapTolerance), p.ObservationTime)
 	ctx.Height++
 	ctx.Time = start.Add(HostBlockGapTolerance + time.Nanosecond)
 	next, err := AdvanceHostProgress(ctx, p)
 	require.NoError(t, err)
-	require.Equal(t, uint64(ctx.Time.Add(SharedSnapshotChallengePeriod).UnixNano()), next.ResumeUsableAfterUnixNs)
+	require.Equal(t, p.ObservationTime, next.ObservationTime)
+	require.NoError(t, VerifyHostWindow(ctx, 1, next))
+	_, err = AdvanceHostProgress(Context{Height: 0, Time: start}, nil)
+	require.ErrorIs(t, err, ErrInvalidTimestamp)
+	old.ObservationTime = math.MaxUint64
+	_, err = AdvanceHostProgress(Context{Height: old.Height + 1, Time: start}, old)
+	require.ErrorIs(t, err, ErrInvalidTimestamp)
 }
 
 func TestHostWindowRequiresCommittedInclusionBlock(t *testing.T) {
 	deadline := uint64(time.Unix(1_700_000_000, 0).UnixNano())
 	ctx := Context{Height: 1_000_000}
-	for _, cutoff := range []struct{ epoch, resume uint64 }{{deadline, 1}, {1, deadline}} {
-		for _, offset := range []int64{0, 1, 2} {
-			ctx.Time = time.Unix(0, int64(deadline)+offset)
-			p := &HostProgress{Height: ctx.Height, TimeUnixNs: uint64(ctx.Time.UnixNano()), PreviousTimeUnixNs: uint64(ctx.Time.UnixNano() - 1), ResumeUsableAfterUnixNs: cutoff.resume}
-			err := VerifyHostWindow(ctx, cutoff.epoch, p)
-			if offset < 2 {
-				require.ErrorIs(t, err, ErrEpochContextPending)
-			} else {
-				require.NoError(t, err)
-			}
+	for _, offset := range []int64{0, 1, 2} {
+		ctx.Time = time.Unix(0, int64(deadline)+offset)
+		p := testHostProgress(ctx)
+		err := VerifyHostWindow(ctx, deadline, p)
+		if offset < 2 {
+			require.ErrorIs(t, err, ErrEpochContextPending)
+		} else {
+			require.NoError(t, err)
 		}
 	}
-	p := &HostProgress{Height: ctx.Height, TimeUnixNs: uint64(ctx.Time.UnixNano()), PreviousTimeUnixNs: deadline + 1, ResumeUsableAfterUnixNs: 1}
+	p := testHostProgress(ctx)
 	for _, mutate := range []func(*HostProgress){
-		func(p *HostProgress) { p.Height-- }, func(p *HostProgress) { p.TimeUnixNs-- }, func(p *HostProgress) { p.PreviousTimeUnixNs = 0 }, func(p *HostProgress) { p.PreviousTimeUnixNs = p.TimeUnixNs }, func(p *HostProgress) { p.ResumeUsableAfterUnixNs = math.MaxUint64 },
+		func(p *HostProgress) { p.Height-- }, func(p *HostProgress) { p.TimeUnixNs-- },
+		func(p *HostProgress) { p.PreviousTimeUnixNs = 0 }, func(p *HostProgress) { p.PreviousTimeUnixNs = p.TimeUnixNs },
+		func(p *HostProgress) { p.ClockID = 0 }, func(p *HostProgress) { p.PreviousObservationTime = p.ObservationTime + 1 },
 	} {
 		copy := *p
 		mutate(&copy)
 		require.ErrorIs(t, VerifyHostWindow(ctx, deadline, &copy), ErrEpochContextPending)
 	}
 	require.ErrorIs(t, VerifyHostWindow(ctx, deadline, nil), ErrEpochContextPending)
-	_, err := AdvanceHostProgress(Context{Height: 1, Time: time.Unix(0, math.MaxInt64)}, nil)
-	require.ErrorIs(t, err, ErrInvalidTimestamp)
 }
 
-func TestStagedHostWindowIncludesFullResponseBudget(t *testing.T) {
-	start := time.Unix(1700000000, 0)
-	progress, err := AdvanceHostProgress(Context{Height: 1, Time: start}, nil)
+func TestPendingStakeWindowPausesAcrossHostInterruption(t *testing.T) {
+	start := time.Unix(1_700_000_000, 0)
+	ctx := Context{Height: 1, Time: start}
+	progress, err := AdvanceHostProgress(ctx, nil)
 	require.NoError(t, err)
-	deadline := uint64(start.Add(SharedSnapshotChallengePeriod).UnixNano())
-	for _, offset := range []int64{0, 1, 2} {
-		ctx := Context{Height: 100, Time: time.Unix(0, int64(deadline)+offset), RequiredResponseWindow: SharedSnapshotChallengePeriod}
-		p := &HostProgress{Height: 100, TimeUnixNs: uint64(ctx.Time.UnixNano()), PreviousTimeUnixNs: uint64(ctx.Time.UnixNano() - 1), ResumeUsableAfterUnixNs: progress.ResumeUsableAfterUnixNs}
-		if offset < 2 {
-			require.ErrorIs(t, VerifyHostWindow(ctx, 1, p), ErrEpochContextPending)
-		} else {
-			require.NoError(t, VerifyHostWindow(ctx, 1, p))
-		}
+	ctx.HostProgress = func(Context) *HostProgress { return progress }
+	cs := &ClientState{StorageNamespace: make([]byte, 32), VerificationGeneration: 1}
+	shared := dbadapter.Store{DB: dbm.NewMemDB()}
+	require.NoError(t, startStakeWindow(ctx, shared, cs, 8))
+	// Eleven hours of actual host progress have elapsed before a two-hour halt.
+	progress.ObservationTime = uint64(11 * time.Hour)
+	progress.TimeUnixNs = uint64(start.Add(11 * time.Hour).UnixNano())
+	ctx.Height++
+	ctx.Time = start.Add(13 * time.Hour)
+	progress, err = AdvanceHostProgress(ctx, progress)
+	require.NoError(t, err)
+	require.Equal(t, uint64(11*time.Hour), progress.ObservationTime)
+	require.Greater(t, uint64(ctx.Time.UnixNano()), uint64(start.Add(12*time.Hour).UnixNano()))
+	require.NoError(t, VerifyHostWindow(ctx, 1, progress), "old usable state has no new window")
+	require.ErrorIs(t, verifyStakeWindow(shared, cs, 8, progress), ErrEpochContextPending)
+	// Snapshot export/import preserves the unfinished target. The host clock
+	// lives in the host IBC store and is reloaded unchanged after restart.
+	exported, err := ExportSnapshotGenesis(shared)
+	require.NoError(t, err)
+	restored := dbadapter.Store{DB: dbm.NewMemDB()}
+	require.NoError(t, ImportSnapshotGenesis(restored, exported))
+	shared = restored
+	require.ErrorIs(t, verifyStakeWindow(shared, cs, 8, progress), ErrEpochContextPending)
+	// A second interruption does not restart the twelve-hour budget.
+	for i := 0; i < 360; i++ {
+		ctx.Height++
+		ctx.Time = ctx.Time.Add(HostBlockGapTolerance)
+		progress, err = AdvanceHostProgress(ctx, progress)
+		require.NoError(t, err)
 	}
+	require.Equal(t, uint64(12*time.Hour), progress.ObservationTime)
+	require.ErrorIs(t, verifyStakeWindow(shared, cs, 8, progress), ErrEpochContextPending)
+	ctx.Height++
+	ctx.Time = ctx.Time.Add(time.Hour)
+	progress, err = AdvanceHostProgress(ctx, progress)
+	require.NoError(t, err)
+	require.ErrorIs(t, verifyStakeWindow(shared, cs, 8, progress), ErrEpochContextPending, "a completed post-cutoff block is still required")
+	for i := 0; i < 2; i++ {
+		ctx.Height++
+		ctx.Time = ctx.Time.Add(time.Second)
+		progress, err = AdvanceHostProgress(ctx, progress)
+		require.NoError(t, err)
+	}
+	require.NoError(t, verifyStakeWindow(shared, cs, 8, progress))
+	// Accepted allocations and unrelated epochs have no pending stake clock.
+	shared.Delete(stakeWindowKey(cs, 8))
+	require.NoError(t, verifyStakeWindow(shared, cs, 8, progress))
+	require.NoError(t, verifyStakeWindow(shared, cs, 9, progress))
+	// Losing the clock cannot silently complete an unfinished challenge.
+	require.NoError(t, startStakeWindow(ctx, shared, cs, 10))
+	progress.ClockID++
+	require.ErrorIs(t, verifyStakeWindow(shared, cs, 10, progress), ErrEpochContextPending)
 }

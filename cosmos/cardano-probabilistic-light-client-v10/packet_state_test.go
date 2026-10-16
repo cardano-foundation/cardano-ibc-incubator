@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"os"
 	"strings"
 	"testing"
@@ -82,4 +83,16 @@ func TestDefaultPacketProofsUseAuthenticatedLaneSnapshot(t *testing.T) {
 	require.Error(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, pathTypes.NewMerklePath([]byte("ibc"), key), []byte{1}))
 	require.Error(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, pathTypes.NewMerklePath([]byte("ibc"), []byte("commitments/ports/transfer/channels/channel-1/sequences/2")), value))
 	require.False(t, isPacketStateKey([]byte("commitments/ports/mock/channels/channel-0/sequences/2")))
+	// A real host block gap must not re-quarantine this certified old root.
+	before, err := client.GetTimestampAtHeight(ctx, store, cdc, height)
+	require.NoError(t, err)
+	core := coreContext(ctx)
+	resumedAt := ctx.BlockTime().Add(time.Hour)
+	resumed, err := state.AdvanceHostProgress(state.Context{Height: ctx.BlockHeight() + 1, Time: resumedAt}, core.HostProgress(core))
+	require.NoError(t, err)
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight()+1).WithBlockTime(resumedAt).WithValue(hostProgressContextKey{}, hostProgressProvider(func(sdk.Context) *state.HostProgress { return resumed }))
+	require.NoError(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, pathTypes.NewMerklePath([]byte("ibc"), key), value))
+	after, err := client.GetTimestampAtHeight(ctx, store, cdc, height)
+	require.NoError(t, err)
+	require.Equal(t, before, after, "host resumption cannot change packet-proof timestamps")
 }

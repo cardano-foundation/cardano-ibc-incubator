@@ -208,9 +208,9 @@ The Gateway:
 
 ### New Client
 
-Use the ordinary Hermes client creation command. Gateway prepares initial state at the requested Cardano height or its current indexed point. That point must contain the bridge instance's HostState UTxO. The operator trusts the configured node and history providers for initialization. Hermes submits `MsgCreateClient` and automatically finishes the bounded imports. No bootstrap file is required. The creation records contain references only and pending imports resume at the same checkpoint. Proof use still waits for the existing response window after import completes.
+Use the ordinary Hermes client creation command. Gateway prepares initial state at the requested Cardano height or its current indexed point. That point must contain the bridge instance's HostState UTxO. The operator trusts the configured node and history providers for initialization. Hermes submits `MsgCreateClient` and automatically finishes the bounded imports. No bootstrap file is required. The creation records contain references only and pending imports resume at the same checkpoint. The final import certifies the bootstrap table with Mithril. Proof use requires a completed host block after that commitment cutoff without a twelve-hour stake challenge.
 
-An observation may cross one epoch boundary from its trusted checkpoint. A future table starts a twelve-hour response window when its verified receipt is activated. Until that window and a subsequent committed host block have passed, an observation using that epoch cannot advance the checkpoint or publish a proof root. Qualification remains positioned at the anchor. Temporary descendants advance working verification state only. The committed checkpoint retains the anchor's nonce, registry, production and certificate counters.
+An observation may cross one epoch boundary from its trusted checkpoint. A future table without matching Mithril certification starts a twelve-hour response window when its verified receipt is activated. Until that window and a subsequent committed host block have passed, an observation using that epoch cannot advance the checkpoint or publish a proof root. Qualification remains positioned at the anchor. Temporary descendants advance working verification state only. The committed checkpoint retains the anchor's nonce, registry, production and certificate counters.
 
 The client derives a block's epoch from its signed slot and the stored current
 epoch boundaries. Those boundaries provide the network's epoch length and slot
@@ -266,7 +266,7 @@ change.
 
 ## Epoch Context Challenge Window
 
-The response window is twelve hours of committed host time. It budgets bounded evidence verification and challenge submission. Repeated proposals do not reset it. A host interruption starts the full window again. Both activation and proof verification require a completed host block after the relevant epoch and host deadlines.
+Only an uncertified stake distribution starts the twelve-hour response window. It budgets bounded evidence verification and challenge submission. Repeated proposals do not reset it. Host interruptions pause the unfinished window without resetting elapsed observation time. They do not impose another wait on certified or already cleared allocations. Both activation and proof verification require a completed host block after the allocation's own cutoff. A matching Mithril certificate removes any remaining stake wait. Bootstrap requires certification. Authorized recovery adopts a usable substitute without starting a new stake window.
 
 Hermes checks the exact requested proof root before waiting for an epoch proposal. A retained root waits only for its own epoch. A new observation waits for its base epoch and any new table used by its settlement descendants. An unrelated future proposal does not delay packet or handshake proofs or checkpoint refresh. Generation checks, host continuity and connection delays still apply.
 
@@ -507,7 +507,7 @@ metadata must be present, and its operational-certificate counters may not
 regress. Recovery cannot be used to cross client types or move a route to a
 different HostState NFT deployment.
 
-Recovery pins the substitute's verified checkpoint. Bounded continuations reject certificate-counter rollback before activation advances the subject's generation. Old proof roots and sessions become unusable immediately. The replacement receives a fresh response window. Collection cleanup runs separately through bounded maintenance.
+Recovery pins the substitute's verified checkpoint. Bounded continuations reject certificate-counter rollback before activation advances the subject's generation. Old proof roots and sessions become unusable immediately. The replacement adopts already usable state and requires a completed block after its recovery cutoff. It starts no new stake challenge. Collection cleanup runs separately through bounded maintenance.
 
 See the [probabilistic-client recovery runbook](./probabilistic-client-recovery.md)
 for the local v8/v10 Classic test, its membership and non-membership assertions,

@@ -42,7 +42,7 @@ func TestSnapshotCrossEpochZeroStakeProducer(t *testing.T) {
 			cdc := jsonTestCodec{}
 			client, _, err := initializeTrusted(t, ctx, cdc, private, fixture.Client, fixture.Consensus)
 			require.NoError(t, err)
-			ctx.VerifyHostUsability = stagedTestHostWindow
+			ctx.HostProgress = testHostProgress
 			ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod + time.Second)
 			evidence := cloneNativeHeader(t, header)
 			if missingNativeStake {

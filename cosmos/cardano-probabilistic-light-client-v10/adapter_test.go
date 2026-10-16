@@ -290,13 +290,13 @@ func testAdapterPoolRegistry(epoch uint64, entries []*StakeDistributionEntry) *P
 // Unit tests advance a virtual uninterrupted clock. Live hosts use InstallHostLiveness.
 func withTestHostProgress(ctx sdk.Context) sdk.Context {
 	return ctx.WithValue(hostProgressContextKey{}, hostProgressProvider(func(current sdk.Context) *state.HostProgress {
-		return &state.HostProgress{Height: current.BlockHeight(), TimeUnixNs: uint64(current.BlockTime().UnixNano()), PreviousTimeUnixNs: uint64(current.BlockTime().UnixNano() - 1), ResumeUsableAfterUnixNs: 1}
+		return &state.HostProgress{Height: current.BlockHeight(), TimeUnixNs: uint64(current.BlockTime().UnixNano()), PreviousTimeUnixNs: uint64(current.BlockTime().UnixNano() - 1), ClockID: 1, ObservationTime: uint64(current.BlockTime().UnixNano()), PreviousObservationTime: uint64(current.BlockTime().UnixNano() - 1)}
 	}))
 }
 
 // Only explicitly trusted test genesis gets an elapsed host bootstrap window.
 func seedAcceptanceHostProgress(ctx sdk.Context, key *storetypes.KVStoreKey) {
-	ctx.KVStore(key).Set(hostProgressKey, encodeHostProgress(&state.HostProgress{Height: 0, TimeUnixNs: uint64(ctx.BlockTime().UnixNano() - 1), PreviousTimeUnixNs: uint64(ctx.BlockTime().UnixNano() - 2), ResumeUsableAfterUnixNs: 1}))
+	ctx.KVStore(key).Set(hostProgressKey, encodeHostProgress(&state.HostProgress{Height: 0, TimeUnixNs: uint64(ctx.BlockTime().UnixNano() - 1), PreviousTimeUnixNs: uint64(ctx.BlockTime().UnixNano() - 2), ClockID: 1, ObservationTime: uint64(ctx.BlockTime().UnixNano() - 1), PreviousObservationTime: uint64(ctx.BlockTime().UnixNano() - 2)}))
 }
 
 // installTestCheckpoint prepares explicit trusted fixture data using the same

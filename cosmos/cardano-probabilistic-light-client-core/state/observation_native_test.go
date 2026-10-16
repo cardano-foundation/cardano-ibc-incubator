@@ -37,7 +37,7 @@ func TestStagedNativeBoundaryDifferential(t *testing.T) {
 	cdc := jsonTestCodec{}
 	client, _, err := initializeTrusted(t, ctx, cdc, private, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
-	ctx.VerifyHostUsability = stagedTestHostWindow
+	ctx.HostProgress = testHostProgress
 	ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod + 2*time.Second)
 	base := bytes.Clone(client.CheckpointReference)
 	plan, err := BuildObservationPlan(client, fixture.Header, nil, uint64(len(fixture.Client.EpochStakeDistribution)), 4)
@@ -162,7 +162,7 @@ func TestReceiptChallengeAndRecoveryUsePinnedHistory(t *testing.T) {
 	require.NoError(t, err)
 	substitute, _, err := initializeTrusted(t, ctx, cdc, substitutePrivate, fixture.Client, fixture.Consensus)
 	require.NoError(t, err)
-	ctx.VerifyHostUsability = stagedTestHostWindow
+	ctx.HostProgress = testHostProgress
 	ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod + 2*time.Second)
 	plan, err := BuildObservationPlan(subject, fixture.Header, nil, 13, 4)
 	require.NoError(t, err)
@@ -310,10 +310,6 @@ func observationStoreContents(t *testing.T, store storetypes.KVStore) map[string
 		values[string(iterator.Key())] = bytes.Clone(iterator.Value())
 	}
 	return values
-}
-
-func stagedTestHostWindow(current Context, deadline uint64) error {
-	return VerifyHostWindow(current, deadline, &HostProgress{Height: current.Height, TimeUnixNs: uint64(current.BlockTime().UnixNano()), PreviousTimeUnixNs: uint64(current.BlockTime().Add(-time.Nanosecond).UnixNano()), ResumeUsableAfterUnixNs: 1})
 }
 
 func TestNativeReceiptsIgnoreDifferentTemporaryTails(t *testing.T) {

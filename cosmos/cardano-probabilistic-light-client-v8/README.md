@@ -89,9 +89,10 @@ go get github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probab
 
 ## Epoch challenge deployment
 
-New epoch roots are quarantined for twelve hours of Cosmos host time, including
-bootstrap and recovery. Updates can advance while pending, but IBC proof use is
-blocked. This requires the companion Gateway/Hermes changes to commit proposals
-separately and wait on host-assigned deadlines. Legacy states without deadlines
-fail closed for proof use. See [operation, migration and remaining trust
+Only an uncertified stake distribution starts a twelve-hour challenge window.
+A matching Mithril certificate removes that wait. Host interruptions pause an
+unfinished window without restarting elapsed time or re-locking usable roots.
+Bootstrap requires Mithril certification. Authorized recovery adopts a usable
+substitute without a new stake challenge. Dependent updates and proof use still
+require a completed host block after their own cutoff. See [operation, migration and remaining trust
 assumptions](../../docs/probabilistic-light-client.md#epoch-context-challenge-window).

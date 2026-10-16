@@ -34,7 +34,7 @@ import (
 
 // A certificate received three hours into a pending epoch must release the
 // stake wait only after commitment. Contradictions still take the keeper's
-// freeze path, and certification cannot release a host interruption wait.
+// freeze path, and a host interruption cannot add a challenge wait to certified stake.
 func TestAppLateMithrilCertificateReleasesPendingEpoch(t *testing.T) {
 	const chainID = "mithril-release-1"
 	const clientID = ModuleName + "-0"
@@ -73,7 +73,7 @@ func TestAppLateMithrilCertificateReleasesPendingEpoch(t *testing.T) {
 	}
 	root, err := mithril.StakeDistributionRoot(entries)
 	require.NoError(t, err)
-	for _, scenario := range []string{"matching", "contradicting", "invalid signature", "host interruption"} {
+	for _, scenario := range []string{"matching", "contradicting", "invalid signature", "host interruption", "certificate after host interruption"} {
 		t.Run(scenario, func(t *testing.T) {
 			now := ctx.BlockTime().Add(3 * time.Hour)
 			app := simapp.NewSimApp(log.NewNopLogger(), dbm.NewMemDB(), nil, false, simtestutil.AppOptionsMap{flags.FlagHome: t.TempDir()}, baseapp.SetChainID(chainID))
@@ -176,7 +176,11 @@ func TestAppLateMithrilCertificateReleasesPendingEpoch(t *testing.T) {
 				require.Zero(t, checked.Code, checked.Log)
 				require.Equal(t, originalDeadline, installed().epochChallenge(8).UsableAfterUnixNs)
 			}
-			result := commit(time.Second, wire).TxResults[0]
+			certificateGap := time.Second
+			if scenario == "certificate after host interruption" {
+				certificateGap = 10 * time.Hour
+			}
+			result := commit(certificateGap, wire).TxResults[0]
 			if scenario == "invalid signature" {
 				require.NotZero(t, result.Code)
 				require.Equal(t, originalDeadline, installed().epochChallenge(8).UsableAfterUnixNs)
@@ -194,7 +198,11 @@ func TestAppLateMithrilCertificateReleasesPendingEpoch(t *testing.T) {
 			}
 			certifiedAt := now
 			require.Equal(t, uint64(certifiedAt.UnixNano()), installed().epochChallenge(8).UsableAfterUnixNs)
-			require.Less(t, uint64(now.UnixNano()), originalDeadline)
+			if scenario == "certificate after host interruption" {
+				require.Greater(t, uint64(now.UnixNano()), originalDeadline, "a certificate releases a paused challenge even after its original wall deadline")
+			} else {
+				require.Less(t, uint64(now.UnixNano()), originalDeadline)
+			}
 			gap := time.Second
 			if scenario == "host interruption" {
 				gap = state.HostBlockGapTolerance + time.Second
@@ -203,17 +211,17 @@ func TestAppLateMithrilCertificateReleasesPendingEpoch(t *testing.T) {
 			require.NotZero(t, result.Code)
 			require.Contains(t, result.Log, "committed block")
 			result = commit(time.Second, sign(activation)).TxResults[0]
-			if scenario == "host interruption" {
-				require.NotZero(t, result.Code)
-				progress := decodeHostProgress(current().KVStore(app.GetKey(exported.StoreKey)).Get(hostProgressKey))
-				require.Equal(t, uint64(certifiedAt.Add(gap+state.SharedSnapshotChallengePeriod).UnixNano()), progress.ResumeUsableAfterUnixNs)
-			} else {
-				require.Zero(t, result.Code, result.Log)
-				require.Equal(t, uint64(984), installed().LatestHeight.RevisionHeight)
-				_, found := GetConsensusState(app.IBCKeeper.ClientKeeper.ClientStore(current(), clientID), app.AppCodec(), NewHeight(0, 984))
-				require.True(t, found)
-				require.NoError(t, installed().verifyEpochUsable(current(), 8))
-			}
+			require.Zero(t, result.Code, result.Log)
+			require.Equal(t, uint64(984), installed().LatestHeight.RevisionHeight)
+			_, found := GetConsensusState(app.IBCKeeper.ClientKeeper.ClientStore(current(), clientID), app.AppCodec(), NewHeight(0, 984))
+			require.True(t, found)
+			require.NoError(t, installed().verifyEpochUsable(current(), 8))
+			// A later halt cannot re-lock either the certified allocation or
+			// the retained old proof root's already trusted epoch.
+			commit(time.Hour)
+			require.NoError(t, installed().verifyEpochUsable(current(), 8))
+			require.NoError(t, installed().verifyEpochUsable(current(), 7))
+			require.Equal(t, exported.Active, installed().Status(current(), app.IBCKeeper.ClientKeeper.ClientStore(current(), clientID), app.AppCodec()))
 		})
 	}
 }

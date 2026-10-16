@@ -98,7 +98,8 @@ func TestAppFollowingEpochActivationRequiresCommittedCutoffBlock(t *testing.T) {
 		{"at deadline", -time.Nanosecond, 0, true},
 		{"first post-deadline block", 0, time.Nanosecond, true},
 		{"completed post-deadline block", time.Nanosecond, 2 * time.Nanosecond, false},
-		{"host interruption", time.Nanosecond, 11*time.Second + time.Nanosecond, true},
+		{"host interruption after completed window", time.Nanosecond, 11*time.Second + time.Nanosecond, false},
+		{"host interruption during pending window", -time.Hour, time.Hour, true},
 	} {
 		for _, order := range []string{"no challenge", "activation first", "challenge first"} {
 			t.Run(scenario.name+"/"+order, func(t *testing.T) {
@@ -189,10 +190,11 @@ func TestAppFollowingEpochActivationRequiresCommittedCutoffBlock(t *testing.T) {
 				current := app.NewUncachedContext(false, cmtproto.Header{ChainID: chainID, Height: 2, Time: now})
 				progress := decodeHostProgress(current.KVStore(app.GetKey(exported.StoreKey)).Get(hostProgressKey))
 				require.NotNil(t, progress)
-				if scenario.name == "host interruption" {
-					require.Equal(t, uint64(now.Add(state.SharedSnapshotChallengePeriod).UnixNano()), progress.ResumeUsableAfterUnixNs)
+				require.Equal(t, uint64(1), progress.ClockID)
+				if now.Sub(previous) > state.HostBlockGapTolerance {
+					require.Equal(t, uint64(previous.UnixNano()), progress.ObservationTime, "a halt pauses only the pending stake clock")
 				} else {
-					require.Equal(t, uint64(1), progress.ResumeUsableAfterUnixNs)
+					require.Equal(t, uint64(now.UnixNano()), progress.ObservationTime)
 				}
 				clientStore := app.IBCKeeper.ClientKeeper.ClientStore(current, clientID)
 				updated, found := getClientState(clientStore, app.AppCodec())
@@ -215,6 +217,15 @@ func TestAppFollowingEpochActivationRequiresCommittedCutoffBlock(t *testing.T) {
 				} else if result.Code != 0 {
 					require.Equal(t, privatePages, recoveryStoreSnapshot(t, clientStore))
 					require.Equal(t, sharedPages, recoveryStoreSnapshot(t, current.KVStore(SharedStoreKey)))
+				}
+				if order == "no challenge" && result.Code == 0 {
+					later := now.Add(time.Hour)
+					commit(3, later)
+					resumed := app.NewUncachedContext(false, cmtproto.Header{ChainID: chainID, Height: 3, Time: later})
+					resumed = resumed.WithValue(hostProgressContextKey{}, hostProgressProvider(func(c sdk.Context) *state.HostProgress {
+						return decodeHostProgress(c.KVStore(app.GetKey(exported.StoreKey)).Get(hostProgressKey))
+					}))
+					require.NoError(t, updated.verifyEpochUsable(resumed, 8), "an accepted unsigned allocation cannot be re-locked by a later halt")
 				}
 			})
 		}

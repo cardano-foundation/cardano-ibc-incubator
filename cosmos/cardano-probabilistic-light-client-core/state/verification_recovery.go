@@ -62,6 +62,11 @@ func (cs *ClientState) beginRecovery(ctx Context, cdc StateCodec, private, subst
 	if !found || consensus.VerificationGeneration != substitute.VerificationGeneration {
 		return fmt.Errorf("substitute proof state is missing or quarantined")
 	}
+	for _, epoch := range []uint64{substitute.CurrentEpoch, consensus.AcceptedEpoch} {
+		if err := substitute.verifyEpochUsable(ctx, epoch); err != nil {
+			return err
+		}
+	}
 	if err := consensus.ValidateBasic(); err != nil {
 		return err
 	}
@@ -178,6 +183,11 @@ func (cs *ClientState) activateRecovery(ctx Context, cdc StateCodec, private, sh
 	if recovery.Replacement.IsExpired(recovery.Checkpoint.Timestamp, ctx.BlockTime()) {
 		return ErrTrustingPeriodExpired
 	}
+	for _, epoch := range []uint64{recovery.Replacement.CurrentEpoch, recovery.Consensus.AcceptedEpoch} {
+		if err := recovery.Replacement.verifyEpochUsable(ctx, epoch); err != nil {
+			return err
+		}
+	}
 	replacement := *recovery.Replacement
 	replacement.StorageNamespace = bytes.Clone(cs.StorageNamespace)
 	replacement.VerificationGeneration = cs.VerificationGeneration + 1
@@ -188,7 +198,7 @@ func (cs *ClientState) activateRecovery(ctx Context, cdc StateCodec, private, sh
 	}
 	deadline := replacement.EpochContextChallenges[0].UsableAfterUnixNs
 	if replacement.TrustingPeriod <= 0 || recovery.Checkpoint.Timestamp > ^uint64(0)-uint64(replacement.TrustingPeriod) || recovery.Checkpoint.Timestamp+uint64(replacement.TrustingPeriod) <= deadline {
-		return fmt.Errorf("recovery must leave its entire response window inside the replacement's trusting period")
+		return fmt.Errorf("recovery replacement has no remaining trusting lifetime")
 	}
 	if recovery.Consensus.AcceptedEpoch != replacement.CurrentEpoch {
 		replacement.EpochContextChallenges = append(replacement.EpochContextChallenges, &EpochContextChallenge{Epoch: recovery.Consensus.AcceptedEpoch, UsableAfterUnixNs: replacement.EpochContextChallenges[0].UsableAfterUnixNs})

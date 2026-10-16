@@ -26,7 +26,7 @@ func newMithrilRecovery(t *testing.T) *mithrilRecovery {
 	network, err := mithriltest.NewNetwork(100, 200, 300, 400, 500)
 	require.NoError(t, err)
 	return &mithrilRecovery{
-		ctx:     Context{Time: time.Unix(0, int64(consensus.Timestamp)).Add(time.Hour), Height: 100, SelfHeight: NewHostHeight(0, 100), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }},
+		ctx:     Context{HostProgress: testHostProgress, Time: time.Unix(0, int64(consensus.Timestamp)).Add(time.Hour), Height: 100, SelfHeight: NewHostHeight(0, 100), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }},
 		cdc:     jsonTestCodec{},
 		shared:  shared,
 		network: network,
@@ -64,6 +64,7 @@ func (m *mithrilRecovery) certify(t *testing.T, client *ClientState, private sto
 
 func (m *mithrilRecovery) recover(t *testing.T, subject *ClientState, private storetypes.KVStore, substitute *ClientState, substituteStore storetypes.KVStore) (*ClientState, error) {
 	t.Helper()
+	m.ctx.Time = m.ctx.Time.Add(2 * time.Nanosecond)
 	subject.UpdateStateOnMisbehaviour(m.ctx, m.cdc, private, nil)
 	subject, _ = GetClientState(private, m.cdc)
 	if err := subject.CheckSubstituteAndUpdateState(m.ctx, m.cdc, private, substituteStore, substitute); err != nil {
@@ -185,7 +186,7 @@ func TestRecoveredClientRollsOverOnCarriedCertification(t *testing.T) {
 	network, err := mithriltest.NewNetwork(100, 200, 300, 400, 500)
 	require.NoError(t, err)
 	shared := dbadapter.Store{DB: dbm.NewMemDB()}
-	ctx := Context{Time: time.Unix(0, int64(fixture.Header.DescendantBlocks[len(fixture.Header.DescendantBlocks)-1].Timestamp)).Add(time.Hour), Height: 1, SelfHeight: NewHostHeight(0, 1), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }, VerifyHostUsability: stagedTestHostWindow}
+	ctx := Context{Time: time.Unix(0, int64(fixture.Header.DescendantBlocks[len(fixture.Header.DescendantBlocks)-1].Timestamp)).Add(time.Hour), Height: 1, SelfHeight: NewHostHeight(0, 1), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }, HostProgress: testHostProgress}
 	cdc := jsonTestCodec{}
 	m := &mithrilRecovery{ctx: ctx, cdc: cdc, shared: shared, network: network}
 
@@ -210,8 +211,8 @@ func TestRecoveredClientRollsOverOnCarriedCertification(t *testing.T) {
 
 	recovered, err := m.recover(t, subject, private, substitute, substituteStore)
 	require.NoError(t, err)
-	// Recovery restarts the current epoch's response window.
-	ctx.Time = ctx.Time.Add(SharedSnapshotChallengePeriod + 2*time.Second)
+	// Recovery only needs its commitment cutoff. It starts no stake window.
+	ctx.Time = ctx.Time.Add(2 * time.Nanosecond)
 	a := &anchoredClient{ctx: ctx, cdc: cdc, private: private, shared: shared, client: recovered, fixture: fixture, network: network, table: table, base: append([]byte(nil), recovered.CheckpointReference...)}
 	a.stage(t)
 	proposedAt := a.ctx.Time
@@ -276,8 +277,8 @@ func TestRecoveryCarriesAcceptedStake(t *testing.T) {
 			if !contradicting {
 				deadline := recovered.epochChallenge(epoch).UsableAfterUnixNs
 				require.Empty(t, recovered.UpdateState(ctx, cdc, private, msg))
-				require.Equal(t, deadline, recovered.epochChallenge(epoch).UsableAfterUnixNs, "certification cannot shorten the independent recovery wait")
-				require.ErrorIs(t, recovered.VerifyEpochUsable(ctx.WithBlockTime(ctx.Time.Add(time.Second)), epoch), ErrEpochContextPending)
+				require.Equal(t, deadline, recovered.epochChallenge(epoch).UsableAfterUnixNs, "certification does not change the recovery commitment cutoff")
+				require.NoError(t, recovered.VerifyEpochUsable(ctx.WithBlockTime(ctx.Time.Add(time.Second)), epoch))
 			}
 		})
 	}

@@ -16,7 +16,7 @@ import (
 
 func coreContext(ctx sdk.Context) state.Context {
 	height := clienttypes.GetSelfHeight(ctx)
-	return state.Context{VerifyHostUsability: func(current state.Context, deadline uint64) error { return verifyHostUsability(ctx, current, deadline) }, Snapshots: func() (storetypes.KVStore, error) {
+	return state.Context{HostProgress: func(current state.Context) *state.HostProgress { return hostProgressEvidence(ctx) }, Snapshots: func() (storetypes.KVStore, error) {
 		var result storetypes.KVStore
 		var err error
 		func() {

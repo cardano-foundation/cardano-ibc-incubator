@@ -76,7 +76,7 @@ func newAnchoredClient(t *testing.T) *anchoredClient {
 	// The bootstrap moves the anchor to the epoch whose certificates certify
 	// the table electing the next epoch's leaders.
 	require.Equal(t, network.Anchor(table.Epoch-1), mithril.Anchor{Epoch: client.MithrilEpoch, AggregateVerificationKey: client.MithrilAggregateVerificationKey, ProtocolParametersHash: client.MithrilProtocolParametersHash})
-	ctx.VerifyHostUsability = stagedTestHostWindow
+	ctx.HostProgress = testHostProgress
 	// The certified bootstrap table is usable after the next block.
 	ctx.Time = ctx.Time.Add(time.Second)
 	return &anchoredClient{ctx: ctx, cdc: cdc, private: private, shared: shared, client: client, fixture: fixture, network: network, table: table, base: bytes.Clone(client.CheckpointReference)}

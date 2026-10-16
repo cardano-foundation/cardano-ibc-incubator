@@ -928,16 +928,16 @@ func newProbabilisticTestClientStore(t *testing.T, keyName string) (Context, sto
 
 	ctx := Context{Time: time.Unix(1_700_000_000, 0), Height: 100, SelfHeight: NewHostHeight(0, 100)}
 	// Unit tests model an uninterrupted host. Native acceptance records real blocks.
-	ctx.VerifyHostUsability = testContinuousHost
+	ctx.HostProgress = testHostProgress
 
 	return ctx, stateStore.GetKVStore(key)
 }
 
-func testContinuousHost(current Context, deadline uint64) error {
-	return VerifyHostWindow(current, deadline, &HostProgress{
+func testHostProgress(current Context) *HostProgress {
+	return &HostProgress{
 		Height: current.Height, TimeUnixNs: uint64(current.Time.UnixNano()),
-		PreviousTimeUnixNs: uint64(current.Time.UnixNano() - 1), ResumeUsableAfterUnixNs: 1,
-	})
+		PreviousTimeUnixNs: uint64(current.Time.UnixNano() - 1), ClockID: 1, ObservationTime: uint64(current.Time.UnixNano()), PreviousObservationTime: uint64(current.Time.UnixNano() - 1),
+	}
 }
 
 func newProbabilisticTestClientState() *ClientState {

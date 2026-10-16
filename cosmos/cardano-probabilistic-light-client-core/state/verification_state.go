@@ -182,10 +182,13 @@ func InitializeFromTrustedCheckpoint(ctx Context, cdc StateCodec, private storet
 	return thin, compactConsensus, nil
 }
 func (cs *ClientState) resetEpochDeadline(ctx Context, epoch uint64) error {
-	deadline, err := sharedSnapshotChallengeDeadline(ctx)
-	if err != nil {
-		return err
+	// Recovery adopts an already usable trusted substitute. It does not submit
+	// an uncertified stake distribution or start a new stake response window.
+	now := ctx.BlockTime().UnixNano()
+	if now <= 0 {
+		return fmt.Errorf("recovery needs a positive block time")
 	}
+	deadline := uint64(now)
 	cs.EpochContextChallenges = []*EpochContextChallenge{{Epoch: epoch, UsableAfterUnixNs: deadline}}
 	return nil
 }

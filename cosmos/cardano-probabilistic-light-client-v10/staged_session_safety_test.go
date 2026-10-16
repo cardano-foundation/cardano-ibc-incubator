@@ -322,6 +322,7 @@ func TestAppFailedStagedRecoveryAllowsAuthorizedRetry(t *testing.T) {
 		_, _, err := initializeTrusted(t, ctx, cdc, private(id), client, consensus)
 		require.NoError(t, err)
 	}
+	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(2 * time.Nanosecond))
 	subjectID, badID, goodID := ModuleName+"-0", ModuleName+"-1", ModuleName+"-2"
 	subject, _ := getClientState(private(subjectID), cdc)
 	subject.UpdateStateOnMisbehaviour(ctx, cdc, private(subjectID), nil)
