@@ -1,16 +1,17 @@
-package crypto
+package crypto_test
 
 import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/mithril/mithriltest/signing"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestVerificationKeyToBytes(t *testing.T) {
-	sk, err := Gen(Const32Bytes)
+	sk, err := signing.Gen(Const32Bytes)
 	assert.NoError(t, err)
-	vk, err := new(VerificationKey).FromSigningKey(sk)
+	vk, err := sk.VerificationKey()
 	assert.NoError(t, err)
 	vkBytes := vk.ToBytes()
 	vkHex := hex.EncodeToString(vkBytes)

@@ -1,11 +1,11 @@
-package crypto
+package crypto_test
 
 import (
 	"encoding/hex"
-	"math"
-	"math/big"
 	"testing"
 
+	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/mithril/crypto"
+	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/mithril/mithriltest/signing"
 	"github.com/stretchr/testify/assert"
 	blst "github.com/supranational/blst/bindings/go"
 )
@@ -29,13 +29,13 @@ var (
 )
 
 func TestVkFromP2Affine(t *testing.T) {
-	signingKey, err := Gen(Const32Bytes)
+	signingKey, err := signing.Gen(Const32Bytes)
 	assert.NoError(t, err, "signing key generation should be success")
 
-	vk, err := new(VerificationKey).FromSigningKey(signingKey)
+	vk, err := signingKey.VerificationKey()
 	assert.NoError(t, err, "verification key generation from valid signing key should be success")
 
-	p2 := vkFromP2Affine(vk)
+	p2 := crypto.VkFromP2AffineForTest(vk)
 	p2Bytes := p2.Serialize()
 	p2Hex := hex.EncodeToString(p2Bytes)
 
@@ -44,12 +44,12 @@ func TestVkFromP2Affine(t *testing.T) {
 }
 
 func TestSigToP1(t *testing.T) {
-	sk, err := Gen(Const32Bytes)
+	sk, err := signing.Gen(Const32Bytes)
 	assert.NoError(t, err, "signing key generation should be success")
 
 	sig := sk.Sign(Const64Bytes)
 
-	p1 := sigToP1(sig.BlstSig)
+	p1 := crypto.SigToP1ForTest(sig.BlstSig)
 	p1Bytes := p1.Serialize()
 	p1Hex := hex.EncodeToString(p1Bytes)
 
@@ -65,7 +65,7 @@ func TestP2AffineToVk(t *testing.T) {
 	scalars := generateScalars(t, len)
 
 	p2 := p2Affines.Mult(scalars, int(len))
-	blstVk := p2AffineToVk(p2)
+	blstVk := crypto.P2AffineToVkForTest(p2)
 	blstVkBytes := blstVk.Serialize()
 	blstVkHex := hex.EncodeToString(blstVkBytes)
 
@@ -81,7 +81,7 @@ func TestP1AffineToSig(t *testing.T) {
 	scalars := generateScalars(t, len)
 
 	p1 := p1Affines.Mult(scalars, int(len))
-	blstSig := p1AffineToSig(p1)
+	blstSig := crypto.P1AffineToSigForTest(p1)
 	blstSigBytes := blstSig.Serialize()
 	blstSigHex := hex.EncodeToString(blstSigBytes)
 
@@ -90,30 +90,30 @@ func TestP1AffineToSig(t *testing.T) {
 }
 
 func generateIkmByIndex(idx uint64) []byte {
-	ikm := Const32Bytes
+	ikm := append([]byte(nil), Const32Bytes...)
 	ikm[0] = byte(idx)
 	return ikm
 }
 
-func generateSigningKeys(t *testing.T, len uint64) []*SigningKey {
-	sks := []*SigningKey{}
+func generateSigningKeys(t *testing.T, len uint64) []*signing.SigningKey {
+	sks := []*signing.SigningKey{}
 	for i := 0; i < int(len); i++ {
 		ikm := generateIkmByIndex(uint64(i))
 
-		sk, err := Gen(ikm)
+		sk, err := signing.Gen(ikm)
 		sks = append(sks, sk)
 		assert.NoError(t, err, "generate signing key should be success")
 	}
 	return sks
 }
 
-func generateVks(t *testing.T, len uint64) ([]*SigningKey, []*VerificationKey) {
+func generateVks(t *testing.T, len uint64) ([]*signing.SigningKey, []*crypto.VerificationKey) {
 	sks := generateSigningKeys(t, len)
 
-	vks := []*VerificationKey{}
+	vks := []*crypto.VerificationKey{}
 
 	for i := 0; i < int(len); i++ {
-		vk, err := new(VerificationKey).FromSigningKey(sks[i])
+		vk, err := sks[i].VerificationKey()
 		assert.NoError(t, err, "generate verification key from signing key should be success")
 
 		vks = append(vks, vk)
@@ -125,7 +125,7 @@ func generateP1s(t *testing.T, len uint64) []*blst.P1 {
 	_, _, sigs := generateSignatures(t, len)
 	p1s := []*blst.P1{}
 	for i := 0; i < int(len); i++ {
-		p1 := sigToP1(sigs[i].BlstSig)
+		p1 := crypto.SigToP1ForTest(sigs[i].BlstSig)
 		p1s = append(p1s, p1)
 	}
 	return p1s
@@ -135,7 +135,7 @@ func generateP2s(t *testing.T, len uint64) []*blst.P2 {
 	_, vks := generateVks(t, len)
 	p2s := []*blst.P2{}
 	for i := 0; i < int(len); i++ {
-		p2 := vkFromP2Affine(vks[i])
+		p2 := crypto.VkFromP2AffineForTest(vks[i])
 		p2s = append(p2s, p2)
 	}
 	return p2s
@@ -149,28 +149,12 @@ func generateScalars(t *testing.T, len uint64) []byte {
 	return scalars
 }
 
-func generateSignatures(t *testing.T, len uint64) ([]*SigningKey, []*VerificationKey, []*Signature) {
+func generateSignatures(t *testing.T, len uint64) ([]*signing.SigningKey, []*crypto.VerificationKey, []*crypto.Signature) {
 	sks, vks := generateVks(t, len)
 
-	sigs := []*Signature{}
+	sigs := []*crypto.Signature{}
 	for i := 0; i < int(len); i++ {
 		sigs = append(sigs, sks[i].Sign(Const64Bytes))
 	}
 	return sks, vks, sigs
-}
-
-func TestEarlyBreakTaylor(t *testing.T) {
-	for x := -0.9; x <= 0.9; x += 0.01 { // Duyệt qua khoảng từ -0.9 đến 0.9 với bước nhảy 0.01
-		exp := math.Exp(x)
-		cmpN := new(big.Rat).SetFloat64(exp - 2e-10)
-		cmpP := new(big.Rat).SetFloat64(exp + 2e-10)
-		xDecimal := new(big.Rat).SetFloat64(x)
-
-		if !taylorComparison(1000, cmpN, xDecimal) {
-			t.Errorf("Failed for cmpN with x = %v", x)
-		}
-		if taylorComparison(1000, cmpP, xDecimal) {
-			t.Errorf("Failed for cmpP with x = %v", x)
-		}
-	}
 }
