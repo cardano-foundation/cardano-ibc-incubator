@@ -212,7 +212,7 @@ func TestRecoveredClientRollsOverOnCarriedCertification(t *testing.T) {
 	recovered, err := m.recover(t, subject, private, substitute, substituteStore)
 	require.NoError(t, err)
 	// Recovery only needs its commitment cutoff. It starts no stake window.
-	ctx.Time = ctx.Time.Add(2 * time.Nanosecond)
+	ctx.Time = m.ctx.Time.Add(2 * time.Nanosecond)
 	a := &anchoredClient{ctx: ctx, cdc: cdc, private: private, shared: shared, client: recovered, fixture: fixture, network: network, table: table, base: append([]byte(nil), recovered.CheckpointReference...)}
 	a.stage(t)
 	proposedAt := a.ctx.Time

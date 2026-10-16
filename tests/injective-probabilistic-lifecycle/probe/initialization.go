@@ -86,9 +86,9 @@ func initializationRun(encoding injcodec.EncodingConfig, key *ethsecp256k1.PrivK
 		write(filepath.Join(dir, "validators.json"), d.validators)
 	} else {
 		d.height = info.LastBlockHeight
-		saved, err := client.Query(context.Background(), &abci.QueryRequest{Path: "/store/ibc/key", Data: []byte("probabilisticHost/continuity")})
+		saved, err := client.Query(context.Background(), &abci.QueryRequest{Path: "/store/" + lc.ModuleName + "/key", Data: []byte("snapshots/v2/host/continuity")})
 		must(err)
-		if len(saved.Value) == 32 {
+		if len(saved.Value) == 48 {
 			d.now = time.Unix(0, int64(binary.BigEndian.Uint64(saved.Value[8:16])))
 		} else {
 			// Pending initialization has no completed checkpoint continuity yet.

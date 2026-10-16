@@ -339,9 +339,9 @@ func boundedRun(encoding injcodec.EncodingConfig, key *ethsecp256k1.PrivKey, add
 		d.block()
 	} else {
 		d.height = info.LastBlockHeight
-		progress, err := client.Query(context.Background(), &abci.QueryRequest{Path: "/store/ibc/key", Data: []byte("probabilisticHost/continuity")})
+		progress, err := client.Query(context.Background(), &abci.QueryRequest{Path: "/store/" + lc.ModuleName + "/key", Data: []byte("snapshots/v2/host/continuity")})
 		must(err)
-		if len(progress.Value) == 32 {
+		if len(progress.Value) == 48 {
 			d.now = time.Unix(0, int64(binary.BigEndian.Uint64(progress.Value[8:16])))
 		} else {
 			d.now = genesis.GenesisTime.Add(time.Duration(d.height) * 10 * time.Second)
@@ -398,13 +398,14 @@ func boundedRun(encoding injcodec.EncodingConfig, key *ethsecp256k1.PrivKey, add
 	id := lc.ModuleName + "-0"
 	before := d.state(id)
 	write(filepath.Join(dir, "initial-state.json"), before)
-	host, err := client.Query(context.Background(), &abci.QueryRequest{Path: "/store/ibc/key", Data: []byte("probabilisticHost/continuity")})
+	host, err := client.Query(context.Background(), &abci.QueryRequest{Path: "/store/" + lc.ModuleName + "/key", Data: []byte("snapshots/v2/host/continuity")})
 	must(err)
-	if len(host.Value) != 32 {
+	if len(host.Value) != 48 {
 		panic("host continuity hooks must be installed")
 	}
-	hostDeadline := binary.BigEndian.Uint64(host.Value[24:32]) + uint64(12*time.Hour-3*time.Minute)
-	d.until(max(before.EpochContextChallenges[0].UsableAfterUnixNs, hostDeadline))
+	// Certified bootstrap has only its own commitment cutoff. A destination
+	// interruption cannot introduce a separate twelve-hour host deadline.
+	d.until(before.EpochContextChallenges[0].UsableAfterUnixNs)
 	if raw, err := os.ReadFile(filepath.Join(dir, "headers.json")); err == nil {
 		var headers map[string]*lc.ProbabilisticHeader
 		must(json.Unmarshal(raw, &headers))

@@ -188,7 +188,7 @@ func TestAppFollowingEpochActivationRequiresCommittedCutoffBlock(t *testing.T) {
 					require.Zero(t, result.Code, result.Log)
 				}
 				current := app.NewUncachedContext(false, cmtproto.Header{ChainID: chainID, Height: 2, Time: now})
-				progress := decodeHostProgress(current.KVStore(app.GetKey(exported.StoreKey)).Get(hostProgressKey))
+				progress := decodeHostProgress(current.KVStore(SharedStoreKey).Get(hostProgressKey))
 				require.NotNil(t, progress)
 				require.Equal(t, uint64(1), progress.ClockID)
 				if now.Sub(previous) > state.HostBlockGapTolerance {
@@ -223,7 +223,7 @@ func TestAppFollowingEpochActivationRequiresCommittedCutoffBlock(t *testing.T) {
 					commit(3, later)
 					resumed := app.NewUncachedContext(false, cmtproto.Header{ChainID: chainID, Height: 3, Time: later})
 					resumed = resumed.WithValue(hostProgressContextKey{}, hostProgressProvider(func(c sdk.Context) *state.HostProgress {
-						return decodeHostProgress(c.KVStore(app.GetKey(exported.StoreKey)).Get(hostProgressKey))
+						return decodeHostProgress(c.KVStore(SharedStoreKey).Get(hostProgressKey))
 					}))
 					require.NoError(t, updated.verifyEpochUsable(resumed, 8), "an accepted unsigned allocation cannot be re-locked by a later halt")
 				}

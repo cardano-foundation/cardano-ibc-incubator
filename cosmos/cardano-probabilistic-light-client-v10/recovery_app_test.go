@@ -50,6 +50,10 @@ func recoveryStoreSnapshot(t *testing.T, store storetypes.KVStore) map[string][]
 	iterator := store.Iterator(nil, nil)
 	defer func() { require.NoError(t, iterator.Close()) }()
 	for ; iterator.Valid(); iterator.Next() {
+		// BeginBlock advances these records even if every transaction fails.
+		if bytes.HasPrefix(iterator.Key(), []byte("snapshots/v2/host/")) {
+			continue
+		}
 		snapshot[string(iterator.Key())] = bytes.Clone(iterator.Value())
 	}
 	return snapshot
