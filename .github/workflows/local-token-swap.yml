@@ -1,0 +1,83 @@
+name: Local token swap demo
+
+# Runs the documented local demo end to end: a DevKit Cardano network with
+# Mithril, the bridge, the v8-classic Cosmos fixture, the Cardano route and
+# a token round trip, every packet proven through the probabilistic client.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+      - release/**
+    paths:
+      - .github/workflows/local-token-swap.yml
+      - chains/cosmos/scripts/run_direct_token_swap.sh
+
+concurrency:
+  group: local-token-swap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  demo:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: recursive
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler jq
+      - uses: dtolnay/rust-toolchain@1.91.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            caribic
+            relayer
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: cosmos/cardano-probabilistic-light-client-v8/go.mod
+          cache-dependency-path: |
+            cosmos/cardano-probabilistic-light-client-core/go.sum
+            cosmos/cardano-probabilistic-light-client-v8/go.sum
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.6
+      - uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.24
+      - name: Build Caribic and Hermes
+        run: |
+          cargo build --locked --manifest-path caribic/Cargo.toml
+          # Hermes pins its own toolchain in relayer/rust-toolchain.toml.
+          (cd relayer && cargo build --locked --release --bin hermes)
+          caribic/target/debug/caribic check
+      - name: Start the network and bridge
+        run: timeout 5400 caribic/target/debug/caribic start
+      - name: Start the v8-classic Cosmos chain
+        run: timeout 1800 caribic/target/debug/caribic chain start --chain cosmos --network v8-classic
+      - name: Create the Cardano route
+        run: timeout 3600 caribic/target/debug/caribic setup route --from cardano --to cosmos --to-network v8-classic
+      - name: Run the token round trip
+        run: timeout 3600 caribic/target/debug/caribic demo token-swap --chain cosmos --network v8-classic
+      - name: Collect logs
+        if: always()
+        run: |
+          mkdir -p demo-logs
+          cp -r .caribic/devkit demo-logs/devkit 2>/dev/null || true
+          cp ~/.hermes/hermes.log ~/.hermes/hermes.err demo-logs/ 2>/dev/null || true
+          cp ~/.hermes/config.toml demo-logs/hermes-config.toml 2>/dev/null || true
+          for container in $(docker ps -a --format '{{.Names}}'); do
+            docker logs --tail 3000 "$container" > "demo-logs/container-${container}.log" 2>&1 || true
+          done
+          caribic/target/debug/caribic devkit status > demo-logs/devkit-status.txt 2>&1 || true
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: local-token-swap-logs
+          path: demo-logs/
+          include-hidden-files: true
