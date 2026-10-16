@@ -209,7 +209,7 @@ func beginObservation(ctx Context, store storetypes.KVStore, private storetypes.
 			}
 		}
 	} else {
-		original, err := loadVerifiedObservation(store, cs, chunk.OriginalReceipt)
+		original, err := loadRetainedObservation(store, cs, chunk.OriginalReceipt)
 		if err != nil {
 			return zero, err
 		}
@@ -259,6 +259,18 @@ func beginObservation(ctx Context, store storetypes.KVStore, private storetypes.
 	}
 	if err := pinVerificationCheckpoint(store, base, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 2, id[:])); err != nil {
 		return zero, err
+	}
+	if len(session.OriginalReceipt) != 0 {
+		original, err := loadRetainedObservation(store, cs, session.OriginalReceipt)
+		if err != nil {
+			return zero, err
+		}
+		if err := retainVerifiedObservation(store, cs, original, session.OriginalReceipt); err != nil {
+			return zero, err
+		}
+		if err := pinSnapshotObject(store, scope, objectReceipt, [32]byte(session.OriginalReceipt), append(namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 4, id[:]), 7)); err != nil {
+			return zero, err
+		}
 	}
 	if err := retainVerification(store, cs, 1, id[:], nil, 0, session.ExpiresAt); err != nil {
 		return zero, err
