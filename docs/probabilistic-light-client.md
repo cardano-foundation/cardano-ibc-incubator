@@ -268,6 +268,8 @@ change.
 
 The response window is twelve hours of committed host time. It budgets bounded evidence verification and challenge submission. Repeated proposals do not reset it. A host interruption starts the full window again. Both activation and proof verification require a completed host block after the relevant epoch and host deadlines.
 
+Hermes checks the exact requested proof root before waiting for an epoch proposal. A retained root waits only for its own epoch. A new observation waits for its base epoch and any new table used by its settlement descendants. An unrelated future proposal does not delay packet or handshake proofs or checkpoint refresh. Generation checks, host continuity and connection delays still apply.
+
 Hermes expands the exact saved checkpoint through pinned snapshot queries. It stages the alternative history and submits two verified receipt references as misbehaviour. It never uses the latest history in place of the proposal's original checkpoint. Different temporary tails or an unsigned table disagreement alone cannot freeze the client. Sessions have no signer owner. Any signer can relay authentic progress, but a live session cannot be discarded. Permissionless cleanup is allowed after its fixed expiry.
 
 An independent observer still needs qualifying native evidence and transaction inclusion within the supported window. The delay does not authenticate the stake allocation. Censorship, missing evidence or a false allocation may prevent progress. See [the verification design](probabilistic-bounded-verification.md) for the workload calculation and authorized recovery limitation.
