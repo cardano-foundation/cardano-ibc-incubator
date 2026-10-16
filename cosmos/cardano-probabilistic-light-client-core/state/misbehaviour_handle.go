@@ -13,7 +13,7 @@ func (cs ClientState) CheckForMisbehaviour(ctx Context, cdc StateCodec, clientSt
 		conflict, err := cs.verifiedReceiptConflict(ctx, evidence)
 		return err == nil && conflict
 	case *MithrilStakeCertificates:
-		return cs.mithrilStakeConflict(ctx, evidence)
+		return cs.mithrilStakeConflict(clientStore, evidence)
 	}
 	return false
 }
