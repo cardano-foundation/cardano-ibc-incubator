@@ -1,0 +1,657 @@
+{
+  "selected_runs": [
+    "local",
+    "local-capacity-size",
+    "testnet",
+    "testnet-capacity-size",
+    "testnet-lifecycle-complete"
+  ],
+  "transactions": [
+    {
+      "run": "local",
+      "label": "limit-proposal",
+      "signed_tx_bytes": 2621001,
+      "signed_tx_sha256": "be239710c75a4cd136ebeb07c4a6492308a1e6717e0ca55e763fcfdc74487581",
+      "gas_wanted": 600000000,
+      "simulation_gas": {
+        "gas_wanted": "600000000",
+        "gas_used": "242816918"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "BE239710C75A4CD136EBEB07C4A6492308A1E6717E0CA55E763FCFDC74487581"
+      },
+      "commit_height": "8",
+      "commit_code": 0,
+      "commit_gas_used": "242851313",
+      "commit_log": "",
+      "client_changed": true
+    },
+    {
+      "run": "local",
+      "label": "limit-challenge",
+      "signed_tx_bytes": 5241618,
+      "signed_tx_sha256": "a377f0cd3bfde6e561dfc19224268e706b002a511e58d056b811e01d8c9c3d69",
+      "gas_wanted": 600000000,
+      "simulation_gas": {
+        "gas_wanted": "600000000",
+        "gas_used": "214398585"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "A377F0CD3BFDE6E561DFC19224268E706B002A511E58D056B811E01D8C9C3D69"
+      },
+      "commit_height": "131",
+      "commit_code": 0,
+      "commit_gas_used": "214433028",
+      "commit_log": "",
+      "client_changed": true
+    },
+    {
+      "run": "local-capacity-size",
+      "label": "size-proposal",
+      "signed_tx_bytes": 1908178,
+      "signed_tx_sha256": "1c09c949f455978c2b3f3b2302ab99746a84147a2e3bec10e6f8ca43c189043e",
+      "gas_wanted": 600000000,
+      "simulation_gas": {
+        "gas_wanted": "600000000",
+        "gas_used": "210416272"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "1C09C949F455978C2B3F3B2302AB99746A84147A2E3BEC10E6F8CA43C189043E"
+      },
+      "commit_height": "6",
+      "commit_code": 0,
+      "commit_gas_used": "210450667",
+      "commit_log": "",
+      "client_changed": true
+    },
+    {
+      "run": "local-capacity-size",
+      "label": "size-challenge",
+      "signed_tx_bytes": 3815980,
+      "signed_tx_sha256": "f3e449358f0822edb44a1e53f10c3d5c800e4221567488989b9d2700d0815092",
+      "gas_wanted": 600000000,
+      "simulation_gas": {
+        "gas_wanted": "600000000",
+        "gas_used": "174942205"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "F3E449358F0822EDB44A1E53F10C3D5C800E4221567488989B9D2700D0815092"
+      },
+      "commit_height": "12",
+      "commit_code": 0,
+      "commit_gas_used": "174976648",
+      "commit_log": "",
+      "client_changed": true
+    },
+    {
+      "run": "testnet",
+      "label": "limit-proposal",
+      "signed_tx_bytes": 2620999,
+      "signed_tx_sha256": "c93ceb1be054638cdf9202be2b3f242d879bbb84f8fe65797650bd2b1443dc40",
+      "gas_wanted": 75000000,
+      "simulation_gas": null,
+      "simulation_error": "rpc error: code = Unknown desc = [reason:\"out of gas\" metadata:{key:\"ABCICode\" value:\"11\"} metadata:{key:\"Codespace\" value:\"sdk\"}]: rpc error: code = Unknown desc = out of gas in location: WritePerByte; gasWanted: 150000000, gasUsed: 152055565: out of gas [!injective!labs/cosmos-sdk@v0.50.14-inj.4/baseapp/recovery.go:58] With gas wanted: '150000000' and gas used: '152055565' : unknown request\n",
+      "admission": {
+        "error": "{\"code\": -32603, \"message\": \"Internal error\", \"data\": \"broadcast error on transaction validation: tx C93CEB1BE054638CDF9202BE2B3F242D879BBB84F8FE65797650BD2B1443DC40 is invalid: code=11, data=, log='out of gas in location: Cardano native header verification; gasWanted: 75000000, gasUsed: 94004586: out of gas', codespace='sdk'\"}"
+      },
+      "commit_height": null,
+      "commit_code": null,
+      "commit_gas_used": null,
+      "commit_log": null,
+      "client_changed": false
+    },
+    {
+      "run": "testnet",
+      "label": "limit-challenge",
+      "signed_tx_bytes": 5241616,
+      "signed_tx_sha256": "919a8e396877b26031b59a05667c64014f2976c3b9e6612bb74bc9ae98a85739",
+      "gas_wanted": 75000000,
+      "simulation_gas": null,
+      "simulation_error": "rpc error: code = Unknown desc = [reason:\"out of gas\" metadata:{key:\"ABCICode\" value:\"11\"} metadata:{key:\"Codespace\" value:\"sdk\"}]: rpc error: code = Unknown desc = out of gas in location: WritePerByte; gasWanted: 150000000, gasUsed: 187009306: out of gas [!injective!labs/cosmos-sdk@v0.50.14-inj.4/baseapp/recovery.go:58] With gas wanted: '150000000' and gas used: '187009306' : unknown request\n",
+      "admission": {
+        "error": "{\"code\": -32603, \"message\": \"Internal error\", \"data\": \"tx pre check: tx size is too big: 5241621, max: 4193429\"}"
+      },
+      "commit_height": null,
+      "commit_code": null,
+      "commit_gas_used": null,
+      "commit_log": null,
+      "client_changed": false
+    },
+    {
+      "run": "testnet-capacity-size",
+      "label": "size-proposal",
+      "signed_tx_bytes": 1908176,
+      "signed_tx_sha256": "5615e20efd587f8c703cc310da74b3baeef8edd3cdb4ff6a35f609b79a6c7812",
+      "gas_wanted": 75000000,
+      "simulation_gas": null,
+      "simulation_error": "rpc error: code = Unknown desc = [reason:\"out of gas\" metadata:{key:\"ABCICode\" value:\"11\"} metadata:{key:\"Codespace\" value:\"sdk\"}]: rpc error: code = Unknown desc = out of gas in location: WritePerByte; gasWanted: 150000000, gasUsed: 210416269: out of gas [!injective!labs/cosmos-sdk@v0.50.14-inj.4/baseapp/recovery.go:58] With gas wanted: '150000000' and gas used: '210416269' : unknown request\n",
+      "admission": {
+        "error": "{\"code\": -32603, \"message\": \"Internal error\", \"data\": \"broadcast error on transaction validation: tx 5615E20EFD587F8C703CC310DA74B3BAEEF8EDD3CDB4FF6A35F609B79A6C7812 is invalid: code=11, data=, log='out of gas in location: WritePerByte; gasWanted: 75000000, gasUsed: 116135641: out of gas', codespace='sdk'\"}"
+      },
+      "commit_height": null,
+      "commit_code": null,
+      "commit_gas_used": null,
+      "commit_log": null,
+      "client_changed": false
+    },
+    {
+      "run": "testnet-capacity-size",
+      "label": "size-challenge",
+      "signed_tx_bytes": 3815978,
+      "signed_tx_sha256": "2ec2f69456f430a2e5cac6b9b9b843ceed6d15acbe97d6810959cac4cbbdd4bf",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "147552926"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "2EC2F69456F430A2E5CAC6B9B9B843CEED6D15ACBE97D6810959CAC4CBBDD4BF"
+      },
+      "commit_height": "11",
+      "commit_code": 11,
+      "commit_gas_used": "80759009",
+      "commit_log": "out of gas in location: Cardano native header verification; gasWanted: 75000000, gasUsed: 80759009: out of gas",
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "channel-init",
+      "signed_tx_bytes": 373,
+      "signed_tx_sha256": "d874e9950b9b625afbee71652ac5f4588a052382444a3889388f354a3957aebf",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "158320"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "D874E9950B9B625AFBEE71652AC5F4588A052382444A3889388F354A3957AEBF"
+      },
+      "commit_height": "7",
+      "commit_code": 0,
+      "commit_gas_used": "192632",
+      "commit_log": "",
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "channel-ack",
+      "signed_tx_bytes": 3033,
+      "signed_tx_sha256": "e04a9a7dc1e866e1aa53327e3013d63eb573b4a5c9a51974da8f6e2228a52dbc",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "159389"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "E04A9A7DC1E866E1AA53327E3013D63EB573B4A5C9A51974DA8F6E2228A52DBC"
+      },
+      "commit_height": "9",
+      "commit_code": 0,
+      "commit_gas_used": "193746",
+      "commit_log": "",
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "baseline-subject",
+      "signed_tx_bytes": 30870,
+      "signed_tx_sha256": "a7e3af89890834d80977b56ca64ef661602efa569968e469bf51841b9935f2f0",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "13609465"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "A7E3AF89890834D80977B56CA64EF661602EFA569968E469BF51841B9935F2F0"
+      },
+      "commit_height": "11",
+      "commit_code": 0,
+      "commit_gas_used": "13643882",
+      "commit_log": "",
+      "client_changed": true
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "baseline-control",
+      "signed_tx_bytes": 30870,
+      "signed_tx_sha256": "9a6c33b8b29fb021c05e4f2ce0ada863772dacddc4f55e6434fe5efbac7a8004",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "13609465"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "9A6C33B8B29FB021C05E4F2CE0ADA863772DACDDC4F55E6434FE5EFBAC7A8004"
+      },
+      "commit_height": "13",
+      "commit_code": 0,
+      "commit_gas_used": "13643885",
+      "commit_log": "",
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "recv-packet-967-1",
+      "signed_tx_bytes": 3157,
+      "signed_tx_sha256": "0a0d37ca3678780a0b2636508f8ea87ca05ebf74dd66c3c8917d1d7ce4522815",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "260443"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "0A0D37CA3678780A0B2636508F8EA87CA05EBF74DD66C3C8917D1D7CE4522815"
+      },
+      "commit_height": "15",
+      "commit_code": 0,
+      "commit_gas_used": "294863",
+      "commit_log": "",
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "proposal",
+      "signed_tx_bytes": 64144,
+      "signed_tx_sha256": "a7c9c4bf01ffd7985d2fae7392c548fce9c6f136d459bca075a3e9010aa6ed6e",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "27507883"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "A7C9C4BF01FFD7985D2FAE7392C548FCE9C6F136D459BCA075A3E9010AA6ED6E"
+      },
+      "commit_height": "17",
+      "commit_code": 0,
+      "commit_gas_used": "27542303",
+      "commit_log": "",
+      "client_changed": true
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "honest",
+      "signed_tx_bytes": 64144,
+      "signed_tx_sha256": "83119b5b08407c6421699094730e17cdabf5d490e4d1ee3f09990675d1d6a7c6",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "27507883"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "83119B5B08407C6421699094730E17CDABF5D490E4D1EE3F09990675D1D6A7C6"
+      },
+      "commit_height": "20",
+      "commit_code": 0,
+      "commit_gas_used": "27542303",
+      "commit_log": "",
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "challenge",
+      "signed_tx_bytes": 127909,
+      "signed_tx_sha256": "159238949853eb99d9d730e06415120f5b381420f32207928e0086447c9eb9d8",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "27341711"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "159238949853EB99D9D730E06415120F5B381420F32207928E0086447C9EB9D8"
+      },
+      "commit_height": "23",
+      "commit_code": 0,
+      "commit_gas_used": "27376131",
+      "commit_log": "",
+      "client_changed": true
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "recv-packet-1032-2",
+      "signed_tx_bytes": 3163,
+      "signed_tx_sha256": "2bf6c5cd2f3844049279c0f75b5b56f60bc9ce653189ebab650b2d1c73919a49",
+      "gas_wanted": 75000000,
+      "simulation_gas": null,
+      "simulation_error": "rpc error: code = Unknown desc = [reason:\"client state is not active\" metadata:{key:\"ABCICode\" value:\"29\"} metadata:{key:\"Codespace\" value:\"client\"}]: rpc error: code = Unknown desc = failed to execute message; message index: 0: receive packet verification failed: couldn't verify counterparty packet commitment: client (08-cardano-probabilistic-0) status is Frozen: client state is not active [!injective!labs/ibc-go/v8@v8.7.0-inj.3/modules/core/03-connection/keeper/verify.go:217] With gas wanted: '150000000' and gas used: '124457' : unknown request\n",
+      "admission": {
+        "error": "{\"code\": -32603, \"message\": \"Internal error\", \"data\": \"broadcast error on transaction validation: tx 2BF6C5CD2F3844049279C0F75B5B56F60BC9CE653189EBAB650B2D1C73919A49 is invalid: code=29, data=, log='receive packet verification failed: couldn't verify counterparty packet commitment: client (08-cardano-probabilistic-0) status is Frozen: client state is not active', codespace='client'\"}"
+      },
+      "commit_height": null,
+      "commit_code": null,
+      "commit_gas_used": null,
+      "commit_log": null,
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "frozen-packet",
+      "signed_tx_bytes": 3163,
+      "signed_tx_sha256": "2bf6c5cd2f3844049279c0f75b5b56f60bc9ce653189ebab650b2d1c73919a49",
+      "gas_wanted": 75000000,
+      "simulation_gas": null,
+      "simulation_error": "rpc error: code = Unknown desc = [reason:\"client state is not active\" metadata:{key:\"ABCICode\" value:\"29\"} metadata:{key:\"Codespace\" value:\"client\"}]: rpc error: code = Unknown desc = failed to execute message; message index: 0: receive packet verification failed: couldn't verify counterparty packet commitment: client (08-cardano-probabilistic-0) status is Frozen: client state is not active [!injective!labs/ibc-go/v8@v8.7.0-inj.3/modules/core/03-connection/keeper/verify.go:217] With gas wanted: '150000000' and gas used: '124457' : unknown request\n",
+      "admission": {
+        "error": "{\"code\": -32603, \"message\": \"Internal error\", \"data\": \"broadcast error on transaction validation: tx 2BF6C5CD2F3844049279C0F75B5B56F60BC9CE653189EBAB650B2D1C73919A49 is invalid: code=29, data=, log='receive packet verification failed: couldn't verify counterparty packet commitment: client (08-cardano-probabilistic-0) status is Frozen: client state is not active', codespace='client'\"}"
+      },
+      "commit_height": null,
+      "commit_code": null,
+      "commit_gas_used": null,
+      "commit_log": null,
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "create-substitute",
+      "signed_tx_bytes": 16892,
+      "signed_tx_sha256": "ae31e4b611b3360adfc1f985d8c8907b5eb2c5adb450cc23fdc8b29a9588cb67",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "780801"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "AE31E4B611B3360ADFC1F985D8C8907B5EB2C5ADB450CC23FDC8B29A9588CB67"
+      },
+      "commit_height": "33",
+      "commit_code": 0,
+      "commit_gas_used": "815221",
+      "commit_log": "",
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "replacement",
+      "signed_tx_bytes": 59831,
+      "signed_tx_sha256": "09586b877823d91653c0ea1bc570ecc6af228784dead38cb701b9622c000184f",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "26060440"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "09586B877823D91653C0EA1BC570ECC6AF228784DEAD38CB701B9622C000184F"
+      },
+      "commit_height": "35",
+      "commit_code": 0,
+      "commit_gas_used": "26094860",
+      "commit_log": "",
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "unauthorized-recovery",
+      "signed_tx_bytes": 375,
+      "signed_tx_sha256": "6d50d263a095a35527d928ee6eb5aecfd785c3b0f831b59ba576a7f9cf37ace5",
+      "gas_wanted": 75000000,
+      "simulation_gas": null,
+      "simulation_error": "rpc error: code = Unknown desc = [reason:\"unauthorized\" metadata:{key:\"ABCICode\" value:\"2\"} metadata:{key:\"Codespace\" value:\"ibc\"}]: rpc error: code = Unknown desc = failed to execute message; message index: 0: expected inj10d07y265gmmuvt4z0w9aw880jnsr700jstypyt, got inj14mhvr9emwpfarks8q824gv0nk7z5wltgklnr3r: unauthorized [!injective!labs/ibc-go/v8@v8.7.0-inj.3/modules/core/keeper/msg_server.go:107] With gas wanted: '150000000' and gas used: '54787' : unknown request\n",
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "6D50D263A095A35527D928EE6EB5AECFD785C3B0F831B59BA576A7F9CF37ACE5"
+      },
+      "commit_height": "37",
+      "commit_code": 2,
+      "commit_gas_used": "89207",
+      "commit_log": "failed to execute message; message index: 0: expected inj10d07y265gmmuvt4z0w9aw880jnsr700jstypyt, got inj14mhvr9emwpfarks8q824gv0nk7z5wltgklnr3r: unauthorized",
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "governance-recovery",
+      "signed_tx_bytes": 560,
+      "signed_tx_sha256": "cd605b57189c58ba53282e9c89b73afbc9b0950c6456cdb45ae29dddb5dd327d",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "181859"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "CD605B57189C58BA53282E9C89B73AFBC9B0950C6456CDB45AE29DDDB5DD327D"
+      },
+      "commit_height": "39",
+      "commit_code": 0,
+      "commit_gas_used": "216279",
+      "commit_log": "",
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "vote-recovery",
+      "signed_tx_bytes": 307,
+      "signed_tx_sha256": "2b97ef10129574839ee6b9f0ce935c60cb0b9ed98b7516ed430052ddda03a11b",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "60167"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "2B97EF10129574839EE6B9F0CE935C60CB0B9ED98B7516ED430052DDDA03A11B"
+      },
+      "commit_height": "41",
+      "commit_code": 0,
+      "commit_gas_used": "94587",
+      "commit_log": "",
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "pending-recovery-packet",
+      "signed_tx_bytes": 3163,
+      "signed_tx_sha256": "7a3e67ae8067157587d2b2d50995f4137c705796403de1cf1b846ecf9135d35f",
+      "gas_wanted": 75000000,
+      "simulation_gas": null,
+      "simulation_error": "rpc error: code = Unknown desc = [reason:\"epoch context challenge window has not elapsed\" metadata:{key:\"ABCICode\" value:\"20\"} metadata:{key:\"Codespace\" value:\"08-cardano-probabilistic\"}]: rpc error: code = Unknown desc = failed to execute message; message index: 0: receive packet verification failed: couldn't verify counterparty packet commitment: failed packet commitment verification for client (08-cardano-probabilistic-0): epoch 8 is pending until Unix nanoseconds 1792009209514897246: epoch context challenge window has not elapsed [/injective/injective-chain/modules/cardano-probabilistic-light-client/internal/core/state/epoch_challenge.go:56] With gas wanted: '150000000' and gas used: '164143' : unknown request\n",
+      "admission": {
+        "error": "{\"code\": -32603, \"message\": \"Internal error\", \"data\": \"broadcast error on transaction validation: tx 7A3E67AE8067157587D2B2D50995F4137C705796403DE1CF1B846ECF9135D35F is invalid: code=20, data=, log='receive packet verification failed: couldn't verify counterparty packet commitment: failed packet commitment verification for client (08-cardano-probabilistic-0): epoch 8 is pending until Unix nanoseconds 1792009209514897246: epoch context challenge window has not elapsed', codespace='08-cardano-probabilistic'\"}"
+      },
+      "commit_height": null,
+      "commit_code": null,
+      "commit_gas_used": null,
+      "commit_log": null,
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "ordinary",
+      "signed_tx_bytes": 59867,
+      "signed_tx_sha256": "57807cd9fedf02ab1bfff064200817332ff28b6430dcbfc51636b64841abfb8f",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "26012930"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "57807CD9FEDF02AB1BFFF064200817332FF28B6430DCBFC51636B64841ABFB8F"
+      },
+      "commit_height": "967",
+      "commit_code": 0,
+      "commit_gas_used": "26047350",
+      "commit_log": "",
+      "client_changed": true
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "recv-packet-1063-2",
+      "signed_tx_bytes": 3163,
+      "signed_tx_sha256": "d68dfb82ca407f09a2f15073e9d3676e5ff6dd5d46b8ef1621fce5186fdc401d",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "240429"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "D68DFB82CA407F09A2F15073E9D3676E5FF6DD5D46B8EF1621FCE5186FDC401D"
+      },
+      "commit_height": "969",
+      "commit_code": 0,
+      "commit_gas_used": "274849",
+      "commit_log": "",
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "recv-packet-1063-3",
+      "signed_tx_bytes": 3169,
+      "signed_tx_sha256": "e5f723a7c62b631739d3274c32574678feeda827cbb174e7703875e3e12e8727",
+      "gas_wanted": 75000000,
+      "simulation_gas": {
+        "gas_wanted": "150000000",
+        "gas_used": "240489"
+      },
+      "simulation_error": null,
+      "admission": {
+        "code": 0,
+        "data": "",
+        "log": "",
+        "codespace": "",
+        "hash": "E5F723A7C62B631739D3274C32574678FEEDA827CBB174E7703875E3E12E8727"
+      },
+      "commit_height": "971",
+      "commit_code": 0,
+      "commit_gas_used": "274909",
+      "commit_log": "",
+      "client_changed": false
+    },
+    {
+      "run": "testnet-lifecycle-complete",
+      "label": "quarantined-proof",
+      "signed_tx_bytes": 3163,
+      "signed_tx_sha256": "01e699e5318ba51cd53916778d2eaea515cdbc2c9afc9284ecb3379d9c5fe756",
+      "gas_wanted": 75000000,
+      "simulation_gas": null,
+      "simulation_error": "rpc error: code = Unknown desc = [reason:\"processed time not found\" metadata:{key:\"ABCICode\" value:\"6\"} metadata:{key:\"Codespace\" value:\"08-cardano-probabilistic\"}]: rpc error: code = Unknown desc = failed to execute message; message index: 0: receive packet verification failed: couldn't verify counterparty packet commitment: failed packet commitment verification for client (08-cardano-probabilistic-0): processed time not found [!injective!labs/ibc-go/v8@v8.7.0-inj.3/modules/core/03-connection/keeper/verify.go:235] With gas wanted: '150000000' and gas used: '142676' : unknown request\n",
+      "admission": {
+        "error": "{\"code\": -32603, \"message\": \"Internal error\", \"data\": \"broadcast error on transaction validation: tx 01E699E5318BA51CD53916778D2EAEA515CDBC2C9AFC9284ECB3379D9C5FE756 is invalid: code=6, data=, log='receive packet verification failed: couldn't verify counterparty packet commitment: failed packet commitment verification for client (08-cardano-probabilistic-0): processed time not found', codespace='08-cardano-probabilistic'\"}"
+      },
+      "commit_height": null,
+      "commit_code": null,
+      "commit_gas_used": null,
+      "commit_log": null,
+      "client_changed": false
+    }
+  ],
+  "completed_lifecycles": [
+    {
+      "freeze_committed": true,
+      "authorized_recovery_committed": true,
+      "old_consensus_quarantined": true,
+      "packets_received": [
+        1,
+        2,
+        3
+      ],
+      "restart_preserved_state": true,
+      "run": "testnet-lifecycle-complete",
+      "freeze": {
+        "deadline_unix_ns": 1792008775891649201,
+        "observed_committed_time": "2026-10-14T20:09:59.014593511Z",
+        "frozen_height": {
+          "revision_number": "0",
+          "revision_height": "1"
+        }
+      },
+      "restart": {
+        "client_restored": true,
+        "host_height": "978"
+      }
+    }
+  ]
+}

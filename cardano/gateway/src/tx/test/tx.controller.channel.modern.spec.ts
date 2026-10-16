@@ -4,6 +4,7 @@ import { TxController } from '../tx.controller';
 import { ClientService } from '../client.service';
 import { ConnectionService } from '../connection.service';
 import { ChannelService } from '../channel.service';
+import { ChannelUpgradeService } from '../channel-upgrade.service';
 import { PacketService } from '../packet.service';
 import { SubmissionService } from '../submission.service';
 import { HostStateHeartbeatService } from '../host-state-heartbeat.service';
@@ -18,6 +19,7 @@ describe('TxController - Channel (modern)', () => {
     channelCloseInit: jest.Mock;
     channelCloseConfirm: jest.Mock;
   };
+  let channelUpgradeServiceMock: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     // This suite verifies that channel endpoints are pure controller pass-throughs:
@@ -30,6 +32,12 @@ describe('TxController - Channel (modern)', () => {
       channelCloseInit: jest.fn(),
       channelCloseConfirm: jest.fn(),
     };
+    channelUpgradeServiceMock = Object.fromEntries(
+      ['Init', 'Try', 'Ack', 'Confirm', 'Open', 'Timeout', 'Cancel', 'Flush'].map((step) => [
+        `channelUpgrade${step}`,
+        jest.fn(),
+      ]),
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [TxController],
@@ -38,6 +46,7 @@ describe('TxController - Channel (modern)', () => {
         { provide: ClientService, useValue: {} },
         { provide: ConnectionService, useValue: {} },
         { provide: ChannelService, useValue: channelServiceMock },
+        { provide: ChannelUpgradeService, useValue: channelUpgradeServiceMock },
         { provide: PacketService, useValue: {} },
         { provide: SubmissionService, useValue: {} },
         { provide: HostStateHeartbeatService, useValue: {} },
@@ -134,4 +143,18 @@ describe('TxController - Channel (modern)', () => {
     expect(channelServiceMock.channelCloseConfirm).toHaveBeenCalledWith(request);
     expect(response).toBe(expected);
   });
+
+  it.each(['Init', 'Try', 'Ack', 'Confirm', 'Open', 'Timeout', 'Cancel', 'Flush'])(
+    'delegates ChannelUpgrade%s to ChannelUpgradeService',
+    async (step) => {
+      const request = { port_id: 'transfer', channel_id: 'channel-0' } as any;
+      const expected = { unsigned_tx: Buffer.from([7]) } as any;
+      channelUpgradeServiceMock[`channelUpgrade${step}`].mockResolvedValue(expected);
+
+      const response = await (controller as any)[`ChannelUpgrade${step}`](request);
+
+      expect(channelUpgradeServiceMock[`channelUpgrade${step}`]).toHaveBeenCalledWith(request);
+      expect(response).toBe(expected);
+    },
+  );
 });

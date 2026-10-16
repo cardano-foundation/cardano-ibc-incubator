@@ -1,0 +1,14 @@
+{
+  "captured_at_utc": "2026-10-14T19:28:44.044038+00:00",
+  "chain_id": "injective-888",
+  "height": "143753794",
+  "source_tag": "v1.18.0-1770939123",
+  "source_commit": "6632cef271f7482f39f9c5d4b085adc1370e8b7e",
+  "module_branch_commit": "8f7c0a9785617de372c23ecd538cf158597a676f",
+  "snapshot_node_version": "v1.20.4-bl.2",
+  "snapshot_node_commit": "1ffa252",
+  "block_max_bytes": "4194304",
+  "block_max_gas": "150000000",
+  "max_gas_wanted_per_tx": "75000000",
+  "snapshot_scope": "Observed Injective testnet parameters at one reported height, selected for local replay. The repository source tag differs from the currently reported testnet node version."
+}

@@ -2,6 +2,7 @@ import { migrationReference, withMigrationReference, type MigrationRuntimeConfig
 import { credentialToAddress, type LucidEvolution, type TxBuilder, type UTxO } from '@lucid-evolution/lucid';
 import { sha3_256 } from 'js-sha3';
 import { acknowledgementSchema } from './acknowledgementCodec';
+import { decodeChannelDatum, encodeChannelDatum } from './channelDatum';
 import type { UnsignedSendPacketEscrowTxInput } from '@cardano-ibc/tx-builder';
 import { createUnsignedSendPacketEscrowTx } from './sendPacketEscrow';
 import type { IbcTreeLucidService, IbcTreeUtxo } from './ibcStateRoot';
@@ -145,6 +146,7 @@ async function encodeHostStateDatum(
       live_clients: Data.Integer(),
       live_connections: Data.Integer(),
       live_channels: Data.Integer(),
+      last_heartbeat_time: Data.Integer(),
     }),
   });
   return Data.to(hostStateDatum, HostStateDatumSchema as any, { canonical: true });
@@ -191,6 +193,7 @@ async function decodeHostStateDatum(
       live_clients: Data.Integer(),
       live_connections: Data.Integer(),
       live_channels: Data.Integer(),
+      last_heartbeat_time: Data.Integer(),
     }),
   });
   return Data.from(encoded, HostStateDatumSchema as any);
@@ -240,6 +243,7 @@ async function decodeClientDatum(
     frozenHeight: HeightSchema,
     latestHeight: HeightSchema,
     proofSpecs: Data.Array(ProofSpecSchema),
+    upgradePath: Data.Array(Data.Bytes()),
   });
   const MerkleRootSchema = Data.Object({
     hash: Data.Bytes(),
@@ -336,212 +340,6 @@ async function decodeConnectionDatum(
   return Data.from(encoded, ConnectionDatumSchema as any);
 }
 
-async function decodeChannelDatum(
-  encoded: string,
-  Lucid: typeof import('@lucid-evolution/lucid'),
-) {
-  const { Data } = Lucid;
-  const StateSchema = Data.Enum([
-    Data.Literal('Uninitialized'),
-    Data.Literal('Init'),
-    Data.Literal('TryOpen'),
-    Data.Literal('Open'),
-    Data.Literal('Close'),
-  ]);
-  const OrderSchema = Data.Enum([
-    Data.Literal('None'),
-    Data.Literal('Unordered'),
-    Data.Literal('Ordered'),
-  ]);
-  const ChannelCounterpartySchema = Data.Object({
-    port_id: Data.Bytes(),
-    channel_id: Data.Bytes(),
-  });
-  const ChannelSchema = Data.Object({
-    state: StateSchema,
-    ordering: OrderSchema,
-    counterparty: ChannelCounterpartySchema,
-    connection_hops: Data.Array(Data.Bytes()),
-    version: Data.Bytes(),
-  });
-  const ChannelDatumStateSchema = Data.Object({
-    channel: ChannelSchema,
-    next_sequence_send: Data.Integer(),
-    next_sequence_recv: Data.Integer(),
-    next_sequence_ack: Data.Integer(),
-    packet_commitment: Data.Map(Data.Integer(), Data.Bytes()),
-    packet_receipt: Data.Map(Data.Integer(), Data.Bytes()),
-    packet_acknowledgement: Data.Map(Data.Integer(), Data.Bytes()),
-    minimum_receive_proof_height: Data.Object({
-      revisionNumber: Data.Integer(),
-      revisionHeight: Data.Integer(),
-    }),
-    maximum_receive_proof_height: Data.Object({
-      revisionNumber: Data.Integer(),
-      revisionHeight: Data.Integer(),
-    }),
-  });
-  const AuthTokenSchema = Data.Object({
-    policyId: Data.Bytes(),
-    name: Data.Bytes(),
-  });
-  const ChannelDatumSchema = Data.Object({
-    state: ChannelDatumStateSchema,
-    port: Data.Bytes(),
-    token: AuthTokenSchema,
-  });
-  return Data.from(encoded, ChannelDatumSchema as any);
-}
-
-async function encodeChannelDatum(
-  channelDatum: any,
-  Lucid: typeof import('@lucid-evolution/lucid'),
-) {
-  const CML = (Lucid as any).CML;
-  if (!CML) {
-    const { Data } = Lucid;
-    const StateSchema = Data.Enum([
-      Data.Literal('Uninitialized'),
-      Data.Literal('Init'),
-      Data.Literal('TryOpen'),
-      Data.Literal('Open'),
-      Data.Literal('Close'),
-    ]);
-    const OrderSchema = Data.Enum([
-      Data.Literal('None'),
-      Data.Literal('Unordered'),
-      Data.Literal('Ordered'),
-    ]);
-    const ChannelCounterpartySchema = Data.Object({
-      port_id: Data.Bytes(),
-      channel_id: Data.Bytes(),
-    });
-    const ChannelSchema = Data.Object({
-      state: StateSchema,
-      ordering: OrderSchema,
-      counterparty: ChannelCounterpartySchema,
-      connection_hops: Data.Array(Data.Bytes()),
-      version: Data.Bytes(),
-    });
-    const ChannelDatumStateSchema = Data.Object({
-      channel: ChannelSchema,
-      next_sequence_send: Data.Integer(),
-      next_sequence_recv: Data.Integer(),
-      next_sequence_ack: Data.Integer(),
-      packet_commitment: Data.Map(Data.Integer(), Data.Bytes()),
-      packet_receipt: Data.Map(Data.Integer(), Data.Bytes()),
-      packet_acknowledgement: Data.Map(Data.Integer(), Data.Bytes()),
-      minimum_receive_proof_height: Data.Object({
-        revisionNumber: Data.Integer(),
-        revisionHeight: Data.Integer(),
-      }),
-      maximum_receive_proof_height: Data.Object({
-        revisionNumber: Data.Integer(),
-        revisionHeight: Data.Integer(),
-      }),
-    });
-    const AuthTokenSchema = Data.Object({
-      policyId: Data.Bytes(),
-      name: Data.Bytes(),
-    });
-    const ChannelDatumSchema = Data.Object({
-      state: ChannelDatumStateSchema,
-      port: Data.Bytes(),
-      token: AuthTokenSchema,
-    });
-    return Data.to(channelDatum, ChannelDatumSchema as any);
-  }
-
-  const bytesData = (hex: string) => CML.PlutusData.new_bytes(Buffer.from(hex, 'hex'));
-  const intData = (value: bigint) => CML.PlutusData.new_integer(CML.BigInteger.from_str(value.toString()));
-  const listData = (items: any[]) => {
-    const list = CML.PlutusDataList.new();
-    for (const item of items) {
-      list.add(item);
-    }
-    return list;
-  };
-  const constrData = (index: number, fields: any[]) =>
-    CML.PlutusData.new_constr_plutus_data(CML.ConstrPlutusData.new(BigInt(index), listData(fields)));
-  const mapData = (entries: Map<bigint, string>) => {
-    const map = CML.PlutusMap.new();
-    for (const [key, value] of entries.entries()) {
-      map.set(intData(key), bytesData(value));
-    }
-    return CML.PlutusData.new_map(map);
-  };
-
-  const channelStateIndex: Record<string, number> = {
-    Uninitialized: 0,
-    Init: 1,
-    TryOpen: 2,
-    Open: 3,
-    Close: 4,
-  };
-  const channelOrderIndex: Record<string, number> = {
-    None: 0,
-    Unordered: 1,
-    Ordered: 2,
-  };
-
-  const stateIndex = channelStateIndex[channelDatum.state.channel.state];
-  const orderIndex = channelOrderIndex[channelDatum.state.channel.ordering];
-  if (stateIndex === undefined || orderIndex === undefined) {
-    throw new Error(
-      `Invalid channel datum state/order: state=${String(channelDatum.state.channel.state)}, order=${String(
-        channelDatum.state.channel.ordering,
-      )}`,
-    );
-  }
-
-  const counterpartyData = constrData(0, [
-    bytesData(channelDatum.state.channel.counterparty.port_id),
-    bytesData(channelDatum.state.channel.counterparty.channel_id),
-  ]);
-
-  const connectionHops = CML.PlutusDataList.new();
-  for (const hop of channelDatum.state.channel.connection_hops) {
-    connectionHops.add(bytesData(hop));
-  }
-
-  const channelData = constrData(0, [
-    constrData(stateIndex, []),
-    constrData(orderIndex, []),
-    counterpartyData,
-    CML.PlutusData.new_list(connectionHops),
-    bytesData(channelDatum.state.channel.version),
-  ]);
-
-  const stateData = constrData(0, [
-    channelData,
-    intData(channelDatum.state.next_sequence_send),
-    intData(channelDatum.state.next_sequence_recv),
-    intData(channelDatum.state.next_sequence_ack),
-    mapData(channelDatum.state.packet_commitment),
-    mapData(channelDatum.state.packet_receipt),
-    mapData(channelDatum.state.packet_acknowledgement),
-    constrData(0, [
-      intData(channelDatum.state.minimum_receive_proof_height.revisionNumber),
-      intData(channelDatum.state.minimum_receive_proof_height.revisionHeight),
-    ]),
-    constrData(0, [
-      intData(channelDatum.state.maximum_receive_proof_height.revisionNumber),
-      intData(channelDatum.state.maximum_receive_proof_height.revisionHeight),
-    ]),
-  ]);
-
-  const tokenData = constrData(0, [
-    bytesData(channelDatum.token.policyId),
-    bytesData(channelDatum.token.name),
-  ]);
-  const channelDatumData = constrData(0, [
-    stateData,
-    bytesData(channelDatum.port),
-    tokenData,
-  ]);
-
-  return channelDatumData.to_cbor_hex();
-}
 
 function unknownCodecTypeError(operation: 'encode' | 'decode', type: string, supportedTypes: readonly string[]) {
   return new Error(

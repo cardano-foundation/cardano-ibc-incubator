@@ -9,7 +9,6 @@ This page is the index for architecture diagrams in this repository.
 - Denom trace lifecycle diagram: `docs/denom-trace-mapping.md`
 - Voucher trace registry design: `docs/cardano-trace-registry.md`
 - Probabilistic light-client design: `docs/probabilistic-light-client.md`
-- Deprecated Mithril proof flow: `docs/mithril-light-client.md` under `Mithril Proof Flow For Relaying`
 
 ## Direct Links
 
@@ -18,4 +17,3 @@ This page is the index for architecture diagrams in this repository.
 - [Denom Trace Lifecycle Diagram](./denom-trace-mapping.md)
 - [Voucher Trace Registry Design](./cardano-trace-registry.md)
 - [Probabilistic Light-Client Design](./probabilistic-light-client.md)
-- [Deprecated Mithril Proof Flow](./mithril-light-client.md#mithril-proof-flow-for-relaying)

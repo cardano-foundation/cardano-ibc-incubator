@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG GO_IMAGE=golang:1.23.8-alpine
+ARG GO_IMAGE=golang:1.26.9-alpine
 ARG RUNTIME_IMAGE=alpine:3.22.2
 
 FROM ${GO_IMAGE} AS builder
@@ -17,6 +17,7 @@ RUN apk add --no-cache \
     make \
     musl-dev \
     perl \
+    python3 \
     tar
 
 RUN test -n "${IBC_GO_MAJOR}" \
@@ -32,7 +33,8 @@ COPY cosmos/cardano-probabilistic-light-client-v8 /cardano-ibc/cosmos/cardano-pr
 COPY cosmos/cardano-probabilistic-light-client-v10 /cardano-ibc/cosmos/cardano-probabilistic-light-client-v10
 COPY chains/cosmos/patch_cardano_probabilistic_light_client.sh /usr/local/bin/patch-cardano-light-client
 
-RUN /usr/local/bin/patch-cardano-light-client /src/ibc-go /cardano-ibc \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    /usr/local/bin/patch-cardano-light-client /src/ibc-go /cardano-ibc \
     && cd /src/ibc-go \
     && go mod tidy \
     && if [ "${IBC_GO_MAJOR}" = "10" ]; then \
@@ -42,6 +44,7 @@ RUN /usr/local/bin/patch-cardano-light-client /src/ibc-go /cardano-ibc \
 ARG LOCAL_FIXTURE_CLOCK=0
 COPY chains/cosmos/scripts/patch_local_clock.sh /usr/local/bin/patch-local-clock
 RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
     case "${LOCAL_FIXTURE_CLOCK}" in \
       0) ;; \
       1) test "${IBC_GO_MAJOR}" = 8 \
@@ -50,15 +53,19 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
       *) exit 1 ;; \
     esac
 
+ARG HOST_BUILD_VERSION
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     cd /src/ibc-go \
+    && set -- \
+    && if [ -n "${HOST_BUILD_VERSION}" ]; then set -- "VERSION=${HOST_BUILD_VERSION}"; fi \
     && if [ "${IBC_GO_MAJOR}" = "8" ]; then \
-         BUILD_TAGS=muslc make build; \
+         BUILD_TAGS=muslc make build "$@"; \
        else \
-         make build; \
+         make build "$@"; \
        fi \
-    && install -Dm755 /src/ibc-go/build/simd /out/simd
+    && install -Dm755 /src/ibc-go/build/simd /out/simd \
+    && DEVKIT_CLOCK_OFFSET=+0s /out/simd version >/dev/null
 
 FROM ${RUNTIME_IMAGE}
 

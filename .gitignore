@@ -51,8 +51,6 @@ chains/cardano/yaci-postgres/
 chains/cardano/baseinfo/
 chains/cardano/persistence/
 
-chains/mithrils/mithril
-chains/mithrils/data
 cardano-cli
 cardano-node
 
@@ -83,3 +81,7 @@ studies/cardano_probabilistic_finality/out*/
 
 # Generated Aiken execution-budget report
 /aiken-check.json
+.caribic/test-artifacts/
+
+# Internal Gateway client initialization encoder
+cardano/gateway/bin/

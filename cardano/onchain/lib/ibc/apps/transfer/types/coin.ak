@@ -16,7 +16,8 @@ pub fn receiver_chain_is_source(
   let voucher_prefix = get_denom_prefix(source_port, source_channel)
 
   let denom_prefix =
-    bytearray.length(voucher_prefix) |> bytearray.take(denom, _)
+    bytearray.length(voucher_prefix)
+      |> bytearray.take(denom, _)
 
   denom_prefix == voucher_prefix
 }

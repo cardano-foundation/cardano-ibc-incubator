@@ -211,7 +211,8 @@ async function packetProof(deployment, op) {
             protobufBytes(2, String(packet.fields[2]));
         const closedChannel = "08041001" + protobufBytes(3, counterpart) +
             protobufBytes(4, String(counterparty.fields[1])) +
-            protobufBytes(5, String(end.fields[4]));
+            protobufBytes(5, String(end.fields[4])) +
+            protobufUint(6, op.fields[7]);
         const closePath = (0, exports.record)([
             prefix,
             (0, lucid_1.fromText)(`channelEnds/ports/${(0, lucid_1.toText)(String(port))}/channels/${(0, lucid_1.toText)(String(channelId))}`),
@@ -232,6 +233,19 @@ async function packetProof(deployment, op) {
             ? `{"error":"${(0, lucid_1.toText)(String(op.fields[2]))}"}`
             : '{"result":"AQ=="}'));
     return (0, exports.variant)(0, ...common, proof, path, value);
+}
+function protobufVarint(value) {
+    let encoded = "";
+    do {
+        const next = Number(value % 128n);
+        value /= 128n;
+        encoded += (next | (value ? 128 : 0)).toString(16).padStart(2, "0");
+    } while (value);
+    return encoded;
+}
+// proto3 omits a zero integer field.
+function protobufUint(field, value) {
+    return value === 0n ? "" : protobufVarint(BigInt(field * 8)) + protobufVarint(value);
 }
 function protobufBytes(field, hex) {
     let length = hex.length / 2;
@@ -462,7 +476,7 @@ async function buildPacketSendBatch(lucid, deployment, intents, validFrom, valid
         escrows,
     };
 }
-async function buildPacketCompletion(lucid, deployment, packet, proofHeight, proof, validFrom, validTo, liquidity, rejection, proofClose) {
+async function buildPacketCompletion(lucid, deployment, packet, proofHeight, proof, validFrom, validTo, liquidity, rejection, close) {
     const { port, channelId } = channelIdentity(deployment);
     const sequence = packet.fields[0];
     const laneId = (0, packet_lanes_1.packetLane)(port, channelId, sequence, deployment.laneCount);
@@ -513,8 +527,8 @@ async function buildPacketCompletion(lucid, deployment, packet, proofHeight, pro
         operation = (0, exports.variant)(2, packet, fields, proofHeight, proof, update, liquidity.map(exports.outRef));
         delete mint[deployment.batchPolicy + (0, lucid_1.fromText)("acknowledge")];
         mint[deployment.batchPolicy + (0, lucid_1.fromText)("timeout")] = 1n;
-        if (proofClose) {
-            operation = (0, exports.variant)(8, packet, fields, proofHeight, proof, update, liquidity.map(exports.outRef), proofClose);
+        if (close) {
+            operation = (0, exports.variant)(8, packet, fields, proofHeight, proof, update, liquidity.map(exports.outRef), close.proof, close.counterpartyUpgradeSequence);
         }
         if (rejection !== undefined) {
             if (!rejection)
@@ -874,7 +888,9 @@ async function buildPacketPrune(lucid, deployment, sequence, proofHeight, proof,
         input,
     };
 }
-const buildPacketTimeoutOnClose = (lucid, deployment, packet, proofHeight, proof, proofClose, liquidity, validFrom, validTo) => buildPacketCompletion(lucid, deployment, packet, proofHeight, proof, validFrom, validTo, liquidity, undefined, proofClose);
+const buildPacketTimeoutOnClose = (lucid, deployment, packet, proofHeight, proof, proofClose, 
+// The upgrade sequence of the closed counterparty channel that proofClose proves.
+counterpartyUpgradeSequence, liquidity, validFrom, validTo) => buildPacketCompletion(lucid, deployment, packet, proofHeight, proof, validFrom, validTo, liquidity, undefined, { proof: proofClose, counterpartyUpgradeSequence });
 exports.buildPacketTimeoutOnClose = buildPacketTimeoutOnClose;
 /** Admission is permissionless, so batch discovery must reject unfunded or malformed datums. */
 function usableTransferIntent(input, deployment, validTo) {

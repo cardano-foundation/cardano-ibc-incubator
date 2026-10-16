@@ -5,14 +5,19 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	state "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/state"
+
 	probabilisticcore "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	pathTypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types/v2"
 	ics23 "github.com/cosmos/ics23/go"
 	"github.com/stretchr/testify/require"
-	"os"
-	"strings"
-	"testing"
 )
 
 func packetProofFixture(t *testing.T, key, value []byte) (*ics23.ExistenceProof, []byte) {
@@ -42,19 +47,22 @@ func TestDefaultPacketProofsUseAuthenticatedLaneSnapshot(t *testing.T) {
 	consensus := newProbabilisticTestConsensusState(snapshot.BlockHash, snapshot.Height)
 	consensus.IbcStateRoot = snapshot.HostRoot
 	consensus.PacketStateSnapshot = raw
-	client := newProbabilisticTestClientState()
+	input := newProbabilisticTestClientState()
+	input.LatestHeight = NewHeight(0, snapshot.Height)
+	input.OperationalCertificateCounterHistoryStartHeight = input.LatestHeight
+
 	ctx, store := newProbabilisticTestClientStore(t, "packet-lane-proofs")
 	cdc := newProbabilisticTestCodec()
 	height := NewHeight(0, 42)
-	setConsensusState(store, cdc, consensus, height)
+	client, installed := installTestCheckpoint(t, ctx.WithBlockTime(ctx.BlockTime().Add(-state.SharedSnapshotChallengePeriod-time.Second)), cdc, store, input, consensus)
 	setConsensusMetadata(ctx, store, height)
 	key := []byte("receipts/ports/transfer/channels/channel-0/sequences/1")
 	empty, _ := packetProofFixture(t, key, nil)
 	absence := commitmenttypes.MerkleProof{Proofs: []*ics23.CommitmentProof{{Proof: &ics23.CommitmentProof_Nonexist{Nonexist: &ics23.NonExistenceProof{Key: key, Left: empty}}}}}
 	proof, err := absence.Marshal()
 	require.NoError(t, err)
-	require.NoError(t, client.VerifyNonMembership(ctx, store, cdc, height, 0, 0, proof, pathTypes.NewMerklePath(key)))
-	require.Error(t, verifyPacketNonMembership(consensus, 43, key, proof))
+	require.NoError(t, client.VerifyNonMembership(ctx, store, cdc, height, 0, 0, proof, pathTypes.NewMerklePath([]byte("ibc"), key)))
+	require.Error(t, client.verifyPagedPacketNonMembership(ctx, installed, 43, key, proof))
 
 	key = []byte("commitments/ports/transfer/channels/channel-0/sequences/2")
 	value := bytes.Repeat([]byte{0xab}, 32)
@@ -67,12 +75,24 @@ func TestDefaultPacketProofsUseAuthenticatedLaneSnapshot(t *testing.T) {
 	snapshot.Lanes[hex.EncodeToString(name)] = lane
 	consensus.PacketStateSnapshot, err = probabilisticcore.EncodePacketStateSnapshot(snapshot)
 	require.NoError(t, err)
-	setConsensusState(store, cdc, consensus, height)
+	client, installed = installTestCheckpoint(t, ctx.WithBlockTime(ctx.BlockTime().Add(-state.SharedSnapshotChallengePeriod-time.Second)), cdc, store, input, consensus)
 	membership := commitmenttypes.MerkleProof{Proofs: []*ics23.CommitmentProof{{Proof: &ics23.CommitmentProof_Exist{Exist: existence}}}}
 	proof, err = membership.Marshal()
 	require.NoError(t, err)
-	require.NoError(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, pathTypes.NewMerklePath(key), value))
-	require.Error(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, pathTypes.NewMerklePath(key), []byte{1}))
-	require.Error(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, pathTypes.NewMerklePath([]byte("commitments/ports/transfer/channels/channel-1/sequences/2")), value))
+	require.NoError(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, pathTypes.NewMerklePath([]byte("ibc"), key), value))
+	require.Error(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, pathTypes.NewMerklePath([]byte("ibc"), key), []byte{1}))
+	require.Error(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, pathTypes.NewMerklePath([]byte("ibc"), []byte("commitments/ports/transfer/channels/channel-1/sequences/2")), value))
 	require.False(t, isPacketStateKey([]byte("commitments/ports/mock/channels/channel-0/sequences/2")))
+	// A real host block gap must not re-quarantine this certified old root.
+	before, err := client.GetTimestampAtHeight(ctx, store, cdc, height)
+	require.NoError(t, err)
+	core := coreContext(ctx)
+	resumedAt := ctx.BlockTime().Add(time.Hour)
+	resumed, err := state.AdvanceHostProgress(state.Context{Height: ctx.BlockHeight() + 1, Time: resumedAt}, core.HostProgress(core))
+	require.NoError(t, err)
+	ctx = ctx.WithBlockHeight(ctx.BlockHeight()+1).WithBlockTime(resumedAt).WithValue(hostProgressContextKey{}, hostProgressProvider(func(sdk.Context) *state.HostProgress { return resumed }))
+	require.NoError(t, client.VerifyMembership(ctx, store, cdc, height, 0, 0, proof, pathTypes.NewMerklePath([]byte("ibc"), key), value))
+	after, err := client.GetTimestampAtHeight(ctx, store, cdc, height)
+	require.NoError(t, err)
+	require.Equal(t, before, after, "host resumption cannot change packet-proof timestamps")
 }

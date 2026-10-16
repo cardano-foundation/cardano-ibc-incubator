@@ -5,7 +5,7 @@ import re
 import socket
 import subprocess
 
-from profile import http, normalized_genesis, wait_for
+from profile import MITHRIL_SIGNERS, http, normalized_genesis, wait_for
 
 
 def require(condition, message):
@@ -173,6 +173,41 @@ def verify_producer_blocks(runtime, shelley):
             "epoch_nonce": nonce, "active_stake": total, "blocks": metadata}
 
 
+def verify_mithril(runtime):
+    # Mithril certifies the stake that local clients bootstrap from. Startup
+    # fast-forwards a new network to epoch 5. Before then there is no
+    # aggregator until epoch 1 and no certificate until epoch 2.
+    services = ("mithril-aggregator", *MITHRIL_SIGNERS)
+    listed = runtime.compose("ps", "--all", "--format", "{{.Service}} {{.State}}", *services, capture=True)
+    states = dict(line.split(maxsplit=1) for line in listed.splitlines() if line.strip())
+    for service in services:
+        require(states.get(service) == "running", f"{service} is {states.get(service, 'not created')}")
+    epoch = json.loads(runtime.cli("query", "tip", "--testnet-magic", "42"))["epoch"]
+    result = {"epoch": epoch, "containers": states}
+    if epoch < 1:
+        return result
+    aggregator = runtime.mithril_endpoint()
+
+    def registrations():
+        found = http(aggregator + "/signers/registered/latest")["registrations"]
+        return found if len(found) == len(MITHRIL_SIGNERS) else None
+
+    result["registered_signers"] = len(wait_for("Mithril signer registrations", registrations, timeout=300))
+    if epoch >= 3:
+        certificates = http(aggregator + "/certificates")
+        require(bool(certificates), "Mithril has no genesis certificate")
+        result["certificates"] = len(certificates)
+    if epoch >= 5:
+        # A client bootstrapped now needs these two certified distributions.
+        for certified in (epoch - 3, epoch - 2):
+            try:
+                http(f"{aggregator}/artifact/cardano-stake-distribution/epoch/{certified}")
+            except OSError as error:
+                raise RuntimeError(f"Mithril has not certified the epoch {certified} stake distribution: {error}")
+        result["certified_stake_epochs"] = [epoch - 3, epoch - 2]
+    return result
+
+
 def run_smoke(runtime):
     genesis = json.loads((runtime.state / "genesis.json").read_text())
     verify_genesis_security(genesis)
@@ -219,6 +254,7 @@ def run_smoke(runtime):
     nonce = json.loads(runtime.cli("query", "protocol-state", "--testnet-magic", "42"))["epochNonce"]
     require(re.fullmatch(r"[0-9a-f]{64}", nonce), "Missing Cardano epoch nonce")
     verification = verify_producer_blocks(runtime, shelley)
+    mithril = verify_mithril(runtime)
     payment = submit_payment(runtime)
     return {
         "genesis_config_sha256": normalized_genesis(genesis),
@@ -229,6 +265,7 @@ def run_smoke(runtime):
                      "praos_fields_present": True, "epoch_nonce": nonce, "distinct_producers": len(producers),
                      "retained_ledger_state": retained},
         "native_verification": verification,
+        "mithril": mithril,
         "bridge_compatibility": {
             "status": "network_ready",
             "required_distinct_pools": policy["threshold_unique_pools"],

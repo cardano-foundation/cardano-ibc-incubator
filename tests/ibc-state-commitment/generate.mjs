@@ -1,0 +1,245 @@
+import assert from 'node:assert/strict'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const directory = dirname(fileURLToPath(import.meta.url))
+const root = resolve(directory, '../..')
+const runtime = resolve(root, 'packages/cardano-ibc-tx-builder-runtime/dist')
+const require = createRequire(resolve(runtime, 'ibcStateRoot.js'))
+const Lucid = require('@lucid-evolution/lucid')
+const gatewayRequire = createRequire(resolve(root, 'cardano/gateway/package.json'))
+const { MerkleProof } = gatewayRequire('@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment')
+const { ICS23MerkleTree } = require(resolve(runtime, 'ics23MerkleTree.js'))
+const {
+  encodeClientStateValue, encodeConsensusStateValue, encodeConnectionEndValue, encodeChannelEndValue,
+  encodeChannelUpgradeValue, encodeChannelUpgradeErrorValue,
+} = require(resolve(runtime, 'ibcStateRoot.js'))
+const hex = (text) => Buffer.from(text).toString('hex')
+const spec = (size, min, max) => ({
+  leaf_spec: { hash: 1n, prehash_key: 0n, prehash_value: 1n, length: 1n, prefix: '00' },
+  inner_spec: { child_order: [0n, 1n], child_size: size, min_prefix_length: min, max_prefix_length: max, empty_child: '', hash: 1n },
+  max_depth: 0n, min_depth: 0n, prehash_key_before_comparison: false,
+})
+const client = {
+  chainId: hex('cosmos-2'), trustLevel: { numerator: 1n, denominator: 3n },
+  trustingPeriod: 1_209_600_000_000_000n, unbondingPeriod: 1_814_400_000_000_000n,
+  maxClockDrift: 10_000_000_000n, frozenHeight: { revisionNumber: 0n, revisionHeight: 0n },
+  latestHeight: { revisionNumber: 2n, revisionHeight: 100n },
+  proofSpecs: [spec(33n, 4n, 12n), spec(32n, 1n, 1n)],
+  upgradePath: [hex('upgrade'), hex('upgradedIBCState')],
+}
+const consensus = { timestamp: 1_700_000_000_000_000_000n, next_validators_hash: '11'.repeat(32), root: { hash: '22'.repeat(32) } }
+const connection = {
+  client_id: hex('07-tendermint-0'), versions: [{ identifier: hex('1'), features: [hex('ORDER_ORDERED'), hex('ORDER_UNORDERED')] }],
+  state: 'Open', counterparty: { client_id: hex('07-tendermint-9'), connection_id: hex('connection-2'), prefix: { key_prefix: hex('ibc') } },
+  delay_period: 0n,
+}
+const channel = {
+  state: 'Open', ordering: 'Unordered',
+  counterparty: { port_id: hex('transfer'), channel_id: hex('channel-2') },
+  connection_hops: [hex('connection-0')], version: hex('ics20-1'),
+}
+const encodedConsensus = await encodeConsensusStateValue(consensus, Lucid)
+const members = [
+  { name: 'client', key: 'clients/07-tendermint-0/clientState', committed: await encodeClientStateValue(client, Lucid) },
+  { name: 'consensus_revision_1', key: 'clients/07-tendermint-0/consensusStates/1-100', committed: encodedConsensus },
+  { name: 'consensus_revision_2', key: 'clients/07-tendermint-0/consensusStates/2-100', committed: encodedConsensus },
+  { name: 'connection', key: 'connections/connection-0', committed: await encodeConnectionEndValue(connection, Lucid) },
+  { name: 'channel', key: 'channelEnds/ports/transfer/channels/channel-0', committed: await encodeChannelEndValue(channel, Lucid) },
+  { name: 'next_sequence_recv', key: 'nextSequenceRecv/ports/transfer/channels/channel-0', committed: Lucid.Data.to(7n) },
+]
+const jsonProof = (proof) => ({
+  key: proof.key.toString('hex'), value: proof.value.toString('hex'),
+  path: proof.path.map((op) => ({ hash: op.hash, prefix: op.prefix.toString('hex'), suffix: op.suffix.toString('hex') })),
+})
+const protoExist = (proof) => ({ key: proof.key, value: proof.value, path: proof.path })
+const proofHex = (proofs) => Buffer.from(MerkleProof.encode({ proofs }).finish()).toString('hex')
+const membershipVectors = (members) => {
+  const tree = new ICS23MerkleTree()
+  for (const member of members) tree.set(member.key, member.committed)
+  const vectors = members.map((member) => ({
+    protobuf: proofHex([{ exist: protoExist(tree.generateProof(member.key)) }]),
+    ...member, root: tree.getRoot(), siblings: tree.getSiblings(member.key).map((sibling) => sibling.toString('hex')),
+    proof: { proofs: [{ exist: jsonProof(tree.generateProof(member.key)) }] },
+  }))
+  return { tree, vectors }
+}
+const { tree, vectors } = membershipVectors(members)
+const absentKey = 'clients/07-tendermint-0/consensusStates/3-100'
+const absent = tree.generateNonExistenceProof(absentKey)
+vectors.push({
+  name: 'absent_consensus', key: absentKey, committed: '', root: tree.getRoot(),
+  protobuf: proofHex([{ nonexist: { key: absent.key, left: protoExist(absent.left) } }]),
+  siblings: tree.getSiblings(absentKey).map((sibling) => sibling.toString('hex')),
+  proof: { proofs: [{ nonexist: { key: absent.key.toString('hex'), left: jsonProof(absent.left), right: null } }] },
+})
+const fixture = { version: 1, vectors }
+const zero = '00'.repeat(32)
+const aiken = [
+  '// Generated by tests/ibc-state-commitment/generate.mjs. Do not edit by hand.',
+  'use aiken/builtin', 'use aiken/cbor',
+  'use ibc/client/ics_007_tendermint_client/client_state.{ClientState}',
+  'use ibc/client/ics_007_tendermint_client/height.{Height}',
+  'use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{',
+  '  UncheckedRational,', '}',
+  'use ibc/core/ics_023_vector_commitments/merkle',
+  'use ibc/core/ics_025_handler_interface/ibc_state_commitment as commitment', '',
+  'test client_serialization_matches_gateway_and_go() {',
+  '  let client =', '    ClientState {',
+  '      chain_id: "cosmos-2",',
+  '      trust_level: UncheckedRational { numerator: 1, denominator: 3 },',
+  '      trusting_period: 1209600000000000,',
+  '      unbonding_period: 1814400000000000,',
+  '      max_clock_drift: 10000000000,',
+  '      frozen_height: Height { revision_number: 0, revision_height: 0 },',
+  '      latest_height: Height { revision_number: 2, revision_height: 100 },',
+  '      proof_specs: merkle.get_sdk_specs(),',
+  '      upgrade_path: ["upgrade", "upgradedIBCState"],', '    }',
+  `  cbor.serialise(client) == #"${members[0].committed}"`, '}', '',
+]
+const pushProofTests = (aiken, vectors) => {
+  for (const vector of vectors) {
+    aiken.push(`test ${vector.name}_proof_matches_gateway_and_go() {`, '  let witness =', '    [')
+    for (const sibling of vector.siblings) aiken.push(sibling === zero ? '      commitment.empty_hash,' : `      #"${sibling}",`)
+    aiken.push('    ]', `  let key = "${vector.key}"`)
+    if (vector.committed.length > 60) aiken.push('  let value =', `    #"${vector.committed}"`)
+    else aiken.push(`  let value = #"${vector.committed}"`)
+    aiken.push('  let leaf =', '    commitment.leaf_hash(builtin.sha2_256(key), commitment.value_hash(value))',
+      `  commitment.compute_root(key, leaf, witness) == #"${vector.root}"`, '}', '')
+  }
+}
+pushProofTests(aiken, vectors)
+
+// Channel upgrade records use their own tree so the vectors above keep their
+// roots. Counterparty light clients must authenticate these encodings before
+// any Cardano validator commits them.
+const upgradeFields = { ordering: 'Unordered', connection_hops: [hex('connection-1')], version: hex('ics20-1') }
+const zeroHeight = { revisionNumber: 0n, revisionHeight: 0n }
+const upgradeError = 'ABCI code: 28: restored channel to pre-upgrade state'
+const upgradeMembers = [
+  {
+    name: 'channel_flushing', key: 'channelEnds/ports/transfer/channels/channel-1',
+    committed: await encodeChannelEndValue({ ...channel, state: 'Flushing', upgrade_sequence: 3n }, Lucid),
+  },
+  {
+    name: 'channel_upgraded', key: 'channelEnds/ports/transfer/channels/channel-2',
+    committed: await encodeChannelEndValue({ ...channel, connection_hops: [hex('connection-1')], upgrade_sequence: 1n }, Lucid),
+  },
+  {
+    name: 'channel_upgrade', key: 'channelUpgrades/upgrades/ports/transfer/channels/channel-1',
+    committed: await encodeChannelUpgradeValue({
+      fields: upgradeFields, timeout: { height: { revisionNumber: 2n, revisionHeight: 500n }, timestamp: 1_700_000_600_000_000_000n },
+      next_sequence_send: 5n,
+    }, Lucid),
+  },
+  {
+    name: 'channel_upgrade_init', key: 'channelUpgrades/upgrades/ports/transfer/channels/channel-2',
+    committed: await encodeChannelUpgradeValue({ fields: upgradeFields, timeout: { height: zeroHeight, timestamp: 0n }, next_sequence_send: 0n }, Lucid),
+  },
+  {
+    name: 'channel_upgrade_error', key: 'channelUpgrades/upgradeError/ports/transfer/channels/channel-1',
+    committed: await encodeChannelUpgradeErrorValue({ sequence: 3n, message: hex(upgradeError) }, Lucid),
+  },
+]
+const upgrade = membershipVectors(upgradeMembers)
+// The datum keeps the pending upgrade and the latest error receipt.
+const { channelSchemas } = require(resolve(runtime, 'channelDatum.js'))
+const flushingUpgrade = {
+  fields: upgradeFields, timeout: { height: zeroHeight, timestamp: 1_700_000_600_000_000_000n }, next_sequence_send: 5n,
+}
+const upgradingDatum = {
+  state: {
+    channel: { ...channel, state: 'Flushing', upgrade_sequence: 3n },
+    next_sequence_send: 1n, next_sequence_recv: 1n, next_sequence_ack: 1n,
+    packet_commitment: new Map(), packet_receipt: new Map(), packet_acknowledgement: new Map(),
+    minimum_receive_proof_height: zeroHeight, maximum_receive_proof_height: { revisionNumber: 1n, revisionHeight: 9n },
+    upgrade: {
+      pending: {
+        upgrade: flushingUpgrade, timeout_period: 86_400_000n,
+        counterparty_upgrade: { ...flushingUpgrade, next_sequence_send: 9n }, flushed_lanes: 1n,
+      },
+      error_receipt: { sequence: 2n, message: hex(upgradeError) },
+      recv_start_sequence: 0n,
+    },
+  },
+  port: hex('transfer'), token: { policyId: 'ab'.repeat(28), name: 'cd'.repeat(8) },
+}
+const upgradingDatumCbor = Lucid.Data.to(upgradingDatum, channelSchemas(Lucid).Datum)
+const upgradeFixture = { version: 1, vectors: upgrade.vectors }
+const upgradeCommitted = Object.fromEntries(upgradeMembers.map((member) => [member.name, member.committed]))
+const upgradeAiken = [
+  '// Generated by tests/ibc-state-commitment/generate.mjs. Do not edit by hand.',
+  'use aiken/builtin', 'use aiken/cbor',
+  'use ibc/auth.{AuthToken}',
+  'use ibc/client/ics_007_tendermint_client/height.{Height}',
+  'use ibc/core/ics_004/channel_datum.{',
+  '  ChannelDatum, ChannelDatumState, ChannelUpgradeState, PendingUpgrade,', '}',
+  'use ibc/core/ics_004/types/channel.{Channel}',
+  'use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}',
+  'use ibc/core/ics_004/types/order.{Unordered}',
+  'use ibc/core/ics_004/types/state.{ChannelState, Flushing, Open}',
+  'use ibc/core/ics_004/types/upgrade.{',
+  '  ErrorReceipt, Upgrade, UpgradeFields, UpgradeTimeout,', '}',
+  'use ibc/core/ics_025_handler_interface/ibc_state_commitment as commitment', '',
+  'fn channel(', '  state: ChannelState,', '  connection_hop: ByteArray,', '  sequence: Int,', ') -> Channel {',
+  '  Channel {', '    state,', '    ordering: Unordered,',
+  '    counterparty: ChannelCounterparty {', '      port_id: "transfer",', '      channel_id: "channel-2",', '    },',
+  '    connection_hops: [connection_hop],', '    version: "ics20-1",', '    upgrade_sequence: sequence,', '  }', '}', '',
+  'fn upgrade_fields() -> UpgradeFields {', '  UpgradeFields {', '    ordering: Unordered,',
+  '    connection_hops: ["connection-1"],', '    version: "ics20-1",', '  }', '}', '',
+  'test channel_flushing_serialization_matches_gateway_and_go() {',
+  '  cbor.serialise(channel(Flushing, "connection-0", 3)) == #"' + upgradeCommitted.channel_flushing + '"', '}', '',
+  'test channel_upgraded_serialization_matches_gateway_and_go() {',
+  '  cbor.serialise(channel(Open, "connection-1", 1)) == #"' + upgradeCommitted.channel_upgraded + '"', '}', '',
+  'test channel_upgrade_serialization_matches_gateway_and_go() {', '  let upgrade =', '    Upgrade {',
+  '      fields: upgrade_fields(),', '      timeout: UpgradeTimeout {',
+  '        height: Height { revision_number: 2, revision_height: 500 },', '        timestamp: 1700000600000000000,', '      },',
+  '      next_sequence_send: 5,', '    }',
+  '  cbor.serialise(upgrade) == #"' + upgradeCommitted.channel_upgrade + '"', '}', '',
+  'test channel_upgrade_init_serialization_matches_gateway_and_go() {', '  let upgrade =', '    Upgrade {',
+  '      fields: upgrade_fields(),', '      timeout: UpgradeTimeout {',
+  '        height: Height { revision_number: 0, revision_height: 0 },', '        timestamp: 0,', '      },',
+  '      next_sequence_send: 0,', '    }',
+  '  cbor.serialise(upgrade) == #"' + upgradeCommitted.channel_upgrade_init + '"', '}', '',
+  'test channel_upgrade_error_serialization_matches_gateway_and_go() {',
+  '  let receipt =', '    ErrorReceipt {', '      sequence: 3,', `      message: "${upgradeError}",`, '    }',
+  '  cbor.serialise(receipt) == #"' + upgradeCommitted.channel_upgrade_error + '"', '}', '',
+]
+upgradeAiken.push(
+  '// The Gateway runtime encodes channel datums with the same Plutus shape.',
+  'test channel_datum_serialization_matches_gateway() {',
+  '  let upgrade =', '    Upgrade {', '      fields: upgrade_fields(),', '      timeout: UpgradeTimeout {',
+  '        height: Height { revision_number: 0, revision_height: 0 },', '        timestamp: 1700000600000000000,', '      },',
+  '      next_sequence_send: 5,', '    }',
+  '  let upgrade_state: Data =', '    ChannelUpgradeState {', '      pending: Some(', '        PendingUpgrade {',
+  '          upgrade,', '          timeout_period: 86400000,',
+  '          counterparty_upgrade: Some(', '            Upgrade { ..upgrade, next_sequence_send: 9 },', '          ),', '          flushed_lanes: 1,',
+  '        },', '      ),',
+  '      error_receipt: Some(', '        ErrorReceipt {', '          sequence: 2,',
+  `          message: "${upgradeError}",`, '        },', '      ),', '      recv_start_sequence: 0,', '    }',
+  '  let datum =', '    ChannelDatum {', '      state: ChannelDatumState {', '        channel: Channel {',
+  '          ..channel(Flushing, "connection-0", 3),', '          counterparty: ChannelCounterparty {',
+  '            port_id: "transfer",', '            channel_id: "channel-2",', '          },', '        },',
+  '        next_sequence_send: 1,', '        next_sequence_recv: 1,', '        next_sequence_ack: 1,',
+  '        packet_commitment: [],', '        packet_receipt: [],', '        packet_acknowledgement: [],',
+  '        minimum_receive_proof_height: Height {', '          revision_number: 0,', '          revision_height: 0,', '        },',
+  '        maximum_receive_proof_height: Height {', '          revision_number: 1,', '          revision_height: 9,', '        },',
+  '        upgrade: upgrade_state,', '      },', '      port_id: "transfer",',
+  '      token: AuthToken {', `        policy_id: #"${'ab'.repeat(28)}",`, `        name: #"${'cd'.repeat(8)}",`, '      },', '    }',
+  '  cbor.serialise(datum) == #"' + upgradingDatumCbor + '"', '}', '',
+)
+pushProofTests(upgradeAiken, upgrade.vectors)
+const outputs = [
+  [resolve(directory, 'proofs.json'), `${JSON.stringify(fixture, null, 2)}\n`],
+  [resolve(root, 'cardano/onchain/lib/ibc/core/ics-025-handler-interface/ibc_state_proof_vectors.test.ak'), aiken.join('\n')],
+  [resolve(directory, 'channel-upgrade.json'), `${JSON.stringify(upgradeFixture, null, 2)}\n`],
+  [resolve(root, 'cardano/onchain/lib/ibc/core/ics-004/types/upgrade_vectors.test.ak'), upgradeAiken.join('\n')],
+]
+const mode = process.argv[2] ?? '--check'
+assert.ok(mode === '--write' || mode === '--check', 'Use --write or --check')
+for (const [path, content] of outputs) {
+  if (mode === '--write') writeFileSync(path, content)
+  else assert.equal(readFileSync(path, 'utf8'), content, `${path} differs from Gateway output. Regenerate with --write.`)
+}

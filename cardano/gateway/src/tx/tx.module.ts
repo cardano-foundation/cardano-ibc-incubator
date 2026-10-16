@@ -6,6 +6,7 @@ import { TendermintClientService, TENDERMINT_HEADER_TYPE_URL } from './tendermin
 import { LIGHT_CLIENT_HANDLERS, type LightClientHandler } from './light-client-handler';
 import { TENDERMINT_MISBEHAVIOUR_TYPE_URL } from '../shared/types/misbehaviour/misbehaviour';
 import { ChannelService } from './channel.service';
+import { ChannelUpgradeService } from './channel-upgrade.service';
 import { ConnectionService } from './connection.service';
 import { PacketLaneService } from './packet-lane.service';
 import { PacketService } from './packet.service';
@@ -45,6 +46,7 @@ import { IbcTreeModule } from '../shared/modules/ibc-tree/ibc-tree.module';
     },
     ConnectionService,
     ChannelService,
+    ChannelUpgradeService,
     PacketService,
     PacketLaneService,
     AsyncIcqHostService,

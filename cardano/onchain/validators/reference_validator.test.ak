@@ -66,6 +66,7 @@ fn shutdown_host_state_datum(grace_period_end: Int) -> HostStateDatum {
     nft_policy: test_nft_policy(),
     deployer: trusted_deployer,
     control: HostStateControl {
+      last_heartbeat_time: 0,
       port_registry: [],
       shutdown: ShuttingDown {
         initiated_at: state.last_update_time,

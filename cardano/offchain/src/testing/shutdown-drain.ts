@@ -195,9 +195,16 @@ export async function checkShutdownDrain(
       0n,
     );
     const channelState = record(
-      record(variant(3), variant(1), record(port, fromText("channel-7")), [
-        fromText("connection-0"),
-      ], fromText("ics20-1")),
+      record(
+        variant(3),
+        variant(1),
+        record(port, fromText("channel-7")),
+        [
+          fromText("connection-0"),
+        ],
+        fromText("ics20-1"),
+        0n,
+      ),
       1n,
       1n,
       1n,
@@ -206,6 +213,7 @@ export async function checkShutdownDrain(
       new Map(),
       record(0n, 0n),
       record(0n, 0n),
+      record(variant(1), variant(1), 0n),
     );
     const channelDatum = record(channelState, port, channelToken);
     const tree = new DeploymentIbcTree();
@@ -218,7 +226,7 @@ export async function checkShutdownDrain(
     }
     tree.set("clients/07-tendermint-0/clientState", encode(client.client));
     tree.set(
-      "clients/07-tendermint-0/consensusStates/10",
+      "clients/07-tendermint-0/consensusStates/1-10",
       encode(client.consensus),
     );
     tree.set("connections/connection-0", encode(connection));
@@ -283,6 +291,7 @@ export async function checkShutdownDrain(
           live_clients: 1n,
           live_connections: 1n,
           live_channels: 1n,
+          last_heartbeat_time: 0n,
         },
       },
       HostStateDatum,

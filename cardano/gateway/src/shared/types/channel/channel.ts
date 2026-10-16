@@ -8,4 +8,5 @@ export type Channel = {
   counterparty: ChannelCounterparty;
   connection_hops: string[];
   version: string;
+  upgrade_sequence: bigint;
 };

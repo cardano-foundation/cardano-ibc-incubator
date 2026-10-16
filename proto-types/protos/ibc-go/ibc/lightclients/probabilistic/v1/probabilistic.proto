@@ -18,22 +18,36 @@ message StakeDistributionEntry {
 
   string pool_id = 1;
   uint64 stake = 2;
+  // Compatibility fields. Must match the independent effective registry.
   bytes vrf_key_hash = 3;
   uint64 first_registration_slot = 4;
   // Exact relative active stake used for Praos leader eligibility. The
-  // existing stake field remains the weight used by settlement scoring.
+  // existing stake field supplies the current share before settlement discounting.
   uint64 relative_stake_numerator = 5;
   uint64 relative_stake_denominator = 6;
 }
 
+// During updates only stake allocation supplies independently claimed data.
+// Every other field is compared with values derived from accepted state or
+// stored network configuration. A mismatch rejects the update. The starting
+// state and network configuration require authenticated or explicitly trusted
+// bootstrap.
 message EpochContext {
   option (gogoproto.goproto_getters) = false;
 
+  // Must equal the epoch derived from the signed header slot and stored schedule.
   uint64 epoch = 1;
+  // Identities, VRF hashes and ages must match the independently tracked
+  // registry for this epoch. Stake amounts remain under the challenge model.
   repeated StakeDistributionEntry stake_distribution = 2;
+  // Must equal the nonce derived from checkpoint history. Header verification
+  // uses that locally derived nonce.
   bytes epoch_nonce = 3;
+  // Must equal ClientState.slots_per_kes_period, fixed at bootstrap.
   uint64 slots_per_kes_period = 4;
+  // Must equal the start slot calculated from the client's stored epoch schedule.
   uint64 epoch_start_slot = 5;
+  // Must equal the exclusive end calculated from that same stored schedule.
   uint64 epoch_end_slot_exclusive = 6;
 }
 
@@ -90,6 +104,131 @@ message ClientState {
   uint64 latest_checkpoint_timestamp = 29;
   // Required deployment policy for packet lane identities.
   bytes packet_lane_policy_id = 30;
+  // Pending epoch roots cannot verify IBC proofs before their deadline.
+  // Initialize replaces any caller-supplied values with host-assigned times.
+  repeated EpochContextChallenge epoch_context_challenges = 31;
+  // Required authenticated running state at latest_checkpoint_height.
+  PraosNonceState latest_checkpoint_nonce_state = 32;
+  // Established network parameter. Updates cannot redefine this window.
+  uint64 randomness_stabilisation_window_slots = 33;
+  // Independently authenticated registration state at the checkpoint.
+  PoolRegistryState latest_checkpoint_pool_registry = 34;
+  // Epoch reference derived from capped credit, never raw accepted claims.
+  SettlementCreditState latest_checkpoint_settlement_credit = 35;
+  // Verified production history positioned at this committed checkpoint.
+  PoolProductionHistory latest_checkpoint_pool_production = 36;
+  // Version 2 keeps verification collections in authenticated destination storage.
+  uint32 storage_version = 37;
+  uint64 verification_generation = 38;
+  bytes checkpoint_reference = 39;
+  bytes storage_namespace = 40;
+  // Explicitly trusted compact bootstrap objects. Removed from stored ClientState.
+  bytes bootstrap_objects = 41;
+  bool bootstrap_pending = 42;
+  // Trusted Mithril signing state for certificates of mithril_epoch, set at
+  // bootstrap like the checkpoint. When present, a Mithril-certified stake
+  // distribution outranks a supplied epoch stake table.
+  uint64 mithril_epoch = 43;
+  // Hex-encoded JSON, exactly as Mithril publishes it.
+  string mithril_aggregate_verification_key = 44;
+  // Mithril's hash of the epoch's protocol parameters.
+  string mithril_protocol_parameters_hash = 45;
+}
+
+// Production observed through the checkpoint. Bit 0 represents epoch-1 and
+// bit 4 represents epoch-5. Current-epoch observations never qualify that epoch.
+// Bootstrap authenticates this state. Missing pool records grant no qualification.
+message PoolProductionHistory {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 epoch = 1;
+  repeated PoolProductionRecord pools = 2;
+}
+
+message PoolProductionRecord {
+  option (gogoproto.goproto_getters) = false;
+
+  string pool_id = 1;
+  uint32 completed_epochs_bitmap = 2;
+  bool produced_current_epoch = 3;
+}
+
+// Exact settlement reference shares for this epoch. At an adjacent rollover
+// the client advances these using the preceding epoch's capped credit once.
+// Values are never normalized after discounting. Bootstrap authenticates them.
+message SettlementCreditState {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 epoch = 1;
+  repeated PoolSettlementCredit reference = 2;
+}
+
+// Reduced unsigned fraction in canonical big-endian form. Each integer is at
+// most 16 bytes. Zero shares are omitted. This keeps fractional credit exact.
+message PoolSettlementCredit {
+  option (gogoproto.goproto_getters) = false;
+
+  string pool_id = 1;
+  bytes numerator = 2;
+  bytes denominator = 3;
+}
+
+// Pool identity and VRF binding from the trusted bootstrap or authenticated
+// certificate history. Slot zero is valid for a genesis registration.
+message PoolRegistrationBinding {
+  option (gogoproto.goproto_getters) = false;
+
+  string pool_id = 1;
+  bytes vrf_key_hash = 2;
+  uint64 first_registration_slot = 3;
+}
+
+// The current registration state, separate from frozen election snapshots.
+// Retired records retain their authenticated registration age.
+message PoolRegistrationRecord {
+  option (gogoproto.goproto_getters) = false;
+
+  PoolRegistrationBinding registration = 1;
+  bool registered = 2;
+  bytes pending_vrf_key_hash = 3;
+  uint64 pending_effective_epoch = 4;
+  // Zero means no scheduled retirement.
+  uint64 retirement_epoch = 5;
+}
+
+// Registration projection of Cardano's current pool state and mark/set
+// snapshots at the associated checkpoint. This contains no stake amounts.
+// Bootstrap must establish all three views independently of the epoch table.
+message PoolRegistryState {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 epoch = 1;
+  repeated PoolRegistrationRecord pools = 2;
+  repeated PoolRegistrationBinding mark = 3;
+  repeated PoolRegistrationBinding effective = 4;
+}
+
+// Babbage/Conway Praos state after applying the checkpoint header.
+// Empty running nonce bytes represent Cardano's NeutralNonce identity. A
+// missing message is unavailable state and must never be filled with defaults.
+message PraosNonceState {
+  option (gogoproto.goproto_getters) = false;
+
+  bytes epoch_nonce = 1;
+  bytes evolving_nonce = 2;
+  bytes candidate_nonce = 3;
+  // Derived from the previous-block hash in the last applied header,
+  // not from that header's own hash.
+  bytes last_applied_block_nonce = 4;
+  bytes last_epoch_block_nonce = 5;
+}
+
+// Host-chain timestamps assigned by the verifier, never by an update header.
+message EpochContextChallenge {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 epoch = 1;
+  uint64 usable_after_unix_ns = 2;
 }
 
 message ConsensusState {
@@ -101,9 +240,22 @@ message ConsensusState {
   uint64 accepted_epoch = 4;
   uint64 unique_pools_count = 5;
   uint64 unique_stake_bps = 6;
-  uint64 security_score_bps = 7;
+  // Deprecated compatibility value. Verified observations retain 10000.
+  // This is not a confidence measure. Use the settlement diagnostics instead.
+  uint64 security_score_bps = 7 [deprecated = true];
   // Canonical CBOR snapshot of live host and lane outputs at this height.
   bytes packet_state_snapshot = 8;
+  // Running nonce values at this accepted block, excluding descendants.
+  PraosNonceState nonce_state = 9;
+  // Registration state at this historical accepted block.
+  PoolRegistryState pool_registry = 10;
+  // Reference at this accepted block for historical settlement verification.
+  SettlementCreditState settlement_credit = 11;
+  // History at this accepted block, excluding temporary settlement descendants.
+  PoolProductionHistory pool_production = 12;
+  uint64 verification_generation = 13;
+  bytes checkpoint_reference = 14;
+  bytes packet_state_reference = 15;
 }
 
 message Misbehaviour {
@@ -112,6 +264,18 @@ message Misbehaviour {
   string client_id = 1 [deprecated = true];
   ProbabilisticHeader probabilistic_header_1 = 2 [(gogoproto.customname) = "ProbabilisticHeader1"];
   ProbabilisticHeader probabilistic_header_2 = 3 [(gogoproto.customname) = "ProbabilisticHeader2"];
+  // Receipts are produced by the verifier. They are bound to this client and generation.
+  bytes verified_observation_1 = 4;
+  bytes verified_observation_2 = 5;
+}
+
+// Mithril aggregator certificates in JSON from consecutive epochs, starting at
+// the client's mithril_epoch. Each certified Cardano stake distribution becomes
+// the required stake table of the epoch whose leaders it elects.
+message MithrilStakeCertificates {
+  option (gogoproto.goproto_getters) = false;
+
+  repeated string certificates = 1;
 }
 
 message ProbabilisticBlock {
@@ -148,4 +312,37 @@ message ProbabilisticHeader {
   // Checkpoints authenticate Cardano chain progression without creating an
   // IBC consensus state or renewing the trusting period.
   bool is_checkpoint = 12;
+  // Bounded operations share the normal IBC client-message entry point.
+  ObservationChunk observation_chunk = 13;
 }
+
+// Intermediate verification remains isolated from the trusted checkpoint.
+// Operation codes and canonical payloads are defined by the versioned shared core.
+message ObservationChunk {
+  option (gogoproto.goproto_getters) = false;
+  uint32 operation = 1;
+  bytes session_id = 2;
+  bytes base_checkpoint_reference = 3;
+  bytes original_receipt = 4;
+  uint64 anchor_height = 5;
+  uint32 block_count = 6;
+  EpochContext table_context = 7;
+  // Canonical binary pool identifiers and uint64 amounts, in strict order.
+  bytes stake_rows = 8;
+  repeated ProbabilisticBlock blocks = 9;
+  bytes objects = 10;
+  bytes other_receipt = 11;
+  bool is_checkpoint = 12;
+  string host_state_tx_hash = 13;
+  uint32 table_rows = 14;
+  uint64 table_total = 15;
+  bytes evidence_digest = 16;
+  bytes table_digest = 17;
+  uint32 sequence = 18;
+  // Isolated observations can be compared without activating either as an update.
+  bool isolated = 19;
+
+}
+
+// Queries return bounded pages from destination storage. They do not create
+// authority for references that are absent from the client's accepted context.

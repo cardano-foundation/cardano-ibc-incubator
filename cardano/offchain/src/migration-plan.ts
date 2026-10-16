@@ -38,6 +38,9 @@ export const CHANNEL_OPERATION_NAMES = [
   "timeout_packet",
   "acknowledge_packet",
   "prune_packet_history",
+  "chan_upgrade",
+  "chan_upgrade_handshake",
+  "chan_upgrade_finish",
 ] as const;
 export const REGISTRY_TOKEN_NAME = fromText("ibc_implementation_registry");
 export const MIGRATION_ROLES = [

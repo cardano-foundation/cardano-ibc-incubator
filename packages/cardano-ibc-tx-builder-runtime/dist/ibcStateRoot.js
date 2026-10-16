@@ -5,8 +5,12 @@ exports.encodeClientStateValue = encodeClientStateValue;
 exports.encodeConsensusStateValue = encodeConsensusStateValue;
 exports.encodeConnectionEndValue = encodeConnectionEndValue;
 exports.encodeChannelEndValue = encodeChannelEndValue;
+exports.encodeChannelUpgradeValue = encodeChannelUpgradeValue;
+exports.encodeChannelUpgradeErrorValue = encodeChannelUpgradeErrorValue;
+exports.encodeChannelUpgradeRecords = encodeChannelUpgradeRecords;
 exports.encodeModuleRegistration = encodeModuleRegistration;
 const ics23MerkleTree_1 = require("./ics23MerkleTree");
+const channelDatum_1 = require("./channelDatum");
 const plutusSerialise_1 = require("./plutusSerialise");
 class StaleIbcTreeStateError extends Error {
     constructor(message = 'IBC tree state changed while the operation was in progress') {
@@ -62,6 +66,7 @@ async function encodeClientStateValue(clientState, Lucid) {
         frozenHeight: HeightSchema,
         latestHeight: HeightSchema,
         proofSpecs: Data.Array(ProofSpecSchema),
+        upgradePath: Data.Array(Data.Bytes()),
     });
     // Match Aiken cbor.serialise, including indefinite-length arrays.
     // Canonical CBOR would change the committed value bytes.
@@ -116,24 +121,56 @@ async function encodeChannelEndValue(channelEnd, Lucid) {
         Data.Literal('TryOpen'),
         Data.Literal('Open'),
         Data.Literal('Close'),
-    ]);
-    const OrderSchema = Data.Enum([
-        Data.Literal('None'),
-        Data.Literal('Unordered'),
-        Data.Literal('Ordered'),
+        Data.Literal('Flushing'),
+        Data.Literal('FlushComplete'),
     ]);
     const ChannelCounterpartySchema = Data.Object({
         port_id: Data.Bytes(),
         channel_id: Data.Bytes(),
     });
-    const ChannelSchema = Data.Object({
+    const fields = {
         state: StateSchema,
-        ordering: OrderSchema,
+        ordering: channelOrderSchema(Lucid),
         counterparty: ChannelCounterpartySchema,
         connection_hops: Data.Array(Data.Bytes()),
         version: Data.Bytes(),
-    });
+    };
+    // Channel upgrades append upgrade_sequence. Channels without it keep the
+    // five-field encoding that existing deployments committed.
+    const ChannelSchema = channelEnd.upgrade_sequence === undefined
+        ? Data.Object(fields)
+        : Data.Object({ ...fields, upgrade_sequence: Data.Integer() });
     return Data.to(channelEnd, ChannelSchema);
+}
+// Committed under channelUpgrades/upgrades/ports/{port}/channels/{channel}.
+async function encodeChannelUpgradeValue(upgrade, Lucid) {
+    return Lucid.Data.to(upgrade, (0, channelDatum_1.channelSchemas)(Lucid).Upgrade);
+}
+// Committed under channelUpgrades/upgradeError/ports/{port}/channels/{channel}.
+async function encodeChannelUpgradeErrorValue(receipt, Lucid) {
+    return Lucid.Data.to(receipt, (0, channelDatum_1.channelSchemas)(Lucid).ErrorReceipt);
+}
+/**
+ * The committed upgrade and error-receipt values of a channel's upgrade state.
+ * An absent record commits the empty value, which removes its key.
+ */
+async function encodeChannelUpgradeRecords(upgrade, Lucid) {
+    return {
+        upgrade: upgrade?.pending
+            ? Buffer.from(await encodeChannelUpgradeValue(upgrade.pending.upgrade, Lucid), 'hex')
+            : Buffer.alloc(0),
+        errorReceipt: upgrade?.error_receipt
+            ? Buffer.from(await encodeChannelUpgradeErrorValue(upgrade.error_receipt, Lucid), 'hex')
+            : Buffer.alloc(0),
+    };
+}
+function channelOrderSchema(Lucid) {
+    const { Data } = Lucid;
+    return Data.Enum([
+        Data.Literal('None'),
+        Data.Literal('Unordered'),
+        Data.Literal('Ordered'),
+    ]);
 }
 async function encodeModuleRegistration(registration, Lucid) {
     const { Data } = Lucid;
@@ -450,7 +487,7 @@ class IbcTreeStateStore {
                         !/^(?:[0-9a-f]{2})+$/.test(consensusValue)) {
                         throw new Error(`Invalid recovered consensus record for '${clientId}'`);
                     }
-                    const path = `clients/${clientId}/consensusStates/${record.height.revisionHeight}`;
+                    const path = `clients/${clientId}/consensusStates/${record.height.revisionNumber}-${record.height.revisionHeight}`;
                     if (consensusPaths.has(path))
                         throw new Error(`Duplicate consensus state path '${path}' during tree rebuild`);
                     tree.set(path, Buffer.from(consensusValue, 'hex'));
@@ -464,7 +501,7 @@ class IbcTreeStateStore {
                 : Object.entries(consensusStates ?? {});
             for (const [heightKey, consensusState] of entries) {
                 const heightStr = typeof heightKey === 'object' && heightKey !== null
-                    ? `${heightKey.revisionHeight || 0}`
+                    ? `${heightKey.revisionNumber || 0}-${heightKey.revisionHeight || 0}`
                     : String(heightKey);
                 const consensusPath = `clients/${clientId}/consensusStates/${heightStr}`;
                 if (consensusPaths.has(consensusPath)) {
@@ -522,6 +559,9 @@ class IbcTreeStateStore {
             const portId = portHex ? Buffer.from(portHex, 'hex').toString('utf8') : 'transfer';
             const channelValue = Buffer.from(await encodeChannelEndValue(channelDatum.state.channel, lucidService.LucidImporter), 'hex');
             tree.set(`channelEnds/ports/${portId}/channels/${channelId}`, channelValue);
+            const upgradeRecords = await encodeChannelUpgradeRecords(channelDatum.state.upgrade, lucidService.LucidImporter);
+            tree.set(`channelUpgrades/upgrades/ports/${portId}/channels/${channelId}`, upgradeRecords.upgrade);
+            tree.set(`channelUpgrades/upgradeError/ports/${portId}/channels/${channelId}`, upgradeRecords.errorReceipt);
             const { Data } = lucidService.LucidImporter;
             tree.set(`nextSequenceSend/ports/${portId}/channels/${channelId}`, Buffer.from(Data.to(channelDatum.state.next_sequence_send, Data.Integer()), 'hex'));
             tree.set(`nextSequenceRecv/ports/${portId}/channels/${channelId}`, Buffer.from(Data.to(channelDatum.state.next_sequence_recv, Data.Integer()), 'hex'));
@@ -645,6 +685,31 @@ class IbcTreeStateStore {
         return {
             ...this.preparePublication(speculativeTree, version),
             channelSiblings,
+        };
+    }
+    /**
+     * Witnesses for an UpgradeChannel step: the channel end, upgrade and error
+     * receipt keys are updated in that order. Unchanged keys take no witness.
+     */
+    computeRootWithUpgradeChannelUpdate(oldRoot, portId, channelId, values) {
+        const version = this.version;
+        const speculativeTree = this.getClonedTreeFromRoot(oldRoot);
+        const update = (path, oldValue, newValue) => {
+            if (oldValue.equals(newValue)) {
+                return [];
+            }
+            const siblings = speculativeTree.getSiblings(path).map((h) => h.toString('hex'));
+            speculativeTree.set(path, newValue);
+            return siblings;
+        };
+        const channelSiblings = update(`channelEnds/ports/${portId}/channels/${channelId}`, values.oldChannel, values.newChannel);
+        const upgradeSiblings = update(`channelUpgrades/upgrades/ports/${portId}/channels/${channelId}`, values.oldUpgrade, values.newUpgrade);
+        const errorReceiptSiblings = update(`channelUpgrades/upgradeError/ports/${portId}/channels/${channelId}`, values.oldErrorReceipt, values.newErrorReceipt);
+        return {
+            ...this.preparePublication(speculativeTree, version),
+            channelSiblings,
+            upgradeSiblings,
+            errorReceiptSiblings,
         };
     }
     computeRootWithPrunePacketHistoryUpdate(oldRoot, portId, channelId, sequence, ordering) {

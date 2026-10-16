@@ -4,6 +4,8 @@
  * and the exact state NFT identify the accepted channel transition.
  */
 const fs = require('node:fs');
+const { ownedRuntimeProviders } = require('./owned-runtime-providers.cjs');
+const { verifyLaneTransition } = require('./verify-migration-lanes.cjs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
 const { createRequire } = require('node:module');
@@ -35,14 +37,33 @@ async function json(url) {
   if (!response.ok) throw new Error(`Canonical query failed ${response.status}: ${url}`);
   return response.json();
 }
-async function datum(output, lucid) {
-  const raw = await json(`http://127.0.0.1:2742/datums/${output.datum_hash}`);
+async function datum(output, lucid, kupo) {
+  const raw = await json(`http://${kupo}/datums/${output.datum_hash}`);
   requireThat(typeof raw.datum === 'string', 'Missing channel datum');
   return decodeChannelDatum(raw.datum, lucid);
 }
 function tokenQuantity(output, unit) {
   const assets = output.amount().multi_asset();
-  return assets.get(CML.ScriptHash.from_hex(unit.slice(0, 56)), CML.AssetName.from_hex(unit.slice(56))) ?? 0n;
+  return assets?.get(CML.ScriptHash.from_hex(unit.slice(0, 56)), CML.AssetName.from_hex(unit.slice(56))) ?? 0n;
+}
+function redeemerAt(witnesses, tag, index) {
+  const redeemers = witnesses.redeemers();
+  requireThat(redeemers, 'Canonical redeemers missing');
+  const map = redeemers.as_map_redeemer_key_to_redeemer_val();
+  if (map) {
+    const keys = map.keys();
+    for (let i = 0; i < keys.len(); i++) {
+      const key = keys.get(i);
+      if (key.tag() === tag && key.index() === BigInt(index)) return map.get(key).data();
+    }
+  } else {
+    const array = redeemers.as_arr_legacy_redeemer();
+    for (let i = 0; array && i < array.len(); i++) {
+      const value = array.get(i);
+      if (value.tag() === tag && value.index() === BigInt(index)) return value.data();
+    }
+  }
+  throw new Error('Canonical operation redeemer missing');
 }
 function verifyTransition(before, after, packet, kind) {
   requireThat(equal(before.token, after.token) && before.port === after.port &&
@@ -116,14 +137,17 @@ async function main() {
     } finally { client.close(); types.close(); }
     return;
   }
+  const result = JSON.parse(fs.readFileSync(path.join(path.dirname(manifestPath), 'result.json'), 'utf8'));
+  const providers = ownedRuntimeProviders(result.networkRuntime);
+  const kupo = providers.kupo;
   const lucid = await import(req.resolve('@lucid-evolution/lucid'));
   const unit = channelUnit(manifest, request.channel);
   if (request.mode === 'route') {
-    const outputs = await json(`http://127.0.0.1:2742/matches/${unit.slice(0, 56)}.${unit.slice(56)}?unspent`);
+    const outputs = await json(`http://${kupo}/matches/${unit.slice(0, 56)}.${unit.slice(56)}?unspent`);
     requireThat(outputs.length === 1 && outputs[0].value.assets[unit.slice(0, 56) + '.' + unit.slice(56)] === 1,
       'Unique live channel NFT required');
     requireThat(outputs[0].address === manifest.validators.spend_channel.address, 'Current channel implementation mismatch');
-    const decoded = await datum(outputs[0], lucid);
+    const decoded = await datum(outputs[0], lucid, kupo);
     requireThat(decoded.token.policyId + decoded.token.name === unit && decoded.port === Buffer.from('transfer').toString('hex'), 'Authenticated channel identity');
     requireThat(decoded.state.channel.state === 'Open' && decoded.state.channel.ordering === 'Unordered', 'Only open unordered routes supported');
     console.log(JSON.stringify({ unit, channel: request.channel, counterparty: decoded.state.channel.counterparty,
@@ -131,7 +155,7 @@ async function main() {
     return;
   }
   requireThat(request.mode === 'packet' && /^[0-9a-f]{64}$/.test(request.transaction), 'Packet transaction identity');
-  const db = new Client({ host: '127.0.0.1', port: 27432, database: 'yaci_store', user: 'yaci', password: 'devkit' });
+  const db = new Client({ host: '127.0.0.1', port: Number(providers.historyDb.split(':')[1]), database: 'yaci_store', user: 'yaci', password: 'devkit' });
   await db.connect();
   try {
     const query = 'SELECT t.tx_index,t.block,t.block_hash,b.slot FROM transaction t JOIN block b ON b.number=t.block AND b.hash=t.block_hash WHERE t.tx_hash=$1 AND t.invalid=false';
@@ -140,7 +164,7 @@ async function main() {
       requireThat(rows.length === 1, 'Unique canonical valid transaction required');
       const inclusion = rows[0];
       const logger = { log() {}, warn() {}, error() {}, debug() {} };
-      const fetcher = new MiniProtocalsService({}, { get: k => k === 'yaciStoreEndpoint' ? 'http://127.0.0.1:29083' : undefined }, logger);
+      const fetcher = new MiniProtocalsService({}, { get: k => k === 'yaciStoreEndpoint' ? `http://${providers.history}` : undefined }, logger);
       const bytes = await fetcher.fetchBlockCbor({ hash: inclusion.block_hash, slotNo: BigInt(inclusion.slot) });
       const block = require('./authenticate-migration-block.cjs').authenticateBlock(bytes, inclusion.block_hash);
       const index = Number(inclusion.tx_index);
@@ -150,6 +174,85 @@ async function main() {
       return { tx, inclusion, witnesses: block.transaction_witness_sets().get(index) };
     }
     const { tx, inclusion, witnesses } = await body(request.transaction);
+    if (manifest.packet_state) {
+      const { packetLane, packetLaneTokenName, sendSequencerTokenName } = req('@cardano-ibc/tx-builder/dist/packet-lanes');
+      const config = manifest.packet_state;
+      const policies = tx.mint()?.keys();
+      const minted = Array.from({ length: policies?.len() ?? 0 }, (_, i) => policies.get(i).to_hex()).sort();
+      const batchIndex = minted.indexOf(config.batch.script_hash);
+      if (batchIndex < 0) { console.log(JSON.stringify({ packetTransition: false })); return; }
+      const raw = redeemerAt(witnesses, 1, batchIndex);
+      const authorization = lucid.Data.from(raw.to_cbor_hex());
+      requireThat(authorization.index === 0 && authorization.fields.length === 3, 'Invalid canonical packet authorization');
+      const token = authorization.fields[0], operation = authorization.fields[1];
+      requireThat(token.index === 0 && token.fields[0] + token.fields[1] === unit, 'Packet authorization names another channel');
+      const expectedIndex = { SendPacket: 0, AcknowledgePacket: 1, TimeoutPacket: 2, WriteAcknowledgement: 5 }[request.kind];
+      requireThat(operation.index === expectedIndex, 'Canonical packet operation differs from the receipt');
+      const packets = operation.index === 0 ? operation.fields[2] : [operation.fields[0]];
+      requireThat(packets.length === 1, 'This receipt must describe exactly one canonical packet');
+      const packet = request.packet;
+      const expectedPacket = new lucid.Constr(0, [BigInt(packet.sequence),
+        ...[packet.source_port, packet.source_channel, packet.destination_port, packet.destination_channel].map(value => Buffer.from(value).toString('hex')),
+        packet.data, new lucid.Constr(0, [BigInt(packet.timeout_height.revision_number), BigInt(packet.timeout_height.revision_height)]),
+        BigInt(packet.timeoutNanoseconds)]);
+      requireThat(equal(packets[0], expectedPacket), 'Canonical packet operation contains another packet');
+      const port = request.kind === 'WriteAcknowledgement' ? packet.destination_port : packet.source_port;
+      const channel = request.kind === 'WriteAcknowledgement' ? packet.destination_channel : packet.source_channel;
+      requireThat(port === 'transfer' && channel === request.channel, 'Packet does not belong to the selected route');
+      const lane = packetLane(port, channel, BigInt(packet.sequence), config.lane_count);
+      const laneUnit = config.state.script_hash + packetLaneTokenName(port, channel, lane, config.lane_count);
+      async function tokenInput(references, expectedUnit) {
+        const matches = [];
+        for (let i = 0; references && i < references.len(); i++) {
+          const reference = references.get(i), hash = reference.transaction_id().to_hex();
+          const indexed = await json(`http://${kupo}/matches/${reference.index()}@${hash}`);
+          if (indexed.some(output => output.value.assets[expectedUnit.slice(0, 56) + '.' + expectedUnit.slice(56)])) {
+            const output = (await body(hash)).tx.outputs().get(Number(reference.index()));
+            requireThat(tokenQuantity(output, expectedUnit) === 1n, 'Canonical state NFT differs from the index');
+            matches.push(output);
+          }
+        }
+        requireThat(matches.length === 1, 'Exactly one canonical state NFT input is required');
+        return matches[0];
+      }
+      function tokenOutput(expectedUnit) {
+        const matches = [];
+        for (let i = 0; i < tx.outputs().len(); i++) {
+          const output = tx.outputs().get(i);
+          if (tokenQuantity(output, expectedUnit) !== 0n) matches.push(output);
+        }
+        requireThat(matches.length === 1 && tokenQuantity(matches[0], expectedUnit) === 1n, 'State NFT continuation differs');
+        return matches[0];
+      }
+      const channelReference = await tokenInput(tx.reference_inputs(), unit);
+      requireThat(channelReference.address().to_bech32() === manifest.validators.spend_channel.address, 'Channel reference implementation mismatch');
+      const channelDatum = await decodeChannelDatum(channelReference.datum().as_datum().to_cbor_hex(), lucid);
+      requireThat(channelDatum.token.policyId + channelDatum.token.name === unit && channelDatum.port === Buffer.from(port).toString('hex'),
+        'Channel reference datum identity mismatch');
+      const input = await tokenInput(tx.inputs(), laneUnit), output = tokenOutput(laneUnit);
+      requireThat(input.address().to_bech32() === config.guard.address && output.address().to_bech32() === config.guard.address,
+        'Packet lane implementation mismatch');
+      const before = lucid.Data.from(input.datum().as_datum().to_cbor_hex());
+      const after = lucid.Data.from(output.datum().as_datum().to_cbor_hex());
+      requireThat(equal(before.fields.slice(0, 4), [Buffer.from(port).toString('hex'), Buffer.from(channel).toString('hex'),
+        BigInt(lane), BigInt(config.lane_count)]), 'Packet lane datum identity mismatch');
+      verifyLaneTransition(before, after, packet, request.kind, operation.index === 5 ? operation.fields[2] : undefined);
+      if (operation.index === 0) {
+        const sequenceUnit = config.state.script_hash + sendSequencerTokenName(port, channel);
+        const sequenceInput = await tokenInput(tx.inputs(), sequenceUnit), sequenceOutput = tokenOutput(sequenceUnit);
+        requireThat(sequenceInput.address().to_bech32() === config.guard.address && sequenceOutput.address().to_bech32() === config.guard.address,
+          'Send sequencer implementation mismatch');
+        const old = lucid.Data.from(sequenceInput.datum().as_datum().to_cbor_hex());
+        const next = lucid.Data.from(sequenceOutput.datum().as_datum().to_cbor_hex());
+        requireThat(old.index === 0 && old.fields.length === 4 && old.fields[3] === BigInt(packet.sequence), 'Wrong original send sequencer');
+        requireThat(next.index === 0 && equal(next.fields, [...old.fields.slice(0, 2), old.fields[2] + 1n, old.fields[3] + 1n]),
+          'Send sequencing was rewound or changed');
+      }
+      requireThat(equal((await db.query(query, [request.transaction])).rows, [inclusion]), 'Canonical packet inclusion changed');
+      console.log(JSON.stringify({ packetTransition: true, unit: laneUnit, channelUnit: unit, lane, transaction: request.transaction,
+        inclusion, commitment: commitment(packet), connectionHops: channelDatum.state.channel.connection_hops }));
+      return;
+    }
     const outputs = [];
     for (let i = 0; i < tx.outputs().len(); i++) {
       const output = tx.outputs().get(i);
@@ -162,7 +265,7 @@ async function main() {
     const inputs = [];
     for (let i = 0; i < tx.inputs().len(); i++) {
       const input = tx.inputs().get(i), hash = input.transaction_id().to_hex();
-      const candidates = await json(`http://127.0.0.1:2742/matches/${input.index()}@${hash}`);
+      const candidates = await json(`http://${kupo}/matches/${input.index()}@${hash}`);
       if (candidates.some(o => o.value.assets[unit.slice(0, 56) + '.' + unit.slice(56)])) {
         const source = (await body(hash)).tx.outputs().get(Number(input.index()));
         requireThat(tokenQuantity(source, unit) === 1n, 'Forged channel input');

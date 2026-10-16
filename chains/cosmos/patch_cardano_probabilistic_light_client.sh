@@ -159,6 +159,13 @@ elif [ "${APP_KIND}" = "injective" ]; then
     perl -0pi -e 's#(\t\tibctm\.NewAppModule\(\),\n)#${1}\t\tcardanoprobabilistic.NewAppModule(),\n#' "${APP_FILE}"
   fi
 elif [ "${APP_KIND}" = "ibc-go-simapp" ]; then
+  if ! grep -q 'cardanoprobabilistic.InstallHostLiveness(app)' "${APP_FILE}"; then
+    perl -0pi -e 's#(app.SetAnteHandler\(anteHandler\))#${1}\n\tcardanoprobabilistic.InstallHostLiveness(app)#' "${APP_FILE}"
+  fi
+  if ! grep -q 'cardanoprobabilistic.InstallHostLiveness(app)' "${APP_FILE}"; then
+    echo "[cardano-light-client-patch] failed to install host continuity hooks" >&2
+    exit 1
+  fi
   if ! grep -q "${CLIENT_IMPORT}" "${APP_FILE}"; then
     perl -0pi -e "s#(ibctm \"github.com/cosmos/ibc-go/v${IBC_GO_MAJOR}/modules/light-clients/07-tendermint\"\n)#\$1\tcardanoprobabilistic \"${CLIENT_IMPORT}\"\n#" "${APP_FILE}"
   fi
@@ -208,6 +215,62 @@ cardanoprobabilistic.NewAppModule(cardanoLightClientModule)"
   fi
 fi
 
+# Versioned snapshots are part of the application's authenticated state.
+# Store keys must be the exact mounted SDK key objects, not matching names.
+python3 - "${APP_FILE}" "${APP_KIND}" "${IBC_GO_MAJOR}" <<'PY_SHARED_STORE'
+import re
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+kind, major = sys.argv[2:]
+source = path.read_text()
+if kind == "injective" and "cardanoprobabilistic.InstallHostLiveness(app)" not in source:
+    ante = "app.SetAnteHandler(anteHandler)"
+    if ante not in source:
+        raise SystemExit("Cannot identify the Injective host continuity hook")
+    source = source.replace(ante, ante + "\n\t\tcardanoprobabilistic.InstallHostLiveness(app)", 1)
+if kind in ("injective", "ibc-go-simapp"):
+    mounted = re.search(r"\bapp\.MountKVStores\((app\.keys|keys)\)", source)
+    if mounted is None:
+        raise SystemExit("Cannot identify the destination snapshot store mount")
+    assignment = mounted.group(1) + "[cardanoprobabilistic.ModuleName] = cardanoprobabilistic.SharedStoreKey"
+    if assignment not in source:
+        source = source[:mounted.start()] + assignment + "\n\t" + source[mounted.start():]
+    if major == "8":
+        source = source.replace("cardanoprobabilistic.NewAppModule(),", "cardanoprobabilistic.NewAppModule().WithStorage(app.AppCodec(), &app.IBCKeeper.ClientKeeper),")
+    source = source.replace(".WithStorage(appCodec,", ".WithStorage(app.AppCodec(),")
+    # Both applications specify the initialization order explicitly.
+    if kind == "injective":
+        start = source.index("func initGenesisOrder()")
+        prefix, order = source[:start], source[start:]
+        if "cardanoprobabilistic.ModuleName," not in order:
+            order = order.replace("ibcexported.ModuleName,", "cardanoprobabilistic.ModuleName,\n\t\tibcexported.ModuleName,", 1)
+        source = prefix + order
+    else:
+        call = re.search(r"\.SetOrderInitGenesis\(([^()]*)\)", source)
+        if call is None:
+            raise SystemExit("Cannot identify the destination genesis order")
+        start, end = call.span(1)
+        argument = call.group(1).strip()
+        named_order = re.fullmatch(r"(\w+)\.\.\.", argument)
+        if named_order:
+            declaration = re.search(
+                rf"\b{re.escape(named_order.group(1))}\s*:=\s*\[\]string\s*\{{([^}}]*)\}}",
+                source[:call.start()],
+            )
+            if declaration is None:
+                raise SystemExit("Cannot identify the destination genesis order declaration")
+            start, end = declaration.span(1)
+        order = source[start:end]
+        if "cardanoprobabilistic.ModuleName" not in order:
+            match = re.search(r"(ibcexported|ibctypes)\.ModuleName,", order)
+            if match is None:
+                raise SystemExit("Cannot identify IBC in the destination genesis order")
+            order = order[:match.start()] + "cardanoprobabilistic.ModuleName,\n\t\t" + order[match.start():]
+            source = source[:start] + order + source[end:]
+path.write_text(source)
+PY_SHARED_STORE
+
 if command -v gofmt >/dev/null 2>&1; then
   gofmt -w "${CLIENT_DIR}" "${APP_FILE}"
 fi
@@ -216,13 +279,13 @@ if command -v go >/dev/null 2>&1; then
   (
     cd "${CHAIN_DIR}"
     GOWORK=off go mod edit \
-      -require=github.com/blinklabs-io/gouroboros@v0.89.1 \
+      -require=github.com/blinklabs-io/gouroboros@v0.205.4 \
       -require=github.com/fxamacker/cbor/v2@v2.7.0 \
       -require=github.com/utxorpc/go-codegen@v0.5.1
   )
 else
   if ! grep -q '^[[:space:]]*github.com/blinklabs-io/gouroboros[[:space:]]' "${CHAIN_DIR}/go.mod"; then
-    printf '\nrequire github.com/blinklabs-io/gouroboros v0.89.1\n' >> "${CHAIN_DIR}/go.mod"
+    printf '\nrequire github.com/blinklabs-io/gouroboros v0.205.4\n' >> "${CHAIN_DIR}/go.mod"
   fi
   if ! grep -q '^[[:space:]]*github.com/fxamacker/cbor/v2[[:space:]]' "${CHAIN_DIR}/go.mod"; then
     printf 'require github.com/fxamacker/cbor/v2 v2.7.0\n' >> "${CHAIN_DIR}/go.mod"
@@ -230,6 +293,52 @@ else
   if ! grep -q '^[[:space:]]*github.com/utxorpc/go-codegen[[:space:]]' "${CHAIN_DIR}/go.mod"; then
     printf 'require github.com/utxorpc/go-codegen v0.5.1\n' >> "${CHAIN_DIR}/go.mod"
   fi
+fi
+
+# Match the execution and transport dependencies measured by the adapter's
+# destination tests. Upstream simapp otherwise keeps older SDK/CometBFT
+# patches and a Sonic version incompatible with the adapter's toolchain.
+# Only the local compatibility profiles use this dependency selection.
+if [ "${APP_KIND}" = "ibc-go-simapp" ]; then
+  PROFILE_GO_VERSION="$(awk '$1 == "go" { print $2; exit }' "${SOURCE_CLIENT_DIR}/go.mod")"
+  test -n "${PROFILE_GO_VERSION}"
+  (
+    cd "${CHAIN_DIR}"
+    set -- "-go=${PROFILE_GO_VERSION}"
+    for profile_dependency in \
+      cosmossdk.io/core \
+      cosmossdk.io/api \
+      cosmossdk.io/math \
+      cosmossdk.io/store \
+      cosmossdk.io/x/tx \
+      github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream \
+      github.com/aws/aws-sdk-go-v2/service/s3 \
+      github.com/cosmos/cosmos-sdk \
+      github.com/cometbft/cometbft \
+      github.com/cosmos/cosmos-db \
+      github.com/cosmos/gogoproto \
+      github.com/ethereum/go-ethereum \
+      github.com/fxamacker/cbor/v2 \
+      github.com/hashicorp/go-getter \
+      github.com/klauspost/compress \
+      github.com/ulikunitz/xz \
+      go.opentelemetry.io/otel \
+      go.opentelemetry.io/otel/metric \
+      go.opentelemetry.io/otel/sdk \
+      go.opentelemetry.io/otel/sdk/metric \
+      go.opentelemetry.io/otel/trace \
+      golang.org/x/net \
+      google.golang.org/grpc \
+      google.golang.org/protobuf \
+      github.com/bytedance/sonic \
+      github.com/bytedance/sonic/loader; do
+      profile_version="$(awk -v dependency="${profile_dependency}" '$1 == dependency { print $2; exit }' "${SOURCE_CLIENT_DIR}/go.mod")"
+      if [ -n "${profile_version}" ]; then
+        set -- "$@" "-require=${profile_dependency}@${profile_version}"
+      fi
+    done
+    GOWORK=off go mod edit "$@"
+  )
 fi
 
 echo "[cardano-light-client-patch] patched ${APP_KIND} local app with ${CLIENT_IMPORT}"

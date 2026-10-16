@@ -21,13 +21,20 @@ def configure_relative_clock(node, directory, offset):
 
 
 class MigrationRuntime(profile.Runtime):
-    def __init__(self, root, project, offset, epoch_length, ogmios_port, kupo_port, existing=False, host_data=False):
+    def __init__(self, root, project, offset, epoch_length, ogmios_port, kupo_port, existing=False, host_data=False, pool_aging=False):
         super().__init__(root)
+        # The rehearsal steps its own clock file, so it skips the Mithril fast-forward.
+        self.mithril_fast_forward = False
         self.project = project
         self.compose_file = root / 'compose.json'
         if existing:
             if not self.compose_file.is_file() or not self.settings_path.is_file():
                 raise ValueError('Expected an existing Yaci migration runtime')
+            saved = json.loads(self.compose_file.read_text())
+            if all(saved['services'][name]['environment'].get('DEVKIT_SECURITY_PARAM') == '2160' for name in NODES):
+                self.producer_readiness_timeout = 900
+                self.block_readiness_timeout = 900
+                self.start_all_producers_before_blocks = True
             return
         if self.compose_file.exists():
             raise ValueError('Refusing to overwrite an existing migration runtime')
@@ -38,6 +45,7 @@ class MigrationRuntime(profile.Runtime):
                      'DEVKIT_HISTORY_DB_PORT': 27432}
             for key in profile.PORTS:
                 reservation = socket.socket()
+                reservation.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 reservation.bind(('127.0.0.1', ports.get(key, 0)))
                 reservations.append(reservation)
                 self.settings[key] = str(reservation.getsockname()[1])
@@ -51,11 +59,22 @@ class MigrationRuntime(profile.Runtime):
         config = json.loads(super().compose('config', '--format', 'json', capture=True))
         runtime = root / 'runtime'
         runtime.mkdir()
+        if pool_aging:
+            if epoch_length != 432000:
+                raise ValueError('Pool aging requires five-day epochs')
+            self.producer_readiness_timeout = 900
+            self.block_readiness_timeout = 900
+            self.start_all_producers_before_blocks = True
+            properties = root / 'node.properties'
+            properties.write_text((ROOT / 'chains/cardano/devkit/node.properties').read_text().replace('securityParam=48', 'securityParam=2160'))
         for name in NODES:
             service = config['services'][name]
             service['volumes'].append({'type': 'bind', 'source': str(runtime), 'target': '/runtime'})
             service['environment']['DEVKIT_EPOCH_LENGTH'] = str(epoch_length)
             service['environment']['DEVKIT_FULL_MESH'] = 'true'
+            if pool_aging:
+                service['environment'].update(DEVKIT_SECURITY_PARAM='2160', DEVKIT_BLOCK_TIME='20')
+                service['volumes'].append({'type': 'bind', 'source': str(properties), 'target': '/app/config/node.properties', 'read_only': True})
             configure_relative_clock(service, runtime, offset)
         properties = root / 'yaci.properties'
         properties.write_text((ROOT / 'chains/cardano/yaci/config/application.properties').read_text()

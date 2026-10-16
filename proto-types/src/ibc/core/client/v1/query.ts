@@ -292,9 +292,13 @@ export interface QueryUpgradedConsensusStateResponse {
  */
 export interface QueryNewClientRequest {
   /**
-   * Block number to query
+   * Initial Cardano height. Zero selects the current point after HostState creation.
    */
   height: bigint;
+  /**
+   * Zero requests creation records. Positive values request one bounded import.
+   */
+  initialization_sequence: number;
 }
 /**
  * @name QueryNewClientResponse
@@ -302,14 +306,12 @@ export interface QueryNewClientRequest {
  * @see proto type: ibc.core.client.v1.QueryNewClientResponse
  */
 export interface QueryNewClientResponse {
-  /**
-   * client state associated with the request identifier
-   */
   client_state?: Any;
-  /**
-   * consensus state associated with the request identifier
-   */
   consensus_state?: Any;
+  /**
+   * One bounded MsgUpdateClient payload for the same initial checkpoint.
+   */
+  initialization_message?: Any;
 }
 function createBaseQueryLatestHeightRequest(): QueryLatestHeightRequest {
   return {};
@@ -1568,6 +1570,7 @@ export const QueryUpgradedConsensusStateResponse = {
 function createBaseQueryNewClientRequest(): QueryNewClientRequest {
   return {
     height: BigInt(0),
+    initialization_sequence: 0,
   };
 }
 /**
@@ -1581,6 +1584,9 @@ export const QueryNewClientRequest = {
     if (message.height !== BigInt(0)) {
       writer.uint32(8).uint64(message.height);
     }
+    if (message.initialization_sequence !== 0) {
+      writer.uint32(16).uint32(message.initialization_sequence);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): QueryNewClientRequest {
@@ -1593,6 +1599,9 @@ export const QueryNewClientRequest = {
         case 1:
           message.height = reader.uint64();
           break;
+        case 2:
+          message.initialization_sequence = reader.uint32();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1603,11 +1612,15 @@ export const QueryNewClientRequest = {
   fromJSON(object: any): QueryNewClientRequest {
     const obj = createBaseQueryNewClientRequest();
     if (isSet(object.height)) obj.height = BigInt(object.height.toString());
+    if (isSet(object.initialization_sequence))
+      obj.initialization_sequence = Number(object.initialization_sequence);
     return obj;
   },
   toJSON(message: QueryNewClientRequest): unknown {
     const obj: any = {};
     message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
+    message.initialization_sequence !== undefined &&
+      (obj.initialization_sequence = Math.round(message.initialization_sequence));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<QueryNewClientRequest>, I>>(object: I): QueryNewClientRequest {
@@ -1615,6 +1628,7 @@ export const QueryNewClientRequest = {
     if (object.height !== undefined && object.height !== null) {
       message.height = BigInt(object.height.toString());
     }
+    message.initialization_sequence = object.initialization_sequence ?? 0;
     return message;
   },
 };
@@ -1622,6 +1636,7 @@ function createBaseQueryNewClientResponse(): QueryNewClientResponse {
   return {
     client_state: undefined,
     consensus_state: undefined,
+    initialization_message: undefined,
   };
 }
 /**
@@ -1638,6 +1653,9 @@ export const QueryNewClientResponse = {
     if (message.consensus_state !== undefined) {
       Any.encode(message.consensus_state, writer.uint32(18).fork()).ldelim();
     }
+    if (message.initialization_message !== undefined) {
+      Any.encode(message.initialization_message, writer.uint32(26).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): QueryNewClientResponse {
@@ -1653,6 +1671,9 @@ export const QueryNewClientResponse = {
         case 2:
           message.consensus_state = Any.decode(reader, reader.uint32());
           break;
+        case 3:
+          message.initialization_message = Any.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1664,6 +1685,8 @@ export const QueryNewClientResponse = {
     const obj = createBaseQueryNewClientResponse();
     if (isSet(object.client_state)) obj.client_state = Any.fromJSON(object.client_state);
     if (isSet(object.consensus_state)) obj.consensus_state = Any.fromJSON(object.consensus_state);
+    if (isSet(object.initialization_message))
+      obj.initialization_message = Any.fromJSON(object.initialization_message);
     return obj;
   },
   toJSON(message: QueryNewClientResponse): unknown {
@@ -1672,6 +1695,10 @@ export const QueryNewClientResponse = {
       (obj.client_state = message.client_state ? Any.toJSON(message.client_state) : undefined);
     message.consensus_state !== undefined &&
       (obj.consensus_state = message.consensus_state ? Any.toJSON(message.consensus_state) : undefined);
+    message.initialization_message !== undefined &&
+      (obj.initialization_message = message.initialization_message
+        ? Any.toJSON(message.initialization_message)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<QueryNewClientResponse>, I>>(object: I): QueryNewClientResponse {
@@ -1681,6 +1708,9 @@ export const QueryNewClientResponse = {
     }
     if (object.consensus_state !== undefined && object.consensus_state !== null) {
       message.consensus_state = Any.fromPartial(object.consensus_state);
+    }
+    if (object.initialization_message !== undefined && object.initialization_message !== null) {
+      message.initialization_message = Any.fromPartial(object.initialization_message);
     }
     return message;
   },

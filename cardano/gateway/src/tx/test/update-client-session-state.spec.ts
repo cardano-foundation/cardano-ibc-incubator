@@ -119,6 +119,7 @@ function fixtureClientDatum(header: Header, consensusState: ConsensusState): Cli
     token: { policyId: 'aa'.repeat(28), name: 'bb'.repeat(32) },
     state: {
       clientState: {
+        upgradePath: [],
         chainId: header.signedHeader.header.chainId,
         trustLevel: { numerator: 1n, denominator: 3n },
         trustingPeriod: 1_209_600_000_000_000n,

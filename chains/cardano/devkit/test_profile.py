@@ -170,7 +170,8 @@ class ProfileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             runtime = Runtime(Path(folder))
             genesis = {"byron": {"startTime": 1767139200},
-                       "shelley": {"systemStart": "2025-12-31T00:00:00Z", "networkMagic": 42, "epochLength": 5000}}
+                       "shelley": {"systemStart": "2025-12-31T00:00:00Z", "networkMagic": 42, "epochLength": 5000,
+                                   "securityParam": 2, "activeSlotsCoeff": 0.25}}
             def export_id():
                 (runtime.state / "clock-offset").write_text("-123s")
                 with patch("profile.http", side_effect=lambda url: genesis[url.rsplit("/", 1)[-1]]):
@@ -179,11 +180,14 @@ class ProfileTests(unittest.TestCase):
                 self.assertEqual(values["CARDANO_LOCAL_CLOCK_OFFSET"], "-123s")
                 self.assertEqual(values["CARDANO_SYSTEM_START"], genesis["shelley"]["systemStart"])
                 self.assertEqual(values["CARDANO_EPOCH_LENGTH"], "5000")
+                self.assertEqual(values["CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS"], "32")
                 self.assertEqual(values["GATEWAY_DB_PORT"], runtime.settings["DEVKIT_GATEWAY_DB_PORT"])
                 self.assertEqual(values["GATEWAY_DB_NAME"], "gateway_app")
                 self.assertFalse(any(key.startswith("HISTORY_DB_") for key in values))
+                self.assertEqual(values["MITHRIL_ENDPOINT"], f'http://127.0.0.1:{runtime.settings["DEVKIT_MITHRIL_PORT"]}/aggregator')
                 containers = dict(line.split("=", 1) for line in (runtime.state / "container-endpoints.env").read_text().splitlines())
                 self.assertEqual(containers["GATEWAY_DB_HOST"], "gateway-db")
+                self.assertEqual(containers["MITHRIL_ENDPOINT"], "http://mithril-aggregator:8080/aggregator")
                 return values["CARDANO_LOCAL_NETWORK_ID"]
             first = export_id()
             self.assertEqual(export_id(), first)
@@ -191,6 +195,15 @@ class ProfileTests(unittest.TestCase):
                 run.return_value.stdout = ""
                 runtime.reset()
             self.assertNotEqual(export_id(), first)
+
+    def test_mithril_startup_does_not_wait_for_its_first_epochs(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = Runtime(Path(folder))
+            with patch("profile.http") as http, patch.object(runtime, "compose") as calls:
+                runtime.start_mithril()
+            http.assert_not_called()
+            self.assertEqual([call.args for call in calls.call_args_list],
+                             [("up", "-d", "mithril-aggregator", "mithril-signer-2", "mithril-signer-3")])
 
     def test_genesis_fingerprint_ignores_only_start_time(self):
         genesis = {"byron": {"startTime": 1}, "shelley": {"systemStart": "one", "networkMagic": 42}}
@@ -200,6 +213,117 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(normalized_genesis(genesis), normalized_genesis(reset))
         reset["shelley"]["networkMagic"] = 43
         self.assertNotEqual(normalized_genesis(genesis), normalized_genesis(reset))
+
+
+
+class FakeChain:
+    """A chain whose tip follows the shared clock file, with the nonce service
+    and Mithril aggregator answering as they would in each epoch."""
+
+    def __init__(self, runtime, start_slot=100, ready_epoch=None):
+        self.runtime = runtime
+        self.start_slot = start_slot
+        self.start_offset = runtime.clock_offset()
+        self.requests = []
+        self.ready_epoch = ready_epoch
+
+    def slot(self):
+        return self.start_slot + self.runtime.clock_offset() - self.start_offset
+
+    def tip(self, node="devkit"):
+        slot = self.slot()
+        return {"slot": slot, "block": slot // 4, "hash": f"{slot:064x}", "epoch": slot // 5000}
+
+    def http(self, url):
+        self.requests.append(url)
+        epoch = self.slot() // 5000
+        path = url.split("/aggregator", 1)[-1]
+        if url.endswith("/health"):
+            return {"observed_epochs": list(range(epoch + 1))}
+        if path.startswith("/signers/registered/"):
+            if 1 <= int(path.rsplit("/", 1)[1]) <= epoch:
+                return {"registrations": [{}, {}]}
+        elif path == "/certificates":
+            return [{"hash": "genesis"}] if epoch >= 2 else []
+        elif path.startswith("/artifact/cardano-stake-distribution/epoch/"):
+            certified = int(path.rsplit("/", 1)[1])
+            if 2 <= certified < epoch or self.ready_epoch is not None and certified <= self.ready_epoch:
+                return {"epoch": certified}
+        raise OSError("404 Not Found")
+
+
+class FastForwardTests(unittest.TestCase):
+    def runtime(self, folder):
+        runtime = Runtime(Path(folder))
+        runtime.set_clock(-25_000_000)
+        return runtime
+
+    def test_a_new_network_steps_its_clock_until_mithril_certifies_two_epochs(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = self.runtime(folder)
+            chain = FakeChain(runtime)
+            offsets = []
+            set_clock = runtime.set_clock
+
+            def record(offset):
+                offsets.append(offset)
+                set_clock(offset)
+
+            with patch("profile.http", side_effect=chain.http), patch("profile.time.sleep"), \
+                    patch.object(runtime, "tip", side_effect=chain.tip), patch.object(runtime, "sql", return_value="1"), \
+                    patch.object(runtime, "set_clock", side_effect=record):
+                runtime.fast_forward_mithril()
+            self.assertEqual(chain.tip()["epoch"], 5)
+            self.assertEqual({later - earlier for earlier, later in zip([-25_000_000, *offsets], offsets)}, {300})
+            self.assertEqual((runtime.clock_dir / "clock.rc").read_text(), f"{offsets[-1]:+d}s\n")
+            self.assertEqual((runtime.state / "clock-offset").read_text(), f"{offsets[-1]:+d}s")
+            asked = [url.split("/aggregator", 1)[1] for url in chain.requests if "/aggregator" in url]
+            for epoch in range(1, 6):
+                self.assertIn(f"/signers/registered/{epoch}", asked)
+            self.assertIn("/certificates", asked)
+            # Each epoch is left only after its stake certificate exists.
+            for epoch in (2, 3, 4):
+                self.assertIn(f"/artifact/cardano-stake-distribution/epoch/{epoch}", asked)
+
+    def test_a_restarted_ready_network_keeps_its_clock(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = self.runtime(folder)
+            chain = FakeChain(runtime, start_slot=40_100, ready_epoch=7)
+            serving = iter([False, False, True])
+            answer = chain.http
+
+            def http(url):
+                # The restarted aggregator takes a moment to serve again.
+                if "/aggregator" in url and not next(serving, True):
+                    raise OSError("Connection refused")
+                return answer(url)
+
+            with patch("profile.http", side_effect=http), patch("profile.time.sleep"), \
+                    patch.object(runtime, "tip", side_effect=chain.tip), patch.object(runtime, "set_clock") as set_clock:
+                runtime.fast_forward_mithril()
+            set_clock.assert_not_called()
+
+    def test_a_step_waits_for_every_producer_on_indexed_history(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = self.runtime(folder)
+            points = {node: {"slot": 900, "block": 30, "hash": "ab" * 32, "epoch": 0} for node in ("devkit", *PRODUCERS)}
+            with patch.object(runtime, "tip", side_effect=lambda node: points[node]), \
+                    patch.object(runtime, "sql", return_value="1") as sql:
+                self.assertTrue(runtime.canonical_tips(880))
+                self.assertIn("(30, 900, '" + "ab" * 32 + "')", sql.call_args.args[0])
+                self.assertFalse(runtime.canonical_tips(901))
+                # A producer on another block needs both blocks in Yaci's history.
+                points["producer-4"] = {"slot": 904, "block": 31, "hash": "cd" * 32, "epoch": 0}
+                self.assertFalse(runtime.canonical_tips(880))
+                sql.return_value = "2"
+                self.assertTrue(runtime.canonical_tips(880))
+
+    def test_the_clock_never_passes_the_host_clock(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = self.runtime(folder)
+            with self.assertRaisesRegex(RuntimeError, "must not pass the host clock"):
+                runtime.set_clock(1)
+            self.assertEqual(runtime.clock_offset(), -25_000_000)
 
 
 if __name__ == "__main__":

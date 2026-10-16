@@ -1,5 +1,4 @@
 use aiken/builtin
-use aiken/cbor
 use aiken/collection/dict
 // HostState is the single coordinator UTxO for IBC object creation and root updates.
 
@@ -13,20 +12,16 @@ use cardano/transaction.{
   InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend,
 }
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/height
+use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_002_client_semantics/registry
 use ibc/core/ics_002_client_semantics/types/keys as client_id_keys
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/keys as conn_id_keys
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
-use ibc/core/ics_004/channel_redeemer.{
-  AcknowledgePacket, PrunePacketHistory as PruneChannelPacketHistory, RecvPacket,
-  SendPacket, SpendChannelRedeemer, TimeoutOnClose, TimeoutPacket,
-}
 use ibc/core/ics_004/types/keys as chan_id_keys
 use ibc/core/ics_004/types/order.{Ordered}
-use ibc/core/ics_004/types/packet as packet_mod
+use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_024_host_requirements/channel_keys as host_channel_keys
 use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
@@ -37,6 +32,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
   validate_authorize_finalization, validate_shutdown_authority,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/implementation/commitment_codec as codec
 use ibc/utils/text_bytes
 use ibc/utils/validator_utils
 
@@ -281,23 +277,22 @@ pub fn validate_create_client_root(
 
   // The initial consensus state is stored at the client's latest height.
   let latest_height = client_datum.latest_height
-  let consensus_height =
-    text_bytes.int_to_decimal_bytes(latest_height.revision_height)
+  let consensus_height = height.to_string(latest_height)
   let consensus_state_key =
     client_keys.full_client_consensus_state_path(client_id, consensus_height)
 
   // Commitment values.
   //
-  // We commit the CBOR serialization of the on-chain types. The Gateway must
+  // We commit the frozen wire encoding. The Gateway must
   // use the same encoding when it computes the update witnesses.
-  let client_state_value = cbor.serialise(client_datum.state.client_state)
+  let client_state_value =
+    codec.encode_client_state(client_datum.state.client_state)
 
-  // `is_initialized_valid` guarantees there is exactly one consensus state and
-  // its key equals `latest_height`, so we can require a single value here.
-  expect [Pair(consensus_height_key, consensus_state)] =
-    client_datum.state.consensus_states
-  expect consensus_height_key == latest_height
-  let consensus_state_value = cbor.serialise(consensus_state)
+  // The mandatory registered factory verifies the singleton consensus state's
+  // key against latest_height. Reuse that check instead of decoding it twice.
+  let Pair(_, consensus_state) =
+    builtin.head_list(client_datum.state.consensus_states)
+  let consensus_state_value = codec.encode_consensus_state(consensus_state)
 
   // Apply the two updates in order, starting from the old root.
   //
@@ -352,7 +347,7 @@ pub fn validate_update_client_root(
       registration,
       validator_utils.get_inline_datum(client_output),
     )
-  expect output_client.token.policy_id == client_policy_id
+  // authenticate_state_thread checks the registered policy below.
   let client_input =
     authenticate_state_thread(
       inputs,
@@ -380,8 +375,8 @@ pub fn validate_update_client_root(
     ibc_state_commitment.apply_update(
       old_datum.state.ibc_state_root,
       client_keys.full_client_state_path(client_id),
-      cbor.serialise(input_client.state.client_state),
-      cbor.serialise(output_client.state.client_state),
+      codec.encode_client_state(input_client.state.client_state),
+      codec.encode_client_state(output_client.state.client_state),
       client_state_siblings,
     )
   let old_height = input_client.latest_height
@@ -398,10 +393,10 @@ pub fn validate_update_client_root(
         after_client,
         client_keys.full_client_consensus_state_path(
           client_id,
-          text_bytes.int_to_decimal_bytes(new_height.revision_height),
+          height.to_string(new_height),
         ),
         "",
-        cbor.serialise(new_consensus),
+        codec.encode_consensus_state(new_consensus),
         consensus_state_siblings,
       ) == new_datum.state.ibc_state_root
     Less -> False
@@ -458,7 +453,7 @@ pub fn validate_create_connection_root(
   //
   // We commit the CBOR serialization of the on-chain `ConnectionEnd`.
   // The Gateway must use the same encoding when it computes the update witness.
-  let connection_value = cbor.serialise(connection_datum.state)
+  let connection_value = codec.encode_connection(connection_datum.state)
 
   let root_after_connection =
     ibc_state_commitment.apply_update(
@@ -529,15 +524,16 @@ pub fn validate_create_channel_root(
 
   // Commitment values.
   //
-  // We commit the CBOR serialization of the on-chain types. The Gateway must
+  // We commit the frozen wire encoding. The Gateway must
   // use the same encoding when it computes the update witnesses.
-  let channel_value = cbor.serialise(channel_datum.state.channel)
+  let channel_value =
+    codec.encode_upgradable_channel(channel_datum.state.channel)
   let next_sequence_send_value =
-    cbor.serialise(channel_datum.state.next_sequence_send)
+    codec.encode_sequence(channel_datum.state.next_sequence_send)
   let next_sequence_recv_value =
-    cbor.serialise(channel_datum.state.next_sequence_recv)
+    codec.encode_sequence(channel_datum.state.next_sequence_recv)
   let next_sequence_ack_value =
-    cbor.serialise(channel_datum.state.next_sequence_ack)
+    codec.encode_sequence(channel_datum.state.next_sequence_ack)
 
   // Apply the 4 updates in order, starting from the old root.
   //
@@ -606,7 +602,7 @@ pub fn validate_bind_port_root(
   //
   // Commit the immutable application authority, not merely an "is bound"
   // marker. This makes the port-to-module association part of the IBC root.
-  let port_value = cbor.serialise(registration)
+  let port_value = codec.encode_registration(registration)
 
   // The initial root must be created at the registered script credential with
   // precisely the two registered capability NFTs. Its datum is application
@@ -676,8 +672,10 @@ pub fn validate_update_connection_root(
   //
   // We commit the CBOR serialization of the on-chain `ConnectionEnd`.
   // The Gateway must use the same encoding when it computes the update witness.
-  let old_connection_value = cbor.serialise(connection_input_datum.state)
-  let new_connection_value = cbor.serialise(connection_output_datum.state)
+  let old_connection_value =
+    codec.encode_connection(connection_input_datum.state)
+  let new_connection_value =
+    codec.encode_connection(connection_output_datum.state)
 
   let root_after_connection =
     ibc_state_commitment.apply_update(
@@ -750,8 +748,10 @@ pub fn validate_update_channel_root(
   //
   // We commit the CBOR serialization of the on-chain `Channel`.
   // The Gateway must use the same encoding when it computes the update witness.
-  let old_channel_value = cbor.serialise(channel_input_datum.state.channel)
-  let new_channel_value = cbor.serialise(channel_output_datum.state.channel)
+  let old_channel_value =
+    codec.encode_upgradable_channel(channel_input_datum.state.channel)
+  let new_channel_value =
+    codec.encode_upgradable_channel(channel_output_datum.state.channel)
 
   let root_after_channel =
     ibc_state_commitment.apply_update(
@@ -763,6 +763,34 @@ pub fn validate_update_channel_root(
     )
 
   root_after_channel == new_datum.state.ibc_state_root
+}
+
+/// UpgradeChannel commits a channel-upgrade step. The channel validator
+/// requires the upgrade operation for a `ChanUpgrade` spend, and that
+/// operation checks the exact root transition. HostState binds the
+/// authenticated channel thread to that redeemer.
+pub fn validate_upgrade_channel(
+  old_datum: HostStateDatum,
+  inputs: List<Input>,
+  outputs: List<Output>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  spend_channel_script_hash: Hash<Blake2b_224, Script>,
+  channel_policy_id: PolicyId,
+) -> Bool {
+  let channel_output = find_state_output(outputs, spend_channel_script_hash)
+  let channel_input =
+    authenticate_state_thread(
+      inputs,
+      channel_output,
+      decode_channel_datum(channel_output).token,
+      channel_policy_id,
+      old_datum.nft_policy,
+      chan_id_keys.channel_prefix,
+    )
+  expect Some(channel_redeemer) =
+    pairs.get_first(redeemers, Spend(channel_input.output_reference))
+  // `ChanUpgrade` is SpendChannelRedeemer constructor 11.
+  builtin.fst_pair(builtin.un_constr_data(channel_redeemer)) == 11
 }
 
 /// Load a required packet-map entry, failing closed when it is absent.
@@ -786,7 +814,7 @@ fn apply_packet_commitment_deletion(
   ibc_state_commitment.apply_update(
     root,
     packet_keys.packet_commitment_path(port_id, channel_id, sequence),
-    cbor.serialise(commitment),
+    codec.encode_bytes(commitment),
     "",
     siblings,
   )
@@ -845,11 +873,18 @@ pub fn validate_handle_packet_root(
 
   expect Some(channel_redeemer_data) =
     pairs.get_first(redeemers, Spend(channel_input.output_reference))
-  // Dispatch on the stable SpendChannelRedeemer tag, then decode only that
-  // exact constructor. Every accepted branch retains the typed packet/height
-  // checks; unrelated handshake proof constructors are not needed here.
-  let channel_redeemer_tag =
-    builtin.fst_pair(builtin.un_constr_data(channel_redeemer_data))
+  // Dispatch on the stable SpendChannelRedeemer tag and decode only the fields
+  // used here. The channel validator spent in this transaction decodes its
+  // whole redeemer, so validating every constructor again only costs bytes.
+  let channel_redeemer = builtin.un_constr_data(channel_redeemer_data)
+  let channel_redeemer_tag = builtin.fst_pair(channel_redeemer)
+  let channel_redeemer_fields = builtin.snd_pair(channel_redeemer)
+  // Every packet constructor carries its packet first.
+  let redeemer_packet =
+    fn() {
+      expect packet: Packet = builtin.head_list(channel_redeemer_fields)
+      packet
+    }
 
   let old_root = old_datum.state.ibc_state_root
   let is_ordered = channel_input_datum.state.channel.ordering == Ordered
@@ -866,8 +901,8 @@ pub fn validate_handle_packet_root(
           ibc_state_commitment.apply_update(
             old_root,
             host_channel_keys.channel_path(port_id, channel_id),
-            cbor.serialise(channel_input_datum.state.channel),
-            cbor.serialise(channel_output_datum.state.channel),
+            codec.encode_upgradable_channel(channel_input_datum.state.channel),
+            codec.encode_upgradable_channel(channel_output_datum.state.channel),
             channel_siblings,
           )
         } else {
@@ -885,8 +920,7 @@ pub fn validate_handle_packet_root(
   let expected_root =
     when channel_redeemer_tag is {
       5 -> {
-        expect SendPacket { packet }: SpendChannelRedeemer =
-          channel_redeemer_data
+        let packet = redeemer_packet()
         let commitment = packet_mod.commit_packet(packet)
         expect
           channel_datum_mod.validate_send_packet(
@@ -899,8 +933,8 @@ pub fn validate_handle_packet_root(
           ibc_state_commitment.apply_update(
             old_root,
             packet_keys.next_sequence_send_path(port_id, channel_id),
-            cbor.serialise(channel_input_datum.state.next_sequence_send),
-            cbor.serialise(channel_output_datum.state.next_sequence_send),
+            codec.encode_sequence(channel_input_datum.state.next_sequence_send),
+            codec.encode_sequence(channel_output_datum.state.next_sequence_send),
             next_sequence_send_siblings,
           )
         ibc_state_commitment.apply_update(
@@ -911,13 +945,15 @@ pub fn validate_handle_packet_root(
             packet.sequence,
           ),
           "",
-          cbor.serialise(commitment),
+          codec.encode_bytes(commitment),
           packet_commitment_siblings,
         )
       }
       2 -> {
-        expect RecvPacket { packet, proof_height, .. }: SpendChannelRedeemer =
-          channel_redeemer_data
+        let packet = redeemer_packet()
+        // RecvPacket { packet, proof_commitment, proof_height }
+        expect [_, _, proof_height] = channel_redeemer_fields
+        expect proof_height: Height = proof_height
         let acknowledgement =
           required_packet_entry(
             channel_output_datum.state.packet_acknowledgement,
@@ -936,8 +972,12 @@ pub fn validate_handle_packet_root(
             ibc_state_commitment.apply_update(
               old_root,
               packet_keys.next_sequence_recv_path(port_id, channel_id),
-              cbor.serialise(channel_input_datum.state.next_sequence_recv),
-              cbor.serialise(channel_output_datum.state.next_sequence_recv),
+              codec.encode_sequence(
+                channel_input_datum.state.next_sequence_recv,
+              ),
+              codec.encode_sequence(
+                channel_output_datum.state.next_sequence_recv,
+              ),
               next_sequence_recv_siblings,
             )
           } else {
@@ -955,7 +995,7 @@ pub fn validate_handle_packet_root(
                 packet.sequence,
               ),
               "",
-              cbor.serialise(""),
+              codec.encode_bytes(""),
               packet_receipt_siblings,
             )
           }
@@ -967,13 +1007,12 @@ pub fn validate_handle_packet_root(
             packet.sequence,
           ),
           "",
-          cbor.serialise(acknowledgement),
+          codec.encode_bytes(acknowledgement),
           packet_acknowledgement_siblings,
         )
       }
       4 -> {
-        expect AcknowledgePacket { packet, .. }: SpendChannelRedeemer =
-          channel_redeemer_data
+        let packet = redeemer_packet()
         expect
           channel_datum_mod.validate_acknowledge_packet(
             channel_input_datum,
@@ -985,8 +1024,10 @@ pub fn validate_handle_packet_root(
             ibc_state_commitment.apply_update(
               old_root,
               packet_keys.next_sequence_ack_path(port_id, channel_id),
-              cbor.serialise(channel_input_datum.state.next_sequence_ack),
-              cbor.serialise(channel_output_datum.state.next_sequence_ack),
+              codec.encode_sequence(channel_input_datum.state.next_sequence_ack),
+              codec.encode_sequence(
+                channel_output_datum.state.next_sequence_ack,
+              ),
               next_sequence_ack_siblings,
             )
           } else {
@@ -1001,22 +1042,15 @@ pub fn validate_handle_packet_root(
           packet_commitment_siblings,
         )
       }
-      3 -> {
-        expect TimeoutPacket { packet, .. }: SpendChannelRedeemer =
-          channel_redeemer_data
-        timeout_root(packet, is_ordered)
-      }
-      9 -> {
-        expect TimeoutOnClose { packet, .. }: SpendChannelRedeemer =
-          channel_redeemer_data
+      3 -> timeout_root(redeemer_packet(), is_ordered)
+      9 ->
         timeout_root(
-          packet,
+          redeemer_packet(),
           channel_input_datum.state.channel != channel_output_datum.state.channel,
         )
-      }
       8 -> {
-        expect PruneChannelPacketHistory { sequence, .. }: SpendChannelRedeemer =
-          channel_redeemer_data
+        // PrunePacketHistory { sequence, .. }
+        expect sequence: Int = builtin.head_list(channel_redeemer_fields)
         // The prune marker validates the complete successor datum and the
         // authenticated absence proof. The HostState side binds that typed
         // operation to the same sequence and commits the ordering-specific
@@ -1041,7 +1075,7 @@ pub fn validate_handle_packet_root(
             ibc_state_commitment.apply_update(
               old_root,
               packet_keys.packet_receipt_path(port_id, channel_id, sequence),
-              cbor.serialise(receipt),
+              codec.encode_bytes(receipt),
               "",
               packet_receipt_siblings,
             )
@@ -1049,7 +1083,7 @@ pub fn validate_handle_packet_root(
         ibc_state_commitment.apply_update(
           receipt_root,
           packet_keys.packet_acknowledgement_path(port_id, channel_id, sequence),
-          cbor.serialise(acknowledgement),
+          codec.encode_bytes(acknowledgement),
           "",
           packet_acknowledgement_siblings,
         )

@@ -21,6 +21,7 @@ async function context() {
     history_root: '44'.repeat(32),
     state: {
       clientState: {
+        upgradePath: [],
         chainId: 'aa',
         trustLevel: { numerator: 1n, denominator: 3n },
         trustingPeriod: 100n,

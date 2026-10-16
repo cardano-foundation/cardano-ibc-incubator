@@ -6,8 +6,8 @@ values, modeled networks, and clean-state requirement.
 
 `caribic` is a local CLI used to bootstrap, run, and validate the Cardano <-> IBC bridge demo environment in this repo. For those familiar with Hermes, caribic cli also wraps that interface with equivalent commands that allow manual interaction with the relayer. The expected workflow is that keys would be addded to hermes via caribic, i.e, either you can enter via I/O when prompted, or refer to a mnemonic file as prompted, but there is no need to manually configure hermes. 
 
-> [!WARNING]
-> Mithril setup is deprecated, disabled, and not maintained. `caribic start --with-mithril` and `caribic start mithril` now fail fast; use the default stake-weighted-stability light-client mode.
+> [!NOTE]
+> `caribic start network` also starts a Mithril aggregator and two Mithril signers for the local network. A new network's clock is fast-forwarded through its first five epochs, so Mithril has certified the stake a client bootstraps from when startup returns. Public networks use the public Mithril aggregators and run no Mithril containers.
 
 ## Build and run
 
@@ -49,7 +49,7 @@ caribic install
 
 Starts services. Run `caribic --help` to see an actively maintained exhaustive list of targets and commands.
 
-- **Targets**: `all`, `network`, `bridge`, `gateway`, `dapp`, `relayer`; `mithril` is retained only to return the deprecation error.
+- **Targets**: `all`, `network`, `bridge`, `gateway`, `dapp`, `relayer`
 
 With no target, `caribic start` behaves like `caribic start all`: it starts the
 network and bridge stack (including Gateway and Hermes), then starts the IBC
@@ -106,7 +106,7 @@ Hermes config note:
 
 Stops services. With no target, it behaves like `all`.
 
-- **Targets**: `all`, `network`, `bridge`, `dapp`, `demo`, `gateway`, `relayer`, `mithril`
+- **Targets**: `all`, `network`, `bridge`, `dapp`, `demo`, `gateway`, `relayer`
 
 Examples:
 
@@ -135,7 +135,7 @@ caribic chain stop --chain injective --network local
 
 ### `caribic health-check [--service <name>]`
 
-Checks whether key services appear to be up (gateway, cardano, postgres, Yaci, Kupo, Ogmios, Hermes, Osmosis, Redis, cheqd, and Injective). Deprecated Mithril services are not part of the maintained aggregate health check. Use this before running tests if you are unsure about your current state.
+Checks whether key services appear to be up (gateway, cardano, postgres, Yaci, Kupo, Ogmios, Hermes, Osmosis, Redis, cheqd, and Injective). `caribic devkit test` checks the local Mithril aggregator and signers. Use this before running tests if you are unsure about your current state.
 
 ```bash
 caribic health-check
@@ -278,6 +278,12 @@ Hermes. If the process is forcibly interrupted, restore
 local value is `315360000`), recreate the Gateway app with
 `docker compose -f cardano/gateway/docker-compose.yml up -d --force-recreate app`,
 and run `caribic start relayer --network local` before continuing.
+
+### Local v8 staged verification checks
+
+Run `caribic test --light-client challenge-recovery --chain cosmos --network v8-classic` for signed receipt-backed challenges, two-account upload interference and authorized recovery. Run `caribic test --light-client deadline-ordering --chain cosmos --network v8-classic` for committed activation/challenge ordering and host interruption.
+
+These tests use isolated SDK applications with a controlled host clock. They exercise the only supported snapshot format. The former inline-format process and software-upgrade fixtures have been removed. These checks do not certify host software upgrades or public-chain inclusion timing.
 
 ### What the numbered suite tests
 
@@ -485,9 +491,9 @@ Channels and denom traces are discovered at runtime through the planner and the 
 
 ### Keeping the route alive
 
-The Injective-side Cardano client can only be updated with headers whose size and gas grow with the update gap (~4.6–8KB and ~85k gas per preprod block), and update targets must be blocks containing a HostState transaction. In practice this means:
+The Injective-side Cardano client verifies contiguous Cardano history, so header size and gas grow with the update gap (~4.6–8KB and ~85k gas per preprod block). With checkpoint-based expiry, verified rootless checkpoints can keep the client active without a HostState transaction. Fresh proof heights still require a HostState transaction. In practice this means:
 
-- The tracked Cardano Hermes profile sets `host_state_heartbeat_interval = '60s'` as its retry interval. Hermes checks at startup, then uses Gateway's suggested delay to wait until the current epoch's slot midpoint. If no ordinary IBC transaction has refreshed HostState by then, it submits a root-preserving heartbeat. After any HostState transaction in the epoch, Hermes waits toward the next epoch midpoint but rechecks hourly for rollbacks. Failed attempts retry after 60 seconds. Heartbeats currently require the HostState deployment authority.
+- The tracked Cardano Hermes profile sets `host_state_heartbeat_interval = '60s'` as its retry interval. Any funded Cardano payment-key signer can submit a heartbeat. Gateway schedules one after six hours without a HostState transaction. The contract enforces at least six hours between heartbeats using a separate ledger-bound clock that ordinary operations cannot reset. Hermes follows Gateway's suggested delay and rechecks hourly for rollbacks. The unchanged IBC root becomes available at a fresh Cardano anchor once the heartbeat is confirmed and relayed. Gateway defaults to and requires at least a 48-hour trusting period in probabilistic mode so bounded initialization, maintenance and the response window fit before expiry.
 
 - The Hermes daemon does NOT keep this client fresh on its own: its refresh policy triggers near the trusting-period threshold (days), which suits ordinary Tendermint clients but not one whose update cost grows per block of gap. Run an explicit refresh loop while the route is up, for example:
 
@@ -517,3 +523,5 @@ What survives a spin-down: the contract deployment (`manifests/preprod/`), all k
 - `NotFound` account errors on Injective mean the relayer address is unfunded.
 - Hermes errors like `unknown header type: /ibc.lightclients.probabilistic.v1.ProbabilisticHeader` mean the compiled relayer binary is older than the `relayer/` submodule checkout — rebuild it with `cd relayer && cargo build --release --bin hermes`. (Hermes reports errors on stdout, so caribic may show such failures with an empty message.)
 - If client creation on Injective fails with an unsupported client type, re-check the `allowed_clients` query at the top of this section.
+
+`caribic test --light-client deadline-ordering --chain cosmos --network v8-classic` checks activation and challenge ordering against committed blocks in isolated SDK applications. The host clock is controlled so the full six-hour window and interruption rules are exercised without a six-hour wall-clock run. The old inline-format process fixture has been removed.

@@ -12,39 +12,64 @@ const v8Dir = path.join(root, "cosmos/cardano-probabilistic-light-client-v8");
 const v10Dir = path.join(root, "cosmos/cardano-probabilistic-light-client-v10");
 
 const sharedSourceFiles = [
-  "block_authentication.go",
-  "checkpoint.go",
+  "adapter_test.go",
+  "admission_challenge_test.go",
+  "challenge_capacity_test.go",
+  "checkpoint_lifecycle_fixture_test.go",
   "client_state.go",
+  "client_initialization_test.go",
+  "client_state_path_test.go",
+  "cmd/bootstrap/main.go",
+  "cmd/prepare-client/main.go",
   "codec.go",
+  "collision_buckets_test.go",
   "consensus_state.go",
-  "epoch_context.go",
-  "epoch_context_test.go",
+  "core_bridge.go",
+  "core_bridge_test.go",
+  "core_conversion.gen.go",
+  "epoch_challenge.go",
+  "epoch_challenge_test.go",
   "errors.go",
   "events.go",
   "header.go",
+  "historical_codec_test.go",
   "height.go",
   "heuristic_policy.go",
+  "host_continuity.go",
   "host_state_commitment.go",
   "host_state_datum.go",
   "ibc_state_proof.go",
+  "ibc_state_proof_test.go",
   "internal/cardanodatum/tm_helper.go",
+  "internal/cardanodatum/tm_upgrade_test.go",
   "internal/cardanodatum/types.go",
   "keys.go",
-  "misbehaviour_handle.go",
   "misbehavour.go",
+  "mithril_bootstrap_test.go",
+  "mithril_epoch_release_test.go",
+  "mithril_stake.go",
+  "mithril_stake_test.go",
   "packet_state.go",
   "packet_state_test.go",
-  "payload_size_test.go",
   "probabilistic.pb.go",
-  "proposal_handle.go",
-  "proposal_handle_test.go",
-  "stake_bps_test.go",
+  "preparation.go",
+  "query.pb.go",
+  "tx.pb.go",
+  "proto/ibc/lightclients/probabilistic/v1/query.proto",
+  "proto/ibc/lightclients/probabilistic/v1/tx.proto",
+  "receipt_proof_test.go",
+  "relayer_events_test.go",
+  "recovery_invalidation_test.go",
+  "shared_snapshots_test.go",
+  "staged_epoch_usability_test.go",
+  "staged_session_expiry_test.go",
+  "staged_session_safety_test.go",
+  "state_machine.go",
+  "storage_server.go",
   "store.go",
-  "time_validation.go",
-  "time_validation_test.go",
-  "update.go",
-  "upgrade.go",
-  "verifier_test.go",
+  "store_revision_test.go",
+  "storage_format_test.go",
+  "upgrade.go"
 ];
 
 const protoFile = "proto/ibc/lightclients/probabilistic/v1/probabilistic.proto";
@@ -68,6 +93,7 @@ function mustExist(filePath) {
 
 function normalizeCommon(content) {
   return content
+    .replaceAll("channeltypes.CommitPacket(nil, ", "channeltypes.CommitPacket(")
     .replaceAll(
       "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8",
       "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-<IBC_GO_MAJOR>",
@@ -88,6 +114,8 @@ function normalizeCommon(content) {
     .replace(/^\tpathTypes ".*23-commitment\/types\/v2"\n/gm, "")
     .replaceAll("pathTypes.NewMerklePath", "commitmenttypes.NewMerklePath")
     .replaceAll("NewMerklePath(string(key))", "NewMerklePath(key)")
+ .replaceAll('NewMerklePath("ibc", string(key))', 'NewMerklePath([]byte("ibc"), key)')
+ .replace(/NewMerklePath\("ibc", ("[^"\n]*")\)/g, 'NewMerklePath([]byte("ibc"), []byte($1))')
     .replace(/NewMerklePath\(\[\]byte\(("[^"\n]*")\)\)/g, "NewMerklePath($1)")
     .replaceAll(
       "modules/core/23-commitment/types/v2",
@@ -96,7 +124,24 @@ function normalizeCommon(content) {
 }
 
 function normalizeGo(filePath) {
-  return normalizeCommon(read(filePath)).replace(
+  let content = read(filePath);
+  if (path.basename(filePath) === "epoch_challenge_test.go") {
+    // v10 uses byte-valued v2 paths while both adapters serialize the same
+    // v1 MerkleProof. Normalize only those test API/import differences.
+    content = content
+      .replace(
+        '\tcommitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"\n',
+        "",
+      )
+      .replace(
+        'commitmenttypesv2.NewMerklePath([]byte("ibc"), key)',
+        'commitmenttypes.NewMerklePath("ibc", string(key))',
+      );
+  }
+  return normalizeCommon(content).replaceAll(
+    'commitmenttypes.NewMerklePath([]byte("ibc"), []byte(path))',
+    'commitmenttypes.NewMerklePath("ibc", path)',
+  ).replace(
     /var fileDescriptor_[A-Za-z0-9_]+ = \[\]byte\{[\s\S]*?\n}\n/g,
     "var fileDescriptor_<NORMALIZED> = []byte{\n}\n",
   );
@@ -228,12 +273,35 @@ function listFiles(dir, predicate, base = dir) {
 function assertFileInventory() {
   const relevant = (filePath) =>
     filePath.endsWith(".go") || filePath.endsWith(".proto");
-  const expectedV8 = [...sharedSourceFiles, "module.go", protoFile].sort();
+  // Recovery app fixtures use version-specific keeper and module APIs.
+  // Require both files without treating their adapter wiring as shared source.
+  const expectedV8 = [
+    ...sharedSourceFiles,
+    // Persistent live acceptance currently targets only the local v8 profile.
+    "acceptance_host_test.go",
+    "acceptance_source_test.go",
+    "internal/cardanodatum/channel_upgrade_sequence.go",
+    // Channel upgrades exist only in ibc-go v8. v10 must still verify
+    // upgradable Cardano channel ends.
+    "channel_upgrade_app_test.go",
+    "channel_upgrade_proof_test.go",
+    "internal/cardanodatum/channel.go",
+    "module.go",
+    "recovery_app_test.go",
+    "stake_omission_recovery_test.go",
+    protoFile,
+  ].sort();
   const expectedV10 = [
     ...sharedSourceFiles,
+    "channel_upgrade_proof_test.go",
     "events_test.go",
+    "internal/cardanodatum/channel.go",
+    "ordered_timeout_test.go",
     "light_client_module.go",
+    "internal/cardanodatum/channel_upgrade_sequence.go",
     "module.go",
+    "recovery_app_test.go",
+    "stake_omission_recovery_test.go",
     protoFile,
   ].sort();
 
@@ -250,8 +318,13 @@ function assertFileInventory() {
 }
 
 function assertPublicIdentity() {
-  const v8Keys = read(path.join(v8Dir, "keys.go"));
-  const v10Keys = read(path.join(v10Dir, "keys.go"));
+  const v8Keys = read(path.join(coreDir, "state/keys.go"));
+  const v10Keys = read(path.join(coreDir, "state/keys.go"));
+  for (const dir of [v8Dir, v10Dir]) {
+    if (!/\bModuleName\s*=\s*state\.ModuleName/.test(read(path.join(dir, "keys.go")))) {
+      throw new Error(`${path.basename(dir)} must use the shared ModuleName`);
+    }
+  }
   const v8Proto = read(path.join(v8Dir, protoFile));
   const v10Proto = read(path.join(v10Dir, protoFile));
 
@@ -381,7 +454,7 @@ function assertModuleTargets() {
     ],
     [
       v8Mod,
-      "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.5",
+      "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.6",
     ],
     [v8Mod, "github.com/cosmos/ibc-go/v8 v8.7.0"],
     [
@@ -390,7 +463,7 @@ function assertModuleTargets() {
     ],
     [
       v10Mod,
-      "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.5",
+      "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.6",
     ],
     [v10Mod, "github.com/cosmos/ibc-go/v10 v10.2.0"],
   ];
@@ -414,24 +487,14 @@ function assertSharedCoreExtraction() {
   }
 
   const adapterFiles = [
-    path.join(v8Dir, "block_authentication.go"),
-    path.join(v10Dir, "block_authentication.go"),
-    path.join(v8Dir, "host_state_commitment.go"),
-    path.join(v10Dir, "host_state_commitment.go"),
-    path.join(v8Dir, "host_state_datum.go"),
-    path.join(v10Dir, "host_state_datum.go"),
-    path.join(v8Dir, "ibc_state_proof.go"),
-    path.join(v10Dir, "ibc_state_proof.go"),
-    path.join(v8Dir, "internal/cardanodatum/types.go"),
-    path.join(v10Dir, "internal/cardanodatum/types.go"),
+    ...[v8Dir, v10Dir].flatMap(dir => [
+      "core_bridge.go", "core_conversion.gen.go", "state_machine.go", "store.go",
+      "ibc_state_proof.go", "internal/cardanodatum/types.go",
+    ].map(file => path.join(dir, file))),
   ];
-
   for (const filePath of adapterFiles) {
-    const content = read(filePath);
-    if (!content.includes("cardano-probabilistic-light-client-core")) {
-      throw new Error(
-        `${path.relative(root, filePath)} must use shared probabilistic light-client core`,
-      );
+    if (!read(filePath).includes("cardano-probabilistic-light-client-core")) {
+      throw new Error(`${path.relative(root, filePath)} must use the shared core`);
     }
   }
 
@@ -456,10 +519,87 @@ function assertSharedCoreExtraction() {
   }
 }
 
+// These are review budgets, not a reason to compress code. New validation or
+// transition logic belongs in core/state. Raise a budget only for host API work.
+const adapterLineBudgets = {
+  "cmd/bootstrap/main.go": 100,
+  "cmd/prepare-client/main.go": 100,
+  "storage_server.go": 130,
+  "preparation.go": 55,
+  "client_state.go": 190,
+  "codec.go": 20,
+  "consensus_state.go": 30,
+  "core_bridge.go": 130,
+  "epoch_challenge.go": 30,
+  "packet_state.go": 115,
+  "errors.go": 30,
+  "events.go": 110,
+  "header.go": 55,
+  "height.go": 90,
+  "heuristic_policy.go": 20,
+  "host_continuity.go": 120,
+  "host_state_commitment.go": 10,
+  "host_state_datum.go": 10,
+  "ibc_state_proof.go": 200,
+  "internal/cardanodatum/tm_helper.go": 85,
+  "internal/cardanodatum/channel_upgrade_sequence.go": 10,
+  "internal/cardanodatum/channel.go": 80,
+  "internal/cardanodatum/types.go": 30,
+  "keys.go": 20,
+  "light_client_module.go": 185,
+  "misbehavour.go": 50,
+  "mithril_stake.go": 20,
+  "module.go": 125,
+  "state_machine.go": 75,
+  "store.go": 100,
+  "upgrade.go": 30
+};
+
+function assertThinAdapters() {
+  for (const dir of [v8Dir, v10Dir]) {
+    for (const file of listFiles(dir, f => f.endsWith(".go"))) {
+      if (file.endsWith("_test.go") || file.endsWith(".pb.go") || file.endsWith(".gen.go")) continue;
+      const source = read(path.join(dir, file));
+      const lines = source.trimEnd().split("\n").length;
+      if (!adapterLineBudgets[file] || lines > adapterLineBudgets[file]) {
+        throw new Error(`${path.basename(dir)}/${file} exceeds its thin adapter budget (${lines}/${adapterLineBudgets[file] ?? 0} lines). Put shared logic in core/state.`);
+      }
+      if (/\b(?:computeHeaderSecurityMetrics|verifyBridgeContinuity|verifyHeaderTemporalContinuity|validateCheckpointFields|persistCheckpoint|validateOperationalCertificateCounterRecovery|authenticateProbabilisticBlock)\s*\(/.test(source)) {
+        throw new Error(`${file} reintroduces shared state-machine logic`);
+      }
+      if (/"(?:github.com\/blinklabs-io\/gouroboros|math\/bits)/.test(source)) {
+        throw new Error(`${file} imports Cardano verification or scoring dependencies in an adapter`);
+      }
+    }
+  }
+  for (const file of listFiles(coreDir, f => f.endsWith(".go"))) {
+    if (/"github.com\/cosmos\/(?:ibc-go|cosmos-sdk)\//.test(read(path.join(coreDir, file)))) {
+      throw new Error(`${file} makes the shared core depend on an IBC or SDK version`);
+    }
+  }
+  for (const file of ["update.go", "checkpoint.go", "time_validation.go", "proposal_handle.go", "misbehaviour_handle.go", "block_authentication.go"]) {
+    mustExist(path.join(coreDir, "state", file));
+  }
+}
+
+function assertMithrilAuditBoundary() {
+  for (const dir of [coreDir, v8Dir, v10Dir]) {
+    for (const file of listFiles(dir, f => f.endsWith(".go"))) {
+      if (file.endsWith("_test.go")) continue;
+      if (dir === coreDir && file.startsWith("mithril/mithriltest/")) continue;
+      if (/"github\.com\/cardano-foundation\/cardano-ibc-incubator\/cosmos\/cardano-probabilistic-light-client-core\/mithril\/mithriltest(?:\/[^"\n]*)?"/.test(read(path.join(dir, file)))) {
+        throw new Error(`${path.relative(root, path.join(dir, file))} imports Mithril certificate-generation support into production verification`);
+      }
+    }
+  }
+}
+
 try {
   assertModuleTargets();
   assertSharedCoreExtraction();
   assertFileInventory();
+  assertThinAdapters();
+  assertMithrilAuditBoundary();
   assertPublicIdentity();
   assertCoreSourceParity();
   assertAdapterBoundaries();

@@ -1,3 +1,4 @@
+use aiken/builtin
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Input, Mint, Output, OutputReference, Transaction}
@@ -5,8 +6,8 @@ use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, ChanCloseConfirm, ChanCloseInit, ChanOpenAck,
-  ChanOpenConfirm, PrunePacketHistory, ReclaimChannel, RecvPacket, SendPacket,
-  SpendChannelRedeemer, TimeoutOnClose, TimeoutPacket,
+  ChanOpenConfirm, ChanUpgrade, PrunePacketHistory, ReclaimChannel, RecvPacket,
+  SendPacket, SpendChannelRedeemer, TimeoutOnClose, TimeoutPacket,
 }
 use ibc/utils/shutdown
 use ibc/utils/validator_utils
@@ -22,6 +23,9 @@ pub fn validate(
   timeout_packet_policy_id: PolicyId,
   acknowledge_packet_policy_id: PolicyId,
   prune_packet_history_policy_id: PolicyId,
+  chan_upgrade_policy_id: PolicyId,
+  chan_upgrade_handshake_policy_id: PolicyId,
+  chan_upgrade_finish_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
   optional_datum: Option<ChannelDatum>,
   redeemer: SpendChannelRedeemer,
@@ -155,6 +159,27 @@ pub fn validate(
         validator_utils.ExpectHandlePacket,
         True,
       )
+    ChanUpgrade(raw) -> {
+      // Steps 1 to 3 (TRY, ACK, CONFIRM) and 4 to 6 (OPEN, TIMEOUT, CANCEL)
+      // have their own operations. INIT and FLUSH share the third.
+      expect [step, ..] = builtin.snd_pair(builtin.un_constr_data(raw))
+      let index = builtin.fst_pair(builtin.un_constr_data(step))
+      validate_operation_witness(
+        transaction,
+        spent_output,
+        datum.token,
+        host_state_nft_policy_id,
+        if index >= 1 && index <= 3 {
+          chan_upgrade_handshake_policy_id
+        } else if index >= 4 && index <= 6 {
+          chan_upgrade_finish_policy_id
+        } else {
+          chan_upgrade_policy_id
+        },
+        validator_utils.ExpectUpgradeChannel,
+        True,
+      )
+    }
   }
 }
 

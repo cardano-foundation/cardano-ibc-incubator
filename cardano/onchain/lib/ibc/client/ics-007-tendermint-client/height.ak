@@ -2,6 +2,8 @@ use aiken/primitive/bytearray
 use aiken/primitive/int
 use ibc/utils/text_bytes
 
+// Frozen public commitment primitive. Keep its fields and order unchanged.
+// Put private metadata in a separate type. See docs/cardano-commitment-codec.md.
 pub type Height {
   // the revision that the client is currently on
   revision_number: Int,
@@ -76,4 +78,15 @@ pub fn zero_height() -> Height {
 
 pub fn is_zero(height: Height) -> Bool {
   height.revision_number == 0 && height.revision_height == 0
+}
+
+/// IBC paths include both revision and height, including revision zero.
+pub fn to_string(value: Height) -> ByteArray {
+  bytearray.concat(
+    text_bytes.int_to_decimal_bytes(value.revision_number),
+    bytearray.concat(
+      "-",
+      text_bytes.int_to_decimal_bytes(value.revision_height),
+    ),
+  )
 }

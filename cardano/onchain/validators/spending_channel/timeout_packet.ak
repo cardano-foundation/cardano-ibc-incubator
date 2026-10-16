@@ -85,6 +85,7 @@ validator timeout_packet(
       proof_close,
       proof_height,
       next_sequence_recv,
+      counterparty_upgrade_sequence,
     ) =
       when channel_redeemer is {
         TimeoutPacket {
@@ -92,13 +93,15 @@ validator timeout_packet(
           proof_unreceived,
           proof_height,
           next_sequence_recv,
-        } -> (packet, proof_unreceived, None, proof_height, next_sequence_recv)
+        } ->
+          (packet, proof_unreceived, None, proof_height, next_sequence_recv, 0)
         TimeoutOnClose {
           packet,
           proof_unreceived,
           proof_close,
           proof_height,
           next_sequence_recv,
+          counterparty_upgrade_sequence,
         } ->
           (
             packet,
@@ -106,6 +109,7 @@ validator timeout_packet(
             Some(proof_close),
             proof_height,
             next_sequence_recv,
+            counterparty_upgrade_sequence,
           )
         _ -> fail
       }
@@ -219,6 +223,7 @@ validator timeout_packet(
             proof_height,
             proof_unreceived,
             close_proof,
+            counterparty_upgrade_sequence,
             packet,
             next_sequence_recv,
             redeemers,
@@ -372,6 +377,7 @@ fn validate_timeout_on_close_proofs(
   proof_height: Height,
   proof_unreceived: Data,
   proof_close: Data,
+  counterparty_upgrade_sequence: Int,
   packet: Packet,
   next_sequence_recv: Int,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
@@ -400,6 +406,7 @@ fn validate_timeout_on_close_proofs(
       counterparty: expected_counterparty,
       connection_hops: [connection.counterparty.connection_id],
       version: cur_channel.version,
+      upgrade_sequence: counterparty_upgrade_sequence,
     }
   let closed_channel_value =
     channel_pb.marshal_for_channel(

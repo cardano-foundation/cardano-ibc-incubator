@@ -92,31 +92,6 @@ export function createProofSpecSchema(Data: LucidData) {
   };
 }
 
-export function createMithrilClientStateSchema(Data: LucidData) {
-  const MithrilHeightSchema = createHeightSchema(Data);
-  const FractionSchema = Data.Object({
-    numerator: Data.Integer(),
-    denominator: Data.Integer(),
-  });
-  const MithrilProtocolParametersSchema = Data.Object({
-    k: Data.Integer(),
-    m: Data.Integer(),
-    phi_f: FractionSchema,
-  });
-
-  return Data.Object({
-    chain_id: Data.Bytes(),
-    latest_height: MithrilHeightSchema,
-    frozen_height: MithrilHeightSchema,
-    current_epoch: Data.Integer(),
-    trusting_period: Data.Integer(),
-    protocol_parameters: MithrilProtocolParametersSchema,
-    upgrade_path: Data.Array(Data.Bytes()),
-    host_state_nft_policy_id: Data.Bytes(),
-    host_state_nft_token_name: Data.Bytes(),
-  });
-}
-
 export function createTendermintClientStateSchema(Data: LucidData) {
   const RationalSchema = Data.Object({
     numerator: Data.Integer(),
@@ -134,6 +109,7 @@ export function createTendermintClientStateSchema(Data: LucidData) {
     frozenHeight: HeightSchema,
     latestHeight: HeightSchema,
     proofSpecs: Data.Array(ProofSpecSchema),
+    upgradePath: Data.Array(Data.Bytes()),
   });
 }
 

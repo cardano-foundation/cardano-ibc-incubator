@@ -14,7 +14,6 @@ import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { HistoryService, HistoryTxEvidence } from '../services/history.service';
 import { UtxoDto } from '../dtos/utxo.dto';
 import { decodeChannelDatum } from '../../shared/types/channel/channel-datum';
@@ -124,7 +123,7 @@ function makeChannelDatum(overrides: Record<string, unknown> = {}) {
 function makeHistoricalTree() {
   const tree = {
     get: jest.fn((path: string) =>
-      path === 'clients/07-tendermint-0/consensusStates/77' ? Buffer.from(CONSENSUS_VALUE, 'hex') : undefined,
+      path === 'clients/07-tendermint-0/consensusStates/0-77' ? Buffer.from(CONSENSUS_VALUE, 'hex') : undefined,
     ),
     generateProof: jest.fn((path: string) => ({ path })),
     generateNonExistenceProof: jest.fn((path: string) => ({ path })),
@@ -134,7 +133,7 @@ function makeHistoricalTree() {
   return tree;
 }
 
-function makeDeps(lightClientMode = 'mithril') {
+function makeDeps() {
   const capturedTree = makeHistoricalTree();
   const treeStore = {
     getCurrentTree: jest.fn(() => ({ generateProof: jest.fn(), generateNonExistenceProof: jest.fn() })),
@@ -151,7 +150,6 @@ function makeDeps(lightClientMode = 'mithril') {
   const logger = makeLogger();
   const configService = {
     get: jest.fn((key: string) => {
-      if (key === 'cardanoLightClientMode') return lightClientMode;
       if (key === 'cardanoChainId') return 'cardano-devnet';
       if (key === 'deployment')
         return {
@@ -219,13 +217,6 @@ function makeDeps(lightClientMode = 'mithril') {
     findUtxosByPolicyIdAndPrefixTokenName: jest.fn(async (): Promise<UtxoDto[]> => []),
     findTransactionEvidenceByHash: jest.fn(async (): Promise<HistoryTxEvidence | null> => null),
   };
-  const mithrilService = {
-    getCardanoTransactionsSetSnapshot: jest.fn(async () => [
-      {
-        block_number: LATEST_ACCEPTED_HEIGHT.toString(),
-      },
-    ]),
-  };
   const ibcTreeCacheService = {
     load: jest.fn(async () => ({
       root: HISTORICAL_ROOT,
@@ -241,12 +232,10 @@ function makeDeps(lightClientMode = 'mithril') {
     configService,
     lucidService: lucidService as unknown as LucidService,
     historyService: historyService as unknown as HistoryService,
-    mithrilService: mithrilService as unknown as MithrilService,
     ibcTreeCacheService,
     mocks: {
       lucidService,
       historyService,
-      mithrilService,
       ibcTreeCacheService,
       treeStore,
     },
@@ -320,8 +309,26 @@ function resetProofServiceMocks() {
   );
 }
 
+// Stability accepts the live HostState at LATEST_ACCEPTED_HEIGHT unless a test
+// says otherwise.
+let stabilitySpies: jest.SpyInstance[] = [];
+function acceptLatestHostState() {
+  stabilitySpies = [
+    jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(LATEST_ACCEPTED_HEIGHT),
+    jest
+      .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
+      .mockImplementation(
+        async ({ height }) => ({ anchorHeight: height, anchorBlock: { hash: 'accepted-anchor' } }) as never,
+      ),
+  ];
+}
+
 describe('proof-bearing services with captured query heights', () => {
-  beforeEach(resetProofServiceMocks);
+  beforeEach(() => {
+    resetProofServiceMocks();
+    acceptLatestHostState();
+  });
+  afterEach(() => stabilitySpies.forEach((spy) => spy.mockRestore()));
 
   it('serves channel proofs from the cached tree at the requested height', async () => {
     const deps = makeDeps();
@@ -330,7 +337,6 @@ describe('proof-bearing services with captured query heights', () => {
       deps.configService,
       deps.lucidService,
       {} as KupoService,
-      deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -356,7 +362,6 @@ describe('proof-bearing services with captured query heights', () => {
       deps.logger,
       deps.configService,
       deps.lucidService,
-      deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -393,7 +398,6 @@ describe('proof-bearing services with captured query heights', () => {
       deps.logger,
       deps.configService,
       deps.lucidService,
-      deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -483,7 +487,6 @@ describe('proof-bearing services with captured query heights', () => {
       deps.logger,
       deps.configService,
       deps.lucidService,
-      deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -517,7 +520,6 @@ describe('proof-bearing services with captured query heights', () => {
         deps.logger,
         deps.configService,
         deps.lucidService,
-        deps.mithrilService,
         deps.historyService,
         deps.ibcTreeCacheService as any,
         deps.treeStore,
@@ -538,7 +540,6 @@ describe('proof-bearing services with captured query heights', () => {
       deps.logger,
       deps.configService,
       deps.lucidService,
-      deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -563,7 +564,6 @@ describe('proof-bearing services with captured query heights', () => {
       deps.logger,
       deps.configService,
       deps.lucidService,
-      deps.mithrilService,
       deps.historyService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -588,7 +588,6 @@ describe('proof-bearing services with captured query heights', () => {
       {} as KupoService,
       deps.historyService,
       {} as MiniProtocalsService,
-      deps.mithrilService,
       {} as DenomTraceService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -616,7 +615,6 @@ describe('proof-bearing services with captured query heights', () => {
       {} as KupoService,
       deps.historyService,
       {} as MiniProtocalsService,
-      deps.mithrilService,
       {} as DenomTraceService,
       deps.ibcTreeCacheService as any,
       deps.treeStore,
@@ -634,7 +632,7 @@ describe('proof-bearing services with captured query heights', () => {
     );
 
     expect(normalizeConsensusStateFromDatum).toHaveBeenCalledWith(expect.any(Map), 77n);
-    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('clients/07-tendermint-0/consensusStates/77');
+    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('clients/07-tendermint-0/consensusStates/0-77');
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
 
@@ -689,7 +687,9 @@ describe('proof-bearing services with captured query heights', () => {
         },
       ]);
       deps.historicalTree.get.mockImplementation((path) =>
-        path === `clients/07-tendermint-0/consensusStates/${height}` ? Buffer.from(CONSENSUS_VALUE, 'hex') : undefined,
+        path === `clients/07-tendermint-0/consensusStates/1-${height}`
+          ? Buffer.from(CONSENSUS_VALUE, 'hex')
+          : undefined,
       );
       const service = new QueryService(
         deps.logger,
@@ -698,7 +698,6 @@ describe('proof-bearing services with captured query heights', () => {
         {} as KupoService,
         deps.historyService,
         {} as MiniProtocalsService,
-        deps.mithrilService,
         {} as DenomTraceService,
         deps.ibcTreeCacheService as any,
         deps.treeStore,
@@ -707,7 +706,7 @@ describe('proof-bearing services with captured query heights', () => {
       const response = await service.queryConsensusState(request, { queryHeight: HISTORICAL_HEIGHT });
       expect(ConsensusState.decode(response.consensus_state!.value).timestamp).toEqual({ seconds: 1n, nanos: 1 });
       expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
-        `clients/07-tendermint-0/consensusStates/${height}`,
+        `clients/07-tendermint-0/consensusStates/1-${height}`,
       );
       expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
     },
@@ -724,7 +723,6 @@ describe('proof-bearing services with captured query heights', () => {
           deps.configService,
           deps.lucidService,
           {} as KupoService,
-          deps.mithrilService,
           deps.historyService,
           deps.ibcTreeCacheService as any,
           deps.treeStore,
@@ -740,7 +738,6 @@ describe('proof-bearing services with captured query heights', () => {
           deps.configService,
           deps.lucidService,
           {} as KupoService,
-          deps.mithrilService,
           deps.historyService,
           deps.ibcTreeCacheService as any,
           deps.treeStore,
@@ -755,7 +752,6 @@ describe('proof-bearing services with captured query heights', () => {
           deps.logger,
           deps.configService,
           deps.lucidService,
-          deps.mithrilService,
           deps.historyService,
           deps.ibcTreeCacheService as any,
           deps.treeStore,
@@ -774,7 +770,6 @@ describe('proof-bearing services with captured query heights', () => {
           {} as KupoService,
           deps.historyService,
           {} as MiniProtocalsService,
-          deps.mithrilService,
           {} as DenomTraceService,
           deps.ibcTreeCacheService as any,
           deps.treeStore,
@@ -784,7 +779,7 @@ describe('proof-bearing services with captured query heights', () => {
     {
       name: 'consensus state',
       unit: CLIENT_TOKEN_UNIT,
-      path: 'clients/07-tendermint-0/consensusStates/77',
+      path: 'clients/07-tendermint-0/consensusStates/0-77',
       run: (deps: ReturnType<typeof makeDeps>) =>
         new QueryService(
           deps.logger,
@@ -793,7 +788,6 @@ describe('proof-bearing services with captured query heights', () => {
           {} as KupoService,
           deps.historyService,
           {} as MiniProtocalsService,
-          deps.mithrilService,
           {} as DenomTraceService,
           deps.ibcTreeCacheService as any,
           deps.treeStore,
@@ -818,7 +812,6 @@ describe('proof-bearing services with captured query heights', () => {
         deps.logger,
         deps.configService,
         deps.lucidService,
-        deps.mithrilService,
         deps.historyService,
         deps.ibcTreeCacheService as any,
         deps.treeStore,
@@ -864,7 +857,7 @@ describe('proof-bearing services with captured query heights', () => {
     it.each([false, true])(
       `checks the accepted stability block hash for ${method} even with unchanged HostState (rollback=%s)`,
       async (rollback) => {
-        const deps = makeDeps('stake-weighted-stability');
+        const deps = makeDeps();
         const settled = jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(LATEST_ACCEPTED_HEIGHT);
         const evidence = jest.spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight').mockResolvedValue({
           anchorHeight: LATEST_ACCEPTED_HEIGHT,
@@ -891,7 +884,7 @@ describe('proof-bearing services with captured query heights', () => {
     );
     it(`does not fabricate a height when stability fails after snapshot capture for ${method}`, async () => {
       jest.useFakeTimers();
-      const deps = makeDeps('stake-weighted-stability');
+      const deps = makeDeps();
       const settled = jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(LATEST_ACCEPTED_HEIGHT);
       const evidence = jest
         .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
@@ -987,7 +980,6 @@ describe('proof-bearing services with captured query heights', () => {
           deps.configService,
           deps.lucidService,
           {} as KupoService,
-          deps.mithrilService,
           deps.historyService,
           deps.ibcTreeCacheService as any,
           deps.treeStore,
@@ -1015,4 +1007,91 @@ describe('proof-bearing services with captured query heights', () => {
       });
     }
   }
+});
+
+describe('channel upgrade queries with captured query heights', () => {
+  beforeEach(() => {
+    resetProofServiceMocks();
+    acceptLatestHostState();
+  });
+  afterEach(() => stabilitySpies.forEach((spy) => spy.mockRestore()));
+
+  it('serves an upgrade in progress and its error receipt with proofs at the requested height', async () => {
+    const deps = makeDeps();
+    const upgrade = {
+      fields: { ordering: 'Unordered', connection_hops: [toHex('connection-1')], version: toHex('ics20-1') },
+      timeout: { height: { revisionNumber: 0n, revisionHeight: 0n }, timestamp: 5n },
+      next_sequence_send: 4n,
+    };
+    (decodeChannelDatum as jest.Mock).mockResolvedValue(
+      makeChannelDatum({
+        upgrade: {
+          pending: { upgrade, timeout_period: 3_600_000n, counterparty_upgrade: null, flushed_lanes: 0n },
+          error_receipt: { sequence: 2n, message: toHex('ABCI code: 28: restored channel to pre-upgrade state') },
+          recv_start_sequence: 0n,
+        },
+      }),
+    );
+    const service = new ChannelService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      {} as KupoService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+      deps.treeStore,
+    );
+
+    const upgradeResponse = await service.queryUpgrade({ port_id: 'mock', channel_id: 'channel-0' } as any, {
+      queryHeight: HISTORICAL_HEIGHT,
+    });
+    const errorResponse = await service.queryUpgradeError({ port_id: 'mock', channel_id: 'channel-0' } as any, {
+      queryHeight: HISTORICAL_HEIGHT,
+    });
+
+    expect(upgradeResponse.upgrade).toEqual({
+      fields: { ordering: 1, connection_hops: ['connection-1'], version: 'ics20-1' },
+      timeout: { height: { revision_number: 0n, revision_height: 0n }, timestamp: 5n },
+      next_sequence_send: 4n,
+    });
+    expect(errorResponse.error_receipt).toEqual({
+      sequence: 2n,
+      message: 'ABCI code: 28: restored channel to pre-upgrade state',
+    });
+    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
+      'channelUpgrades/upgrades/ports/mock/channels/channel-0',
+    );
+    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
+      'channelUpgrades/upgradeError/ports/mock/channels/channel-0',
+    );
+    expect(upgradeResponse.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
+  });
+
+  it('reports a missing upgrade as not found, as ibc-go does', async () => {
+    const deps = makeDeps();
+    (decodeChannelDatum as jest.Mock).mockResolvedValue(
+      makeChannelDatum({ upgrade: { pending: null, error_receipt: null, recv_start_sequence: 0n } }),
+    );
+    const service = new ChannelService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      {} as KupoService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+      deps.treeStore,
+    );
+
+    await expect(service.queryUpgrade({ port_id: 'mock', channel_id: 'channel-0' } as any)).rejects.toThrow(
+      /no upgrade/,
+    );
+    await expect(service.queryUpgradeError({ port_id: 'mock', channel_id: 'channel-0' } as any)).rejects.toThrow(
+      /no upgrade error/,
+    );
+    expect(deps.historicalTree.generateProof).not.toHaveBeenCalled();
+    deps.capturedTree.get.mockReturnValue(Buffer.from('01', 'hex'));
+    await expect(service.queryUpgrade({ port_id: 'mock', channel_id: 'channel-0' } as any)).rejects.toThrow(
+      /absence contradicts the captured commitment/,
+    );
+  });
 });

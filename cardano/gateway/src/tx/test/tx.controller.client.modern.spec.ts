@@ -4,6 +4,7 @@ import { TxController } from '../tx.controller';
 import { ClientService } from '../client.service';
 import { ConnectionService } from '../connection.service';
 import { ChannelService } from '../channel.service';
+import { ChannelUpgradeService } from '../channel-upgrade.service';
 import { PacketService } from '../packet.service';
 import { SubmissionService } from '../submission.service';
 import { HostStateHeartbeatService } from '../host-state-heartbeat.service';
@@ -32,6 +33,7 @@ describe('TxController - Client (modern)', () => {
         { provide: ClientService, useValue: clientServiceMock },
         { provide: ConnectionService, useValue: {} },
         { provide: ChannelService, useValue: {} },
+        { provide: ChannelUpgradeService, useValue: {} },
         { provide: PacketService, useValue: {} },
         { provide: SubmissionService, useValue: {} },
         { provide: HostStateHeartbeatService, useValue: {} },

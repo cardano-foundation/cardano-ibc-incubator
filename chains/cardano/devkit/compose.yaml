@@ -7,11 +7,58 @@ x-node: &node
   entrypoint: [sh, /profile/entrypoint.sh]
   environment: &node-environment
     DEVKIT_CLOCK_OFFSET: ${DEVKIT_CLOCK_OFFSET:-+0s}
+    # The nodes share one clock file, so a new network's clock can be stepped
+    # forward through the epochs Mithril needs. Producers also connect to
+    # each other directly, so a step can't leave one on a fork.
+    DEVKIT_CLOCK_FILE: /devkit-clock/clock.rc
+    DEVKIT_FULL_MESH: "true"
     DEVKIT_PEER: "true"
     yaci_store_enabled: "false"
     ogmios_enabled: "false"
     kupo_enabled: "false"
   stop_grace_period: 30s
+
+# Mithril certifies the devnet's Cardano stake distributions, from which local
+# probabilistic clients bootstrap. Two producers sign. The keys are Mithril's
+# public devnet test keys, not secrets.
+x-mithril-environment: &mithril-environment
+  NETWORK: devnet
+  NETWORK_MAGIC: "42"
+  RUN_INTERVAL: "1000"
+  ERA_READER_ADAPTER_TYPE: bootstrap
+  CHAIN_OBSERVER_TYPE: pallas
+  # Mithril's configuration requires a cardano-cli path, though the Pallas
+  # observer does not run it.
+  CARDANO_CLI_PATH: cardano-cli
+  CARDANO_NODE_SOCKET_PATH: /clusters/nodes/default/node/node.sock
+  DB_DIRECTORY: /clusters/nodes/default/node/db
+  DATA_STORES_DIRECTORY: /mithril/stores
+  STORE_RETENTION_LIMIT: "10"
+
+x-mithril-aggregator-environment: &mithril-aggregator-environment
+  <<: *mithril-environment
+  SERVER_IP: 0.0.0.0
+  SERVER_PORT: "8080"
+  PUBLIC_SERVER_URL: http://mithril-aggregator:8080/aggregator
+  SNAPSHOT_DIRECTORY: /mithril/snapshots
+  SNAPSHOT_READER_TYPE: local
+  SNAPSHOT_UPLOADER_TYPE: local
+  SIGNED_ENTITY_TYPES: CardanoStakeDistribution
+  AGGREGATE_SIGNATURE_TYPE: Concatenation
+  PROTOCOL_PARAMETERS__K: "5"
+  PROTOCOL_PARAMETERS__M: "100"
+  PROTOCOL_PARAMETERS__PHI_F: "0.65"
+  CARDANO_NODE_VERSION: 10.1.4
+  GENESIS_VERIFICATION_KEY: 5b33322c3235332c3138362c3230312c3137372c31312c3131372c3133352c3138372c3136372c3138312c3138382c32322c35392c3230362c3130352c3233312c3135302c3231352c33302c37382c3231322c37362c31362c3235322c3138302c37322c3133342c3133372c3234372c3136312c36385d
+  ANCILLARY_FILES_SIGNER_CONFIG: '{"type": "secret-key", "secret_key": "5b3131382c3138342c3232342c3137332c3136302c3234312c36312c3134342c36342c39332c3130362c3232392c38332c3133342c3138392c34302c3138392c3231302c32352c3138342c3136302c3134312c3233372c32362c3136382c35342c3233392c3230342c3133392c3131392c31332c3139395d"}'
+
+# Signers wait for epoch 1, like the aggregator.
+x-mithril-signer: &mithril-signer
+  image: ghcr.io/intersectmbo/mithril-signer:2630.1-hotfix-3f6cb73@sha256:b4657c8ce3e1912316f9b800699a618039271667516cf4cccb3e239a8a66a26d
+  user: "0:0"
+  init: true
+  restart: unless-stopped
+  entrypoint: [sh, /profile/mithril.sh, signer]
 
 services:
   bootstrap:
@@ -36,6 +83,7 @@ services:
       - "127.0.0.1:${DEVKIT_KUPO_PORT:-11442}:1442"
     volumes:
       - cluster-data:/clusters
+      - ${DEVKIT_CLOCK_DIR:?Missing DevKit clock directory}:/devkit-clock:ro
       - genesis-data:/export
       - bootstrap-data:/bootstrap:ro
   producer-2:
@@ -48,6 +96,7 @@ services:
         aliases: [producer-2.local]
     volumes:
       - producer-2-data:/clusters
+      - ${DEVKIT_CLOCK_DIR:?Missing DevKit clock directory}:/devkit-clock:ro
       - bootstrap-data:/bootstrap:ro
   producer-3:
     <<: *node
@@ -59,6 +108,7 @@ services:
         aliases: [producer-3.local]
     volumes:
       - producer-3-data:/clusters
+      - ${DEVKIT_CLOCK_DIR:?Missing DevKit clock directory}:/devkit-clock:ro
       - bootstrap-data:/bootstrap:ro
   producer-4:
     <<: *node
@@ -70,6 +120,7 @@ services:
         aliases: [producer-4.local]
     volumes:
       - producer-4-data:/clusters
+      - ${DEVKIT_CLOCK_DIR:?Missing DevKit clock directory}:/devkit-clock:ro
       - bootstrap-data:/bootstrap:ro
   producer-5:
     <<: *node
@@ -81,6 +132,7 @@ services:
         aliases: [producer-5.local]
     volumes:
       - producer-5-data:/clusters
+      - ${DEVKIT_CLOCK_DIR:?Missing DevKit clock directory}:/devkit-clock:ro
       - bootstrap-data:/bootstrap:ro
   nonce:
     <<: *node
@@ -145,6 +197,47 @@ services:
       - genesis-data:/app/genesis:ro
       - history-cache:/app/data
       - history-logs:/app/logs
+  # The aggregator waits for epoch 1 and creates the genesis certificate.
+  mithril-aggregator:
+    image: ghcr.io/intersectmbo/mithril-aggregator:2630.1-hotfix-3f6cb73@sha256:7adeae1d812f01d90fb5482f1310237add941b9440314471c931b6083c0796f0
+    # The node's socket and database belong to root.
+    user: "0:0"
+    init: true
+    restart: unless-stopped
+    environment:
+      <<: *mithril-aggregator-environment
+      GENESIS_SECRET_KEY: 5b3131382c3138342c3232342c3137332c3136302c3234312c36312c3134342c36342c39332c3130362c3232392c38332c3133342c3138392c34302c3138392c3231302c32352c3138342c3136302c3134312c3233372c32362c3136382c35342c3233392c3230342c3133392c3131392c31332c3139395d
+    entrypoint: [sh, /profile/mithril.sh, aggregator]
+    ports:
+      - "127.0.0.1:${DEVKIT_MITHRIL_PORT:-18083}:8080"
+    volumes:
+      - cluster-data:/clusters:ro
+      - mithril-aggregator-data:/mithril
+      - ./mithril.sh:/profile/mithril.sh:ro
+  mithril-signer-2:
+    <<: *mithril-signer
+    environment:
+      <<: *mithril-environment
+      AGGREGATOR_ENDPOINT: http://mithril-aggregator:8080/aggregator
+      KES_SECRET_KEY_PATH: /bootstrap/producer-2/kes.skey
+      OPERATIONAL_CERTIFICATE_PATH: /bootstrap/producer-2/opcert.cert
+    volumes:
+      - producer-2-data:/clusters:ro
+      - bootstrap-data:/bootstrap:ro
+      - mithril-signer-2-data:/mithril
+      - ./mithril.sh:/profile/mithril.sh:ro
+  mithril-signer-3:
+    <<: *mithril-signer
+    environment:
+      <<: *mithril-environment
+      AGGREGATOR_ENDPOINT: http://mithril-aggregator:8080/aggregator
+      KES_SECRET_KEY_PATH: /bootstrap/producer-3/kes.skey
+      OPERATIONAL_CERTIFICATE_PATH: /bootstrap/producer-3/opcert.cert
+    volumes:
+      - producer-3-data:/clusters:ro
+      - bootstrap-data:/bootstrap:ro
+      - mithril-signer-3-data:/mithril
+      - ./mithril.sh:/profile/mithril.sh:ro
 volumes:
   bootstrap-data:
   cluster-data:
@@ -158,3 +251,6 @@ volumes:
   history-data:
   history-cache:
   history-logs:
+  mithril-aggregator-data:
+  mithril-signer-2-data:
+  mithril-signer-3-data:

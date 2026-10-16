@@ -71,6 +71,7 @@ type ChannelStateLike = {
         revisionNumber: bigint;
         revisionHeight: bigint;
     };
+    upgrade?: any;
 };
 type ChannelDatumLike = {
     state: ChannelStateLike;
@@ -108,6 +109,11 @@ export interface BindPortStateRootResult extends StateRootResult {
 export interface UpdateChannelStateRootResult extends StateRootResult {
     channelSiblings: string[];
 }
+export interface UpgradeChannelStateRootResult extends StateRootResult {
+    channelSiblings: string[];
+    upgradeSiblings: string[];
+    errorReceiptSiblings: string[];
+}
 export interface UpdateClientStateRootResult extends StateRootResult {
     clientStateSiblings: string[];
     consensusStateSiblings: string[];
@@ -121,6 +127,16 @@ export declare function encodeClientStateValue(clientState: any, Lucid: typeof i
 export declare function encodeConsensusStateValue(consensusState: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
 export declare function encodeConnectionEndValue(connectionEnd: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
 export declare function encodeChannelEndValue(channelEnd: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
+export declare function encodeChannelUpgradeValue(upgrade: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
+export declare function encodeChannelUpgradeErrorValue(receipt: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
+/**
+ * The committed upgrade and error-receipt values of a channel's upgrade state.
+ * An absent record commits the empty value, which removes its key.
+ */
+export declare function encodeChannelUpgradeRecords(upgrade: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<{
+    upgrade: Buffer;
+    errorReceipt: Buffer;
+}>;
 export declare function encodeModuleRegistration(registration: any, Lucid: typeof import('@lucid-evolution/lucid')): Promise<string>;
 /**
  * One deployment's working tree and the readers used to rebuild it.
@@ -160,6 +176,18 @@ export declare class IbcTreeStateStore {
     computeRootWithCreateConnectionUpdate(oldRoot: string, connectionId: string, connectionValue: Buffer): CreateConnectionStateRootResult;
     computeRootWithCreateChannelUpdate(oldRoot: string, portId: string, channelId: string, channelValue: Buffer, nextSequenceSendValue: Buffer, nextSequenceRecvValue: Buffer, nextSequenceAckValue: Buffer): CreateChannelStateRootResult;
     computeRootWithUpdateChannelUpdate(oldRoot: string, portId: string, channelId: string, channelValue: Buffer): UpdateChannelStateRootResult;
+    /**
+     * Witnesses for an UpgradeChannel step: the channel end, upgrade and error
+     * receipt keys are updated in that order. Unchanged keys take no witness.
+     */
+    computeRootWithUpgradeChannelUpdate(oldRoot: string, portId: string, channelId: string, values: {
+        oldChannel: Buffer;
+        newChannel: Buffer;
+        oldUpgrade: Buffer;
+        newUpgrade: Buffer;
+        oldErrorReceipt: Buffer;
+        newErrorReceipt: Buffer;
+    }): UpgradeChannelStateRootResult;
     computeRootWithPrunePacketHistoryUpdate(oldRoot: string, portId: string, channelId: string, sequence: bigint, ordering: 'None' | 'Unordered' | 'Ordered'): PrunePacketHistoryStateRootResult;
     computeRootWithPortBind(oldRoot: string, portId: string, portValue: Buffer): BindPortStateRootResult;
     getCurrentTree(): ICS23MerkleTree;

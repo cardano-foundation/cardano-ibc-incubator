@@ -33,7 +33,7 @@ github.com/cosmos/ibc-go/v8 v8.7.0
 
 For `ibc-go/v10` chains, use the sibling module at `cosmos/cardano-probabilistic-light-client-v10`.
 
-Shared Cardano block, HostState, and commitment-proof logic lives in `cosmos/cardano-probabilistic-light-client-core`; this module only carries the `ibc-go/v8` adapter surface around that shared implementation.
+The state machine lives in `cosmos/cardano-probabilistic-light-client-core/state`. This module keeps the `ibc-go/v8` interfaces, registered protobufs, codecs, proof-value conversions, and events. Put changes to verification, checkpoints, time rules, or recovery in the shared core. See the [core README](../cardano-probabilistic-light-client-core/README.md) for regeneration and testing instructions.
 
 ## Integration
 
@@ -59,6 +59,19 @@ Exact wiring varies by chain, but the app must register the concrete client type
 
 The chain's IBC client params must allow `08-cardano-probabilistic`. If the params are restricted to only `06-solomachine` and `07-tendermint`, `MsgCreateClient` will still fail even if the Go code is compiled into the binary.
 
+## Commitment Paths
+
+Membership and non-membership verification accept only a two-component
+Merkle path: `["ibc", "<IBC object key>"]`, with a nonempty object key.
+The `ibc` namespace matches Cardano's on-chain `default_merkle_prefix` in
+`ics-024-host-requirements/connection_keys.ak`; it is not configurable.
+Paths with missing, different, or extra prefix components are rejected.
+
+After validating the full path, the adapter removes the namespace because
+`ibc_state_root` commits directly to object keys. Consensus-state keys retain
+the existing translation from `consensusStates/<revisionNumber>-<revisionHeight>`
+to Cardano's `consensusStates/<revisionHeight>` format.
+
 ## Release Tags
 
 Because this is a nested Go module, release tags must be prefixed with the module directory:
@@ -73,3 +86,13 @@ Consumers can then require it with:
 ```sh
 go get github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8@v0.1.7
 ```
+
+## Epoch challenge deployment
+
+Only an uncertified stake distribution starts a six-hour challenge window.
+A matching Mithril certificate removes that wait. Host interruptions pause an
+unfinished window without restarting elapsed time or re-locking usable roots.
+Bootstrap requires Mithril certification. Authorized recovery adopts a usable
+substitute without a new stake challenge. Dependent updates and proof use still
+require a completed host block after their own cutoff. See [operation, migration and remaining trust
+assumptions](../../docs/probabilistic-light-client.md#epoch-context-challenge-window).

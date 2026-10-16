@@ -385,6 +385,7 @@ Deno.test("atomic finalization stays below the mainnet transaction size", async 
         live_clients: 0n,
         live_connections: 0n,
         live_channels: 0n,
+        last_heartbeat_time: 0n,
       },
     },
     HostStateDatum,

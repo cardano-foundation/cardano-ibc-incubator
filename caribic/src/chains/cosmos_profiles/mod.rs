@@ -75,10 +75,12 @@ impl ChainAdapter for CosmosProfilesChainAdapter {
         request: &ChainStartRequest<'_>,
     ) -> Result<(), String> {
         self.validate_flags(request.network, request.flags)?;
-        let profile = CosmosTestProfile::parse(request.network)?.config();
+        let profile = CosmosTestProfile::parse(request.network)?
+            .config()
+            .configured()?;
         let options = CosmosProfileOptions::from_flags(request.flags)?;
 
-        lifecycle::prepare(project_root_path, *profile, options.stateful_or(false)).map_err(
+        lifecycle::prepare(project_root_path, profile, options.stateful_or(false)).map_err(
             |error| {
                 format!(
                     "Failed to prepare Cosmos profile '{}': {}",
@@ -86,10 +88,10 @@ impl ChainAdapter for CosmosProfilesChainAdapter {
                 )
             },
         )?;
-        lifecycle::start(project_root_path, *profile)
+        lifecycle::start(project_root_path, profile)
             .await
             .map_err(|error| format!("Failed to start {}: {}", profile.display_name, error))?;
-        hermes::sync_profile_with_hermes(project_root_path, *profile).map_err(|error| {
+        hermes::sync_profile_with_hermes(project_root_path, profile).map_err(|error| {
             format!(
                 "Started {}, but failed to sync its Hermes configuration: {}",
                 profile.display_name, error
@@ -106,8 +108,8 @@ impl ChainAdapter for CosmosProfilesChainAdapter {
         flags: &ChainFlags,
     ) -> Result<(), String> {
         self.validate_flags(network, flags)?;
-        let profile = CosmosTestProfile::parse(network)?.config();
-        lifecycle::stop(project_root_path, *profile);
+        let profile = CosmosTestProfile::parse(network)?.config().configured()?;
+        lifecycle::stop(project_root_path, profile);
         Ok(())
     }
 
@@ -118,7 +120,7 @@ impl ChainAdapter for CosmosProfilesChainAdapter {
         flags: &ChainFlags,
     ) -> Result<Vec<ChainHealthStatus>, String> {
         self.validate_flags(network, flags)?;
-        let profile = CosmosTestProfile::parse(network)?.config();
+        let profile = CosmosTestProfile::parse(network)?.config().configured()?;
         let rpc_label = match profile.semantics {
             IbcSemantics::Classic => "Cosmos Classic profile (RPC)",
             IbcSemantics::V2 => "Cosmos IBC v2 profile (RPC)",
@@ -147,13 +149,14 @@ pub(crate) fn configure_hermes_for_classic_route(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let profile = CosmosTestProfile::parse(profile)
         .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?
-        .config();
-    hermes::configure_classic_profile(project_root_path, *profile)
+        .config()
+        .configured()?;
+    hermes::configure_classic_profile(project_root_path, profile)
 }
 
 pub(crate) fn validate_route_state(project_root_path: &Path, profile: &str) -> Result<(), String> {
-    let profile = CosmosTestProfile::parse(profile)?.config();
-    clock::FixtureClock::selected(project_root_path, *profile)?
+    let profile = CosmosTestProfile::parse(profile)?.config().configured()?;
+    clock::FixtureClock::selected(project_root_path, profile)?
         .validate_retained_state(&profile.state_dir(project_root_path))
 }
 
@@ -383,15 +386,21 @@ mod tests {
                 yaml_string(&compose_service.environment, "COSMOS_IBC_SEMANTICS"),
                 config.semantics.as_str()
             );
-            assert!(compose_service
-                .ports
-                .contains(&format!("{}:26657", config.rpc_port)));
-            assert!(compose_service
-                .ports
-                .contains(&format!("{}:9090", config.grpc_port)));
-            assert!(compose_service
-                .ports
-                .contains(&format!("{}:1317", config.rest_port)));
+            assert!(compose_service.ports.contains(&format!(
+                "${{COSMOS_{}_RPC_PORT:-{}}}:26657",
+                config.name.replace('-', "_").to_ascii_uppercase(),
+                config.rpc_port
+            )));
+            assert!(compose_service.ports.contains(&format!(
+                "${{COSMOS_{}_GRPC_PORT:-{}}}:9090",
+                config.name.replace('-', "_").to_ascii_uppercase(),
+                config.grpc_port
+            )));
+            assert!(compose_service.ports.contains(&format!(
+                "${{COSMOS_{}_REST_PORT:-{}}}:1317",
+                config.name.replace('-', "_").to_ascii_uppercase(),
+                config.rest_port
+            )));
 
             assert!(chain_ids.insert(config.chain_id));
             assert!(rpc_ports.insert(config.rpc_port));

@@ -237,6 +237,7 @@ describe('Timeout packet ICS-20 JSON validation', () => {
     const message: MsgTimeoutOnClose = {
       ...buildMsgTimeout(packetData),
       proof_close: proofClose,
+      counterparty_upgrade_sequence: 0n,
     };
 
     const result = validateAndFormatTimeoutOnClosePacketParams(message);

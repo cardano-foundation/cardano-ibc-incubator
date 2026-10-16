@@ -175,6 +175,7 @@ fn validate_chan_open_ack_proof(
       counterparty: expected_counterparty,
       connection_hops: counterparty_hops,
       version: counterparty_version,
+      upgrade_sequence: 0,
     }
 
   let verify_proof_redeemer =

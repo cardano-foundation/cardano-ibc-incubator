@@ -24,6 +24,10 @@ export enum State {
    * packets.
    */
   STATE_CLOSED = 4,
+  /** STATE_FLUSHING - A channel has just accepted the upgrade handshake attempt and is flushing in-flight packets. */
+  STATE_FLUSHING = 5,
+  /** STATE_FLUSHCOMPLETE - A channel has just completed flushing any in-flight packets. */
+  STATE_FLUSHCOMPLETE = 6,
   UNRECOGNIZED = -1,
 }
 export function stateFromJSON(object: any): State {
@@ -43,6 +47,12 @@ export function stateFromJSON(object: any): State {
     case 4:
     case "STATE_CLOSED":
       return State.STATE_CLOSED;
+    case 5:
+    case "STATE_FLUSHING":
+      return State.STATE_FLUSHING;
+    case 6:
+    case "STATE_FLUSHCOMPLETE":
+      return State.STATE_FLUSHCOMPLETE;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -61,6 +71,10 @@ export function stateToJSON(object: State): string {
       return "STATE_OPEN";
     case State.STATE_CLOSED:
       return "STATE_CLOSED";
+    case State.STATE_FLUSHING:
+      return "STATE_FLUSHING";
+    case State.STATE_FLUSHCOMPLETE:
+      return "STATE_FLUSHCOMPLETE";
     case State.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -139,6 +153,11 @@ export interface Channel {
    * opaque channel version, which is agreed upon during the handshake
    */
   version: string;
+  /**
+   * upgrade sequence indicates the latest upgrade attempt performed by this channel
+   * the value of 0 indicates the channel has never been upgraded
+   */
+  upgrade_sequence: bigint;
 }
 /**
  * IdentifiedChannel defines a channel with additional port and channel
@@ -177,6 +196,11 @@ export interface IdentifiedChannel {
    * channel identifier
    */
   channel_id: string;
+  /**
+   * upgrade sequence indicates the latest upgrade attempt performed by this channel
+   * the value of 0 indicates the channel has never been upgraded
+   */
+  upgrade_sequence: bigint;
 }
 /**
  * Counterparty defines a channel end counterparty
@@ -310,6 +334,24 @@ export interface Coin {
   denom: string;
   amount: bigint;
 }
+/**
+ * Timeout defines an execution deadline structure for 04-channel handlers.
+ * This includes packet lifecycle handlers as well as the upgrade handshake handlers.
+ * A valid Timeout contains either one or both of a timestamp and block height (sequence).
+ * @name Timeout
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.Timeout
+ */
+export interface Timeout {
+  /**
+   * block height after which the packet or upgrade times out
+   */
+  height: Height;
+  /**
+   * block timestamp (in nanoseconds) after which the packet or upgrade times out
+   */
+  timestamp: bigint;
+}
 function createBaseChannel(): Channel {
   return {
     state: 0,
@@ -317,6 +359,7 @@ function createBaseChannel(): Channel {
     counterparty: Counterparty.fromPartial({}),
     connection_hops: [],
     version: "",
+    upgrade_sequence: BigInt(0),
   };
 }
 /**
@@ -345,6 +388,9 @@ export const Channel = {
     if (message.version !== "") {
       writer.uint32(42).string(message.version);
     }
+    if (message.upgrade_sequence !== BigInt(0)) {
+      writer.uint32(48).uint64(message.upgrade_sequence);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): Channel {
@@ -369,6 +415,9 @@ export const Channel = {
         case 5:
           message.version = reader.string();
           break;
+        case 6:
+          message.upgrade_sequence = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -384,6 +433,7 @@ export const Channel = {
     if (Array.isArray(object?.connection_hops))
       obj.connection_hops = object.connection_hops.map((e: any) => String(e));
     if (isSet(object.version)) obj.version = String(object.version);
+    if (isSet(object.upgrade_sequence)) obj.upgrade_sequence = BigInt(object.upgrade_sequence.toString());
     return obj;
   },
   toJSON(message: Channel): unknown {
@@ -398,6 +448,8 @@ export const Channel = {
       obj.connection_hops = [];
     }
     message.version !== undefined && (obj.version = message.version);
+    message.upgrade_sequence !== undefined &&
+      (obj.upgrade_sequence = (message.upgrade_sequence || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Channel>, I>>(object: I): Channel {
@@ -409,6 +461,9 @@ export const Channel = {
     }
     message.connection_hops = object.connection_hops?.map((e) => e) || [];
     message.version = object.version ?? "";
+    if (object.upgrade_sequence !== undefined && object.upgrade_sequence !== null) {
+      message.upgrade_sequence = BigInt(object.upgrade_sequence.toString());
+    }
     return message;
   },
 };
@@ -421,6 +476,7 @@ function createBaseIdentifiedChannel(): IdentifiedChannel {
     version: "",
     port_id: "",
     channel_id: "",
+    upgrade_sequence: BigInt(0),
   };
 }
 /**
@@ -454,6 +510,9 @@ export const IdentifiedChannel = {
     if (message.channel_id !== "") {
       writer.uint32(58).string(message.channel_id);
     }
+    if (message.upgrade_sequence !== BigInt(0)) {
+      writer.uint32(64).uint64(message.upgrade_sequence);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): IdentifiedChannel {
@@ -484,6 +543,9 @@ export const IdentifiedChannel = {
         case 7:
           message.channel_id = reader.string();
           break;
+        case 8:
+          message.upgrade_sequence = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -501,6 +563,7 @@ export const IdentifiedChannel = {
     if (isSet(object.version)) obj.version = String(object.version);
     if (isSet(object.port_id)) obj.port_id = String(object.port_id);
     if (isSet(object.channel_id)) obj.channel_id = String(object.channel_id);
+    if (isSet(object.upgrade_sequence)) obj.upgrade_sequence = BigInt(object.upgrade_sequence.toString());
     return obj;
   },
   toJSON(message: IdentifiedChannel): unknown {
@@ -517,6 +580,8 @@ export const IdentifiedChannel = {
     message.version !== undefined && (obj.version = message.version);
     message.port_id !== undefined && (obj.port_id = message.port_id);
     message.channel_id !== undefined && (obj.channel_id = message.channel_id);
+    message.upgrade_sequence !== undefined &&
+      (obj.upgrade_sequence = (message.upgrade_sequence || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<IdentifiedChannel>, I>>(object: I): IdentifiedChannel {
@@ -530,6 +595,9 @@ export const IdentifiedChannel = {
     message.version = object.version ?? "";
     message.port_id = object.port_id ?? "";
     message.channel_id = object.channel_id ?? "";
+    if (object.upgrade_sequence !== undefined && object.upgrade_sequence !== null) {
+      message.upgrade_sequence = BigInt(object.upgrade_sequence.toString());
+    }
     return message;
   },
 };
@@ -1018,6 +1086,74 @@ export const Coin = {
     message.denom = object.denom ?? "";
     if (object.amount !== undefined && object.amount !== null) {
       message.amount = BigInt(object.amount.toString());
+    }
+    return message;
+  },
+};
+function createBaseTimeout(): Timeout {
+  return {
+    height: Height.fromPartial({}),
+    timestamp: BigInt(0),
+  };
+}
+/**
+ * Timeout defines an execution deadline structure for 04-channel handlers.
+ * This includes packet lifecycle handlers as well as the upgrade handshake handlers.
+ * A valid Timeout contains either one or both of a timestamp and block height (sequence).
+ * @name Timeout
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.Timeout
+ */
+export const Timeout = {
+  typeUrl: "/ibc.core.channel.v1.Timeout",
+  encode(message: Timeout, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.height !== undefined) {
+      Height.encode(message.height, writer.uint32(10).fork()).ldelim();
+    }
+    if (message.timestamp !== BigInt(0)) {
+      writer.uint32(16).uint64(message.timestamp);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): Timeout {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseTimeout();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.height = Height.decode(reader, reader.uint32());
+          break;
+        case 2:
+          message.timestamp = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): Timeout {
+    const obj = createBaseTimeout();
+    if (isSet(object.height)) obj.height = Height.fromJSON(object.height);
+    if (isSet(object.timestamp)) obj.timestamp = BigInt(object.timestamp.toString());
+    return obj;
+  },
+  toJSON(message: Timeout): unknown {
+    const obj: any = {};
+    message.height !== undefined && (obj.height = message.height ? Height.toJSON(message.height) : undefined);
+    message.timestamp !== undefined && (obj.timestamp = (message.timestamp || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<Timeout>, I>>(object: I): Timeout {
+    const message = createBaseTimeout();
+    if (object.height !== undefined && object.height !== null) {
+      message.height = Height.fromPartial(object.height);
+    }
+    if (object.timestamp !== undefined && object.timestamp !== null) {
+      message.timestamp = BigInt(object.timestamp.toString());
     }
     return message;
   },

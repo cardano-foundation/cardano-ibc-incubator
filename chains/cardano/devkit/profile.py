@@ -2,10 +2,13 @@
 """Provision Caribic's five-producer Cardano network through Yaci DevKit."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from fractions import Fraction
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -27,9 +30,14 @@ PORTS = {
     "DEVKIT_HISTORY_DB_PORT": "15432",
     "DEVKIT_GATEWAY_DB_PORT": "15433",
     "DEVKIT_NONCE_PORT": "18082",
+    "DEVKIT_MITHRIL_PORT": "18083",
 }
 DEFAULTS = {**PORTS, "DEVKIT_HOST": "127.0.0.1"}
 PRODUCERS = tuple(f"producer-{index}" for index in range(2, 6))
+MITHRIL_SIGNERS = ("mithril-signer-2", "mithril-signer-3")
+# A clock step must stay well inside the 3k/f = 576-slot forecast window, or
+# the producers can't forge after it. The migration rehearsal uses the same.
+CLOCK_STEP_SECONDS = 300
 
 
 def read_settings(path):
@@ -76,10 +84,11 @@ def http(url, data=None, timeout=15):
         return json.load(response)
 
 
-def wait_for(label, probe, timeout=180):
+def wait_for(label, probe, timeout=180, quiet=False):
     deadline = time.monotonic() + timeout
     last_error = "not ready"
-    next_log = 0
+    # A quiet wait reports only once it takes a while.
+    next_log = time.monotonic() + 15 if quiet else 0
     while time.monotonic() < deadline:
         try:
             result = probe()
@@ -127,6 +136,7 @@ class Runtime:
         suffix = hashlib.sha256(str(self.root).encode()).hexdigest()[:12]
         self.project = f"caribic-devkit-{suffix}"
         self.settings_path = self.state / "runtime.env"
+        self.clock_dir = self.state / "clock"
         settings = read_settings(self.settings_path)
         if not settings:
             settings = {**DEFAULTS, **read_settings(PROFILE / ".env")}
@@ -144,6 +154,7 @@ class Runtime:
         clock_path = self.state / "clock-offset"
         if clock_path.exists():
             env["DEVKIT_CLOCK_OFFSET"] = clock_path.read_text().strip()
+        env["DEVKIT_CLOCK_DIR"] = str(self.clock_dir)
         result = subprocess.run(
             ["docker", "compose", "--project-name", self.project,
              "--file", str(PROFILE / "compose.yaml"), *args],
@@ -154,8 +165,32 @@ class Runtime:
     def cli(self, *args):
         return self.compose("exec", "-T", "devkit", "cardano-cli", *args, capture=True)
 
+    def tip(self, node="devkit"):
+        return json.loads(self.compose("exec", "-T", node, "cardano-cli", "query", "tip",
+                                       "--testnet-magic", "42", capture=True))
+
+    def clock_offset(self):
+        value = (self.state / "clock-offset").read_text().strip()
+        if not re.fullmatch(r"[+-][0-9]+s", value):
+            raise ValueError("Invalid local network clock offset")
+        return int(value[:-1])
+
+    def set_clock(self, offset):
+        # The nodes reread the shared clock file on every clock call. It is
+        # replaced whole, and the recorded offset follows it.
+        if offset > 0:
+            raise RuntimeError("The local network clock must not pass the host clock")
+        self.clock_dir.mkdir(exist_ok=True)
+        pending = self.clock_dir / "clock.rc.pending"
+        pending.write_text(f"{offset:+d}s\n")
+        pending.replace(self.clock_dir / "clock.rc")
+        (self.state / "clock-offset").write_text(f"{offset:+d}s")
+
     def endpoint(self, port):
         return f'http://{self.settings["DEVKIT_HOST"]}:{self.settings[port]}'
+
+    def mithril_endpoint(self):
+        return self.endpoint("DEVKIT_MITHRIL_PORT") + "/aggregator"
 
     def ogmios(self, method, params=None, follow_up=None):
         response = subprocess.run(
@@ -199,11 +234,15 @@ class Runtime:
             "DEVKIT_ADMIN_ENDPOINT": self.endpoint("DEVKIT_ADMIN_PORT"),
             "CARDANO_DOCKER_NETWORK_EXTERNAL": "true",
             "CARDANO_EPOCH_LENGTH": str(genesis["shelley"]["epochLength"]),
+            # This managed network starts in Conway. Its native window is 4*k/f.
+            "CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS": str(math.ceil(
+                4 * genesis["shelley"]["securityParam"] / Fraction(str(genesis["shelley"]["activeSlotsCoeff"])))),
             "GATEWAY_DB_HOST": host, "GATEWAY_DB_PORT": self.settings["DEVKIT_GATEWAY_DB_PORT"],
             "GATEWAY_DB_NAME": "gateway_app", "GATEWAY_DB_USERNAME": "postgres",
             "GATEWAY_DB_PASSWORD": "postgres",
             "CARDANO_EPOCH_PARAMS_ENDPOINT": self.endpoint("DEVKIT_NONCE_PORT"),
             "CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT": self.endpoint("DEVKIT_NONCE_PORT"),
+            "MITHRIL_ENDPOINT": self.mithril_endpoint(),
         }
         write_env(self.state / "endpoints.env", values)
         container = {**values, "OGMIOS_ENDPOINT": "http://devkit:1337",
@@ -214,6 +253,7 @@ class Runtime:
                      "GATEWAY_DB_HOST": "gateway-db", "GATEWAY_DB_PORT": "5432",
                      "CARDANO_EPOCH_PARAMS_ENDPOINT": "http://nonce:8080",
                      "CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT": "http://nonce:8080",
+                     "MITHRIL_ENDPOINT": "http://mithril-aggregator:8080/aggregator",
                      "CARDANO_DOCKER_NETWORK": self.project + "_default",
                      "GATEWAY_COMPOSE_PROJECT": self.project + "-gateway",
                      "GATEWAY_CONTAINER_NAME": self.project + "-gateway-app",
@@ -323,13 +363,22 @@ class Runtime:
             # runs at normal speed and its offset survives restarts.
             target = datetime(2025, 12, 31, tzinfo=timezone.utc).timestamp()
             clock_path.write_text(f"{int(target - time.time()):+d}s")
+        clock_file = self.clock_dir / "clock.rc"
+        if clock_file.exists():
+            # A step interrupted between the two writes leaves the nodes' clock ahead.
+            clock_path.write_text(clock_file.read_text().strip())
+        else:
+            self.set_clock(self.clock_offset())
         self.compose("run", "--rm", "--build", "bootstrap")
         # Saved producers must resume before the primary waits for a new block.
         nodes = ["devkit", *PRODUCERS] if (self.state / "genesis.json").exists() else ["devkit"]
         self.compose("up", "-d", "--build", *nodes)
         admin = self.endpoint("DEVKIT_ADMIN_PORT") + "/local-cluster/api/admin/devnet"
         wait_for("DevKit genesis", lambda: http(admin + "/genesis/shelley"))
-        wait_for("Ogmios block production", lambda: block_production_ready(self.endpoint("DEVKIT_OGMIOS_PORT")))
+        if getattr(self, "start_all_producers_before_blocks", False):
+            self.compose("up", "-d", "--build", *PRODUCERS)
+        wait_for("Ogmios block production", lambda: block_production_ready(self.endpoint("DEVKIT_OGMIOS_PORT")),
+                 timeout=getattr(self, "block_readiness_timeout", 180))
         self.compose("up", "-d", "--build", "nonce", "gateway-db")
         self.compose("exec", "-T", "devkit", "sh", "-c",
                      "for era in byron shelley alonzo conway; do "
@@ -342,9 +391,14 @@ class Runtime:
                  timeout=180)
         wait_for("Kupo", lambda: http(self.endpoint("DEVKIT_KUPO_PORT") + "/health"))
         self.compose("up", "-d", "--build", *PRODUCERS)
-        wait_for("five active block producers", self.producers_ready, timeout=300)
+        wait_for("five active block producers", self.producers_ready,
+                 timeout=getattr(self, "producer_readiness_timeout", 300))
         wait_for("Yaci history", lambda:
                  http(self.endpoint("DEVKIT_HISTORY_PORT") + "/api/v1/blocks/latest").get("height", 0) > 0, timeout=600)
+        self.start_mithril()
+        if getattr(self, "mithril_fast_forward", True):
+            self.fast_forward_mithril()
+            self.export_endpoints()
         genesis = {era: http(admin + "/genesis/" + era) for era in ("byron", "shelley", "alonzo", "conway")}
         write_json(self.state / "genesis.json", genesis)
         report = {
@@ -358,6 +412,79 @@ class Runtime:
         write_json(self.state / "startup.json", report)
         print(f"DevKit is ready. Endpoints: {self.state / 'endpoints.env'}")
         print("Five active producers, Ogmios, Kupo, chain history and epoch nonces are ready.")
+        if getattr(self, "mithril_fast_forward", True):
+            print("Mithril has certified the stake that a new client bootstraps from.")
+
+    def start_mithril(self):
+        # The aggregator and signers start in epoch 1 and create the genesis
+        # certificate in epoch 2 themselves. Signing starts in epoch 3.
+        self.compose("up", "-d", "mithril-aggregator", *MITHRIL_SIGNERS)
+
+    def fast_forward_mithril(self):
+        # A client bootstrapped in epoch C needs Mithril's certificates of the
+        # epoch C-3 and C-2 stake distributions, so a new network's first
+        # client waits for epoch 5, about seven hours. Mithril follows epochs
+        # on the chain, so the clock is stepped through them instead. Each
+        # epoch is left only once Mithril and the nonce service have done that
+        # epoch's work, and readiness is judged only after that, once a
+        # restarted aggregator serves again. A ready network keeps its clock.
+        epoch = self.tip()["epoch"]
+        self.settle_epoch(epoch)
+        while not self.mithril_ready(epoch):
+            while self.tip()["epoch"] == epoch:
+                self.advance_clock(CLOCK_STEP_SECONDS)
+            epoch = self.tip()["epoch"]
+            print(f"Local network clock reached epoch {epoch}.", flush=True)
+            self.settle_epoch(epoch)
+
+    def mithril_ready(self, epoch):
+        return epoch >= 3 and self.mithril_artifact(epoch - 3) and self.mithril_artifact(epoch - 2)
+
+    def mithril_artifact(self, epoch):
+        try:
+            return bool(http(f"{self.mithril_endpoint()}/artifact/cardano-stake-distribution/epoch/{epoch}"))
+        except OSError:
+            return False
+
+    def settle_nonce(self, epoch):
+        # The nonce service only records epochs it observes.
+        nonce = self.endpoint("DEVKIT_NONCE_PORT") + "/health"
+        wait_for(f"the epoch {epoch} nonce", lambda: epoch in http(nonce)["observed_epochs"], timeout=300)
+
+    def settle_epoch(self, epoch):
+        self.settle_nonce(epoch)
+        if epoch < 1:
+            return
+        # Signers registered in an epoch sign two epochs later.
+        aggregator = self.mithril_endpoint()
+        wait_for(f"Mithril signer registrations in epoch {epoch}", lambda:
+                 len(http(f"{aggregator}/signers/registered/{epoch}")["registrations"]) == len(MITHRIL_SIGNERS),
+                 timeout=900)
+        if epoch >= 2:
+            wait_for("the Mithril genesis certificate", lambda: http(aggregator + "/certificates"), timeout=600)
+        if epoch >= 3:
+            wait_for(f"Mithril's certificate of the epoch {epoch - 1} stake distribution",
+                     lambda: self.mithril_artifact(epoch - 1), timeout=600)
+
+    def advance_clock(self, seconds):
+        before = self.tip()
+        self.set_clock(self.clock_offset() + seconds)
+        # Every producer must forge or adopt a block past the step, on the
+        # history Yaci indexed. A step can otherwise leave pools on a fork.
+        wait_for("all five producers past the clock step",
+                 lambda: self.canonical_tips(before["slot"] + seconds - 20), timeout=180, quiet=True)
+
+    def canonical_tips(self, minimum_slot):
+        with ThreadPoolExecutor(len(PRODUCERS) + 1) as pool:
+            points = list(pool.map(self.tip, ("devkit", *PRODUCERS)))
+        if any(int(point.get("slot", -1)) < minimum_slot for point in points):
+            return False
+        if not all(re.fullmatch("[0-9a-f]{64}", point.get("hash", "")) for point in points):
+            raise RuntimeError("Malformed producer block hash")
+        distinct = {(int(point["block"]), int(point["slot"]), point["hash"]) for point in points}
+        listed = ", ".join(f"({number}, {slot}, '{digest}')" for number, slot, digest in sorted(distinct))
+        found = self.sql(f"SELECT count(*) FROM block WHERE (number, slot, hash) IN ({listed})")
+        return found == str(len(distinct))
 
     def resources(self):
         ids = self.compose("ps", "-q", capture=True).split()
@@ -383,7 +510,7 @@ class Runtime:
         if any(project != self.project for project in attached):
             raise RuntimeError("Stop the bridge services before resetting their DevKit network")
         self.compose("down", "--volumes", "--remove-orphans")
-        for name in ("runtime.env", "endpoints.env", "container-endpoints.env", "startup.json", "genesis.json", "test.json", "profile.sha256", "clock-offset", "instance-id"):
+        for name in ("runtime.env", "endpoints.env", "container-endpoints.env", "startup.json", "genesis.json", "test.json", "profile.sha256", "clock-offset", "instance-id", "clock/clock.rc"):
             (self.state / name).unlink(missing_ok=True)
         self.settings = settings
         self.start()

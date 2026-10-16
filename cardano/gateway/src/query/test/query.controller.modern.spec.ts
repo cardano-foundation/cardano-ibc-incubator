@@ -146,8 +146,11 @@ describe('QueryController (modern)', () => {
   it('delegates NewClient to QueryService and returns its response', async () => {
     const request = { height: 123n } as any;
     const expected = {
-      client_state: { type_url: '/ibc.lightclients.mithril.v1.ClientState', value: Buffer.from('01', 'hex') },
-      consensus_state: { type_url: '/ibc.lightclients.mithril.v1.ConsensusState', value: Buffer.from('02', 'hex') },
+      client_state: { type_url: '/ibc.lightclients.probabilistic.v1.ClientState', value: Buffer.from('01', 'hex') },
+      consensus_state: {
+        type_url: '/ibc.lightclients.probabilistic.v1.ConsensusState',
+        value: Buffer.from('02', 'hex'),
+      },
     } as any;
     queryServiceMock.queryNewClient.mockResolvedValue(expected);
 
@@ -337,7 +340,7 @@ describe('QueryController (modern)', () => {
       queryServiceMock,
       'queryIBCHeader',
       { height: 500n },
-      { header: { type_url: '/ibc.lightclients.mithril.v1.MithrilHeader', value: Buffer.from([1]) } },
+      { header: { type_url: '/ibc.lightclients.probabilistic.v1.ProbabilisticHeader', value: Buffer.from([1]) } },
     );
   });
 

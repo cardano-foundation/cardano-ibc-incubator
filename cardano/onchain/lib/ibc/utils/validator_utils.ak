@@ -1,3 +1,4 @@
+use aiken/builtin
 use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
@@ -29,13 +30,13 @@ use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_025_handler_interface/host_state.{
   HostStateDatum, ModuleRegistration, host_state_token_name, is_active,
 }
-use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 
 pub type ExpectedHostStateRedeemer {
   ExpectUpdateClient
   ExpectUpdateConnection
   ExpectUpdateChannel
   ExpectHandlePacket
+  ExpectUpgradeChannel
 }
 
 type PosixTime =
@@ -642,31 +643,15 @@ pub fn require_host_state_thread(
   (host_input, host_output)
 }
 
-fn host_state_redeemer_matches(
-  redeemer: host_state_redeemer.HostStateRedeemer,
-  expected: ExpectedHostStateRedeemer,
-) -> Bool {
+// HostStateRedeemer constructor indices. The HostState validator decodes and
+// checks its whole redeemer, so a co-spending validator only selects the branch.
+fn host_state_redeemer_index(expected: ExpectedHostStateRedeemer) -> Int {
   when expected is {
-    ExpectUpdateClient ->
-      when redeemer is {
-        host_state_redeemer.UpdateClient { .. } -> True
-        _ -> False
-      }
-    ExpectUpdateConnection ->
-      when redeemer is {
-        host_state_redeemer.UpdateConnection { .. } -> True
-        _ -> False
-      }
-    ExpectUpdateChannel ->
-      when redeemer is {
-        host_state_redeemer.UpdateChannel { .. } -> True
-        _ -> False
-      }
-    ExpectHandlePacket ->
-      when redeemer is {
-        host_state_redeemer.HandlePacket { .. } -> True
-        _ -> False
-      }
+    ExpectUpdateClient -> 4
+    ExpectUpdateConnection -> 5
+    ExpectUpdateChannel -> 6
+    ExpectHandlePacket -> 7
+    ExpectUpgradeChannel -> 14
   }
 }
 
@@ -683,9 +668,10 @@ pub fn require_host_state_redeemer(
 
   expect Some(spent_host_state_redeemer) =
     pairs.get_first(redeemers, Spend(host_input.output_reference))
-  expect host_redeemer: host_state_redeemer.HostStateRedeemer =
-    spent_host_state_redeemer
-  expect host_state_redeemer_matches(host_redeemer, expected)?
+  expect
+    builtin.fst_pair(builtin.un_constr_data(spent_host_state_redeemer)) == host_state_redeemer_index(
+      expected,
+    )
 
   (host_input, host_output)
 }

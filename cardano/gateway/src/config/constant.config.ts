@@ -6,3 +6,6 @@ export const TRANSACTION_TIME_TO_LIVE = 120_000; // 2 minutes
 // collateral before those final bytes; a 5 ADA floor underfunded a live update.
 // This remains below Hermes's default 10 ADA loss limit.
 export const TRANSACTION_SET_COLLATERAL = 8_000_000n; // 8 ADA
+
+export const HOST_STATE_HEARTBEAT_INTERVAL_MS = 6 * 60 * 60 * 1_000;
+export const MIN_CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS = 48 * 60 * 60;

@@ -3,11 +3,14 @@
 
 The source baseline and immutable policies are never edited. The replacement
 roles impose a finite normal-operation validity window; the independent
-migration branch is preserved. This is a test release, not a production proposal.
+migration branch is preserved. Heartbeats also receive a 30-second window so
+the probe remains stricter than the production two-minute bound. This is a
+test release, not a production proposal.
 """
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -38,6 +41,14 @@ def main():
             raise RuntimeError(f"Wrapper shape changed: review successor fixture for {role}")
         content = "use ibc/utils/validator_utils as migration_window\n" + content.replace(anchor, anchor +
             f"      expect migration_window.get_tx_valid_to(transaction.validity_range) - migration_window.get_tx_valid_from(transaction.validity_range) <= {args.window_ms}\n", 1)
+        if role == "host_state":
+            # The production heartbeat already caps its window at two minutes.
+            # Tighten this branch further so the rehearsal still proves that
+            # the successor enforces new code while normal ten-second probes pass.
+            heartbeat = re.compile(r"Heartbeat\s*->\s*host\.validate_heartbeat\(\s*old_datum,\s*new_datum,\s*transaction\.validity_range\s*,?\s*\)")
+            if len(heartbeat.findall(content)) != 1:
+                raise RuntimeError("Heartbeat wrapper changed: review successor fixture")
+            content = heartbeat.sub(lambda match: match.group(0) + " && migration_window.get_tx_valid_to(transaction.validity_range) - migration_window.get_tx_valid_from(transaction.validity_range) <= 30000", content)
         path.write_text(content)
     subprocess.run(["aiken", "fmt"], cwd=target, check=True)
     subprocess.run(["aiken", "build", "--deny", "--trace-level", "silent"], cwd=target, check=True)

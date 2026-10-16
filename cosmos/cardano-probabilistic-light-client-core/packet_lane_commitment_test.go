@@ -22,7 +22,7 @@ func laneDatumFixture(t *testing.T) []byte {
 		Version: 1, Root: bytes.Repeat([]byte{0xab}, 32),
 		Commitments: cbor.RawMessage{0xa0}, Receipts: cbor.RawMessage{0x80},
 		Acknowledgements: cbor.RawMessage{0xa0}, MinimumReceiveProofHeight: height,
-		MaximumReceiveProofHeight: height,
+		MaximumReceiveProofHeight: height, Balances: cbor.RawMessage{0xa0},
 	}
 	raw, err := cbor.Marshal(cbor.Tag{Number: 121, Content: datum})
 	if err != nil {
@@ -53,6 +53,40 @@ func TestPacketLaneDatumBindsIdentity(t *testing.T) {
 	}
 }
 
+func TestPacketLaneDatumRejectsLayoutChanges(t *testing.T) {
+	var original cbor.RawTag
+	if err := cbor.Unmarshal(laneDatumFixture(t), &original); err != nil {
+		t.Fatal(err)
+	}
+	var fields []cbor.RawMessage
+	if err := cbor.Unmarshal(original.Content, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []string{"constructor", "order", "type", "appended field"} {
+		t.Run(change, func(t *testing.T) {
+			changed := append([]cbor.RawMessage(nil), fields...)
+			tag := original.Number
+			switch change {
+			case "constructor":
+				tag++
+			case "order":
+				changed[2], changed[3] = changed[3], changed[2]
+			case "type":
+				changed[2] = cbor.RawMessage{0x40}
+			case "appended field":
+				changed = append(changed, cbor.RawMessage{0})
+			}
+			raw, err := cbor.Marshal(cbor.Tag{Number: tag, Content: changed})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := decodePacketLaneRoot(raw, 42, "transfer", "channel-0", 1, 16); err == nil {
+				t.Fatal("accepted changed packet-lane layout")
+			}
+		})
+	}
+}
+
 func laneBlockFixture(t *testing.T, invalid []uint, spentLater bool) ([]byte, string, []byte) {
 	t.Helper()
 	policy := bytes.Repeat([]byte{0x11}, 28)
@@ -78,7 +112,7 @@ func laneBlockFixture(t *testing.T, invalid []uint, spentLater bool) ([]byte, st
 	bodies := []cbor.RawMessage{bodyRaw}
 	witnesses := []map[uint64]any{{}}
 	if spentLater {
-		hash, _ := hex.DecodeString(body.Hash())
+		hash, _ := hex.DecodeString(body.Id().String())
 		laterRaw, marshalErr := cbor.Marshal(map[uint64]any{
 			0: []any{[]any{hash, uint64(0)}}, 1: []any{}, 2: uint64(2), 22: uint64(1),
 		})
@@ -98,7 +132,7 @@ func laneBlockFixture(t *testing.T, invalid []uint, spentLater bool) ([]byte, st
 	if err != nil {
 		t.Fatal(err)
 	}
-	return block, body.Hash(), policy
+	return block, body.Id().String(), policy
 }
 
 func TestPacketLaneExtractsRootFromActualAnchorHeight(t *testing.T) {

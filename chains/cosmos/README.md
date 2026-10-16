@@ -126,6 +126,15 @@ genesis. Preserve the existing home when needed with:
 caribic chain start --chain cosmos --network v10-classic --chain-flag stateful=true
 ```
 
+To run beside another local profile, set `COMPOSE_PROJECT_NAME` and
+`COSMOS_PROFILES_STATE_DIR` for the chain commands. The port variables use the
+profile name with underscores, for example `COSMOS_V8_CLASSIC_RPC_PORT`,
+`COSMOS_V8_CLASSIC_GRPC_PORT`, `COSMOS_V8_CLASSIC_REST_PORT` and
+`COSMOS_V8_CLASSIC_P2P_PORT`. Caribic uses the selected ports for health checks
+and Hermes configuration too. `CARIBIC_HERMES_DIR` selects a separate Hermes
+configuration, key store, log and PID directory for Caribic and this demo.
+Use an absolute directory and keep these settings consistent across the run.
+
 State is stored under `~/.caribic/cosmos-profiles/<profile>`. RPC endpoints use
 the host ports in the table; for example:
 

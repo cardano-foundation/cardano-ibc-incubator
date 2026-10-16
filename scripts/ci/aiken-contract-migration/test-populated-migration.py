@@ -140,6 +140,8 @@ def main():
     parser.add_argument('--retry-read-failure', metavar='STEP', help='Explicit one-step settlement retry after checking retained read-failure logs for construction/submission evidence; canonical pending state remains authoritative')
     args = parser.parse_args()
     runtime, artifacts = args.runtime.resolve(), args.artifacts_dir.resolve()
+    if (runtime / 'fresh-deployment-required.json').exists() and artifacts == runtime:
+        parser.error('This checkpoint restores chain history only. Deploy the selected contracts into a fresh artifact directory before rehearsing.')
     if any(not p.is_relative_to(ROOT / '.deployment-smoke') or not p.is_dir() for p in [runtime, artifacts]):
         parser.error('Explicit owned disposable runtime and artifacts required')
     if any(not re.fullmatch('migration_[a-z0-9_]+', s) for s in [args.history_schema, args.database_prefix]):
@@ -151,7 +153,7 @@ def main():
     genesis = json.loads(genesis_bytes)
     if genesis['networkMagic'] != 42 or genesis['epochLength'] != 432000 or genesis['slotLength'] != 1:
         parser.error('This rehearsal requires a fresh magic-42 five-day-epoch genesis')
-    _clock.require_qualified_genesis(genesis)
+    _clock.require_aging_headroom(genesis)
     if not -63072000 <= baseline['clockOffsetSeconds'] <= -259200:
         parser.error('The fresh fixture needs at least three days of isolated clock headroom')
     if STAGES.index(args.from_stage) > STAGES.index(args.through_stage):
@@ -215,7 +217,7 @@ def main():
         stop('history')
 
     def wait_http(ready):
-        deadline = time.monotonic() + 600
+        deadline = time.monotonic() + (_clock.proof_readiness_timeout(genesis) if ready else 600)
         evidence = run_dir / ('gateway-readiness-' + uuid.uuid4().hex + '.log')
         last = None
         with evidence.open('x') as log:
@@ -239,7 +241,7 @@ def main():
     def history(handler):
         run('init-history', runtime_command('init-history', handler))
 
-    def gateway(handler, historical=False):
+    def gateway(handler, historical=False, proof_ready=True):
         stop('gateway')
         preflight_gateway_ports()
         generation = json.loads(handler.read_text())['migration']['generation']
@@ -255,7 +257,7 @@ def main():
         else:
             env.pop('GATEWAY_HISTORICAL_READ_ONLY', None)
         start('gateway', runtime_command('gateway', handler, database), env)
-        wait_http(not historical)
+        wait_http(not historical and proof_ready)
 
     def hermes(operation):
         return ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-hermes.py'), 'run', '--runtime', str(runtime),
@@ -316,14 +318,32 @@ def main():
                 else:
                     run('startup-diagnostics', compose + ['logs', '--no-color', '--tail', '400', 'history', 'history-db', 'devkit'])
                     raise RuntimeError('Yaci did not index the fresh canonical chain; inspect retained startup diagnostics')
-                run('genesis-history', ['node', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-genesis-history.cjs'), str(runtime)])
+                run('genesis-history', ['node', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-genesis-history.cjs'), str(runtime),
+                    *(['--check'] if (runtime / 'genesis-history-replay.json').exists() else [])])
                 run('stake', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/capture-migration-stake.py'),
                               '--runtime', str(runtime), '--project', project])
+                genesis_start = datetime.datetime.fromisoformat(genesis['systemStart'].replace('Z', '+00:00'))
+                mature_ms = int(genesis_start.timestamp() * 1000) + _clock.POOL_AGING_SECONDS * 1000
+                if (runtime / 'fresh-deployment-required.json').exists():
+                    current_tip = json.loads(run('verify-mature-history', compose + ['exec', '-T', 'devkit',
+                        'cardano-cli', 'conway', 'query', 'tip', '--testnet-magic', '42']))
+                    _clock.require_mature_history(genesis, current_tip)
+                else:
+                    run('pool-aging', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/advance-migration-clock.py'),
+                        '--runtime', str(runtime), '--project', project, '--file-clock', '--pool-aging',
+                        '--step-seconds', '86400', '--until-ms', str(mature_ms)])
                 history(source)
-                gateway(source)
+                gateway(source, proof_ready=False)
                 run('manifest-v1', runtime_command('export', source))
                 run('hermes-setup', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-hermes.py'), 'setup',
                     '--runtime', str(runtime), '--artifacts-dir', str(artifacts), '--clock-offset-seconds', str(offset())])
+                # The original HostState was published before its pools aged.
+                # Produce a real current root-bearing block before asking for
+                # an eligible anchor or creating a foreign client.
+                run('bootstrap-heartbeat', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-hermes.py'),
+                    'heartbeat', '--runtime', str(runtime), '--artifacts-dir', str(artifacts),
+                    '--clock-offset-seconds', str(offset())])
+                wait_http(True)
                 run('wallet-population', deno + [str(ROOT / 'scripts/ci/aiken-contract-migration/migration-wallet.ts'), str(runtime)])
                 run('connection', hermes(['create', 'connection', '--a-chain', 'cardano-devnet', '--b-chain', 'migration-462-1']))
                 for index in range(2):
@@ -375,7 +395,8 @@ def main():
                 stop_operational()
                 ready = int(observed['registry']['phase']['Proposed']['ready_at']) + 120000
                 run('approval-delay', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/advance-migration-clock.py'),
-                    '--runtime', str(runtime), '--project', project, '--file-clock', '--until-ms', str(ready)])
+                    '--runtime', str(runtime), '--project', project, '--file-clock', '--until-ms', str(ready),
+                    '--step-seconds', '86400' if genesis['securityParam'] == 2160 else '300'])
             elif stage.startswith('handover-'):
                 generation = int(stage[-1])
                 handler = installed(generation - 1)

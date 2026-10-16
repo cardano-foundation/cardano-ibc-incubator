@@ -1,6 +1,6 @@
 import * as Lucid from '@lucid-evolution/lucid';
 
-import { ChannelDatum, encodeChannelEndValue } from '../types/channel/channel-datum';
+import { ChannelDatum, encodeChannelEndValue, initialChannelUpgradeState } from '../types/channel/channel-datum';
 import { Order } from '../types/channel/order';
 import { ChannelState } from '../types/channel/state';
 import { ClientDatum, encodeClientStateValue, encodeConsensusStateValue } from '../types/client-datum';
@@ -21,6 +21,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
       history_root: '00'.repeat(32),
       state: {
         clientState: {
+          upgradePath: [],
           chainId: toHex('counterparty-0'),
           trustLevel: { numerator: 1n, denominator: 3n },
           trustingPeriod: 100n,
@@ -83,6 +84,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
           },
           connection_hops: [toHex('connection-0')],
           version: toHex('ics20-1'),
+          upgrade_sequence: 0n,
         },
         next_sequence_send: 3n,
         next_sequence_recv: 1n,
@@ -92,6 +94,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
         packet_acknowledgement: new Map([[6n, 'ccdd']]),
         minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 42n },
         maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 40n },
+        upgrade: initialChannelUpgradeState(),
       },
       port: toHex('transfer'),
       token: { policyId: '51'.repeat(28), name: '52' },
@@ -109,7 +112,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
       Buffer.from(await encodeClientStateValue(clientDatum.state.clientState, Lucid), 'hex'),
     );
     liveTree.set(
-      'clients/07-tendermint-0/consensusStates/81',
+      'clients/07-tendermint-0/consensusStates/0-81',
       Buffer.from(
         await encodeConsensusStateValue(clientDatum.state.consensusStates.get(consensusHeight), Lucid),
         'hex',
@@ -133,8 +136,9 @@ describe('IBC state root recovery after packet-history pruning', () => {
     liveTree.set('commitments/ports/transfer/channels/channel-0/sequences/2', packetValue('aabb'));
     liveTree.set('receipts/ports/transfer/channels/channel-0/sequences/6', packetValue(''));
     liveTree.set('acks/ports/transfer/channels/channel-0/sequences/6', packetValue('ccdd'));
-    // Captured with the Gateway value encoders before moving them into the runtime.
-    expect(liveTree.getRoot()).toBe('7970bb6d5ee49769bfe5207dd02e1c6697b3f521ab5d4920fa36a0b63a317bd3');
+    // Committed values include the upgrade path, the channel upgrade sequence and
+    // full revision-height key.
+    expect(liveTree.getRoot()).toBe('47b1f2a32247e0095e37cb0917050d47485e4309b556508aa3aa99cc90ef6237');
 
     const prunedReceiptPath = 'receipts/ports/transfer/channels/channel-0/sequences/7';
     const prunedAcknowledgementPath = 'acks/ports/transfer/channels/channel-0/sequences/7';
@@ -149,7 +153,7 @@ describe('IBC state root recovery after packet-history pruning', () => {
         version: 12n,
         bound_port: [],
       },
-      control: { port_registry: new Map([[toHex('Transfer-v2'), registration]]), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n },
+      control: { port_registry: new Map([[toHex('Transfer-v2'), registration]]), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n, last_heartbeat_time: 0n },
     };
     const clientUtxo = {
       txHash: '11'.repeat(32), outputIndex: 0,

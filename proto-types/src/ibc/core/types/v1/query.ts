@@ -2,7 +2,7 @@
 import { ResultBlockResults, ResultBlockSearch, Event } from "./block";
 import { Any } from "../../../../google/protobuf/any";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
-import { isSet, DeepPartial, Exact, Rpc } from "../../../../helpers";
+import { isSet, DeepPartial, Exact, bytesFromBase64, base64FromBytes, Rpc } from "../../../../helpers";
 export const protobufPackage = "ibc.core.types.v1";
 /**
  * QueryBlockResultsRequest is the request type for the Query/BlockResults RPC method.
@@ -86,6 +86,19 @@ export interface QueryTransactionByHashResponse {
 export interface QueryIBCHeaderRequest {
   trusted_height: bigint;
   height: bigint;
+  /**
+   * Rootless probabilistic evidence. With a nonzero height, return exact
+   * historical evidence for independent misbehaviour checks. With height zero,
+   * select a newer settled checkpoint for client maintenance. This does not
+   * change the packet-proof height returned by QueryLatestHeight. Maintenance
+   * returns an empty header when no newer settled checkpoint is available.
+   */
+  checkpoint_only: boolean;
+  /**
+   * Destination client state for capped settlement credit and descendant selection.
+   * This is a query hint. The light client derives credit from its own saved state.
+   */
+  probabilistic_client_state: Uint8Array;
 }
 /**
  * @name QueryIBCHeaderResponse
@@ -94,6 +107,30 @@ export interface QueryIBCHeaderRequest {
  */
 export interface QueryIBCHeaderResponse {
   header?: Any;
+}
+/**
+ * Mithril certificates that extend a probabilistic client's Mithril anchor.
+ * @name QueryMithrilStakeCertificatesRequest
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.QueryMithrilStakeCertificatesRequest
+ */
+export interface QueryMithrilStakeCertificatesRequest {
+  /**
+   * The destination client's mithril_epoch.
+   */
+  mithril_epoch: bigint;
+}
+/**
+ * @name QueryMithrilStakeCertificatesResponse
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.QueryMithrilStakeCertificatesResponse
+ */
+export interface QueryMithrilStakeCertificatesResponse {
+  /**
+   * A MithrilStakeCertificates client message. Empty until Mithril certifies a
+   * Cardano stake distribution in mithril_epoch.
+   */
+  client_message?: Any;
 }
 function createBaseQueryBlockResultsRequest(): QueryBlockResultsRequest {
   return {
@@ -541,6 +578,8 @@ function createBaseQueryIBCHeaderRequest(): QueryIBCHeaderRequest {
   return {
     trusted_height: BigInt(0),
     height: BigInt(0),
+    checkpoint_only: false,
+    probabilistic_client_state: new Uint8Array(),
   };
 }
 /**
@@ -557,6 +596,12 @@ export const QueryIBCHeaderRequest = {
     if (message.height !== BigInt(0)) {
       writer.uint32(16).uint64(message.height);
     }
+    if (message.checkpoint_only === true) {
+      writer.uint32(24).bool(message.checkpoint_only);
+    }
+    if (message.probabilistic_client_state.length !== 0) {
+      writer.uint32(34).bytes(message.probabilistic_client_state);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): QueryIBCHeaderRequest {
@@ -572,6 +617,12 @@ export const QueryIBCHeaderRequest = {
         case 2:
           message.height = reader.uint64();
           break;
+        case 3:
+          message.checkpoint_only = reader.bool();
+          break;
+        case 4:
+          message.probabilistic_client_state = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -583,6 +634,9 @@ export const QueryIBCHeaderRequest = {
     const obj = createBaseQueryIBCHeaderRequest();
     if (isSet(object.trusted_height)) obj.trusted_height = BigInt(object.trusted_height.toString());
     if (isSet(object.height)) obj.height = BigInt(object.height.toString());
+    if (isSet(object.checkpoint_only)) obj.checkpoint_only = Boolean(object.checkpoint_only);
+    if (isSet(object.probabilistic_client_state))
+      obj.probabilistic_client_state = bytesFromBase64(object.probabilistic_client_state);
     return obj;
   },
   toJSON(message: QueryIBCHeaderRequest): unknown {
@@ -590,6 +644,13 @@ export const QueryIBCHeaderRequest = {
     message.trusted_height !== undefined &&
       (obj.trusted_height = (message.trusted_height || BigInt(0)).toString());
     message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
+    message.checkpoint_only !== undefined && (obj.checkpoint_only = message.checkpoint_only);
+    message.probabilistic_client_state !== undefined &&
+      (obj.probabilistic_client_state = base64FromBytes(
+        message.probabilistic_client_state !== undefined
+          ? message.probabilistic_client_state
+          : new Uint8Array(),
+      ));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<QueryIBCHeaderRequest>, I>>(object: I): QueryIBCHeaderRequest {
@@ -600,6 +661,8 @@ export const QueryIBCHeaderRequest = {
     if (object.height !== undefined && object.height !== null) {
       message.height = BigInt(object.height.toString());
     }
+    message.checkpoint_only = object.checkpoint_only ?? false;
+    message.probabilistic_client_state = object.probabilistic_client_state ?? new Uint8Array();
     return message;
   },
 };
@@ -656,12 +719,134 @@ export const QueryIBCHeaderResponse = {
     return message;
   },
 };
+function createBaseQueryMithrilStakeCertificatesRequest(): QueryMithrilStakeCertificatesRequest {
+  return {
+    mithril_epoch: BigInt(0),
+  };
+}
+/**
+ * Mithril certificates that extend a probabilistic client's Mithril anchor.
+ * @name QueryMithrilStakeCertificatesRequest
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.QueryMithrilStakeCertificatesRequest
+ */
+export const QueryMithrilStakeCertificatesRequest = {
+  typeUrl: "/ibc.core.types.v1.QueryMithrilStakeCertificatesRequest",
+  encode(
+    message: QueryMithrilStakeCertificatesRequest,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
+    if (message.mithril_epoch !== BigInt(0)) {
+      writer.uint32(8).uint64(message.mithril_epoch);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): QueryMithrilStakeCertificatesRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseQueryMithrilStakeCertificatesRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.mithril_epoch = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): QueryMithrilStakeCertificatesRequest {
+    const obj = createBaseQueryMithrilStakeCertificatesRequest();
+    if (isSet(object.mithril_epoch)) obj.mithril_epoch = BigInt(object.mithril_epoch.toString());
+    return obj;
+  },
+  toJSON(message: QueryMithrilStakeCertificatesRequest): unknown {
+    const obj: any = {};
+    message.mithril_epoch !== undefined &&
+      (obj.mithril_epoch = (message.mithril_epoch || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<QueryMithrilStakeCertificatesRequest>, I>>(
+    object: I,
+  ): QueryMithrilStakeCertificatesRequest {
+    const message = createBaseQueryMithrilStakeCertificatesRequest();
+    if (object.mithril_epoch !== undefined && object.mithril_epoch !== null) {
+      message.mithril_epoch = BigInt(object.mithril_epoch.toString());
+    }
+    return message;
+  },
+};
+function createBaseQueryMithrilStakeCertificatesResponse(): QueryMithrilStakeCertificatesResponse {
+  return {
+    client_message: undefined,
+  };
+}
+/**
+ * @name QueryMithrilStakeCertificatesResponse
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.QueryMithrilStakeCertificatesResponse
+ */
+export const QueryMithrilStakeCertificatesResponse = {
+  typeUrl: "/ibc.core.types.v1.QueryMithrilStakeCertificatesResponse",
+  encode(
+    message: QueryMithrilStakeCertificatesResponse,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
+    if (message.client_message !== undefined) {
+      Any.encode(message.client_message, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): QueryMithrilStakeCertificatesResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseQueryMithrilStakeCertificatesResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.client_message = Any.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): QueryMithrilStakeCertificatesResponse {
+    const obj = createBaseQueryMithrilStakeCertificatesResponse();
+    if (isSet(object.client_message)) obj.client_message = Any.fromJSON(object.client_message);
+    return obj;
+  },
+  toJSON(message: QueryMithrilStakeCertificatesResponse): unknown {
+    const obj: any = {};
+    message.client_message !== undefined &&
+      (obj.client_message = message.client_message ? Any.toJSON(message.client_message) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<QueryMithrilStakeCertificatesResponse>, I>>(
+    object: I,
+  ): QueryMithrilStakeCertificatesResponse {
+    const message = createBaseQueryMithrilStakeCertificatesResponse();
+    if (object.client_message !== undefined && object.client_message !== null) {
+      message.client_message = Any.fromPartial(object.client_message);
+    }
+    return message;
+  },
+};
 /** Query provides defines the gRPC querier service */
 export interface Query {
   BlockResults(request: QueryBlockResultsRequest): Promise<QueryBlockResultsResponse>;
   BlockSearch(request: QueryBlockSearchRequest): Promise<QueryBlockSearchResponse>;
   TransactionByHash(request: QueryTransactionByHashRequest): Promise<QueryTransactionByHashResponse>;
   IBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse>;
+  MithrilStakeCertificates(
+    request: QueryMithrilStakeCertificatesRequest,
+  ): Promise<QueryMithrilStakeCertificatesResponse>;
 }
 export class QueryClientImpl implements Query {
   private readonly rpc: Rpc;
@@ -671,6 +856,7 @@ export class QueryClientImpl implements Query {
     this.BlockSearch = this.BlockSearch.bind(this);
     this.TransactionByHash = this.TransactionByHash.bind(this);
     this.IBCHeader = this.IBCHeader.bind(this);
+    this.MithrilStakeCertificates = this.MithrilStakeCertificates.bind(this);
   }
   BlockResults(request: QueryBlockResultsRequest): Promise<QueryBlockResultsResponse> {
     const data = QueryBlockResultsRequest.encode(request).finish();
@@ -691,6 +877,13 @@ export class QueryClientImpl implements Query {
     const data = QueryIBCHeaderRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.types.v1.Query", "IBCHeader", data);
     return promise.then((data) => QueryIBCHeaderResponse.decode(new BinaryReader(data)));
+  }
+  MithrilStakeCertificates(
+    request: QueryMithrilStakeCertificatesRequest,
+  ): Promise<QueryMithrilStakeCertificatesResponse> {
+    const data = QueryMithrilStakeCertificatesRequest.encode(request).finish();
+    const promise = this.rpc.request("ibc.core.types.v1.Query", "MithrilStakeCertificates", data);
+    return promise.then((data) => QueryMithrilStakeCertificatesResponse.decode(new BinaryReader(data)));
   }
 }
 export const createClientImpl = (rpc: Rpc) => {

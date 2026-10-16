@@ -14,7 +14,6 @@ describe('QueryService transaction redeemer cache', () => {
       { fetchTransactionEvidence } as any,
       {} as any,
       {} as any,
-      {} as any,
       createTestTreeStore(),
       createPacketStateMock() as any,
       metrics as any,

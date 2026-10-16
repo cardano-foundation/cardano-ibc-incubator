@@ -183,6 +183,7 @@ export function validateAndFormatChannelCloseConfirmParams(data: MsgChannelClose
       revisionHeight: BigInt(data.proof_height?.revision_height || 0n),
       revisionNumber: BigInt(data.proof_height?.revision_number || 0n),
     },
+    counterpartyUpgradeSequence: BigInt(data.counterparty_upgrade_sequence ?? 0n),
   };
 
   return { constructedAddress, channelCloseConfirmOperator };

@@ -1,5 +1,11 @@
 import { Logger } from '@nestjs/common';
 import {
+  ClientState as ProbabilisticClientState,
+  PoolProductionHistory,
+} from '@cardano-ibc/proto-types/ibc/lightclients/probabilistic/v1/probabilistic';
+import { settlementReferenceForEpoch } from './settlement-credit';
+import { productionAtAnchor } from './pool-production';
+import {
   GATEWAY_GRPC_ERROR_CODE,
   gatewayGrpcError,
   GrpcFailedPreconditionException,
@@ -10,6 +16,7 @@ import {
 import {
   HistoryBlock,
   HistoryEpochVerificationContext,
+  HistoryEpochContextAtBlock,
   HistoryService,
   HistoryStakeDistributionEntry,
   HistoryTxEvidence,
@@ -60,6 +67,7 @@ export type StakeWeightedStabilityHeaderEvidence = {
   descendantBlocks: HistoryBlock[];
   epochStakeDistribution: HistoryStakeDistributionEntry[];
   epochVerificationContext: HistoryEpochVerificationContext;
+  nextEpochContext?: HistoryEpochContextAtBlock;
   trustedHeight: CardanoHeight;
   trustedEpoch: EpochNumber;
   bridgeBlocks: HistoryBlock[];
@@ -92,23 +100,6 @@ function findFirstEpochBoundaryViolation(
       block.epochNo !== expectedEpoch ||
       block.slotNo < epochVerificationContext.currentEpochStartSlot ||
       block.slotNo >= epochVerificationContext.currentEpochEndSlotExclusive,
-  );
-}
-
-function throwDescendantBoundaryViolation(
-  violatingBlock: HistoryBlock,
-  expectedEpoch: number,
-  epochVerificationContext: HistoryEpochVerificationContext,
-  anchorHeight: number,
-): never {
-  if (violatingBlock.epochNo !== expectedEpoch) {
-    throw new GrpcInternalException(
-      `Stake-weighted stability descendant window for anchor height ${anchorHeight} crosses epoch boundary at height ${violatingBlock.height}: expected epoch ${expectedEpoch}, got ${violatingBlock.epochNo}`,
-    );
-  }
-
-  throw new GrpcInternalException(
-    `Stake-weighted stability descendant window for anchor height ${anchorHeight} crosses trusted epoch slot bounds at height ${violatingBlock.height}: slot ${violatingBlock.slotNo.toString()} not in [${epochVerificationContext.currentEpochStartSlot.toString()}, ${epochVerificationContext.currentEpochEndSlotExclusive.toString()})`,
   );
 }
 
@@ -177,6 +168,12 @@ type LoadStakeWeightedStabilityEvidenceByHeightParams = {
   requireThresholds?: boolean;
   requireFullEpochVerificationContext?: boolean;
   missingAnchorBlockMessage?: string;
+  settlementCreditClient?: ProbabilisticClientState;
+  resolveProductionHistory?: (block: HistoryBlock) => PoolProductionHistory;
+  resolvePoolBindings?: (
+    block: HistoryBlock,
+    entries: HistoryStakeDistributionEntry[],
+  ) => HistoryStakeDistributionEntry[];
 };
 
 type LoadStakeWeightedStabilityEvidenceForTxHashParams = {
@@ -238,7 +235,7 @@ async function hydrateDescendantProducerRegistrationSlots(
             return false;
           }
           const entry = entriesByPoolId.get(poolId);
-          return Boolean(entry && (!entry.firstRegistrationSlot || entry.firstRegistrationSlot <= 0n));
+          return Boolean(entry && (entry.firstRegistrationSlot == null || entry.firstRegistrationSlot < 0n));
         }),
     ),
   );
@@ -277,6 +274,9 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
   requireThresholds = true,
   requireFullEpochVerificationContext = true,
   missingAnchorBlockMessage,
+  resolvePoolBindings,
+  resolveProductionHistory,
+  settlementCreditClient,
 }: LoadStakeWeightedStabilityEvidenceByHeightParams): Promise<StakeWeightedStabilityEvidence> {
   const anchorBlock = await historyService.findBlockByHeight(height);
   if (!anchorBlock) {
@@ -293,8 +293,10 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
       `Epoch context unavailable for anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
     );
   }
-  const { stakeDistribution: epochStakeDistribution, verificationContext: epochVerificationContext } =
-    anchorEpochContext;
+  const { verificationContext: epochVerificationContext } = anchorEpochContext;
+  const epochStakeDistribution = resolvePoolBindings
+    ? resolvePoolBindings(anchorBlock, anchorEpochContext.stakeDistribution)
+    : anchorEpochContext.stakeDistribution;
   assertEpochStakeDistributionAvailable(
     epochStakeDistribution,
     `anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
@@ -338,10 +340,40 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
     anchorBlock,
   );
 
+  const checkpoint = settlementCreditClient?.latest_checkpoint_height ?? settlementCreditClient?.latest_height;
+  let productionBridge: HistoryBlock[] = [];
+  if (settlementCreditClient) {
+    const anchorHeight = BigInt(anchorBlock.height);
+    if (!checkpoint || checkpoint.revision_height <= 0n || checkpoint.revision_height >= anchorHeight) {
+      throw new GrpcInvalidArgumentException('Production history requires a checkpoint preceding the anchor');
+    }
+    productionBridge = await historyService.findBridgeBlocks(checkpoint.revision_height, anchorHeight);
+    if (
+      BigInt(productionBridge.length) !== anchorHeight - checkpoint.revision_height - 1n ||
+      productionBridge.some((block, index) => BigInt(block.height) !== checkpoint.revision_height + BigInt(index) + 1n)
+    ) {
+      throw historyNotReady('Incomplete or non-contiguous bridge segment for production history');
+    }
+  }
+  const poolProduction = settlementCreditClient
+    ? productionAtAnchor(settlementCreditClient, productionBridge, anchorBlock)
+    : resolveProductionHistory
+      ? resolveProductionHistory(anchorBlock)
+      : await historyService.findObservedPoolProductionAtBlock?.(anchorBlock);
+
   let acceptedDescendantBlocks = eligibleDescendantBlocks;
-  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
+  // Historical checkpoint hints may omit immutable network parameters.
+  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(
+    anchorBlock,
+    settlementCreditClient?.slot_length_ns || undefined,
+  );
+  const settlementCreditReference = settlementCreditClient
+    ? settlementReferenceForEpoch(settlementCreditClient, BigInt(anchorBlock.epochNo))
+    : undefined;
   let metrics = computeStabilityMetrics(eligibleDescendantBlocks, hydratedEpochStakeDistribution, stabilityPolicy, {
     poolRegistrationCutoffSlot,
+    settlementCreditReference,
+    poolProduction,
   });
 
   const thresholdDepth = Number(stabilityPolicy.threshold_depth || 0n);
@@ -356,7 +388,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
         candidateDescendantBlocks,
         hydratedEpochStakeDistribution,
         stabilityPolicy,
-        { poolRegistrationCutoffSlot },
+        { poolRegistrationCutoffSlot, settlementCreditReference, poolProduction },
       );
 
       if (
@@ -382,21 +414,30 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
       acceptedDescendantBlocks.length,
     );
     if (thresholdFailure) {
-      if (firstInvalidDescendantIndex >= 0) {
-        throwDescendantBoundaryViolation(
-          scoredDescendantBlocks[firstInvalidDescendantIndex],
-          anchorBlock.epochNo,
-          epochVerificationContext,
-          anchorBlock.height,
+      if (!scoredDescendantBlocks.some((block) => block.epochNo === anchorBlock.epochNo + 1))
+        assertStabilityThresholds(
+          metrics,
+          stabilityPolicy,
+          anchorBlock.height.toString(),
+          acceptedDescendantBlocks.length,
         );
-      }
-
-      assertStabilityThresholds(
-        metrics,
+      const extended = await crossEpochSettlementWindow(
+        historyService,
+        anchorBlock,
+        scoredDescendantBlocks,
+        hydratedEpochStakeDistribution,
+        epochVerificationContext,
         stabilityPolicy,
-        anchorBlock.height.toString(),
-        acceptedDescendantBlocks.length,
+        { poolRegistrationCutoffSlot, settlementCreditReference, poolProduction },
       );
+      acceptedDescendantBlocks = extended.descendants;
+      metrics = computeStabilityMetrics(acceptedDescendantBlocks, hydratedEpochStakeDistribution, stabilityPolicy, {
+        poolRegistrationCutoffSlot,
+        settlementCreditReference,
+        poolProduction,
+        qualificationEpoch: BigInt(anchorBlock.epochNo),
+        nextEpochStakeDistribution: extended.nextEpochContext.stakeDistribution,
+      });
     }
   }
 
@@ -456,6 +497,66 @@ export async function loadStakeWeightedStabilityEvidenceForTxHash({
   };
 }
 
+async function crossEpochSettlementWindow(
+  historyService: HistoryService,
+  anchor: HistoryBlock,
+  descendants: HistoryBlock[],
+  stake: HistoryStakeDistributionEntry[],
+  anchorContext: HistoryEpochVerificationContext,
+  policy: StabilityPolicy,
+  options: Parameters<typeof computeStabilityMetrics>[3],
+): Promise<{ descendants: HistoryBlock[]; nextEpochContext: HistoryEpochContextAtBlock }> {
+  const firstNext = descendants.find((block) => block.epochNo === anchor.epochNo + 1);
+  if (!firstNext)
+    throw heightNotAccepted(
+      BigInt(anchor.height),
+      'Waiting for sufficient same-epoch or adjacent-epoch settlement evidence',
+    );
+  const context = await historyService.findEpochContextAtBlock(firstNext);
+  if (!context) throw historyNotReady('Next epoch context is unavailable for boundary settlement');
+  assertEpochVerificationContextAvailable(context.verificationContext, firstNext.epochNo, 'boundary settlement');
+  if (
+    context.epoch !== firstNext.epochNo ||
+    context.verificationContext.currentEpochStartSlot !== anchorContext.currentEpochEndSlotExclusive ||
+    context.verificationContext.currentEpochEndSlotExclusive - context.verificationContext.currentEpochStartSlot !==
+      anchorContext.currentEpochEndSlotExclusive - anchorContext.currentEpochStartSlot
+  ) {
+    throw new GrpcInternalException(
+      'Boundary settlement crosses epoch boundary with an invalid adjacent epoch schedule',
+    );
+  }
+  assertEpochStakeDistributionAvailable(context.stakeDistribution, 'boundary settlement');
+  const unsupported = descendants.findIndex((block) => block.epochNo > anchor.epochNo + 1);
+  const eligible = unsupported < 0 ? descendants : descendants.slice(0, unsupported);
+  assertBlocksRemainWithinEpochSlotBounds(
+    eligible.filter((block) => block.epochNo === anchor.epochNo),
+    anchorContext,
+    'Boundary settlement old-epoch descendants',
+  );
+  assertBlocksRemainWithinEpochSlotBounds(
+    eligible.filter((block) => block.epochNo === firstNext.epochNo),
+    context.verificationContext,
+    'Boundary settlement descendants',
+  );
+  const hydrated = await hydrateDescendantProducerRegistrationSlots(historyService, stake, eligible, anchor);
+  for (let length = Number(policy.threshold_depth); length <= eligible.length; length++) {
+    const candidate = eligible.slice(0, length);
+    if (!candidate.some((block) => block.epochNo === firstNext.epochNo)) continue;
+    const metrics = computeStabilityMetrics(candidate, hydrated, policy, {
+      ...options,
+      qualificationEpoch: BigInt(anchor.epochNo),
+      nextEpochStakeDistribution: context.stakeDistribution,
+    });
+    if (!getStabilityThresholdFailure(metrics, policy, anchor.height.toString(), candidate.length)) {
+      return { descendants: candidate, nextEpochContext: context };
+    }
+  }
+  throw heightNotAccepted(
+    BigInt(anchor.height),
+    'Waiting for qualified participation within the bounded adjacent-epoch settlement window',
+  );
+}
+
 export async function loadStakeWeightedStabilityHeaderEvidence({
   historyService,
   height,
@@ -464,6 +565,7 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   stabilityPolicy = getStabilityPolicy(),
   requireThresholds = true,
   missingAnchorBlockMessage,
+  settlementCreditClient,
 }: LoadStakeWeightedStabilityHeaderEvidenceParams): Promise<StakeWeightedStabilityHeaderEvidence> {
   if (trustedHeight <= 0n) {
     throw invalidTrustedHeight(
@@ -590,13 +692,46 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     anchorBlock,
   );
 
-  const acceptedDescendantBlocks = eligibleDescendantBlocks;
-  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
+  const poolProduction = settlementCreditClient
+    ? productionAtAnchor(settlementCreditClient, bridgeBlocks, anchorBlock)
+    : await historyService.findObservedPoolProductionAtBlock?.(anchorBlock);
+
+  let acceptedDescendantBlocks = eligibleDescendantBlocks;
+  let nextEpochContext: HistoryEpochContextAtBlock | undefined;
+  // Historical checkpoint hints may omit immutable network parameters.
+  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(
+    anchorBlock,
+    settlementCreditClient?.slot_length_ns || undefined,
+  );
+  const settlementCreditReference = settlementCreditClient
+    ? settlementReferenceForEpoch(settlementCreditClient, BigInt(anchorBlock.epochNo))
+    : undefined;
   const metrics = computeStabilityMetrics(eligibleDescendantBlocks, hydratedAnchorStakeDistribution, stabilityPolicy, {
     poolRegistrationCutoffSlot,
+    settlementCreditReference,
+    poolProduction,
   });
 
   if (requireThresholds) {
+    for (let length = Number(stabilityPolicy.threshold_depth); length <= eligibleDescendantBlocks.length; length++) {
+      const candidate = eligibleDescendantBlocks.slice(0, length);
+      const candidateMetrics = computeStabilityMetrics(candidate, hydratedAnchorStakeDistribution, stabilityPolicy, {
+        poolRegistrationCutoffSlot,
+        settlementCreditReference,
+        poolProduction,
+      });
+      if (
+        !getStabilityThresholdFailure(
+          candidateMetrics,
+          stabilityPolicy,
+          anchorBlock.height.toString(),
+          candidate.length,
+        )
+      ) {
+        acceptedDescendantBlocks = candidate;
+        break;
+      }
+    }
     const thresholdFailure = getStabilityThresholdFailure(
       metrics,
       stabilityPolicy,
@@ -604,7 +739,22 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
       acceptedDescendantBlocks.length,
     );
     if (thresholdFailure) {
-      throw heightNotAccepted(BigInt(anchorBlock.height), thresholdFailure);
+      if (
+        anchorBlock.epochNo !== trustedBlock.epochNo ||
+        !descendantBlocks.some((block) => block.epochNo === anchorBlock.epochNo + 1)
+      )
+        throw heightNotAccepted(BigInt(anchorBlock.height), thresholdFailure);
+      const extended = await crossEpochSettlementWindow(
+        historyService,
+        anchorBlock,
+        descendantBlocks,
+        hydratedAnchorStakeDistribution,
+        epochVerificationContext,
+        stabilityPolicy,
+        { poolRegistrationCutoffSlot, settlementCreditReference, poolProduction },
+      );
+      acceptedDescendantBlocks = extended.descendants;
+      nextEpochContext = extended.nextEpochContext;
     }
   }
 
@@ -615,6 +765,7 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     descendantBlocks: acceptedDescendantBlocks,
     epochStakeDistribution: hydratedAnchorStakeDistribution,
     epochVerificationContext: anchorEpochContext.verificationContext,
+    nextEpochContext,
     trustedHeight: trustedHeight as CardanoHeight,
     trustedEpoch: trustedBlock.epochNo as EpochNumber,
     bridgeBlocks,

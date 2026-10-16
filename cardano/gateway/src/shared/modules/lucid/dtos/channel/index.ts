@@ -4,3 +4,4 @@ export * from './channel-open-confirm.dto';
 export * from './channel-open-init.dto';
 export * from './channel-open-try.dto';
 export * from './channel-close-init.dto';
+export * from './channel-upgrade.dto';

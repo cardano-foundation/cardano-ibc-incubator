@@ -1,3 +1,4 @@
+use aiken/builtin
 use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
@@ -25,7 +26,7 @@ use ibc/core/ics_002_client_semantics/verify_proof_redeemer.{
 }
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/verify
-use ibc/core/ics_004/channel_datum.{ChannelDatum}
+use ibc/core/ics_004/channel_datum
 use ibc/core/ics_004/packet_lane_datum.{
   CommitPacket, CompletePacket, LaneUpdate, PacketLaneDatum, PrunePacket,
   ReceivePacket,
@@ -37,7 +38,7 @@ use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/keys as channel_keys
 use ibc/core/ics_004/types/order.{Unordered}
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
-use ibc/core/ics_004/types/state.{Closed, Open}
+use ibc/core/ics_004/types/state.{Closed, FlushComplete, Flushing, Open}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_024_host_requirements/channel_keys as channel_paths
 use ibc/core/ics_024_host_requirements/packet_keys
@@ -114,6 +115,8 @@ pub type BatchOperation {
     lane: LaneInputUpdate,
     liquidity_refs: List<OutputReference>,
     proof_close: MerkleProof,
+    // The upgrade sequence of the proven closed counterparty channel.
+    counterparty_upgrade_sequence: Int,
   }
   RetireLanes
 }
@@ -204,20 +207,48 @@ fn unique_refs(refs: List<OutputReference>) -> Bool {
   }
 }
 
-fn channel_reference(transaction: Transaction, token: AuthToken) -> ChannelDatum {
+/// The parts of a referenced `ChannelDatum` that settlement reads. The
+/// channel's own validators checked the rest of the datum.
+type ChannelReference {
+  channel: Channel,
+  upgrade: Data,
+  port_id: ByteArray,
+  token: AuthToken,
+}
+
+fn channel_reference(
+  transaction: Transaction,
+  token: AuthToken,
+) -> ChannelReference {
   expect [input] =
     list.filter(
       transaction.reference_inputs,
       fn(input) { auth.contain_auth_token(input.output, token) },
     )
-  expect datum: ChannelDatum = validator_utils.get_inline_datum(input.output)
-  expect datum.token == token
-  expect datum.port_id == "transfer"
+  // ChannelDatum { state: ChannelDatumState { channel, .., upgrade }, port_id, token }
+  expect [state,
+    port_id,
+    datum_token] =
+    builtin.snd_pair(
+      builtin.un_constr_data(validator_utils.get_inline_datum(input.output)),
+    )
+  expect [channel,
+    _,
+    _,
+    _, _, _, _, _, _, upgrade] = builtin.snd_pair(builtin.un_constr_data(state))
+  expect channel: Channel = channel
+  let expected_token: Data = token
+  expect datum_token == expected_token
+  expect builtin.un_b_data(port_id) == "transfer"
+  // Packets sent before an upgrade still settle while the channel flushes.
   expect
-    datum.state.channel.state == Open || datum.state.channel.state == Closed
-  expect datum.state.channel.ordering == Unordered
-  expect datum.state.channel.version == "ics20-1"
-  datum
+    when channel.state is {
+      Open | Closed | Flushing | FlushComplete -> True
+      _ -> False
+    }
+  expect channel.ordering == Unordered
+  expect channel.version == "ics20-1"
+  ChannelReference { channel, upgrade, port_id: "transfer", token }
 }
 
 fn asset_and_amount(
@@ -235,7 +266,7 @@ fn asset_and_amount(
   (policy, name, amount)
 }
 
-fn validate_local_packet(packet: Packet, channel: ChannelDatum) -> Bool {
+fn validate_local_packet(packet: Packet, channel: ChannelReference) -> Bool {
   let channel_id =
     channel_keys.format_channel_identifier(
       auth.extract_token_sequence(channel.token.name),
@@ -244,8 +275,8 @@ fn validate_local_packet(packet: Packet, channel: ChannelDatum) -> Bool {
     packet_mod.validate_basic(packet),
     packet.source_port == channel.port_id,
     packet.source_channel == channel_id,
-    packet.destination_port == channel.state.channel.counterparty.port_id,
-    packet.destination_channel == channel.state.channel.counterparty.channel_id,
+    packet.destination_port == channel.channel.counterparty.port_id,
+    packet.destination_channel == channel.channel.counterparty.channel_id,
     height_mod.is_zero(packet.timeout_height),
   }
 }
@@ -267,8 +298,8 @@ pub fn validate_send(
   expect list.length(intents) == list.length(packets)
   expect unique_refs(list.map(lanes, fn(lane) { lane.input_ref }))
   let channel = channel_reference(transaction, channel_token)
-  expect channel.state.channel.state == Open
-  expect [connection_id] = channel.state.channel.connection_hops
+  expect channel.channel.state == Open
+  expect [connection_id] = channel.channel.connection_hops
   let valid_to =
     validator_utils.get_tx_valid_to(transaction.validity_range) * 1_000_000
   let connection =
@@ -393,7 +424,7 @@ pub fn validate_settlement(
     }
   let channel = channel_reference(transaction, channel_token)
   expect validate_local_packet(packet, channel)
-  expect [connection_id] = channel.state.channel.connection_hops
+  expect [connection_id] = channel.channel.connection_hops
   let valid_to =
     validator_utils.get_tx_valid_to(transaction.validity_range) * 1_000_000
   let (connection, client) =
@@ -449,7 +480,7 @@ pub fn validate_settlement(
   let expected_proof =
     if timeout {
       when op is {
-        TimeoutOnClose { proof_close, .. } -> {
+        TimeoutOnClose { proof_close, counterparty_upgrade_sequence, .. } -> {
           let expected_channel =
             Channel {
               state: Closed,
@@ -459,7 +490,8 @@ pub fn validate_settlement(
                 channel_id: packet.source_channel,
               },
               connection_hops: [connection.state.counterparty.connection_id],
-              version: channel.state.channel.version,
+              version: channel.channel.version,
+              upgrade_sequence: counterparty_upgrade_sequence,
             }
           let membership =
             VerifyMembershipParams {
@@ -624,7 +656,12 @@ pub fn validate_receive(
 ) -> Bool {
   expect Receive { packet, proof_height, proof, lane, .. } = op
   let channel = channel_reference(transaction, channel_token)
-  expect channel.state.channel.state == Open
+  expect
+    channel_datum.can_receive(
+      channel.channel.state,
+      channel.upgrade,
+      packet.sequence,
+    )
   let local_channel =
     channel_keys.format_channel_identifier(
       auth.extract_token_sequence(channel.token.name),
@@ -632,13 +669,13 @@ pub fn validate_receive(
   expect packet_mod.validate_basic(packet)
   expect
     packet.destination_port == channel.port_id && packet.destination_channel == local_channel
-  expect packet.source_port == channel.state.channel.counterparty.port_id
-  expect packet.source_channel == channel.state.channel.counterparty.channel_id
+  expect packet.source_port == channel.channel.counterparty.port_id
+  expect packet.source_channel == channel.channel.counterparty.channel_id
   expect height_mod.is_zero(packet.timeout_height)
   let valid_to =
     validator_utils.get_tx_valid_to(transaction.validity_range) * 1_000_000
   expect packet.timeout_timestamp == 0 || packet.timeout_timestamp > valid_to
-  expect [connection_id] = channel.state.channel.connection_hops
+  expect [connection_id] = channel.channel.connection_hops
   let (connection, client) =
     validator_utils.validate_referred_connection_and_client(
       transaction.reference_inputs,
@@ -796,7 +833,7 @@ pub fn validate_prune(
 ) -> Bool {
   expect Prune { sequence, proof_height, proof, lane } = op
   let channel = channel_reference(transaction, channel_token)
-  expect [connection_id] = channel.state.channel.connection_hops
+  expect [connection_id] = channel.channel.connection_hops
   let valid_to =
     validator_utils.get_tx_valid_to(transaction.validity_range) * 1_000_000
   let (connection, client) =
@@ -824,8 +861,8 @@ pub fn validate_prune(
       merkle.new_merkle_path(
         [
           packet_keys.packet_commitment_path(
-            channel.state.channel.counterparty.port_id,
-            channel.state.channel.counterparty.channel_id,
+            channel.channel.counterparty.port_id,
+            channel.channel.counterparty.channel_id,
             sequence,
           ),
         ],

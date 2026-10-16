@@ -320,7 +320,7 @@ export async function channelFixture(
   const [shutdownScript, shutdownScriptHash] = readValidator(
     "recover_client.recover_client.withdraw",
     lucid,
-    [hostPolicy],
+    [hostPolicy, legacyProofPolicy],
   );
   const [channelMint, channelPolicy] = readValidator(
     "minting_channel_stt.mint_channel_stt.mint",
@@ -427,6 +427,7 @@ export async function channelFixture(
     ZERO_HEIGHT,
     HEIGHT,
     proofSpecs,
+    [],
   );
   const otherClientState = record(
     fromText("otherchain-1"),
@@ -534,6 +535,7 @@ export async function channelFixture(
       ),
       [fromText(CONNECTION)],
       fromText(VERSION),
+      0n,
     );
   const channelDatum = (state: number) =>
     record(
@@ -547,6 +549,8 @@ export async function channelFixture(
         new Map(),
         ZERO_HEIGHT,
         ZERO_HEIGHT,
+        // No upgrade has started.
+        record(variant(1), variant(1), 0n),
       ),
       fromText(PORT),
       channelToken,
@@ -595,6 +599,7 @@ export async function channelFixture(
       live_clients: 1n,
       live_connections: 1n,
       live_channels: isCreate ? 0n : 1n,
+      last_heartbeat_time: 0n,
     },
   };
   const newHostDatum: HostStateDatum = {
@@ -685,7 +690,8 @@ export async function channelFixture(
       ? variant(1, membership.proof, HEIGHT)
       : action.name === "ChanCloseInit"
       ? variant(6)
-      : variant(7, membership.proof, HEIGHT);
+      // The closed counterparty never upgraded.
+      : variant(7, membership.proof, HEIGHT, 0n);
     const operation = channelScripts.referredScripts[action.policy];
     tx = tx.readFrom([
       reference(channelScripts.base.script),

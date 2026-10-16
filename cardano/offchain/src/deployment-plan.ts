@@ -130,6 +130,17 @@ export const buildChannelValidators = (
   };
   const referredScripts: Record<string, PlannedValidator> = {};
   for (const name of names) {
+    if (name.startsWith("chan_upgrade")) {
+      // Upgrade steps call no IBC module, so they take no port policy.
+      referredScripts[name] = load(`spending_channel/${name}.${name}.mint`, [
+        clientRegistry,
+        mintConnectionPolicyId,
+        verifyProofScriptHash,
+        hostStateNftPolicyId,
+        packetConfigPolicy,
+      ]);
+      continue;
+    }
     const args = name === "prune_packet_history"
       ? [clientRegistry, mintConnectionPolicyId, verifyProofScriptHash]
       : [clientRegistry, mintConnectionPolicyId, mintPortPolicyId];
@@ -245,7 +256,7 @@ export const loadDeploymentPlan = async (
   const recoverClient = load(
     "recover_client.recover_client.withdraw",
     "runtime",
-    bytes(hostPolicy),
+    bytes(hostPolicy, verifyProof.hash),
   );
   const implementationRegistry = inputs.migration
     ? load("implementation_registry.implementation_registry.spend", "runtime")

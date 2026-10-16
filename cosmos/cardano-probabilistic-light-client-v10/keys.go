@@ -1,27 +1,19 @@
 package probabilistic
 
-import "fmt"
+import state "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/state"
 
 const (
-	ModuleName                  = "08-cardano-probabilistic"
-	KeyProbabilisticScorePrefix = "probabilisticScore"
-	KeyUniquePoolsPrefix        = "uniquePools"
-	KeyUniqueStakePrefix        = "uniqueStake"
-	KeyAcceptedBlockHashPrefix  = "acceptedBlockHash"
+	ModuleName                  = state.ModuleName
+	KeyProbabilisticScorePrefix = state.KeyProbabilisticScorePrefix
+	KeyUniquePoolsPrefix        = state.KeyUniquePoolsPrefix
+	KeyUniqueStakePrefix        = state.KeyUniqueStakePrefix
+	KeyAcceptedBlockHashPrefix  = state.KeyAcceptedBlockHashPrefix
 )
 
-func ProbabilisticScoreKey(height uint64) []byte {
-	return []byte(fmt.Sprintf("%s/%d", KeyProbabilisticScorePrefix, height))
-}
+func ProbabilisticScoreKey(height uint64) []byte { return state.ProbabilisticScoreKey(height) }
 
-func UniquePoolsKey(height uint64) []byte {
-	return []byte(fmt.Sprintf("%s/%d", KeyUniquePoolsPrefix, height))
-}
+func UniquePoolsKey(height uint64) []byte { return state.UniquePoolsKey(height) }
 
-func UniqueStakeKey(height uint64) []byte {
-	return []byte(fmt.Sprintf("%s/%d", KeyUniqueStakePrefix, height))
-}
+func UniqueStakeKey(height uint64) []byte { return state.UniqueStakeKey(height) }
 
-func AcceptedBlockHashKey(height uint64) []byte {
-	return []byte(fmt.Sprintf("%s/%d", KeyAcceptedBlockHashPrefix, height))
-}
+func AcceptedBlockHashKey(height uint64) []byte { return state.AcceptedBlockHashKey(height) }

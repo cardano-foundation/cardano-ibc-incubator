@@ -1,5 +1,11 @@
 import { Logger } from '@nestjs/common';
 import {
+  PoolSettlementCredit,
+  PoolProductionHistory,
+} from '@cardano-ibc/proto-types/ibc/lightclients/probabilistic/v1/probabilistic';
+import { addCredit, computeSettlementCredits, creditBasisPoints, CreditFraction } from './settlement-credit';
+import { productionRecords } from './pool-production';
+import {
   GATEWAY_GRPC_ERROR_CODE,
   gatewayGrpcError,
   GrpcFailedPreconditionException,
@@ -32,9 +38,12 @@ const LIGHT_CLIENT_STABILITY_POLICY: StabilityPolicy = {
 
 type StabilityScoringOptions = {
   poolRegistrationCutoffSlot?: bigint;
+  settlementCreditReference?: PoolSettlementCredit[];
+  poolProduction?: PoolProductionHistory;
+  qualificationEpoch?: bigint;
+  nextEpochStakeDistribution?: HistoryStakeDistributionEntry[];
 };
 
-const STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS = 1_767_225_600_000_000_000n; // 2026-01-01T00:00:00Z
 const DEFAULT_CARDANO_SLOT_LENGTH_NS = 1_000_000_000n;
 
 export function assertEpochStakeDistributionAvailable(
@@ -72,17 +81,39 @@ export function computePoolRegistrationCutoffSlot(
   if (slotLengthNs <= 0n) {
     throw new Error('Cardano slot length must be greater than zero');
   }
+  if (
+    anchorBlock.slotNo < 0n ||
+    anchorBlock.timestampUnixNs < 0n ||
+    anchorBlock.timestampUnixNs > 18_446_744_073_709_551_615n
+  ) {
+    throw new Error('Cardano anchor slot and timestamp must be within the supported range');
+  }
+  // Match the Go verifier: subtract six calendar months in UTC, clamping to
+  // the target month's last day while preserving time of day and nanoseconds.
+  // This depends on the anchor being settled, never the machine's clock.
+  const anchorDate = new Date(Number(anchorBlock.timestampUnixNs / 1_000_000n));
+  const monthStart = new Date(anchorDate.getTime());
+  monthStart.setUTCDate(1);
+  monthStart.setUTCMonth(monthStart.getUTCMonth() - 6);
+  const monthEnd = new Date(monthStart.getTime());
+  monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1, 0);
+  monthStart.setUTCDate(Math.min(anchorDate.getUTCDate(), monthEnd.getUTCDate()));
+  const cutoffUnixNs = BigInt(monthStart.getTime()) * 1_000_000n + (anchorBlock.timestampUnixNs % 1_000_000n);
   const systemStartUnixNs = anchorBlock.timestampUnixNs - anchorBlock.slotNo * slotLengthNs;
-  if (STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS <= systemStartUnixNs) {
+  if (systemStartUnixNs <= 0n) {
+    throw new Error('Cardano system start must be greater than zero');
+  }
+  if (cutoffUnixNs <= systemStartUnixNs) {
     return 0n;
   }
-  const delta = STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS - systemStartUnixNs;
+  const delta = cutoffUnixNs - systemStartUnixNs;
   return (delta + slotLengthNs - 1n) / slotLengthNs;
 }
 
 export function getStabilityLookaheadDepth(policy: StabilityPolicy, env: NodeJS.ProcessEnv = process.env): number {
   const configured = env.CARDANO_STABILITY_MAX_LOOKAHEAD_DEPTH;
-  const fallback = policy.threshold_depth > 0n ? policy.threshold_depth * 4n : 96n;
+  const fallback =
+    policy.threshold_depth === 24n ? 127n : policy.threshold_depth > 0n ? policy.threshold_depth * 4n : 96n;
   const lookahead = configured ? BigInt(configured) : fallback;
   const minimum = policy.threshold_depth > 0n ? policy.threshold_depth : 1n;
   const normalized = lookahead >= minimum ? lookahead : minimum;
@@ -91,7 +122,7 @@ export function getStabilityLookaheadDepth(policy: StabilityPolicy, env: NodeJS.
     throw new Error(`CARDANO_STABILITY_MAX_LOOKAHEAD_DEPTH is too large: ${normalized.toString()}`);
   }
 
-  return Number(normalized);
+  return Number(normalized > 127n ? 127n : normalized);
 }
 
 export function scoreDescendantBlocks(
@@ -116,9 +147,19 @@ export function computeStabilityMetrics(
   const qualifiedUniquePools = new Set<string>();
   const seenSlotLeaders = new Set<string>();
   const stakeEntryByPool = new Map(epochStakeDistribution.map((entry) => [entry.poolId, entry]));
-  const totalActiveStake = epochStakeDistribution.reduce((sum, entry) => sum + entry.stake, 0n);
+  const credits = computeSettlementCredits(epochStakeDistribution, options.settlementCreditReference);
+  if (options.nextEpochStakeDistribution) {
+    const nextShares = computeSettlementCredits(options.nextEpochStakeDistribution);
+    for (const [pool, credit] of credits) {
+      const limit = nextShares.get(pool) ?? { numerator: 0n, denominator: 1n };
+      if (credit.numerator * limit.denominator > limit.numerator * credit.denominator) credits.set(pool, limit);
+    }
+  }
+  const production = options.poolProduction
+    ? productionRecords(options.poolProduction, options.poolProduction.epoch)
+    : new Map();
 
-  let qualifiedUniqueStake = 0n;
+  let qualifiedUniqueStake: CreditFraction = { numerator: 0n, denominator: 1n };
 
   for (const descendant of descendants) {
     if (!descendant.slotLeader || seenSlotLeaders.has(descendant.slotLeader)) {
@@ -127,16 +168,23 @@ export function computeStabilityMetrics(
 
     seenSlotLeaders.add(descendant.slotLeader);
     const entry = stakeEntryByPool.get(descendant.slotLeader);
+    if (!entry && options.qualificationEpoch !== undefined && BigInt(descendant.epochNo) > options.qualificationEpoch)
+      continue;
     if (!poolRegisteredBeforeCutoff(entry, options.poolRegistrationCutoffSlot)) {
       continue;
     }
 
+    if (
+      options.poolProduction?.epoch !== (options.qualificationEpoch ?? BigInt(descendant.epochNo)) ||
+      !production.get(descendant.slotLeader.toLowerCase())?.completed_epochs_bitmap
+    )
+      continue;
+
     qualifiedUniquePools.add(descendant.slotLeader);
-    qualifiedUniqueStake += entry.stake;
+    qualifiedUniqueStake = addCredit(qualifiedUniqueStake, credits.get(entry.poolId.toLowerCase())!);
   }
 
-  const qualifiedUniqueStakeBps =
-    qualifiedUniqueStake >= totalActiveStake ? 10_000n : (qualifiedUniqueStake * 10_000n) / totalActiveStake;
+  const qualifiedUniqueStakeBps = creditBasisPoints(qualifiedUniqueStake);
 
   const depthScore = minBps(BigInt(descendants.length), policy.threshold_depth);
   const poolsScore = minBps(BigInt(qualifiedUniquePools.size), policy.threshold_unique_pools);
@@ -207,7 +255,7 @@ function poolRegisteredBeforeCutoff(
   if (!entry) {
     throw new Error('Descendant slot leader missing from epoch stake distribution');
   }
-  if (!entry.firstRegistrationSlot || entry.firstRegistrationSlot <= 0n) {
+  if (entry.firstRegistrationSlot == null || entry.firstRegistrationSlot < 0n) {
     throw new Error(`First registration slot missing for pool ${entry.poolId}`);
   }
   return entry.firstRegistrationSlot < poolRegistrationCutoffSlot;

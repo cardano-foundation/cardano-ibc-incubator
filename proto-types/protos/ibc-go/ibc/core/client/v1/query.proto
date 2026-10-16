@@ -222,13 +222,15 @@ message QueryUpgradedConsensusStateResponse {
 }
 
 message QueryNewClientRequest {
-  // Block number to query
-  uint64 height =1;
+  // Initial Cardano height. Zero selects the current point after HostState creation.
+  uint64 height = 1;
+  // Zero requests creation records. Positive values request one bounded import.
+  uint32 initialization_sequence = 2;
 }
 
 message QueryNewClientResponse {
-  // client state associated with the request identifier
   google.protobuf.Any client_state = 1;
-  // consensus state associated with the request identifier
   google.protobuf.Any consensus_state = 2;
+  // One bounded MsgUpdateClient payload for the same initial checkpoint.
+  google.protobuf.Any initialization_message = 3;
 }

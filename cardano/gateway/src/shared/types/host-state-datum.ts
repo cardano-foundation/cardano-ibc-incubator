@@ -26,6 +26,7 @@ export type HostStateDatum = {
     live_clients: bigint;
     live_connections: bigint;
     live_channels: bigint;
+    last_heartbeat_time: bigint;
     shutdown:
       | 'Active'
       | {
@@ -80,6 +81,7 @@ export async function encodeHostStateDatum(
       live_clients: Data.Integer(),
       live_connections: Data.Integer(),
       live_channels: Data.Integer(),
+      last_heartbeat_time: Data.Integer(),
     }),
   });
   type THostStateDatum = Data.Static<typeof HostStateDatumSchema>;
@@ -126,10 +128,17 @@ export async function decodeHostStateDatum(hostStateDatum: string, Lucid: typeof
       live_clients: Data.Integer(),
       live_connections: Data.Integer(),
       live_channels: Data.Integer(),
+      last_heartbeat_time: Data.Integer(),
     }),
   });
   type THostStateDatum = Data.Static<typeof HostStateDatumSchema>;
   const THostStateDatum = HostStateDatumSchema as unknown as HostStateDatum;
+  const raw = Data.from(hostStateDatum) as import('@lucid-evolution/lucid').Constr<Data>;
+  const control = raw.fields[3] as import('@lucid-evolution/lucid').Constr<Data>;
+  if (control?.fields?.length === 5) {
+    control.fields.push(0n);
+    hostStateDatum = Data.to<Data>(raw, undefined, { canonical: true });
+  }
   return Data.from(hostStateDatum, THostStateDatum);
 }
 

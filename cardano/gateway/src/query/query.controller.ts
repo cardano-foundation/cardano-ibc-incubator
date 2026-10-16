@@ -28,6 +28,10 @@ import {
 
 import {
   QueryChannelRequest,
+  QueryUpgradeErrorRequest,
+  QueryUpgradeErrorResponse,
+  QueryUpgradeRequest,
+  QueryUpgradeResponse,
   QueryChannelResponse,
   QueryChannelsRequest,
   QueryChannelsResponse,
@@ -61,6 +65,8 @@ import {
   QueryTransactionByHashResponse,
   QueryIBCHeaderRequest,
   QueryIBCHeaderResponse,
+  QueryMithrilStakeCertificatesRequest,
+  QueryMithrilStakeCertificatesResponse,
 } from '@cardano-ibc/proto-types/build/ibc/core/types/v1/query';
 import {
   QueryBridgeManifestRequest,
@@ -194,6 +200,16 @@ export class QueryController {
     return response as unknown as QueryChannelResponse;
   }
 
+  @GrpcMethod('Query', 'Upgrade')
+  async queryUpgrade(request: QueryUpgradeRequest, metadata?: Metadata): Promise<QueryUpgradeResponse> {
+    return this.channelService.queryUpgrade(request, { queryHeight: getQueryHeightFromMetadata(metadata) });
+  }
+
+  @GrpcMethod('Query', 'UpgradeError')
+  async queryUpgradeError(request: QueryUpgradeErrorRequest, metadata?: Metadata): Promise<QueryUpgradeErrorResponse> {
+    return this.channelService.queryUpgradeError(request, { queryHeight: getQueryHeightFromMetadata(metadata) });
+  }
+
   @GrpcMethod('Query', 'ConnectionChannels')
   async queryConnectionChannels(request: QueryConnectionChannelsRequest): Promise<QueryConnectionChannelsResponse> {
     const response: QueryConnectionChannelsResponse = await this.channelService.queryConnectionChannels(request);
@@ -279,6 +295,13 @@ export class QueryController {
   async queryIBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse> {
     const response: QueryIBCHeaderResponse = await this.queryService.queryIBCHeader(request);
     return response as unknown as QueryIBCHeaderResponse;
+  }
+
+  @GrpcMethod('Query', 'MithrilStakeCertificates')
+  async queryMithrilStakeCertificates(
+    request: QueryMithrilStakeCertificatesRequest,
+  ): Promise<QueryMithrilStakeCertificatesResponse> {
+    return this.queryService.queryMithrilStakeCertificates(request);
   }
   @GrpcMethod('Query', 'NextSequenceReceive')
   async queryNextSequenceReceive(

@@ -19,8 +19,9 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as conn_counterparty_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{TimeoutOnClose, TimeoutPacket}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -48,6 +49,26 @@ fn check_timeout_unordered_packet(
   include_callback: Bool,
   callback_packet_matches: Bool,
   use_timeout_on_close: Bool,
+) {
+  check_timeout_unordered_packet_sequences(
+    use_escrow_shard,
+    include_callback,
+    callback_packet_matches,
+    use_timeout_on_close,
+    0,
+    0,
+  )
+}
+
+/// `claimed` is the redeemer's counterparty upgrade sequence and `proven` the
+/// one in the verified closed counterparty channel.
+fn check_timeout_unordered_packet_sequences(
+  use_escrow_shard: Bool,
+  include_callback: Bool,
+  callback_packet_matches: Bool,
+  use_timeout_on_close: Bool,
+  claimed: Int,
+  proven: Int,
 ) {
   let mock_data = setup()
 
@@ -84,6 +105,7 @@ fn check_timeout_unordered_packet(
       },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -98,6 +120,7 @@ fn check_timeout_unordered_packet(
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -293,6 +316,7 @@ fn check_timeout_unordered_packet(
         proof_close,
         proof_height,
         next_sequence_recv: 0,
+        counterparty_upgrade_sequence: claimed,
       }
     } else {
       TimeoutPacket {
@@ -363,6 +387,7 @@ fn check_timeout_unordered_packet(
             },
             connection_hops: [connection_datum.state.counterparty.connection_id],
             version: input_channel_datum.state.channel.version,
+            upgrade_sequence: proven,
           }
         let close_membership =
           VerifyMembershipParams {
@@ -458,6 +483,16 @@ test succeed_timeout_on_close_unordered_future_packet() {
   check_timeout_unordered_packet(False, True, True, True)
 }
 
+// The closed counterparty may sit at a later sequence after a cancelled
+// upgrade, which the relayer supplies.
+test timeout_on_close_accepts_counterparty_upgrade_sequence() {
+  check_timeout_unordered_packet_sequences(False, True, True, True, 3, 3)
+}
+
+test timeout_on_close_rejects_unproven_counterparty_upgrade_sequence() fail {
+  check_timeout_unordered_packet_sequences(False, True, True, True, 3, 0)
+}
+
 test timeout_packet_accepts_registered_escrow_shard_callback() {
   check_timeout_unordered_packet(True, True, True, False)
 }
@@ -508,6 +543,7 @@ test succeed_timeout_ordered_packet() {
       },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -522,6 +558,7 @@ test succeed_timeout_ordered_packet() {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -700,6 +737,7 @@ test timeout_on_close_recovers_second_future_packet_from_closed_ordered_channel(
       },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
   let empty_channel_datum =
     ChannelDatum {
@@ -713,6 +751,7 @@ test timeout_on_close_recovers_second_future_packet_from_closed_ordered_channel(
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -786,6 +825,7 @@ test timeout_on_close_recovers_second_future_packet_from_closed_ordered_channel(
       proof_close,
       proof_height,
       next_sequence_recv,
+      counterparty_upgrade_sequence: 0,
     }
 
   let channel_id =
@@ -832,6 +872,7 @@ test timeout_on_close_recovers_second_future_packet_from_closed_ordered_channel(
       },
       connection_hops: [connection_datum.state.counterparty.connection_id],
       version: input_channel_datum.state.channel.version,
+      upgrade_sequence: 0,
     }
   let close_membership =
     VerifyMembershipParams {

@@ -15,27 +15,6 @@ fn counterparty_chain_id() -> &'static str {
     "localosmosis"
 }
 
-fn gateway_light_client_mode(project_root: &Path) -> &'static str {
-    let gateway_env_path = project_root.join("cardano/gateway/.env");
-    let env_contents = fs::read_to_string(&gateway_env_path).unwrap_or_default();
-
-    for line in env_contents.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-
-        if let Some(value) = trimmed.strip_prefix("CARDANO_LIGHT_CLIENT_MODE=") {
-            let mode = value.trim().trim_matches('"').trim_matches('\'');
-            if mode == "mithril" {
-                return "mithril";
-            }
-        }
-    }
-
-    "stake-weighted-stability"
-}
-
 fn normalize_env_value(value: &str) -> String {
     value
         .trim()
@@ -127,10 +106,6 @@ async fn refresh_gateway_epoch_nonce_for_stability(
     project_root: &Path,
     http_client: &reqwest::Client,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if gateway_light_client_mode(project_root) != "stake-weighted-stability" {
-        return Ok(());
-    }
-
     let current_epoch_nonce = query_current_cardano_epoch_nonce(project_root)?;
     let gateway_env_path = project_root.join("cardano/gateway/.env");
     let configured_genesis_nonce =
@@ -239,8 +214,7 @@ fn run_command_streaming(
 
             // In normal runs, emit a few high-signal lines so long Hermes steps do not look stuck.
             if verbosity != logger::Verbosity::Verbose {
-                let is_progress_line = trimmed.contains("Waiting for Mithril snapshot")
-                    || trimmed.contains("certified")
+                let is_progress_line = trimmed.contains("certified")
                     || trimmed.contains("submitted")
                     || trimmed.contains("Building unsigned transaction")
                     || trimmed.contains("MsgConnection")
@@ -2412,69 +2386,8 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
         verbose("   target Cosmos chain is running");
     }
 
-    let light_client_mode = gateway_light_client_mode(project_root);
-    if light_client_mode == "stake-weighted-stability" && cardano_running && gateway_running {
+    if cardano_running && gateway_running {
         refresh_gateway_epoch_nonce_for_stability(project_root, &http_client).await?;
-    }
-    if light_client_mode == "mithril" {
-        verbose("   Gateway light client mode: mithril");
-
-        // Check Mithril only when the active Gateway mode actually depends on it.
-        //
-        // Mithril aggregator does not expose a dedicated `/health` endpoint in our setup; the
-        // `/aggregator` endpoint is stable and returns 2xx when the service is up.
-        let mithril_aggregator_base_url = crate::config::get_config()
-            .mithril
-            .aggregator_url
-            .trim_end_matches('/')
-            .to_string();
-        let mithril_aggregator_url = format!("{}/aggregator", mithril_aggregator_base_url);
-        let stake_distributions_url = format!(
-            "{}/aggregator/artifact/mithril-stake-distributions",
-            mithril_aggregator_base_url
-        );
-        let cardano_transactions_url = format!(
-            "{}/aggregator/artifact/cardano-transactions",
-            mithril_aggregator_base_url
-        );
-
-        let mithril_running =
-            check_service_health(&http_client, mithril_aggregator_url.as_str()).await;
-        if !mithril_running {
-            missing_services.push("Mithril aggregator on :8080");
-        } else {
-            verbose("   Mithril is running");
-
-            let stake_distributions_ready =
-                check_json_array_non_empty(&http_client, stake_distributions_url.as_str()).await;
-            let tx_snapshots_ready =
-                check_json_array_non_empty(&http_client, cardano_transactions_url.as_str()).await;
-
-            if stake_distributions_ready && tx_snapshots_ready {
-                verbose("   Mithril stake distributions available");
-                verbose("   Mithril Cardano transaction snapshots available");
-            } else {
-                logger::warn(
-                    "Mithril artifacts are not ready yet; waiting up to 180s for stake distributions and cardano-transaction snapshots.",
-                );
-
-                let artifacts_ready =
-                    wait_for_mithril_artifacts_ready_for_cardano_client(36, Duration::from_secs(5))
-                        .await?;
-
-                if artifacts_ready {
-                    verbose("   Mithril stake distributions available");
-                    verbose("   Mithril Cardano transaction snapshots available");
-                } else {
-                    missing_services.push(
-                        "Mithril artifacts (stake distributions + cardano-transactions) on :8080",
-                    );
-                }
-            }
-        }
-    } else {
-        verbose("   Gateway light client mode: stake-weighted-stability");
-        verbose("   Mithril checks skipped for active Gateway mode");
     }
 
     if !missing_services.is_empty() {
@@ -2632,25 +2545,6 @@ async fn wait_for_service_health(
     false
 }
 
-async fn check_json_array_non_empty(client: &reqwest::Client, url: &str) -> bool {
-    let resp = match client.get(url).send().await {
-        Ok(r) => r,
-        Err(_) => return false,
-    };
-    if !resp.status().is_success() {
-        return false;
-    }
-    match resp.json::<serde_json::Value>().await {
-        Ok(serde_json::Value::Array(items)) => !items.is_empty(),
-        _ => false,
-    }
-}
-
-fn is_mithril_artifact_readiness_error(error: &str) -> bool {
-    (error.contains("query_new_client") && error.contains("Not found: \"height\""))
-        || error.contains("no Mithril stake distributions available")
-}
-
 fn is_unknown_utxo_reference_error(error: &str) -> bool {
     error.contains("unknown UTxO references as inputs") || error.contains("unknownOutputReferences")
 }
@@ -2696,60 +2590,6 @@ fn wait_for_gateway_proof_ready_blocking(
         if attempt < attempts {
             std::thread::sleep(delay);
         }
-    }
-
-    Ok(false)
-}
-
-async fn wait_for_mithril_artifacts_ready_for_cardano_client(
-    max_attempts: usize,
-    interval: Duration,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let mithril_aggregator_base_url = crate::config::get_config()
-        .mithril
-        .aggregator_url
-        .trim_end_matches('/')
-        .to_string();
-    let stake_distributions_url = format!(
-        "{}/aggregator/artifact/mithril-stake-distributions",
-        mithril_aggregator_base_url
-    );
-    let cardano_transactions_url = format!(
-        "{}/aggregator/artifact/cardano-transactions",
-        mithril_aggregator_base_url
-    );
-    let http_client = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(3))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-
-    let start = Instant::now();
-    let mut stake_ready = false;
-    let mut tx_ready = false;
-
-    for attempt in 0..max_attempts {
-        if !stake_ready {
-            stake_ready =
-                check_json_array_non_empty(&http_client, stake_distributions_url.as_str()).await;
-        }
-        if !tx_ready {
-            tx_ready =
-                check_json_array_non_empty(&http_client, cardano_transactions_url.as_str()).await;
-        }
-        if stake_ready && tx_ready {
-            return Ok(true);
-        }
-
-        logger::verbose(&format!(
-            "   Waiting for Mithril artifacts (attempt {}/{}, elapsed {}s, stake_distributions_ready={}, cardano_transactions_ready={})...",
-            attempt + 1,
-            max_attempts,
-            start.elapsed().as_secs(),
-            stake_ready,
-            tx_ready
-        ));
-        tokio::time::sleep(interval).await;
     }
 
     Ok(false)
@@ -3270,25 +3110,6 @@ async fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn s
         Ok(connection_id) => Ok(connection_id),
         Err(first_error) => {
             let first_error_text = first_error.to_string();
-            if is_mithril_artifact_readiness_error(&first_error_text) {
-                logger::warn(
-                    "Mithril artifacts are not ready for Cardano light-client query yet; waiting and retrying connection handshake once.",
-                );
-                let artifacts_ready =
-                    wait_for_mithril_artifacts_ready_for_cardano_client(36, Duration::from_secs(5))
-                        .await?;
-
-                if !artifacts_ready {
-                    return Err(format!(
-                        "{}\n\nMithril artifacts never became ready (stake distributions + cardano transaction snapshots) within 180s.",
-                        first_error_text
-                    )
-                    .into());
-                }
-
-                return run_connection_handshake(project_root);
-            }
-
             if is_unknown_utxo_reference_error(&first_error_text) {
                 logger::warn(
                     "Gateway rejected connection handshake with unknown UTxO references right after client creation; waiting briefly and retrying once.",

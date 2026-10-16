@@ -74,7 +74,8 @@ fn get_sample_header() -> Header {
 test test_get_height() {
   let h = get_sample_header()
   let revision_number =
-    h.signed_header.header.chain_id |> height.parse_chain_id()
+    h.signed_header.header.chain_id
+      |> height.parse_chain_id()
   header.get_height(h) == Height {
     revision_number,
     revision_height: expected_revision_height,

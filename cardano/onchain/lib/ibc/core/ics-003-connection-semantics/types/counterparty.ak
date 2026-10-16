@@ -1,6 +1,8 @@
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/validate
 
+// Frozen public commitment primitive. Keep its fields and order unchanged.
+// Put private metadata in a separate type. See docs/cardano-commitment-codec.md.
 /// Counterparty defines the counterparty chain associated with a connection end.
 pub type Counterparty {
   // identifies the client on the counterparty chain associated with a given connection.

@@ -161,7 +161,8 @@ export type SpendMultitxClientRedeemer =
         historyWitnesses: ConsensusHistoryWitness[];
       };
     }
-  | 'ReclaimClient';
+  | 'ReclaimClient'
+  | 'UpgradeClient';
 
 /**
  * Build all schemas in one place so constructor and record-field order cannot
@@ -367,6 +368,7 @@ function createTendermintUpdateSessionSchemas(Data: LucidData) {
       }),
     }),
     Data.Literal('ReclaimClient'),
+    Data.Literal('UpgradeClient'),
   ]);
 
   return {

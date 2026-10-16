@@ -65,6 +65,7 @@ def main():
     parser.add_argument("--kupo-port", type=int, default=2442)
     parser.add_argument("--cleanup", action="store_true")
     parser.add_argument("--migration-baseline", action="store_true", help="Explicitly authorize this isolated test wallet as the upgrade-baseline authority")
+    parser.add_argument("--pool-aging", action="store_true", help="Fresh fixture only: mainnet security parameter and block interval for bounded pool-aging clock steps")
     parser.add_argument("--pool-count", type=int, choices=[5], default=5, help="Real forging pools; use five for counterparty stability verification")
     parser.add_argument("--clock-offset-seconds", type=int, default=0, help="Disposable devnet process-clock offset; never changes the host clock")
     parser.add_argument("--epoch-length", type=int, help="Fresh disposable genesis only; use 432000 for the two-day migration rehearsal")
@@ -77,6 +78,8 @@ def main():
         parser.error("--existing-network requires an explicit --compose and --project")
     if args.compose and (args.epoch_length is not None or args.host_data):
         parser.error("Genesis timing/storage options cannot modify an existing fixture")
+    if args.pool_aging and (args.compose or args.epoch_length != 432000):
+        parser.error('--pool-aging requires a fresh network with --epoch-length 432000')
     if args.epoch_length is not None and not 5000 <= args.epoch_length <= 432000:
         parser.error("Fresh rehearsal epoch length must be between 5000 and 432000 one-second slots")
     if not args.blueprint.is_file():
@@ -123,7 +126,7 @@ def main():
         os.environ.pop("DOCKER_CONTEXT", None)
     devkit = _devkit.MigrationRuntime(runtime_root, project, args.clock_offset_seconds,
         args.epoch_length or 5000, args.ogmios_port, args.kupo_port,
-        existing=bool(args.compose), host_data=args.host_data)
+        existing=bool(args.compose), host_data=args.host_data, pool_aging=args.pool_aging)
     cli = devkit.cli
 
     print(f"Isolated project: {project}; artifacts: {artifacts}", flush=True)
@@ -132,7 +135,7 @@ def main():
             devkit.start()
         devkit.export_genesis()
         if args.migration_baseline:
-            _clock.require_qualified_genesis(json.loads((runtime / "genesis-shelley.json").read_text()))
+            _clock.require_aging_headroom(json.loads((runtime / "genesis-shelley.json").read_text()))
         # Bind observations to the selected project, including --compose reuse.
         ogmios_port = int(run(compose + ["port", "devkit", "1337"]).splitlines()[0].rsplit(":", 1)[1])
         kupo_port = int(run(compose + ["port", "devkit", "1442"]).splitlines()[0].rsplit(":", 1)[1])

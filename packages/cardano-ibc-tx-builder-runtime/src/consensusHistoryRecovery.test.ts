@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { Buffer } from "node:buffer";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,7 +38,7 @@ const address = CML.EnterpriseAddress.new(
   0,
   CML.Credential.new_script(CML.ScriptHash.from_hex("33".repeat(28))),
 ).to_address().to_bech32();
-const height = (n: bigint) => new Constr(0, [1n, n]);
+const height = (n: bigint, revision = 1n) => new Constr(0, [revision, n]);
 const encode = (data: Data) =>
   Data.to<Data>(data, undefined, { canonical: true });
 type Publication = {
@@ -48,17 +49,24 @@ type Publication = {
 
 // Unsigned CBOR fixtures exercise recovery, not script authorization. Production
 // ledger acceptance is covered separately by the signed integration fixtures.
-function publications(heights: bigint[], bodyOnly = false, migrationAddresses?: string[]): Publication[] {
+// A bare height is in revision 1; a pair sets the revision explicitly.
+function publications(
+  heights: Array<bigint | readonly [bigint, bigint]>,
+  bodyOnly = false,
+  migrationAddresses?: string[],
+): Publication[] {
   const db = new DatabaseSync(":memory:");
   const tree = new IncrementalIbcTree(db);
   const result: Publication[] = [];
   try {
-    for (const n of heights) {
+    for (const entry of heights) {
+      const [revision, n] = typeof entry === "bigint" ? [1n, entry] : entry;
       const previous = result.at(-1);
-      const frozen = previous?.record.height.revisionHeight === n;
+      const frozen = previous?.record.height.revisionNumber === revision &&
+        previous.record.height.revisionHeight === n;
       const record: ConsensusHistoryRecord = {
         clientToken: token,
-        height: { revisionNumber: 1n, revisionHeight: n },
+        height: { revisionNumber: revision, revisionHeight: n },
         consensusState: {
           timestamp: 1000n + n,
           nextValidatorsHash: "44".repeat(32),
@@ -75,18 +83,19 @@ function publications(heights: bigint[], bodyOnly = false, migrationAddresses?: 
       }
       const state = new Constr(0, [
         new Constr(0, [
-          "636861696e2d31",
+          Buffer.from(`chain-${revision}`).toString("hex"),
           new Constr(0, [1n, 3n]),
           100_000n,
           200_000n,
           100n,
           new Constr(0, [0n, frozen ? 1n : 0n]),
-          height(n),
+          height(n, revision),
+          [],
           [],
         ]),
-        new Map([[height(n), recordToConstr(record).fields[2]]]),
-        new Map([[height(n), record.processedTime]]),
-        new Map([[height(n), record.processedHeight]]),
+        new Map([[height(n, revision), recordToConstr(record).fields[2]]]),
+        new Map([[height(n, revision), record.processedTime]]),
+        new Map([[height(n, revision), record.processedHeight]]),
       ]);
       const output: UTxO = {
         txHash: "00".repeat(32),
@@ -426,6 +435,76 @@ test("production private root replays creation, update, freeze and recovery-heig
       );
       assert.deepEqual(index.current(), before);
       assert.equal((await index.recover(source(items))).transactions, 0);
+    } finally {
+      index.close();
+    }
+  }
+});
+
+test("production private root replays an upgrade into a revision whose heights restart", async () => {
+  // (2, 5) reuses an archived revision-1 height, which must not collide.
+  const items = publications([5n, 9n, [2n, 5n], [2n, 5n], [2n, 8n]]);
+  const index = recovery(items);
+  try {
+    const result = await index.recover(source(items));
+    assert.equal(result.transactions, 5);
+    assert.deepEqual(index.current().record.height, {
+      revisionNumber: 2n,
+      revisionHeight: 8n,
+    });
+    for (const archived of [items[1], items[2]]) {
+      const proof = index.witness(token, archived.record.height);
+      assert(
+        verifyIbcTreeWitness(
+          proof.key,
+          proof.value,
+          proof.siblings,
+          result.root,
+        ),
+      );
+    }
+    const records = [];
+    for await (const entry of index.records()) records.push(entry);
+    assert.deepEqual(
+      records.map((entry) => [
+        entry.record.height.revisionNumber,
+        entry.record.height.revisionHeight,
+        entry.archived,
+      ]),
+      [[1n, 5n, true], [1n, 9n, true], [2n, 5n, true], [2n, 8n, false]],
+    );
+    assert.deepEqual(
+      await index.heights({ after: items[1].record.height, limit: 2 }),
+      [items[2].record.height, items[4].record.height],
+    );
+    const insertion = index.insertionWitness();
+    assert(
+      verifyIbcTreeWitness(
+        insertion.key,
+        insertion.value,
+        insertion.siblings,
+        insertion.newRoot,
+      ),
+    );
+  } finally {
+    index.close();
+  }
+});
+
+test("production rejects a checkpoint that moves to an earlier revision or height", async () => {
+  for (
+    const heights of [
+      [[2n, 5n], [1n, 9n]],
+      [[2n, 5n], [2n, 4n]],
+    ] as Array<Array<readonly [bigint, bigint]>>
+  ) {
+    const items = publications(heights);
+    const index = recovery(items);
+    try {
+      await assert.rejects(
+        index.recover(source(items)),
+        /unsupported checkpoint transition/,
+      );
     } finally {
       index.close();
     }

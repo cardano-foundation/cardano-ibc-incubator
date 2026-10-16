@@ -1,22 +1,26 @@
-//! Public-network capacity limits used by local Caribic profiles.
+//! Capacity limits for public networks and local Caribic profiles.
 //!
 //! These constants are intentionally limited to transaction construction and
 //! relay caps. The chain setup scripts hold the corresponding consensus and
 //! staking limits and are covered by the drift tests below.
+//! Local profiles support the larger probabilistic-client batches. Public
+//! destinations require approved matching limits before using those batches.
 
 /// A conservative relayer transaction-size cap below the public nodes' limits.
 pub(crate) const HERMES_CONSERVATIVE_MAX_TX_SIZE: u64 = 1_000_000;
 
+/// Hermes accepts at most 8 MiB per transaction. Local nodes allow 12 MiB.
+/// Two admitted probabilistic headers fit below the smaller relayer cap.
+pub(crate) const LOCAL_MAX_TX_SIZE: u64 = 8 * 1_048_576;
+
+/// Match the larger block and transaction gas budgets in the local profiles.
+pub(crate) const LOCAL_MAX_TX_GAS: u64 = 600_000_000;
+
 /// Injective rejects transactions requesting more than this amount of gas.
 pub(crate) const INJECTIVE_MAX_TX_GAS: u64 = 75_000_000;
 
-/// The local Osmosis profile models no lower per-transaction cap, so Hermes
-/// follows the public block limit.
+/// Public Osmosis relay follows its block gas limit.
 pub(crate) const OSMOSIS_MAX_TX_GAS: u64 = 300_000_000;
-
-/// The local cheqd profile models no lower per-transaction cap, so Hermes
-/// follows the public block limit.
-pub(crate) const CHEQD_MAX_TX_GAS: u64 = 30_000_000;
 
 #[cfg(test)]
 mod tests {
@@ -66,11 +70,11 @@ mod tests {
     }
 
     #[test]
-    fn compatibility_profiles_use_injective_capacity_limits() {
+    fn compatibility_profiles_support_probabilistic_catch_up() {
         let setup = read("chains/cosmos/scripts/setup_profile.sh");
         for expected in [
-            "BLOCK_MAX_BYTES=4194304",
-            "BLOCK_MAX_GAS=150000000",
+            "BLOCK_MAX_BYTES=16777216",
+            "BLOCK_MAX_GAS=600000000",
             "EVIDENCE_MAX_AGE_NUM_BLOCKS=100000",
             "EVIDENCE_MAX_AGE_DURATION=172800000000000",
             "EVIDENCE_MAX_BYTES=1048576",
@@ -78,43 +82,45 @@ mod tests {
             "STAKING_MAX_VALIDATORS=45",
             "STAKING_MAX_ENTRIES=7",
             "STAKING_HISTORICAL_ENTRIES=10000",
-            "MAX_TX_BYTES=1048576",
-            "RPC_MAX_BODY_BYTES=4000000",
-            "Preserved genesis does not match the pinned Injective capacity snapshot",
+            "MAX_TX_BYTES=12582912",
+            "RPC_MAX_BODY_BYTES=20000000",
+            "max-recv-msg-size = 16777216",
+            "Preserved genesis does not match the probabilistic-client capacity profile",
         ] {
             assert!(setup.contains(expected), "missing {expected}");
         }
     }
 
     #[test]
-    fn chain_specific_local_templates_pin_public_capacity_limits() {
+    fn chain_specific_local_templates_support_probabilistic_catch_up() {
         let injective = read("chains/injective/scripts/setup_injective_local.sh");
         for expected in [
-            "BLOCK_MAX_BYTES=4194304",
-            "BLOCK_MAX_GAS=150000000",
+            "BLOCK_MAX_BYTES=16777216",
+            "BLOCK_MAX_GAS=600000000",
             "EVIDENCE_MAX_AGE_NUM_BLOCKS=100000",
             "EVIDENCE_MAX_AGE_DURATION=172800000000000",
             "EVIDENCE_MAX_BYTES=1048576",
             "STAKING_UNBONDING_TIME=1814400s",
-            "MAX_GAS_WANTED_PER_TX=75000000",
+            "MAX_GAS_WANTED_PER_TX=600000000",
             "STAKING_MAX_VALIDATORS=45",
             "STAKING_MAX_ENTRIES=7",
             "STAKING_HISTORICAL_ENTRIES=10000",
-            "MEMPOOL_MAX_TX_BYTES=1048576",
-            "RPC_MAX_BODY_BYTES=4000000",
+            "MEMPOOL_MAX_TX_BYTES=12582912",
+            "RPC_MAX_BODY_BYTES=20000000",
+            "max-recv-msg-size = 16777216",
             "max_tx_bytes = ${MEMPOOL_MAX_TX_BYTES}",
             "max_body_bytes = ${RPC_MAX_BODY_BYTES}",
             "Injective genesis is missing app_state.txfees.params",
             ".app_state.txfees.params.max_gas_wanted_per_tx == $max_gas_wanted_per_tx",
-            "Preserved genesis does not match the pinned Injective mainnet capacity snapshot",
+            "Preserved genesis does not match the probabilistic-client capacity profile",
         ] {
             assert!(injective.contains(expected), "missing {expected}");
         }
 
         let osmosis = read("chains/osmosis/scripts/setup_osmosis_local.sh");
         for expected in [
-            "BLOCK_MAX_BYTES=3000000",
-            "BLOCK_MAX_GAS=300000000",
+            "BLOCK_MAX_BYTES=16777216",
+            "BLOCK_MAX_GAS=600000000",
             "EVIDENCE_MAX_AGE_NUM_BLOCKS=100000",
             "EVIDENCE_MAX_AGE_DURATION=172800000000000",
             "EVIDENCE_MAX_BYTES=1048576",
@@ -122,8 +128,9 @@ mod tests {
             "STAKING_MAX_VALIDATORS=70",
             "STAKING_MAX_ENTRIES=7",
             "STAKING_HISTORICAL_ENTRIES=10000",
-            "MEMPOOL_MAX_TX_BYTES=1048576",
-            "RPC_MAX_BODY_BYTES=4000000",
+            "MEMPOOL_MAX_TX_BYTES=12582912",
+            "RPC_MAX_BODY_BYTES=20000000",
+            "max-recv-msg-size = 16777216",
             "max_tx_bytes = $MEMPOOL_MAX_TX_BYTES",
             "max_body_bytes = $RPC_MAX_BODY_BYTES",
             "'.app_state.gov.params.voting_period' -v '60s'",
@@ -137,8 +144,8 @@ mod tests {
 
         let cheqd = read("chains/cheqd/scripts/generate_local_network.sh");
         for expected in [
-            "BLOCK_MAX_BYTES = '3000000'",
-            "BLOCK_MAX_GAS = '30000000'",
+            "BLOCK_MAX_BYTES = '16777216'",
+            "BLOCK_MAX_GAS = '600000000'",
             "EVIDENCE_MAX_AGE_NUM_BLOCKS = '25920'",
             "EVIDENCE_MAX_AGE_DURATION = '259200000000000'",
             "EVIDENCE_MAX_BYTES = '5000'",
@@ -146,8 +153,9 @@ mod tests {
             "STAKING_MAX_VALIDATORS = 125",
             "STAKING_MAX_ENTRIES = 7",
             "STAKING_HISTORICAL_ENTRIES = 10000",
-            "MEMPOOL_MAX_TX_BYTES = 1048576",
-            "RPC_MAX_BODY_BYTES = 4000000",
+            "MEMPOOL_MAX_TX_BYTES = 12582912",
+            "RPC_MAX_BODY_BYTES = 20000000",
+            "max-recv-msg-size = 16777216",
             "r'^max_tx_bytes = .*$'",
             "r'^max_body_bytes = .*$'",
         ] {

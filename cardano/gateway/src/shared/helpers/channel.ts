@@ -24,3 +24,13 @@ export function channelPathForPacket(portId: string, channelId: string) {
 export function channelPath(portId: string, channelId: string): string {
   return `${KEY_CHANNEL_END_PREFIX}/${channelPathForPacket(portId, channelId)}`;
 }
+
+// ICS-24 channel-upgrade paths, as ibc-go v8 host.ChannelUpgradePath and
+// host.ChannelUpgradeErrorPath build them.
+export function channelUpgradePath(portId: string, channelId: string): string {
+  return `channelUpgrades/upgrades/${channelPathForPacket(portId, channelId)}`;
+}
+
+export function channelUpgradeErrorPath(portId: string, channelId: string): string {
+  return `channelUpgrades/upgradeError/${channelPathForPacket(portId, channelId)}`;
+}

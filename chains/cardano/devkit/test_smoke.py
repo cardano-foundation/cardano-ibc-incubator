@@ -3,7 +3,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import Mock, patch
 
-from smoke import indexed_block_window, raw_block_cbor, verify_genesis_security, verify_ledger_retention
+from smoke import indexed_block_window, raw_block_cbor, verify_genesis_security, verify_ledger_retention, verify_mithril
 
 
 class IndexedBlockWindowTests(unittest.TestCase):
@@ -25,6 +25,56 @@ class IndexedBlockWindowTests(unittest.TestCase):
         ])
         with self.assertRaisesRegex(RuntimeError, "missing raw block CBOR"):
             indexed_block_window(runtime, 2)
+
+
+
+class MithrilTests(unittest.TestCase):
+    running = "mithril-aggregator running\nmithril-signer-2 running\nmithril-signer-3 running\n"
+
+    def runtime(self, epoch, containers=running):
+        runtime = Mock()
+        runtime.compose.return_value = containers
+        runtime.cli.return_value = json.dumps({"epoch": epoch})
+        runtime.mithril_endpoint.return_value = "http://aggregator"
+        return runtime
+
+    def test_a_new_network_only_needs_running_containers(self):
+        with patch("smoke.http") as http:
+            result = verify_mithril(self.runtime(0))
+        http.assert_not_called()
+        self.assertEqual(result["epoch"], 0)
+        self.assertNotIn("registered_signers", result)
+
+    def test_a_restarting_signer_fails(self):
+        containers = self.running.replace("mithril-signer-3 running", "mithril-signer-3 restarting")
+        with self.assertRaisesRegex(RuntimeError, "mithril-signer-3 is restarting"):
+            verify_mithril(self.runtime(0, containers))
+
+    def test_signing_epochs_need_registrations_and_a_genesis_certificate(self):
+        responses = {"http://aggregator/signers/registered/latest": {"registrations": [{}, {}]},
+                     "http://aggregator/certificates": []}
+        with patch("smoke.http", side_effect=responses.get):
+            self.assertEqual(verify_mithril(self.runtime(2))["registered_signers"], 2)
+            with self.assertRaisesRegex(RuntimeError, "no genesis certificate"):
+                verify_mithril(self.runtime(3))
+            responses["http://aggregator/certificates"] = [{"hash": "genesis"}]
+            self.assertEqual(verify_mithril(self.runtime(3))["certificates"], 1)
+
+    def test_from_epoch_five_a_client_can_bootstrap(self):
+        artifact = "http://aggregator/artifact/cardano-stake-distribution/epoch/"
+        responses = {"http://aggregator/signers/registered/latest": {"registrations": [{}, {}]},
+                     "http://aggregator/certificates": [{"hash": "genesis"}], artifact + "3": {"epoch": 3}}
+
+        def http(url):
+            if url not in responses:
+                raise OSError("404 Not Found")
+            return responses[url]
+
+        with patch("smoke.http", side_effect=http):
+            with self.assertRaisesRegex(RuntimeError, "not certified the epoch 4 stake distribution"):
+                verify_mithril(self.runtime(6))
+            responses[artifact + "4"] = {"epoch": 4}
+            self.assertEqual(verify_mithril(self.runtime(6))["certified_stake_epochs"], [3, 4])
 
 
 class LedgerRetentionTests(unittest.TestCase):

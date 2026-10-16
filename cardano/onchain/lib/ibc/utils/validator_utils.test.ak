@@ -319,6 +319,7 @@ fn setup_extract_module_redeemer() -> (
       nft_policy: host_state_nft_policy_id,
       deployer: "mock deployer key hash",
       control: HostStateControl {
+        last_heartbeat_time: 0,
         port_registry: [Pair(port_id, registration)],
         shutdown: Active,
         live_clients: 0,

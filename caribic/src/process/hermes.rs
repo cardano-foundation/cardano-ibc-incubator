@@ -80,6 +80,15 @@ impl HermesCli {
         if let Some(current_dir) = current_dir {
             command.current_dir(current_dir);
         }
+        if std::env::var_os("CARIBIC_HERMES_DIR").is_some_and(|value| !value.is_empty())
+            && !args
+                .iter()
+                .any(|arg| *arg == "--config" || *arg == "-c" || arg.starts_with("--config="))
+        {
+            if let Some(directory) = crate::chains::hermes_support::hermes_directory() {
+                command.arg("--config").arg(directory.join("config.toml"));
+            }
+        }
         command.args(args);
         command
     }
