@@ -152,6 +152,23 @@ func (cs *ClientState) verifyObservationOperation(ctx Context, cdc StateCodec, p
 				}
 			}
 		}
+		if chunk.Operation == ObservationActivate {
+			// Activation messages contain a session reference, not a header
+			// height. Bind the committed result to that exact session step so
+			// event consumers never have to invent a consensus height. Proposals,
+			// rootless checkpoints and exact retries publish no consensus state.
+			consensusHeight := ""
+			if len(heights) != 0 {
+				consensusHeight = fmt.Sprintf("%d-%d", heights[0].GetRevisionNumber(), heights[0].GetRevisionHeight())
+			}
+			ctx.emitEvent("probabilistic_activation_result",
+				newEventAttribute("session_id", fmt.Sprintf("%x", chunk.SessionId)),
+				newEventAttribute("sequence", fmt.Sprint(chunk.Sequence)),
+				newEventAttribute("receipt_id", fmt.Sprintf("%x", session.Receipt)),
+				newEventAttribute("anchor_height", fmt.Sprint(session.AnchorHeight)),
+				newEventAttribute("consensus_height", consensusHeight),
+			)
+		}
 	}
 	result := operationResult{Digest: digest, HostHeight: ctx.Height, HostTime: ctx.BlockTime().UnixNano()}
 	for _, h := range heights {

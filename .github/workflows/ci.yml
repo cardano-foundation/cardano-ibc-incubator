@@ -70,7 +70,9 @@ jobs:
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]] &&
              git diff --quiet --ignore-submodules=none --no-ext-diff \
                "${PR_BASE_SHA}...${PR_HEAD_SHA}" -- \
-               relayer .gitmodules .github/workflows/ci.yml; then
+               relayer .gitmodules .github/workflows/ci.yml \
+               cosmos/cardano-probabilistic-light-client-core \
+               cosmos/cardano-probabilistic-light-client-v8; then
             changed=false
           fi
           echo "changed=${changed}" >> "${GITHUB_OUTPUT}"
@@ -1472,6 +1474,20 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y protobuf-compiler
+
+      - name: Setup Go for keeper event integration
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: cosmos/cardano-probabilistic-light-client-v8/go.mod
+          cache-dependency-path: |
+            cosmos/cardano-probabilistic-light-client-core/go.sum
+            cosmos/cardano-probabilistic-light-client-v8/go.sum
+
+      - name: Execute signed client operations and export keeper events
+        run: |
+          fixture="${RUNNER_TEMP}/probabilistic-operation-events.json"
+          RELAYER_OPERATION_EVENTS="${fixture}" go -C cosmos/cardano-probabilistic-light-client-v8 test . -run '^TestRelayerOperationEvents$' -count=1
+          echo "RELAYER_OPERATION_EVENTS=${fixture}" >> "${GITHUB_ENV}"
 
       - name: Setup Rust
         # Keep compiler upgrades separate from Dependabot action updates.
