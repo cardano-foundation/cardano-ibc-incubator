@@ -37,7 +37,7 @@ PRODUCERS = tuple(f"producer-{index}" for index in range(2, 6))
 MITHRIL_SIGNERS = ("mithril-signer-2", "mithril-signer-3")
 # A clock step must stay well inside the 3k/f = 576-slot forecast window, or
 # the producers can't forge after it. The migration rehearsal uses the same.
-CLOCK_STEP_SECONDS = 300
+CLOCK_STEP_SLOTS = 300
 
 
 def read_settings(path):
@@ -428,11 +428,14 @@ class Runtime:
         # epoch is left only once Mithril and the nonce service have done that
         # epoch's work, and readiness is judged only after that, once a
         # restarted aggregator serves again. A ready network keeps its clock.
+        genesis = http(self.endpoint("DEVKIT_ADMIN_PORT") + "/local-cluster/api/admin/devnet/genesis/shelley")
+        slot_length = Fraction(str(genesis["slotLength"]))
+        step = math.floor(CLOCK_STEP_SLOTS * slot_length)
         epoch = self.tip()["epoch"]
         self.settle_epoch(epoch)
         while not self.mithril_ready(epoch):
             while self.tip()["epoch"] == epoch:
-                self.advance_clock(CLOCK_STEP_SECONDS)
+                self.advance_clock(step, slot_length)
             epoch = self.tip()["epoch"]
             print(f"Local network clock reached epoch {epoch}.", flush=True)
             self.settle_epoch(epoch)
@@ -466,13 +469,14 @@ class Runtime:
             wait_for(f"Mithril's certificate of the epoch {epoch - 1} stake distribution",
                      lambda: self.mithril_artifact(epoch - 1), timeout=600)
 
-    def advance_clock(self, seconds):
+    def advance_clock(self, seconds, slot_length):
         before = self.tip()
         self.set_clock(self.clock_offset() + seconds)
         # Every producer must forge or adopt a block past the step, on the
         # history Yaci indexed. A step can otherwise leave pools on a fork.
+        minimum = before["slot"] + math.floor(seconds / slot_length) - 20
         wait_for("all five producers past the clock step",
-                 lambda: self.canonical_tips(before["slot"] + seconds - 20), timeout=180, quiet=True)
+                 lambda: self.canonical_tips(minimum), timeout=180, quiet=True)
 
     def canonical_tips(self, minimum_slot):
         with ThreadPoolExecutor(len(PRODUCERS) + 1) as pool:

@@ -87,6 +87,8 @@ class References(unittest.TestCase):
                 self.assertEqual(service['environment']['DEVKIT_EPOCH_LENGTH'], '432000')
                 self.assertEqual(service['environment']['DEVKIT_CLOCK_FILE'], '/runtime/migration-clock.rc')
                 self.assertEqual(service['environment']['DEVKIT_FULL_MESH'], 'true')
+                # Its clock steps are sized for one-second slots, unlike the default profile.
+                self.assertEqual((service['environment']['DEVKIT_SLOT_LENGTH'], service['environment']['DEVKIT_BLOCK_TIME']), ('1', '4'))
             self.assertIn('store.epoch-nonce.enabled=true', (root / 'yaci.properties').read_text())
             before = instance.compose_file.read_bytes()
             with patch.object(devkit.profile.Runtime, 'compose') as compose:
@@ -133,7 +135,7 @@ class References(unittest.TestCase):
             for name in devkit.NODES:
                 service = saved['services'][name]
                 self.assertEqual(service['environment']['DEVKIT_SECURITY_PARAM'], '2160')
-                self.assertEqual(service['environment']['DEVKIT_BLOCK_TIME'], '20')
+                self.assertEqual((service['environment']['DEVKIT_SLOT_LENGTH'], service['environment']['DEVKIT_BLOCK_TIME']), ('1', '20'))
                 mounts = [v for v in service['volumes'] if isinstance(v, dict) and v['target'] == '/app/config/node.properties']
                 self.assertEqual(len(mounts), 1)
                 self.assertTrue(mounts[0]['read_only'])

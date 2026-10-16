@@ -1344,6 +1344,20 @@ pub async fn deploy_contracts(
 
     let local_kupo = crate::local_network::endpoint(project_root_path, "KUPO_URL")?;
     let local_ogmios = crate::local_network::endpoint(project_root_path, "OGMIOS_URL")?;
+    // Local bridges deploy upgradeable, like public ones. The devnet
+    // governance names the local deployer key as its only signer and a public
+    // test key as the emergency signer.
+    let governance_path =
+        project_root_path.join("chains/cardano/config/credentials/migration-governance.json");
+    let governance_path = governance_path
+        .to_str()
+        .ok_or("Invalid local migration governance path")?;
+    let mut deployment_environment =
+        local_offchain_environment(&local_kupo, &local_ogmios, &network_magic);
+    deployment_environment.extend([
+        ("IBC_DEPLOYMENT_MODE", "upgradeable"),
+        ("MIGRATION_GOVERNANCE_FILE", governance_path),
+    ]);
     let deployment_result = execute_script(
         offchain_dir.as_path(),
         "deno",
@@ -1359,11 +1373,7 @@ pub async fn deploy_contracts(
             "--allow-write",
             "index.ts",
         ]),
-        Some(local_offchain_environment(
-            &local_kupo,
-            &local_ogmios,
-            &network_magic,
-        )),
+        Some(deployment_environment),
     );
 
     if let Err(error) = deployment_result {

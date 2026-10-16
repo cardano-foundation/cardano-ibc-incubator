@@ -220,15 +220,16 @@ class FakeChain:
     """A chain whose tip follows the shared clock file, with the nonce service
     and Mithril aggregator answering as they would in each epoch."""
 
-    def __init__(self, runtime, start_slot=100, ready_epoch=None):
+    def __init__(self, runtime, start_slot=100, ready_epoch=None, slot_length=0.2):
         self.runtime = runtime
         self.start_slot = start_slot
         self.start_offset = runtime.clock_offset()
         self.requests = []
         self.ready_epoch = ready_epoch
+        self.slot_length = slot_length
 
     def slot(self):
-        return self.start_slot + self.runtime.clock_offset() - self.start_offset
+        return self.start_slot + round((self.runtime.clock_offset() - self.start_offset) / self.slot_length)
 
     def tip(self, node="devkit"):
         slot = self.slot()
@@ -238,6 +239,8 @@ class FakeChain:
         self.requests.append(url)
         epoch = self.slot() // 5000
         path = url.split("/aggregator", 1)[-1]
+        if url.endswith("/genesis/shelley"):
+            return {"slotLength": self.slot_length}
         if url.endswith("/health"):
             return {"observed_epochs": list(range(epoch + 1))}
         if path.startswith("/signers/registered/"):
@@ -262,6 +265,7 @@ class FastForwardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             runtime = self.runtime(folder)
             chain = FakeChain(runtime)
+            # 300 slots of 0.2 seconds.
             offsets = []
             set_clock = runtime.set_clock
 
@@ -274,7 +278,7 @@ class FastForwardTests(unittest.TestCase):
                     patch.object(runtime, "set_clock", side_effect=record):
                 runtime.fast_forward_mithril()
             self.assertEqual(chain.tip()["epoch"], 5)
-            self.assertEqual({later - earlier for earlier, later in zip([-25_000_000, *offsets], offsets)}, {300})
+            self.assertEqual({later - earlier for earlier, later in zip([-25_000_000, *offsets], offsets)}, {60})
             self.assertEqual((runtime.clock_dir / "clock.rc").read_text(), f"{offsets[-1]:+d}s\n")
             self.assertEqual((runtime.state / "clock-offset").read_text(), f"{offsets[-1]:+d}s")
             asked = [url.split("/aggregator", 1)[1] for url in chain.requests if "/aggregator" in url]
@@ -324,6 +328,20 @@ class FastForwardTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "must not pass the host clock"):
                 runtime.set_clock(1)
             self.assertEqual(runtime.clock_offset(), -25_000_000)
+
+
+    def test_one_second_slots_step_three_hundred_seconds(self):
+        with tempfile.TemporaryDirectory() as folder:
+            runtime = self.runtime(folder)
+            chain = FakeChain(runtime, slot_length=1)
+            offsets = []
+            set_clock = runtime.set_clock
+            with patch("profile.http", side_effect=chain.http), patch("profile.time.sleep"), \
+                    patch.object(runtime, "tip", side_effect=chain.tip), patch.object(runtime, "sql", return_value="1"), \
+                    patch.object(runtime, "set_clock", side_effect=lambda offset: (offsets.append(offset), set_clock(offset))):
+                runtime.fast_forward_mithril()
+            self.assertEqual(offsets[0] + 25_000_000, 300)
+            self.assertEqual(chain.tip()["epoch"], 5)
 
 
 if __name__ == "__main__":

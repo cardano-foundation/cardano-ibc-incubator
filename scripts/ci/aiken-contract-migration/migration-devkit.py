@@ -71,6 +71,8 @@ class MigrationRuntime(profile.Runtime):
             service = config['services'][name]
             service['volumes'].append({'type': 'bind', 'source': str(runtime), 'target': '/runtime'})
             service['environment']['DEVKIT_EPOCH_LENGTH'] = str(epoch_length)
+            # The rehearsal's clock steps are sized for one-second slots.
+            service['environment'].update(DEVKIT_SLOT_LENGTH='1', DEVKIT_BLOCK_TIME='4')
             service['environment']['DEVKIT_FULL_MESH'] = 'true'
             if pool_aging:
                 service['environment'].update(DEVKIT_SECURITY_PARAM='2160', DEVKIT_BLOCK_TIME='20')
