@@ -407,19 +407,19 @@ distributions with `k = 5`, `m = 100` and `phi_f = 0.65`. As in Mithril's own
 tests, the aggregator and signers start in epoch 1, since in epoch 0 there is
 no earlier epoch to read signers from. The aggregator creates the genesis
 certificate in epoch 2 from the signers registered in epoch 1, and they sign
-from epoch 3. A client
-bootstrapped in epoch C needs the certified distributions of epochs C-3 and
-C-2, so a new local network's first client waits for epoch 5. With 5,000-slot
-epochs that would be about seven hours. Instead, `caribic start network`
-steps a new network's clock forward 300 seconds at a time, as the migration
-rehearsal does, and every producer must reach each step on the indexed
-history. Mithril follows epochs on the chain, so it isn't affected. Each
-epoch is left only once the nonce service has observed it and Mithril has
-done its work there: signer registrations, the genesis certificate, and the
-previous epoch's stake certificate. Startup returns in epoch 5, once Mithril
-has certified the distributions of epochs 2 and 3. From then on the clock
-runs at normal speed and the network keeps its usual parameters. Public
-networks run no Mithril containers.
+from epoch 3. A client bootstrapped in epoch C needs the certified
+distributions of epochs C-3 and C-2, so a new local network's first client
+waits for epoch 5. With 5,000-slot epochs of 0.2-second slots that would be
+about 83 minutes. Instead, `caribic start network` steps a new network's clock
+forward 300 slots at a time, as the migration rehearsal does, and every
+producer must reach each step on the indexed history. Mithril follows epochs
+on the chain, so it isn't affected. Each epoch is left only once the nonce
+service has observed it and Mithril has done its work there: signer
+registrations, the genesis certificate, and the previous epoch's stake
+certificate. Startup returns in epoch 5, once Mithril has certified the
+distributions of epochs 2 and 3. From then on the clock runs at normal speed
+and the network keeps its usual parameters. Public networks run no Mithril
+containers.
 
 This startup acceleration prepares Mithril but does not satisfy the six-month
 pool-age rule. A transfer rehearsal that keeps the production rules uses the

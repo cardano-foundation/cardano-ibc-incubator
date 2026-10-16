@@ -21,7 +21,7 @@ cargo install --path .
 ### Local Cardano network
 
 `caribic start` uses Yaci DevKit to seed five producers in genesis. Docker Compose and Python 3.9+ are required.
-Epochs retain 5,000 one-second slots (83 minutes 20 seconds). Seeding the pools avoids waiting for registration to activate.
+Epochs retain 5,000 slots, but slots last 0.2 seconds and blocks come about every 0.8 seconds, so an epoch takes 16 minutes 40 seconds and a block is final for the Gateway within about 20 seconds. The security parameter `k = 48` and active slot coefficient `f = 0.25` are unchanged. Seeding the pools avoids waiting for registration to activate.
 Fresh network startup took about 2½ minutes with cached images on a 3-CPU, 4-GiB Docker VM. Image downloads and bridge deployment add time.
 
 DevKit supplies the genesis templates and key-generation scripts. As Cardano versions change we can adopt upstream provisioning fixes instead of maintaining those pieces ourselves. Caribic adds the five-producer configuration and handles funding and bridge connections.

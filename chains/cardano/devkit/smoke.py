@@ -212,7 +212,7 @@ def run_smoke(runtime):
     genesis = json.loads((runtime.state / "genesis.json").read_text())
     verify_genesis_security(genesis)
     shelley = genesis["shelley"]
-    expected = {"networkMagic": 42, "slotLength": 1, "epochLength": 5000,
+    expected = {"networkMagic": 42, "slotLength": 0.2, "epochLength": 5000,
                 "activeSlotsCoeff": 0.25, "securityParam": 48}
     for key, value in expected.items():
         require(shelley.get(key) == value, f"Unexpected genesis {key}: {shelley.get(key)}")
