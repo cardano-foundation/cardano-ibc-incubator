@@ -2,7 +2,7 @@
 set -eu
 
 cd /src/ibc-go
-test "$(go list -m -f '{{.Version}}' github.com/cometbft/cometbft)" = v0.38.11
+test "$(go list -m -f '{{.Version}}' github.com/cometbft/cometbft)" = v0.38.21
 clock_dir="$(go list -m -f '{{.Dir}}' github.com/cometbft/cometbft)"
 # A local replacement keeps the original module cache and checksum checks intact.
 cp -a "$clock_dir" /src/cometbft-local-clock

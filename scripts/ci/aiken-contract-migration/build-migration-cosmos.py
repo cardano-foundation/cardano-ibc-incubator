@@ -17,7 +17,7 @@ def main():
     parser.add_argument('--tag', default='cardano-ibc-migration-cosmos-clock')
     args = parser.parse_args()
     dockerfile = (ROOT / 'chains/cosmos/Dockerfile').read_text()
-    anchor = 'RUN --mount=type=cache,target=/root/.cache/go-build \\'+ '\n    --mount=type=cache,target=/go/pkg/mod'
+    anchor = 'ARG HOST_BUILD_VERSION\nRUN --mount=type=cache,target=/root/.cache/go-build \\'+ '\n    --mount=type=cache,target=/go/pkg/mod'
     if dockerfile.count(anchor) != 1:
         raise RuntimeError('Counterparty build changed; review clock fixture integration')
     clock_source = (ROOT / 'scripts/ci/aiken-contract-migration/cosmos-migration-clock.go.fixture').read_text()

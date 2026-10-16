@@ -421,6 +421,14 @@ has certified the distributions of epochs 2 and 3. From then on the clock
 runs at normal speed and the network keeps its usual parameters. Public
 networks run no Mithril containers.
 
+This startup acceleration prepares Mithril but does not satisfy the six-month
+pool-age rule. A transfer rehearsal that keeps the production rules uses the
+[pool-aging rehearsal](state-preserving-redeployment.md#scale-reproduction-and-release-limits) to
+advance real canonical pool history before creating clients. A
+[cold checkpoint](channel-upgrades.md) can reuse that mature history in a
+separate local network. Deploy fresh contracts when restoring a network-only
+checkpoint for a changed blueprint.
+
 The Gateway's `MithrilStakeCertificates` query returns up to four certificates
 that extend a given `mithril_epoch`, ready to submit as a client message.
 Hermes asks for them from each client's refresh task and before it

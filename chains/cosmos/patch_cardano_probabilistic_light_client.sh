@@ -247,8 +247,20 @@ if kind in ("injective", "ibc-go-simapp"):
             order = order.replace("ibcexported.ModuleName,", "cardanoprobabilistic.ModuleName,\n\t\tibcexported.ModuleName,", 1)
         source = prefix + order
     else:
-        start = source.index(".SetOrderInitGenesis(")
-        end = source.index("\n\t)", start) if "\n\t)" in source[start:] else source.index(")", start)
+        call = re.search(r"\.SetOrderInitGenesis\(([^()]*)\)", source)
+        if call is None:
+            raise SystemExit("Cannot identify the destination genesis order")
+        start, end = call.span(1)
+        argument = call.group(1).strip()
+        named_order = re.fullmatch(r"(\w+)\.\.\.", argument)
+        if named_order:
+            declaration = re.search(
+                rf"\b{re.escape(named_order.group(1))}\s*:=\s*\[\]string\s*\{{([^}}]*)\}}",
+                source[:call.start()],
+            )
+            if declaration is None:
+                raise SystemExit("Cannot identify the destination genesis order declaration")
+            start, end = declaration.span(1)
         order = source[start:end]
         if "cardanoprobabilistic.ModuleName" not in order:
             match = re.search(r"(ibcexported|ibctypes)\.ModuleName,", order)

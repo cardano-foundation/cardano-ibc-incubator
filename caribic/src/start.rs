@@ -16,7 +16,6 @@ use crate::{
     logger::{self, log},
 };
 use console::style;
-use dirs::home_dir;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 use std::fs;
@@ -770,8 +769,8 @@ pub fn start_relayer(
 
     // Set up Hermes configuration directory
     log_or_show_progress("Setting up Hermes configuration", &optional_progress_bar);
-    let home_path = home_dir().ok_or("Could not determine home directory")?;
-    let hermes_dir = home_path.join(".hermes");
+    let hermes_dir =
+        chains::hermes_support::hermes_directory().ok_or("Could not determine Hermes directory")?;
     let hermes_keys_dir = hermes_dir.join("keys");
 
     fs::create_dir_all(&hermes_keys_dir)
@@ -785,8 +784,14 @@ pub fn start_relayer(
         .ok_or_else(|| format!("Relayer path has no parent: {}", relayer_path.display()))?;
     let caribic_dir = project_root.join("caribic");
     let hermes_config_path = hermes_dir.join("config.toml");
-    let hermes_config_template = fs::read(caribic_dir.join("config/hermes-config.example.toml"))
-        .map_err(|e| format!("Failed to read Hermes config template: {}", e))?;
+    let mut hermes_config_template =
+        fs::read(caribic_dir.join("config/hermes-config.example.toml"))
+            .map_err(|e| format!("Failed to read Hermes config template: {}", e))?;
+    if let Some(setting) = chains::hermes_support::isolated_key_store() {
+        hermes_config_template = String::from_utf8(hermes_config_template)?
+            .replace("[[chains]]", &format!("[[chains]]\n{setting}"))
+            .into_bytes();
+    }
     write_owner_only_file(&hermes_config_path, &hermes_config_template)
         .map_err(|e| format!("Failed to install Hermes config securely: {}", e))?;
     let signing_security_dir = hermes_dir.join("signing-security");
@@ -3534,8 +3539,9 @@ fn check_hermes_daemon_service() -> (bool, String) {
 
     if let Some(pid) = read_hermes_pid_file() {
         if is_process_alive(pid) && is_expected_hermes_daemon_pid(pid, expected_binary_str) {
-            let home = home_dir().unwrap_or_default();
-            let log_file = home.join(".hermes/hermes.log");
+            let log_file = chains::hermes_support::hermes_directory()
+                .unwrap_or_default()
+                .join("hermes.log");
 
             if log_file.exists() {
                 return (true, format!("Daemon running (pid={})", pid));

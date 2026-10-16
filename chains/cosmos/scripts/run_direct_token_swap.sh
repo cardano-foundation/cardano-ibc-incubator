@@ -4,6 +4,14 @@ set -Eeuo pipefail
 
 SUCCESS_ACKNOWLEDGEMENT_HEX="7B22726573756C74223A2241513D3D227D"
 
+hermes_cli() {
+  if [[ -n "${CARIBIC_HERMES_DIR:-}" ]]; then
+    "$HERMES_BIN" --config "$CARIBIC_HERMES_DIR/config.toml" "$@"
+  else
+    "$HERMES_BIN" "$@"
+  fi
+}
+
 require_value() {
   if [[ -z "$1" ]]; then
     echo "$2" >&2
@@ -60,7 +68,7 @@ hermes_json_result() {
 
   local output
   local status=0
-  if output="$(run_with_timeout "$timeout_seconds" "$HERMES_BIN" --json "$@" 2>&1)"; then
+  if output="$(run_with_timeout "$timeout_seconds" hermes_cli --json "$@" 2>&1)"; then
     status=0
   else
     status=$?
@@ -414,7 +422,7 @@ require_value "$COSMOS_CARDANO_CHANNEL_ID" "COSMOS_CARDANO_CHANNEL_ID is require
 CARDANO_SEND_DENOM="${CARDANO_SEND_DENOM:-$(jq -r '.tokens.mock // empty' "$HANDLER_JSON" | head -n 1)}"
 require_value "$CARDANO_SEND_DENOM" "Could not resolve the Cardano mock token denom from handler.json."
 
-key_output="$("$HERMES_BIN" keys list --chain "$COSMOS_CHAIN_ID" 2>&1)" || {
+key_output="$(hermes_cli keys list --chain "$COSMOS_CHAIN_ID" 2>&1)" || {
   printf '%s\n' "$key_output" >&2
   exit 1
 }

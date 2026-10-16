@@ -48,10 +48,10 @@ services:
     volumes:
       - ${COSMOS_PROFILES_STATE_DIR:-${HOME}/.caribic/cosmos-profiles}/v8-classic:/var/lib/simd
     ports:
-      - "26756:26656"
-      - "26757:26657"
-      - "9100:9090"
-      - "1327:1317"
+      - "${COSMOS_V8_CLASSIC_P2P_PORT:-26756}:26656"
+      - "${COSMOS_V8_CLASSIC_RPC_PORT:-26757}:26657"
+      - "${COSMOS_V8_CLASSIC_GRPC_PORT:-9100}:9090"
+      - "${COSMOS_V8_CLASSIC_REST_PORT:-1327}:1317"
 
   v10-classic:
     <<: *common-service
@@ -77,10 +77,10 @@ services:
     volumes:
       - ${COSMOS_PROFILES_STATE_DIR:-${HOME}/.caribic/cosmos-profiles}/v10-classic:/var/lib/simd
     ports:
-      - "26856:26656"
-      - "26857:26657"
-      - "9110:9090"
-      - "1338:1317"
+      - "${COSMOS_V10_CLASSIC_P2P_PORT:-26856}:26656"
+      - "${COSMOS_V10_CLASSIC_RPC_PORT:-26857}:26657"
+      - "${COSMOS_V10_CLASSIC_GRPC_PORT:-9110}:9090"
+      - "${COSMOS_V10_CLASSIC_REST_PORT:-1338}:1317"
 
   v10-v2:
     <<: *common-service
@@ -106,7 +106,7 @@ services:
     volumes:
       - ${COSMOS_PROFILES_STATE_DIR:-${HOME}/.caribic/cosmos-profiles}/v10-v2:/var/lib/simd
     ports:
-      - "26956:26656"
-      - "26957:26657"
-      - "9120:9090"
-      - "1347:1317"
+      - "${COSMOS_V10_V2_P2P_PORT:-26956}:26656"
+      - "${COSMOS_V10_V2_RPC_PORT:-26957}:26657"
+      - "${COSMOS_V10_V2_GRPC_PORT:-9120}:9090"
+      - "${COSMOS_V10_V2_REST_PORT:-1347}:1317"

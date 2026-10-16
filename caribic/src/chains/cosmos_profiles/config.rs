@@ -96,6 +96,44 @@ impl CosmosProfileConfig {
             .join(self.name)
     }
 
+    pub(crate) fn configured(self) -> Result<Self, String> {
+        self.with_port_settings(|key| std::env::var(key).ok())
+    }
+
+    fn with_port_settings(
+        mut self,
+        setting: impl Fn(&str) -> Option<String>,
+    ) -> Result<Self, String> {
+        let prefix = format!(
+            "COSMOS_{}",
+            self.name.replace('-', "_").to_ascii_uppercase()
+        );
+        for (kind, port) in [
+            ("RPC", &mut self.rpc_port),
+            ("GRPC", &mut self.grpc_port),
+            ("REST", &mut self.rest_port),
+        ] {
+            let key = format!("{prefix}_{kind}_PORT");
+            if let Some(value) = setting(&key) {
+                *port = value
+                    .parse::<u16>()
+                    .ok()
+                    .filter(|value| *value >= 1024)
+                    .ok_or_else(|| format!("{key} must be a port between 1024 and 65535"))?;
+            }
+        }
+        if self.rpc_port == self.grpc_port
+            || self.rpc_port == self.rest_port
+            || self.grpc_port == self.rest_port
+        {
+            return Err(format!(
+                "{} RPC, gRPC and REST ports must be distinct",
+                self.name
+            ));
+        }
+        Ok(self)
+    }
+
     pub(crate) fn supports_classic_routes(self) -> bool {
         self.semantics == IbcSemantics::Classic
     }
@@ -136,3 +174,32 @@ const V10_V2: CosmosProfileConfig = CosmosProfileConfig {
     grpc_port: 9_120,
     rest_port: 1_347,
 };
+
+#[cfg(test)]
+mod port_tests {
+    use super::V8_CLASSIC;
+
+    #[test]
+    fn isolated_ports_are_used_by_status_queries() {
+        let configured = V8_CLASSIC
+            .with_port_settings(|key| match key {
+                "COSMOS_V8_CLASSIC_RPC_PORT" => Some("27757".into()),
+                "COSMOS_V8_CLASSIC_GRPC_PORT" => Some("9200".into()),
+                "COSMOS_V8_CLASSIC_REST_PORT" => Some("1427".into()),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(configured.status_url(), "http://127.0.0.1:27757/status");
+        assert_eq!(configured.grpc_port, 9200);
+        assert_eq!(configured.rest_port, 1427);
+        assert_eq!(configured.chain_id, V8_CLASSIC.chain_id);
+        assert!(V8_CLASSIC
+            .with_port_settings(|_| Some("27757".into()))
+            .is_err());
+        for invalid in ["0", "1023", "65536", "not-a-port"] {
+            assert!(V8_CLASSIC
+                .with_port_settings(|_| Some(invalid.into()))
+                .is_err());
+        }
+    }
+}

@@ -44,6 +44,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 ARG LOCAL_FIXTURE_CLOCK=0
 COPY chains/cosmos/scripts/patch_local_clock.sh /usr/local/bin/patch-local-clock
 RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
     case "${LOCAL_FIXTURE_CLOCK}" in \
       0) ;; \
       1) test "${IBC_GO_MAJOR}" = 8 \
@@ -63,7 +64,8 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
        else \
          make build "$@"; \
        fi \
-    && install -Dm755 /src/ibc-go/build/simd /out/simd
+    && install -Dm755 /src/ibc-go/build/simd /out/simd \
+    && DEVKIT_CLOCK_OFFSET=+0s /out/simd version >/dev/null
 
 FROM ${RUNTIME_IMAGE}
 
