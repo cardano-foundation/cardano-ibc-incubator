@@ -72,7 +72,8 @@ jobs:
                "${PR_BASE_SHA}...${PR_HEAD_SHA}" -- \
                relayer .gitmodules .github/workflows/ci.yml \
                cosmos/cardano-probabilistic-light-client-core \
-               cosmos/cardano-probabilistic-light-client-v8; then
+               cosmos/cardano-probabilistic-light-client-v8 \
+               cosmos/cardano-probabilistic-light-client-v10; then
             changed=false
           fi
           echo "changed=${changed}" >> "${GITHUB_OUTPUT}"
@@ -1482,12 +1483,16 @@ jobs:
           cache-dependency-path: |
             cosmos/cardano-probabilistic-light-client-core/go.sum
             cosmos/cardano-probabilistic-light-client-v8/go.sum
+            cosmos/cardano-probabilistic-light-client-v10/go.sum
 
       - name: Execute signed client operations and export keeper events
         run: |
           fixture="${RUNNER_TEMP}/probabilistic-operation-events.json"
           RELAYER_OPERATION_EVENTS="${fixture}" go -C cosmos/cardano-probabilistic-light-client-v8 test . -run '^TestRelayerOperationEvents$' -count=1
           echo "RELAYER_OPERATION_EVENTS=${fixture}" >> "${GITHUB_ENV}"
+          v10_fixture="${RUNNER_TEMP}/probabilistic-v10-operation-events.json"
+          RELAYER_OPERATION_EVENTS="${v10_fixture}" go -C cosmos/cardano-probabilistic-light-client-v10 test . -run '^TestRelayerOperationEvents$' -count=1
+          echo "RELAYER_V10_OPERATION_EVENTS=${v10_fixture}" >> "${GITHUB_ENV}"
 
       - name: Setup Rust
         # Keep compiler upgrades separate from Dependabot action updates.
