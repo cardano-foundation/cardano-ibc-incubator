@@ -250,9 +250,8 @@ func TestCertifiedStakeRejectsAnyOtherTable(t *testing.T) {
 	})
 }
 
-// A certificate can arrive after the client activated a table under the
-// response window. One that contradicts the table proves it wrong. One that
-// agrees leaves the window in place, because installed deadlines are immutable.
+// A certificate arriving three hours into the response window either proves
+// the installed table wrong or releases it after the certificate cutoff commits.
 func TestLateCertificatesCheckTheActivatedTable(t *testing.T) {
 	for _, contradicting := range []bool{true, false} {
 		t.Run("contradicting="+strconv.FormatBool(contradicting), func(t *testing.T) {
@@ -260,6 +259,9 @@ func TestLateCertificatesCheckTheActivatedTable(t *testing.T) {
 			a.stage(t)
 			require.NoError(t, a.activateAt(t, a.ctx.Time))
 			deadline := a.client.epochChallenge(a.table.Epoch).UsableAfterUnixNs
+			proposal := a.proposal(t)
+			a.ctx.Time = a.ctx.Time.Add(3 * time.Hour)
+			certifiedAt := a.ctx.Time
 
 			root := tableRoot(t, a.table)
 			if contradicting {
@@ -272,12 +274,55 @@ func TestLateCertificatesCheckTheActivatedTable(t *testing.T) {
 				frozen, found := GetClientState(a.private, a.cdc)
 				require.True(t, found)
 				require.Equal(t, Frozen, frozen.Status(a.ctx, a.private, a.cdc))
+				require.Equal(t, deadline, frozen.epochChallenge(a.table.Epoch).UsableAfterUnixNs)
+				require.ErrorIs(t, frozen.VerifyEpochUsable(a.ctx, a.table.Epoch), ErrIBCClientFrozen)
 				return
 			}
 			require.Empty(t, a.client.UpdateState(a.ctx, a.cdc, a.private, msg))
-			require.Equal(t, deadline, a.client.epochChallenge(a.table.Epoch).UsableAfterUnixNs)
+			require.Equal(t, uint64(certifiedAt.UnixNano()), a.client.epochChallenge(a.table.Epoch).UsableAfterUnixNs)
+			require.Equal(t, uint64(certifiedAt.UnixNano()), a.proposal(t).Deadline)
+			// The historical receipt remains immutable and addressable. Public
+			// state and the proof index expose the earlier authenticated cutoff.
+			receipt, err := loadVerifiedObservation(a.shared, a.client, proposal.Receipt)
+			require.NoError(t, err)
+			require.Equal(t, deadline, receipt.Deadline)
+			stored, found := GetClientState(a.private, a.cdc)
+			require.True(t, found)
+			require.Equal(t, uint64(certifiedAt.UnixNano()), stored.epochChallenge(a.table.Epoch).UsableAfterUnixNs)
+			stored.EpochContextChallenges = nil
+			require.NoError(t, stored.VerifyEpochUsable(a.ctx.WithBlockTime(certifiedAt.Add(2*time.Nanosecond)), a.table.Epoch))
+			require.ErrorContains(t, a.activateAt(t, certifiedAt), "pending")
+			require.ErrorContains(t, a.activateAt(t, certifiedAt.Add(time.Nanosecond)), "committed block")
+			require.NoError(t, a.activateAt(t, certifiedAt.Add(2*time.Nanosecond)))
+			require.NotEqual(t, a.base, a.client.CheckpointReference)
 		})
 	}
+}
+
+func TestLateCertificationDoesNotExtendAnElapsedDeadline(t *testing.T) {
+	a := newAnchoredClient(t)
+	a.stage(t)
+	require.NoError(t, a.activateAt(t, a.ctx.Time))
+	deadline := a.client.epochChallenge(a.table.Epoch).UsableAfterUnixNs
+	a.ctx.Time = time.Unix(0, int64(deadline)).Add(time.Second)
+	a.certify(t, tableRoot(t, a.table))
+	require.Equal(t, deadline, a.client.epochChallenge(a.table.Epoch).UsableAfterUnixNs)
+	require.Equal(t, deadline, a.proposal(t).Deadline)
+}
+
+func TestCertificationOnlyReleasesItsOwnEpoch(t *testing.T) {
+	a := newAnchoredClient(t)
+	a.stage(t)
+	require.NoError(t, a.activateAt(t, a.ctx.Time))
+	deadline := a.client.epochChallenge(a.table.Epoch).UsableAfterUnixNs
+	other := a.table.Epoch + 1
+	a.client.EpochContextChallenges = append(a.client.EpochContextChallenges, &EpochContextChallenge{Epoch: other, UsableAfterUnixNs: deadline})
+	require.NoError(t, writeClientState(a.ctx, a.cdc, a.private, a.client))
+	a.ctx.Time = a.ctx.Time.Add(3 * time.Hour)
+	a.certify(t, tableRoot(t, a.table))
+	require.Equal(t, uint64(a.ctx.Time.UnixNano()), a.client.epochChallenge(a.table.Epoch).UsableAfterUnixNs)
+	require.Equal(t, deadline, a.client.epochChallenge(other).UsableAfterUnixNs)
+	require.ErrorIs(t, a.client.VerifyEpochUsable(a.ctx.WithBlockTime(a.ctx.Time.Add(time.Second)), other), ErrEpochContextPending)
 }
 
 func TestMithrilStakeCertificatesMustExtendTheAnchor(t *testing.T) {

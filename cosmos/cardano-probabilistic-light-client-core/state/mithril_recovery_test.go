@@ -273,6 +273,12 @@ func TestRecoveryCarriesAcceptedStake(t *testing.T) {
 			msg := &MithrilStakeCertificates{Certificates: []string{certificate}}
 			require.NoError(t, recovered.VerifyClientMessage(ctx, cdc, private, msg))
 			require.Equal(t, contradicting, recovered.CheckForMisbehaviour(ctx, cdc, private, msg))
+			if !contradicting {
+				deadline := recovered.epochChallenge(epoch).UsableAfterUnixNs
+				require.Empty(t, recovered.UpdateState(ctx, cdc, private, msg))
+				require.Equal(t, deadline, recovered.epochChallenge(epoch).UsableAfterUnixNs, "certification cannot shorten the independent recovery wait")
+				require.ErrorIs(t, recovered.VerifyEpochUsable(ctx.WithBlockTime(ctx.Time.Add(time.Second)), epoch), ErrEpochContextPending)
+			}
 		})
 	}
 }
