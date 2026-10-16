@@ -324,6 +324,8 @@ func toCoreQueryVerificationRequest(value *QueryVerificationRequest) *state.Quer
 		Limit:               value.Limit,
 		SessionId:           bytes.Clone(value.SessionId),
 		ReceiptId:           bytes.Clone(value.ReceiptId),
+		Epoch:               value.Epoch,
+		ClientId:            value.ClientId,
 	}
 }
 
@@ -671,6 +673,8 @@ func fromCoreQueryVerificationRequest(value *state.QueryVerificationRequest) *Qu
 		Limit:               value.Limit,
 		SessionId:           bytes.Clone(value.SessionId),
 		ReceiptId:           bytes.Clone(value.ReceiptId),
+		Epoch:               value.Epoch,
+		ClientId:            value.ClientId,
 	}
 }
 
