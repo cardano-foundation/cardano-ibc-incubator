@@ -192,7 +192,7 @@ func mustTestTimestampForSlot(t testing.TB, clientState *ClientState, slot uint6
 func temporalTestContext(t testing.TB, clientState *ClientState, hostSlot uint64) Context {
 	t.Helper()
 	hostTimestamp := mustTestTimestampForSlot(t, clientState, hostSlot)
-	return Context{Height: 100, VerifyHostUsability: testContinuousHost}.WithBlockTime(time.Unix(0, int64(hostTimestamp)))
+	return Context{Height: 100, HostProgress: testHostProgress}.WithBlockTime(time.Unix(0, int64(hostTimestamp)))
 }
 
 func setTemporalVerifierEpochContext(clientState *ClientState, epochContext *EpochContext) {

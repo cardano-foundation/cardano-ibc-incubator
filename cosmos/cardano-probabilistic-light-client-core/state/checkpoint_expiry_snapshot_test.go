@@ -31,7 +31,7 @@ func newSnapshotExpiryFixture(t *testing.T) *compactExpiryFixture {
 	cdc := jsonTestCodec{}
 	client, _, err := initializeTrusted(t, ctx, cdc, private, evidence.Client, evidence.Consensus)
 	require.NoError(t, err)
-	ctx.VerifyHostUsability = stagedTestHostWindow
+	ctx.HostProgress = testHostProgress
 	return &compactExpiryFixture{ctx, cdc, private, shared, client, evidence, start}
 }
 

@@ -67,11 +67,12 @@ func pendingRecovery(t *testing.T, shared storetypes.KVStore, client *ClientStat
 func TestFailedSnapshotRecoveryCanBeReplacedByAuthorizedRetry(t *testing.T) {
 	_, consensus := compactTrustedFixture(t, 65)
 	shared := dbadapter.Store{DB: dbm.NewMemDB()}
-	ctx := Context{Time: time.Unix(0, int64(consensus.Timestamp)).Add(time.Hour), Height: 100, SelfHeight: NewHostHeight(0, 100), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
+	ctx := Context{HostProgress: testHostProgress, Time: time.Unix(0, int64(consensus.Timestamp)).Add(time.Hour), Height: 100, SelfHeight: NewHostHeight(0, 100), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 	cdc := jsonTestCodec{}
 	subject, private := recoveryRetryClient(t, ctx, cdc, 0, 10, 10)
 	bad, badStore := recoveryRetryClient(t, ctx, cdc, 10, 11, 9)
 	good, goodStore := recoveryRetryClient(t, ctx, cdc, 20, 12, 12)
+	ctx.Time = ctx.Time.Add(2 * time.Nanosecond)
 	subject.UpdateStateOnMisbehaviour(ctx, cdc, private, nil)
 	subject, _ = GetClientState(private, cdc)
 	require.NoError(t, subject.CheckSubstituteAndUpdateState(ctx, cdc, private, badStore, bad))
@@ -114,10 +115,11 @@ func TestFailedSnapshotRecoveryCanBeReplacedByAuthorizedRetry(t *testing.T) {
 func TestSnapshotRecoveryRechecksExpiryAndAllowsFreshAuthorization(t *testing.T) {
 	_, consensus := compactTrustedFixture(t, 65)
 	shared := dbadapter.Store{DB: dbm.NewMemDB()}
-	ctx := Context{Time: time.Unix(0, int64(consensus.Timestamp)).Add(time.Hour), Height: 100, SelfHeight: NewHostHeight(0, 100), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
+	ctx := Context{HostProgress: testHostProgress, Time: time.Unix(0, int64(consensus.Timestamp)).Add(time.Hour), Height: 100, SelfHeight: NewHostHeight(0, 100), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 	cdc := jsonTestCodec{}
 	subject, private := recoveryRetryClient(t, ctx, cdc, 0, 10, 10)
 	old, oldStore := recoveryRetryClient(t, ctx, cdc, 10, 11, 11)
+	ctx.Time = ctx.Time.Add(2 * time.Nanosecond)
 	subject.UpdateStateOnMisbehaviour(ctx, cdc, private, nil)
 	subject, _ = GetClientState(private, cdc)
 	require.NoError(t, subject.CheckSubstituteAndUpdateState(ctx, cdc, private, oldStore, old))
@@ -131,6 +133,7 @@ func TestSnapshotRecoveryRechecksExpiryAndAllowsFreshAuthorization(t *testing.T)
 	require.Equal(t, uint64(1), subject.VerificationGeneration)
 	// A new trusted substitute has sufficient remaining lifetime at retry.
 	fresh, freshStore := recoveryRetryClient(t, ctx, cdc, uint64((98*time.Hour)/time.Duration(old.SlotLengthNs)), 12, 12)
+	ctx.Time = ctx.Time.Add(2 * time.Nanosecond)
 	require.NoError(t, subject.CheckSubstituteAndUpdateState(ctx, cdc, private, freshStore, fresh))
 	subject, _ = GetClientState(private, cdc)
 	for i := 0; i < 3; i++ {
@@ -144,11 +147,12 @@ func TestSnapshotRecoveryRechecksExpiryAndAllowsFreshAuthorization(t *testing.T)
 func TestSnapshotRecoveryRejectsSubstituteGenerationChange(t *testing.T) {
 	_, consensus := compactTrustedFixture(t, 65)
 	shared := dbadapter.Store{DB: dbm.NewMemDB()}
-	ctx := Context{Time: time.Unix(0, int64(consensus.Timestamp)).Add(time.Hour), Height: 100, SelfHeight: NewHostHeight(0, 100), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
+	ctx := Context{HostProgress: testHostProgress, Time: time.Unix(0, int64(consensus.Timestamp)).Add(time.Hour), Height: 100, SelfHeight: NewHostHeight(0, 100), Snapshots: func() (storetypes.KVStore, error) { return shared, nil }}
 	cdc := jsonTestCodec{}
 	subject, private := recoveryRetryClient(t, ctx, cdc, 0, 10, 10)
 	substitute, substitutePrivate := recoveryRetryClient(t, ctx, cdc, 10, 11, 11)
 	fresh, freshPrivate := recoveryRetryClient(t, ctx, cdc, 20, 12, 12)
+	ctx.Time = ctx.Time.Add(2 * time.Nanosecond)
 	subject.UpdateStateOnMisbehaviour(ctx, cdc, private, nil)
 	subject, _ = GetClientState(private, cdc)
 	require.NoError(t, subject.CheckSubstituteAndUpdateState(ctx, cdc, private, substitutePrivate, substitute))
@@ -180,6 +184,7 @@ func TestSnapshotRecoveryRejectsSubstituteGenerationChange(t *testing.T) {
 	require.Equal(t, Frozen, subject.Status(ctx, private, cdc))
 	require.Equal(t, uint64(1), subject.VerificationGeneration)
 	// The authority can choose the new generation explicitly in a new request.
+	ctx.Time = ctx.Time.Add(2 * time.Nanosecond)
 	require.NoError(t, subject.CheckSubstituteAndUpdateState(ctx, cdc, private, substitutePrivate, substitute))
 	subject, _ = GetClientState(private, cdc)
 	for i := 0; i < 3; i++ {

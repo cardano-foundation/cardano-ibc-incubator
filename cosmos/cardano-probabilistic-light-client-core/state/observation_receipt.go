@@ -221,20 +221,19 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 		key := activatedEpochKey(cs, receipt.Table.Epoch)
 		raw := store.Get(key)
 		if len(raw) == 0 {
-			deadline, err := sharedSnapshotChallengeDeadline(ctx)
-			if err != nil {
-				return nil, err
-			}
 			certified, err := requireCertifiedStake(private, cs.VerificationGeneration, receipt.Table.Epoch, receipt.TableMithrilRoot)
 			if err != nil {
 				return nil, err
 			}
-			if certified {
-				// Mithril authenticates this table, so it needs no response
-				// window. It becomes usable after the next committed block.
-				deadline = uint64(ctx.BlockTime().UnixNano())
-			} else if err := recordAcceptedStake(private, cs.VerificationGeneration, receipt.Table.Epoch, receipt.TableMithrilRoot); err != nil {
-				return nil, err
+			deadline := uint64(ctx.BlockTime().UnixNano())
+			if !certified {
+				deadline, err = sharedSnapshotChallengeDeadline(ctx)
+				if err != nil {
+					return nil, err
+				}
+				if err := recordAcceptedStake(private, cs.VerificationGeneration, receipt.Table.Epoch, receipt.TableMithrilRoot); err != nil {
+					return nil, err
+				}
 			}
 			if cs.TrustingPeriod <= 0 || live.Timestamp > ^uint64(0)-uint64(cs.TrustingPeriod) || live.Timestamp+uint64(cs.TrustingPeriod) <= deadline {
 				return nil, fmt.Errorf("proposal must leave its entire response window inside the client's trusting period")
@@ -262,6 +261,11 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 			}
 			cs.EpochContextChallenges = append(cs.EpochContextChallenges, &EpochContextChallenge{Epoch: receipt.Table.Epoch, UsableAfterUnixNs: deadline})
 			ctx.emitEvent("probabilistic_epoch_context_pending", newEventAttribute("epoch", fmt.Sprint(receipt.Table.Epoch)), newEventAttribute("usable_after_unix_ns", fmt.Sprint(deadline)), newEventAttribute("trusted_height", fmt.Sprintf("0-%d", session.Working.Height-uint64(session.BlockCount))), newEventAttribute("receipt_id", hex.EncodeToString(accepted[:])), newEventAttribute("mithril_certified", fmt.Sprint(certified)))
+			if !certified {
+				if err := startStakeWindow(ctx, store, cs, receipt.Table.Epoch); err != nil {
+					return nil, err
+				}
+			}
 			if err := writeClientState(ctx, cdc, private, cs); err != nil {
 				return nil, err
 			}
@@ -281,6 +285,9 @@ func activateVerifiedObservation(ctx Context, store, private storetypes.KVStore,
 		if err := cs.verifyEpochUsable(ctx, proposal.Table.Epoch); err != nil {
 			return nil, err
 		}
+		// The completed window is permanent. Later host interruptions cannot
+		// place this allocation or its dependent roots back into quarantine.
+		store.Delete(stakeWindowKey(cs, proposal.Table.Epoch))
 	}
 	if err := pinVerificationCheckpoint(store, anchor, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, 1, nil)); err != nil {
 		return nil, err

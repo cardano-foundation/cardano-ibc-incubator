@@ -7,17 +7,20 @@ import (
 	errorsmod "cosmossdk.io/errors"
 )
 
-// HostBlockGapTolerance is a consensus rule for the maintained local profiles.
-// Public hosts must separately approve this bound and challenge inclusion capacity.
+// HostBlockGapTolerance bounds time credited to an uncertified stake table's
+// response window. Public hosts must approve this inclusion assumption.
 const HostBlockGapTolerance = 10 * time.Second
 
-// HostProgress is recorded before transactions in each host block. It lives in
-// the host's IBC store, independently of any client's update frequency.
+// HostProgress records committed host time and a clock that excludes interrupted
+// intervals. A halt never starts a challenge. Only an uncertified stake proposal
+// records a target on this clock.
 type HostProgress struct {
 	Height                  int64
 	TimeUnixNs              uint64
 	PreviousTimeUnixNs      uint64
-	ResumeUsableAfterUnixNs uint64
+	ClockID                 uint64
+	ObservationTime         uint64
+	PreviousObservationTime uint64
 }
 
 func AdvanceHostProgress(ctx Context, previous *HostProgress) (*HostProgress, error) {
@@ -25,43 +28,48 @@ func AdvanceHostProgress(ctx Context, previous *HostProgress) (*HostProgress, er
 	if ctx.Height <= 0 || now <= 0 {
 		return nil, errorsmod.Wrap(ErrInvalidTimestamp, "invalid host block height or time")
 	}
-	progress := &HostProgress{Height: ctx.Height, TimeUnixNs: uint64(now)}
-	interrupted := previous == nil
-	if previous != nil {
-		progress.PreviousTimeUnixNs = previous.TimeUnixNs
-		progress.ResumeUsableAfterUnixNs = previous.ResumeUsableAfterUnixNs
-		interrupted = previous.ResumeUsableAfterUnixNs == 0 || previous.ResumeUsableAfterUnixNs > math.MaxInt64 || previous.TimeUnixNs == 0 || previous.Height != ctx.Height-1 || uint64(now) <= previous.TimeUnixNs ||
-			uint64(now)-previous.TimeUnixNs > uint64(HostBlockGapTolerance)
+	progress := &HostProgress{Height: ctx.Height, TimeUnixNs: uint64(now), ClockID: uint64(now)}
+	if previous == nil || previous.ClockID == 0 {
+		return progress, nil
 	}
-	if interrupted {
-		deadline, err := sharedSnapshotChallengeDeadline(ctx)
-		if err != nil {
-			return nil, err
+	progress.PreviousTimeUnixNs = previous.TimeUnixNs
+	progress.ClockID = previous.ClockID
+	progress.ObservationTime = previous.ObservationTime
+	progress.PreviousObservationTime = previous.ObservationTime
+	if previous.Height == ctx.Height-1 && previous.TimeUnixNs > 0 && uint64(now) > previous.TimeUnixNs {
+		elapsed := uint64(now) - previous.TimeUnixNs
+		if elapsed <= uint64(HostBlockGapTolerance) {
+			if previous.ObservationTime > math.MaxUint64-elapsed {
+				return nil, errorsmod.Wrap(ErrInvalidTimestamp, "host observation clock overflow")
+			}
+			progress.ObservationTime += elapsed
 		}
-		progress.ResumeUsableAfterUnixNs = deadline
 	}
 	return progress, nil
 }
 
-func VerifyHostWindow(ctx Context, epochDeadline uint64, progress *HostProgress) error {
+func hostProgress(ctx Context) (*HostProgress, error) {
+	if ctx.HostProgress == nil {
+		return nil, errorsmod.Wrap(ErrEpochContextPending, "host continuity tracking is missing")
+	}
+	progress := ctx.HostProgress(ctx)
 	now := ctx.BlockTime().UnixNano()
 	if progress == nil || now <= 0 || progress.Height != ctx.Height || progress.TimeUnixNs != uint64(now) ||
-		progress.PreviousTimeUnixNs == 0 || progress.PreviousTimeUnixNs >= uint64(now) ||
-		progress.ResumeUsableAfterUnixNs == 0 || progress.ResumeUsableAfterUnixNs > math.MaxInt64 {
-		return errorsmod.Wrapf(ErrEpochContextPending, "host continuity record is missing or stale at height %d time %d (record %+v)", ctx.Height, now, progress)
+		progress.ClockID == 0 || progress.PreviousObservationTime > progress.ObservationTime {
+		return nil, errorsmod.Wrap(ErrEpochContextPending, "host continuity record is missing or stale")
 	}
-	resumeDeadline := progress.ResumeUsableAfterUnixNs
-	if ctx.RequiredResponseWindow > SharedSnapshotChallengePeriod {
-		extra := uint64(ctx.RequiredResponseWindow - SharedSnapshotChallengePeriod)
-		if resumeDeadline > math.MaxInt64-extra {
-			return errorsmod.Wrap(ErrEpochContextPending, "host resumption deadline cannot represent the staged response window")
-		}
-		resumeDeadline += extra
+	return progress, nil
+}
+
+func VerifyHostWindow(ctx Context, deadline uint64, progress *HostProgress) error {
+	ctx.HostProgress = func(Context) *HostProgress { return progress }
+	if _, err := hostProgress(ctx); err != nil {
+		return err
 	}
-	deadline := max(epochDeadline, resumeDeadline)
-	// Reserve a completed block after the cutoff for challenge inclusion. A
-	// transaction's presence in a mempool never satisfies this condition.
-	if uint64(now) <= deadline || progress.PreviousTimeUnixNs <= deadline {
+	// A completed block after the operation's own cutoff leaves challenges an
+	// inclusion opportunity. Host interruption does not create another cutoff.
+	if progress.PreviousTimeUnixNs == 0 || progress.PreviousTimeUnixNs >= progress.TimeUnixNs ||
+		progress.TimeUnixNs <= deadline || progress.PreviousTimeUnixNs <= deadline {
 		return errorsmod.Wrapf(ErrEpochContextPending, "host proofs are pending until a committed block after Unix nanoseconds %d", deadline)
 	}
 	return nil

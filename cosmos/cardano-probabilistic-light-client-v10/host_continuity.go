@@ -25,7 +25,7 @@ type HostApplication interface {
 }
 
 // InstallHostLiveness records every host block before transactions execute.
-// Missing records start a fresh window, including when upgrading an existing host.
+// Interrupted intervals do not advance an unfinished stake response window.
 // The ante wrapper only supplies evidence. It never prevents challenges executing.
 func InstallHostLiveness(app HostApplication) {
 	key := app.GetKey("ibc")
@@ -78,23 +78,25 @@ func InstallHostLiveness(app HostApplication) {
 }
 
 func encodeHostProgress(p *state.HostProgress) []byte {
-	data := make([]byte, 32)
+	data := make([]byte, 48)
 	binary.BigEndian.PutUint64(data, uint64(p.Height))
 	binary.BigEndian.PutUint64(data[8:], p.TimeUnixNs)
 	binary.BigEndian.PutUint64(data[16:], p.PreviousTimeUnixNs)
-	binary.BigEndian.PutUint64(data[24:], p.ResumeUsableAfterUnixNs)
+	binary.BigEndian.PutUint64(data[24:], p.ClockID)
+	binary.BigEndian.PutUint64(data[32:], p.ObservationTime)
+	binary.BigEndian.PutUint64(data[40:], p.PreviousObservationTime)
 	return data
 }
 func decodeHostProgress(data []byte) *state.HostProgress {
-	if len(data) != 32 {
+	if len(data) != 48 {
 		return nil
 	}
-	return &state.HostProgress{Height: int64(binary.BigEndian.Uint64(data)), TimeUnixNs: binary.BigEndian.Uint64(data[8:]), PreviousTimeUnixNs: binary.BigEndian.Uint64(data[16:]), ResumeUsableAfterUnixNs: binary.BigEndian.Uint64(data[24:])}
+	return &state.HostProgress{Height: int64(binary.BigEndian.Uint64(data)), TimeUnixNs: binary.BigEndian.Uint64(data[8:]), PreviousTimeUnixNs: binary.BigEndian.Uint64(data[16:]), ClockID: binary.BigEndian.Uint64(data[24:]), ObservationTime: binary.BigEndian.Uint64(data[32:]), PreviousObservationTime: binary.BigEndian.Uint64(data[40:])}
 }
-func verifyHostUsability(ctx sdk.Context, current state.Context, deadline uint64) error {
+func hostProgressEvidence(ctx sdk.Context) *state.HostProgress {
 	var progress *state.HostProgress
 	if provider, ok := ctx.Value(hostProgressContextKey{}).(hostProgressProvider); ok {
 		progress = provider(ctx)
 	}
-	return state.VerifyHostWindow(current, deadline, progress)
+	return progress
 }

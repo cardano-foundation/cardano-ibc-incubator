@@ -51,13 +51,13 @@ jobs:
         run: |
           set -o pipefail
           cd cosmos/cardano-probabilistic-light-client-v${{ matrix.major }}
-          go test -run 'TestOnlySnapshotStorage|TestAppAdmitsSnapshotChallenge|TestSignedPartialStakeUpload|TestSignedMaximumObservation|TestAppFailedStagedRecovery|TestAppFollowingEpochActivation|TestEpochChallenge' -count=1 -v | tee "$RUNNER_TEMP/challenge-v${{ matrix.major }}.log"
+          go test -run 'TestOnlySnapshotStorage|TestAppAdmitsSnapshotChallenge|TestSignedPartialStakeUpload|TestSignedMaximumObservation|TestAppFailedStagedRecovery|TestAppFollowingEpochActivation|TestAppLateMithrilCertificate|TestSnapshotHostReplacement|TestEpochChallenge' -count=1 -v | tee "$RUNNER_TEMP/challenge-v${{ matrix.major }}.log"
       - name: Verify checkpoint expiry during staged activation
         if: matrix.major == '8'
         working-directory: cosmos/cardano-probabilistic-light-client-core
         env:
           GOWORK: off
-        run: go test ./state -run 'TestSnapshotCheckpoint|TestSnapshotStaging|TestSnapshotProposal|TestFailedSnapshotRecovery|TestSnapshotRecoveryRechecks|TestCrossLanguageObservation|TestMaximumObservationFitsResponseWindow|TestRetainedReceipt|TestAlternativeRetainsEvidence' -count=1 -v
+        run: go test ./state -run 'TestSnapshotCheckpoint|TestSnapshotStaging|TestSnapshotProposal|TestFailedSnapshotRecovery|TestSnapshotRecoveryRechecks|TestCrossLanguageObservation|TestMaximumObservationFitsResponseWindow|TestRetainedReceipt|TestAlternativeRetainsEvidence|TestHost|TestPendingStakeWindow' -count=1 -v
       - name: Build the destination image with the measured dependencies
         run: >-
           docker compose -f chains/cosmos/docker-compose.yml

@@ -139,6 +139,7 @@ func cleanupRetainedVerification(ctx Context, shared, private storetypes.KVStore
 				return err
 			}
 			shared.Delete(activatedEpochKey(&old, epoch))
+			shared.Delete(stakeWindowKey(&old, epoch))
 		default:
 			return fmt.Errorf("unknown retention record kind")
 		}

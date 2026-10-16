@@ -72,14 +72,14 @@ func TestOnlySnapshotStorageCanCreateAClient(t *testing.T) {
 	require.Error(t, (&Misbehaviour{ClientId: ModuleName + "-0", ProbabilisticHeader1: fixture.Header, ProbabilisticHeader2: fixture.Fork}).ValidateBasic())
 }
 
-// The old shared host records used a shorter deadline. They must not be read
-// under the sole format's twelve-hour policy after a host binary replacement.
-func TestSnapshotHostStartsFreshAfterShorterWindowRecords(t *testing.T) {
+// A host tracker replacement starts an observation clock. It does not impose
+// a response window on already usable state.
+func TestSnapshotHostReplacementDoesNotStartChallengeWindow(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	app, ctx, _ := newBoundaryTestApp(t, now)
 	key := app.GetKey("ibc")
 	store := ctx.KVStore(key)
-	previous := &state.HostProgress{Height: ctx.BlockHeight() - 1, TimeUnixNs: uint64(now.Add(-time.Second).UnixNano()), ResumeUsableAfterUnixNs: uint64(now.Add(3 * time.Minute).UnixNano())}
+	previous := &state.HostProgress{Height: ctx.BlockHeight() - 1, TimeUnixNs: uint64(now.Add(-time.Second).UnixNano()), ClockID: 1}
 	store.Set([]byte("probabilisticHost/continuity"), encodeHostProgress(previous))
 	host := &formatTestHost{key: key, ante: func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) { return ctx, nil }}
 	InstallHostLiveness(host)
@@ -87,12 +87,13 @@ func TestSnapshotHostStartsFreshAfterShorterWindowRecords(t *testing.T) {
 	require.NoError(t, err)
 	progress := decodeHostProgress(store.Get(hostProgressKey))
 	require.NotNil(t, progress)
-	require.Equal(t, uint64(now.Add(state.SharedSnapshotChallengePeriod).UnixNano()), progress.ResumeUsableAfterUnixNs)
+	require.Equal(t, uint64(now.UnixNano()), progress.ClockID)
+	require.Zero(t, progress.ObservationTime)
 	require.Equal(t, encodeHostProgress(previous), store.Get([]byte("probabilisticHost/continuity")))
 	later := coreContext(ctx.WithBlockTime(now.Add(3*time.Minute + time.Second)))
 	progress.TimeUnixNs = uint64(later.BlockTime().UnixNano())
 	progress.PreviousTimeUnixNs = progress.TimeUnixNs - 1
-	require.ErrorIs(t, state.VerifyHostWindow(later, 1, progress), state.ErrEpochContextPending)
+	require.NoError(t, state.VerifyHostWindow(later, 1, progress))
 }
 
 type formatTestHost struct {

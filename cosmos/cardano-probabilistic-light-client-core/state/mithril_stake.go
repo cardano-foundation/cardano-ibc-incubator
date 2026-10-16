@@ -176,7 +176,7 @@ func (cs *ClientState) applyMithrilStakeCertificates(ctx Context, cdc StateCodec
 
 // A matching certificate can replace the remaining stake challenge wait with
 // the certificate transaction's cutoff. Receipts keep their original history.
-// Recovery and host resumption have independent waits that this cannot shorten.
+// Host interruptions pause only the uncertified stake window that this replaces.
 func (cs *ClientState) releaseCertifiedEpoch(ctx Context, private storetypes.KVStore, epoch uint64, root string) error {
 	accepted := private.Get(acceptedStakeRootKey(cs.VerificationGeneration, epoch))
 	if accepted == nil {
@@ -190,12 +190,23 @@ func (cs *ClientState) releaseCertifiedEpoch(ctx Context, private storetypes.KVS
 		return fmt.Errorf("Mithril certification requires a positive host time")
 	}
 	challenge := cs.epochChallenge(epoch)
-	if challenge == nil || challenge.UsableAfterUnixNs <= uint64(now) {
+	if challenge == nil {
 		return nil
 	}
 	shared, err := ctx.snapshotStore()
 	if err != nil {
 		return err
+	}
+	if challenge.UsableAfterUnixNs <= uint64(now) {
+		if !shared.Has(stakeWindowKey(cs, epoch)) {
+			return nil
+		}
+		if progress, err := hostProgress(ctx); err == nil && verifyStakeWindow(shared, cs, epoch, progress) == nil {
+			// This window finished before certification. Keep its earlier
+			// cutoff rather than making already usable stake wait again.
+			shared.Delete(stakeWindowKey(cs, epoch))
+			return nil
+		}
 	}
 	key := activatedEpochKey(cs, epoch)
 	raw := shared.Get(key)
@@ -219,13 +230,14 @@ func (cs *ClientState) releaseCertifiedEpoch(ctx Context, private storetypes.KVS
 	if len(indexed) != 8 || binary.BigEndian.Uint64(indexed) != proposal.Deadline {
 		return fmt.Errorf("certified epoch %d has an inconsistent proof deadline", epoch)
 	}
+	shared.Delete(stakeWindowKey(cs, epoch))
 	proposal.Deadline = uint64(now)
 	raw, err = cbor.Encode(proposal)
 	if err != nil {
 		return err
 	}
 	shared.Set(key, raw)
-	// Only verified certification of this exact installed table may shorten
+	// Only verified certification of this exact installed table may replace
 	// the index. Ordinary writes still enforce deadline immutability.
 	shared.Set(deadlineKey, binary.BigEndian.AppendUint64(nil, uint64(now)))
 	challenge.UsableAfterUnixNs = uint64(now)
