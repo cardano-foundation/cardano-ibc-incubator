@@ -17,6 +17,7 @@ const (
 	QueryEpochProposals      QueryKind = 10
 	QueryBootstrapProgress   QueryKind = 11
 	QueryReceipts            QueryKind = 12
+	QueryEpochUsability      QueryKind = 13
 )
 
 // RetentionKind and OwnerKind occupy separate bytes in persisted keys. Keep

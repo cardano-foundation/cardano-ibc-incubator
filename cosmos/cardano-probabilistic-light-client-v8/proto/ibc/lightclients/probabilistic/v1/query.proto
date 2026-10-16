@@ -16,6 +16,9 @@ message QueryVerificationRequest {
   uint32 limit = 6;
   bytes session_id = 7;
   bytes receipt_id = 8;
+  // Used by the authoritative epoch-usability query.
+  uint64 epoch = 9;
+  string client_id = 10;
 }
 
 message QueryVerificationResponse {

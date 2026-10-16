@@ -1,13 +1,16 @@
 package probabilistic
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 
 	storetypes "cosmossdk.io/store/types"
 	state "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/state"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 )
 
 // QueryKind names the numeric selectors accepted by Verification.
@@ -27,6 +30,7 @@ const (
 	QueryEpochProposals      = state.QueryEpochProposals
 	QueryBootstrapProgress   = state.QueryBootstrapProgress
 	QueryReceipts            = state.QueryReceipts
+	QueryEpochUsability      = state.QueryEpochUsability
 )
 
 type SnapshotStoreProvider interface {
@@ -40,6 +44,37 @@ type storageServer struct {
 func (s storageServer) Verification(goCtx context.Context, request *QueryVerificationRequest) (*QueryVerificationResponse, error) {
 	if request == nil {
 		return nil, fmt.Errorf("missing verification query")
+	}
+	if QueryKind(request.Kind) == QueryEpochUsability {
+		ctx := sdk.UnwrapSDKContext(goCtx)
+		if request.ClientId == "" || len(request.Namespace) != 32 {
+			return nil, fmt.Errorf("epoch usability requires a client id and namespace")
+		}
+		private := s.provider.ClientStore(ctx, request.ClientId)
+		raw := private.Get([]byte("clientState"))
+		if len(raw) == 0 || len(raw) > state.MaxClientBytes {
+			return nil, fmt.Errorf("client does not exist or is oversized")
+		}
+		decoded, err := clienttypes.UnmarshalClientState(s.cdc, raw)
+		if err != nil {
+			return nil, err
+		}
+		client, ok := decoded.(*ClientState)
+		if !ok {
+			return nil, fmt.Errorf("client does not support epoch usability")
+		}
+		if !bytes.Equal(client.StorageNamespace, request.Namespace) || client.VerificationGeneration != request.Generation {
+			return nil, fmt.Errorf("epoch usability references a different client or discarded generation")
+		}
+		readiness, err := toCoreClientState(client).EpochUsability(coreContext(ctx), private, coreCodec{s.cdc}, request.Epoch)
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.Marshal(readiness)
+		if err != nil {
+			return nil, err
+		}
+		return &QueryVerificationResponse{Data: data}, nil
 	}
 	raw, err := state.QueryVerification(coreContext(sdk.UnwrapSDKContext(goCtx)), coreCodec{s.cdc}, toCoreQueryVerificationRequest(request))
 	if err != nil {

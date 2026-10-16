@@ -1,6 +1,7 @@
 package probabilistic
 
 import (
+	"encoding/hex"
 	"reflect"
 	"testing"
 
@@ -17,6 +18,7 @@ func TestCoreConversionsPreserveEveryFieldAndOwnTheirData(t *testing.T) {
 	checkCoreConversion(t, &ProbabilisticHeader{}, toCoreProbabilisticHeader, fromCoreProbabilisticHeader)
 	checkCoreConversion(t, &Misbehaviour{}, toCoreMisbehaviour, fromCoreMisbehaviour)
 	checkCoreConversion(t, &Height{}, toCoreHeight, fromCoreHeight)
+	checkCoreConversion(t, &QueryVerificationRequest{}, toCoreQueryVerificationRequest, fromCoreQueryVerificationRequest)
 }
 
 func checkCoreConversion[P proto.Message, S any](t *testing.T, message P, to func(P) *S, from func(*S) P) {
@@ -118,4 +120,11 @@ func TestCoreErrorsKeepIBCIdentityCodesAndText(t *testing.T) {
 	require.ErrorIs(t, client.Validate(), clienttypes.ErrInvalidClient)
 	require.ErrorIs(t, adapterError(state.ErrInvalidTimestamp), ErrInvalidTimestamp)
 	require.Nil(t, adapterError(nil))
+}
+
+func TestEpochUsabilityQueryWireCompatibility(t *testing.T) {
+	request := &QueryVerificationRequest{Namespace: []byte{0xaa, 0xbb}, Generation: 7, Kind: uint32(QueryEpochUsability), Epoch: 8, ClientId: "08-cardano-probabilistic-0"}
+	encoded, err := request.Marshal()
+	require.NoError(t, err)
+	require.Equal(t, "0a02aabb1007200d4808521a30382d63617264616e6f2d70726f626162696c69737469632d30", hex.EncodeToString(encoded))
 }

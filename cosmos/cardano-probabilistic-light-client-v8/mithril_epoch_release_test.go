@@ -1,6 +1,7 @@
 package probabilistic
 
 import (
+	"context"
 	"encoding/json"
 	"math/rand"
 	"strings"
@@ -78,6 +79,7 @@ func TestAppLateMithrilCertificateReleasesPendingEpoch(t *testing.T) {
 			now := ctx.BlockTime().Add(3 * time.Hour)
 			app := simapp.NewSimApp(log.NewNopLogger(), dbm.NewMemDB(), nil, false, simtestutil.AppOptionsMap{flags.FlagHome: t.TempDir()}, baseapp.SetChainID(chainID))
 			registerCapacityClient(app)
+			RegisterQueryServer(app.GRPCQueryRouter(), storageServer{app.AppCodec(), app.IBCKeeper.ClientKeeper})
 			app.MountStores(SharedStoreKey)
 			t.Cleanup(func() { require.NoError(t, app.Close()) })
 			app.SetInitChainer(func(current sdk.Context, request *abci.RequestInitChain) (*abci.ResponseInitChain, error) {
@@ -143,7 +145,28 @@ func TestAppLateMithrilCertificateReleasesPendingEpoch(t *testing.T) {
 				require.NoError(t, err)
 				return wire
 			}
+			readiness := func(epoch uint64) state.EpochUsability {
+				t.Helper()
+				client := installed()
+				request := &QueryVerificationRequest{ClientId: clientID, Namespace: client.StorageNamespace, Generation: client.VerificationGeneration, Kind: uint32(QueryEpochUsability), Epoch: epoch}
+				data, err := request.Marshal()
+				require.NoError(t, err)
+				reply, err := app.Query(context.Background(), &abci.RequestQuery{Path: "/ibc.lightclients.probabilistic.v1.Query/Verification", Data: data, Height: app.LastBlockHeight()})
+				require.NoError(t, err)
+				require.Zero(t, reply.Code, reply.Log)
+				var response QueryVerificationResponse
+				require.NoError(t, response.Unmarshal(reply.Value))
+				var result state.EpochUsability
+				require.NoError(t, json.Unmarshal(response.Data, &result))
+				require.Equal(t, uint64(app.LastBlockHeight()), result.Height)
+				require.Equal(t, uint64(now.UnixNano()), result.Timestamp)
+				require.Equal(t, epoch, result.Epoch)
+				require.Equal(t, client.VerificationGeneration, result.Generation)
+				return result
+			}
 			commit(time.Second)
+			require.Equal(t, state.EpochPending, readiness(8).Status)
+			require.Equal(t, state.EpochUsable, readiness(7).Status)
 			network, stakeRoot := bootstrapNetwork, root
 			if scenario == "contradicting" {
 				stakeRoot = strings.Repeat("ab", 32)
@@ -182,6 +205,7 @@ func TestAppLateMithrilCertificateReleasesPendingEpoch(t *testing.T) {
 			}
 			result := commit(certificateGap, wire).TxResults[0]
 			if scenario == "invalid signature" {
+				require.Equal(t, state.EpochPending, readiness(8).Status)
 				require.NotZero(t, result.Code)
 				require.Equal(t, originalDeadline, installed().epochChallenge(8).UsableAfterUnixNs)
 				require.Equal(t, exported.Active, installed().Status(current(), app.IBCKeeper.ClientKeeper.ClientStore(current(), clientID), app.AppCodec()))
@@ -189,6 +213,7 @@ func TestAppLateMithrilCertificateReleasesPendingEpoch(t *testing.T) {
 			}
 			require.Zero(t, result.Code, result.Log)
 			if scenario == "contradicting" {
+				require.Equal(t, state.EpochFrozen, readiness(8).Status)
 				require.Equal(t, exported.Frozen, installed().Status(current(), app.IBCKeeper.ClientKeeper.ClientStore(current(), clientID), app.AppCodec()))
 				require.Equal(t, originalDeadline, installed().epochChallenge(8).UsableAfterUnixNs)
 				result = commit(time.Second, sign(activation)).TxResults[0]
@@ -196,6 +221,7 @@ func TestAppLateMithrilCertificateReleasesPendingEpoch(t *testing.T) {
 				require.Contains(t, result.Log, "Frozen")
 				return
 			}
+			require.Equal(t, state.EpochPending, readiness(8).Status)
 			certifiedAt := now
 			require.Equal(t, uint64(certifiedAt.UnixNano()), installed().epochChallenge(8).UsableAfterUnixNs)
 			if scenario == "certificate after host interruption" {
@@ -210,8 +236,10 @@ func TestAppLateMithrilCertificateReleasesPendingEpoch(t *testing.T) {
 			result = commit(gap, sign(activation)).TxResults[0]
 			require.NotZero(t, result.Code)
 			require.Contains(t, result.Log, "committed block")
+			require.Equal(t, state.EpochPending, readiness(8).Status)
 			result = commit(time.Second, sign(activation)).TxResults[0]
 			require.Zero(t, result.Code, result.Log)
+			require.Equal(t, state.EpochUsable, readiness(8).Status)
 			require.Equal(t, uint64(984), installed().LatestHeight.RevisionHeight)
 			_, found := GetConsensusState(app.IBCKeeper.ClientKeeper.ClientStore(current(), clientID), app.AppCodec(), NewHeight(0, 984))
 			require.True(t, found)

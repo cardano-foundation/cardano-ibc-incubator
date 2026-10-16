@@ -27,6 +27,7 @@ func TestVerificationKindCompatibility(t *testing.T) {
 		{QueryEpochProposals, 10},
 		{QueryBootstrapProgress, 11},
 		{QueryReceipts, 12},
+		{QueryEpochUsability, 13},
 	}
 	for _, query := range queries {
 		require.Equal(t, query.Wire, uint32(query.Kind))

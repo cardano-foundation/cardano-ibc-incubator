@@ -217,6 +217,8 @@ type QueryVerificationRequest struct {
 	Limit               uint32 `protobuf:"varint,6,opt,name=limit,proto3" json:"limit,omitempty"`
 	SessionId           []byte `protobuf:"bytes,7,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	ReceiptId           []byte `protobuf:"bytes,8,opt,name=receipt_id,json=receiptId,proto3" json:"receipt_id,omitempty"`
+	Epoch               uint64 `protobuf:"varint,9,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	ClientId            string `protobuf:"bytes,10,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 }
 
 type QueryVerificationResponse struct {

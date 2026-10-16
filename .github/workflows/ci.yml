@@ -1494,6 +1494,12 @@ jobs:
           RELAYER_OPERATION_EVENTS="${v10_fixture}" go -C cosmos/cardano-probabilistic-light-client-v10 test . -run '^TestRelayerOperationEvents$' -count=1
           echo "RELAYER_V10_OPERATION_EVENTS=${v10_fixture}" >> "${GITHUB_ENV}"
 
+      - name: Export authoritative epoch-usability responses
+        run: |
+          fixture="${RUNNER_TEMP}/probabilistic-epoch-usability.json"
+          HERMES_EPOCH_USABILITY_FIXTURE="${fixture}" go -C cosmos/cardano-probabilistic-light-client-core test ./state -run '^TestEpochUsabilityAcrossHaltAndCertification$' -count=1
+          echo "HERMES_EPOCH_USABILITY_FIXTURE=${fixture}" >> "${GITHUB_ENV}"
+
       - name: Setup Rust
         # Keep compiler upgrades separate from Dependabot action updates.
         uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
