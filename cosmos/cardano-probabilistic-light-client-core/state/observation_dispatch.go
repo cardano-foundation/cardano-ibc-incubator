@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
 	"github.com/blinklabs-io/gouroboros/cbor"
 )
@@ -106,6 +107,11 @@ func (cs *ClientState) verifyObservationOperation(ctx Context, cdc StateCodec, p
 			switch chunk.Operation {
 			case ObservationAppendStake:
 				err = appendObservationStake(shared, session, chunk.StakeRows)
+				// A sealed table must not contradict a distribution Mithril
+				// has certified, or no receipt can use it.
+				if err == nil && session.TableMithrilRoot != "" {
+					_, err = requireCertifiedStake(private, cs.VerificationGeneration, session.Table.Epoch, session.TableMithrilRoot)
+				}
 			case ObservationAdvanceCredit:
 				err = advanceObservationCredit(shared, session)
 			case ObservationAppendBlocks:
@@ -224,7 +230,7 @@ func releaseObservationSession(store storetypes.KVStore, cs *ClientState, id []b
 	}
 	return pinSnapshotObject(store, session.Working.Scope, objectBody, [32]byte{}, append(bytes.Clone(owner), 6))
 }
-func (cs *ClientState) verifiedReceiptConflict(ctx Context, msg *Misbehaviour) (bool, error) {
+func (cs *ClientState) verifiedReceiptConflict(ctx Context, clientStore storetypes.KVStore, msg *Misbehaviour) (bool, error) {
 	if msg == nil || len(msg.VerifiedObservation_1) != 32 || len(msg.VerifiedObservation_2) != 32 || msg.ProbabilisticHeader1 != nil || msg.ProbabilisticHeader2 != nil {
 		return false, fmt.Errorf("misbehaviour requires two verified receipt references")
 	}
@@ -239,6 +245,11 @@ func (cs *ClientState) verifiedReceiptConflict(ctx Context, msg *Misbehaviour) (
 	second, err := loadVerifiedObservation(shared, cs, msg.VerifiedObservation_2)
 	if err != nil {
 		return false, err
+	}
+	for _, receipt := range []*verifiedObservation{first, second} {
+		if err := requireReceiptStake(clientStore, cs.VerificationGeneration, receipt); err != nil {
+			return false, errorsmod.Wrap(ErrIBCInvalidMisbehaviour, err.Error())
+		}
 	}
 	return verifiedObservationsConflict(shared, first, second)
 }

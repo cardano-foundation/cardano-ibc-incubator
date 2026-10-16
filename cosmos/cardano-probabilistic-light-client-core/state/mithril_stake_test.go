@@ -233,11 +233,21 @@ func TestUncertifiedStakeKeepsTheResponseWindow(t *testing.T) {
 }
 
 func TestCertifiedStakeRejectsAnyOtherTable(t *testing.T) {
-	a := newAnchoredClient(t)
-	a.certify(t, strings.Repeat("ab", 32))
-	a.stage(t)
-	require.ErrorContains(t, a.activateAt(t, a.ctx.Time), "differs from the Mithril-certified distribution")
-	require.Nil(t, a.client.epochChallenge(a.table.Epoch))
+	t.Run("certified before staging", func(t *testing.T) {
+		a := newAnchoredClient(t)
+		a.certify(t, strings.Repeat("ab", 32))
+		plan, err := BuildObservationPlan(a.client, a.fixture.Header, nil, uint64(len(a.fixture.Client.EpochStakeDistribution)), 4)
+		require.NoError(t, err)
+		require.ErrorContains(t, a.sealingError(t, plan), "differs from the Mithril-certified distribution")
+		require.Nil(t, a.client.epochChallenge(a.table.Epoch))
+	})
+	t.Run("certified after sealing", func(t *testing.T) {
+		a := newAnchoredClient(t)
+		a.stage(t)
+		a.certify(t, strings.Repeat("ab", 32))
+		require.ErrorContains(t, a.activateAt(t, a.ctx.Time), "differs from the Mithril-certified distribution")
+		require.Nil(t, a.client.epochChallenge(a.table.Epoch))
+	})
 }
 
 // A certificate can arrive after the client activated a table under the

@@ -247,3 +247,15 @@ func recordAcceptedStake(clientStore storetypes.KVStore, generation, epoch uint6
 	clientStore.Set(acceptedStakeRootKey(generation, epoch), []byte(root))
 	return nil
 }
+
+// requireReceiptStake rejects a receipt that relies on a stake table Mithril
+// has disproved, whenever the certificate arrived. Such a receipt can neither
+// activate nor serve as misbehaviour evidence. If the client's own installed
+// table is the disproved one, the certificate itself freezes the client.
+func requireReceiptStake(clientStore storetypes.KVStore, generation uint64, receipt *verifiedObservation) error {
+	if receipt.Table.Root.Rows == 0 {
+		return nil
+	}
+	_, err := requireCertifiedStake(clientStore, generation, receipt.Table.Epoch, receipt.TableMithrilRoot)
+	return err
+}
