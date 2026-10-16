@@ -174,8 +174,9 @@ def verify_producer_blocks(runtime, shelley):
 
 
 def verify_mithril(runtime):
-    # Mithril certifies the stake that local clients bootstrap from. A fresh
-    # network has no aggregator until epoch 1 and no certificate until epoch 2.
+    # Mithril certifies the stake that local clients bootstrap from. Startup
+    # fast-forwards a new network to epoch 5. Before then there is no
+    # aggregator until epoch 1 and no certificate until epoch 2.
     services = ("mithril-aggregator", *MITHRIL_SIGNERS)
     listed = runtime.compose("ps", "--all", "--format", "{{.Service}} {{.State}}", *services, capture=True)
     states = dict(line.split(maxsplit=1) for line in listed.splitlines() if line.strip())
@@ -196,6 +197,14 @@ def verify_mithril(runtime):
         certificates = http(aggregator + "/certificates")
         require(bool(certificates), "Mithril has no genesis certificate")
         result["certificates"] = len(certificates)
+    if epoch >= 5:
+        # A client bootstrapped now needs these two certified distributions.
+        for certified in (epoch - 3, epoch - 2):
+            try:
+                http(f"{aggregator}/artifact/cardano-stake-distribution/epoch/{certified}")
+            except OSError as error:
+                raise RuntimeError(f"Mithril has not certified the epoch {certified} stake distribution: {error}")
+        result["certified_stake_epochs"] = [epoch - 3, epoch - 2]
     return result
 
 

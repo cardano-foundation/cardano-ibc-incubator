@@ -420,9 +420,17 @@ no earlier epoch to read signers from. The aggregator creates the genesis
 certificate in epoch 2 from the signers registered in epoch 1, and they sign
 from epoch 3. A client
 bootstrapped in epoch C needs the certified distributions of epochs C-3 and
-C-2, so a fresh local network can bootstrap its first client in epoch 5. With
-5,000-slot epochs that is about seven hours after the network starts. Startup
-does not wait for this. Public networks run no Mithril containers.
+C-2, so a new local network's first client waits for epoch 5. With 5,000-slot
+epochs that would be about seven hours. Instead, `caribic start network`
+steps a new network's clock forward 300 seconds at a time, as the migration
+rehearsal does, and every producer must reach each step on the indexed
+history. Mithril follows epochs on the chain, so it isn't affected. Each
+epoch is left only once the nonce service has observed it and Mithril has
+done its work there: signer registrations, the genesis certificate, and the
+previous epoch's stake certificate. Startup returns in epoch 5, once Mithril
+has certified the distributions of epochs 2 and 3. From then on the clock
+runs at normal speed and the network keeps its usual parameters. Public
+networks run no Mithril containers.
 
 The Gateway's `MithrilStakeCertificates` query returns up to four certificates
 that extend a given `mithril_epoch`, ready to submit as a client message.

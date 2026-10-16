@@ -24,7 +24,7 @@ epoch() {
   wget -qO- http://devkit:1337/health | sed -n 's/.*"currentEpoch": *\([0-9]*\).*/\1/p'
 }
 
-until [ "$(epoch)" -ge 1 ] 2>/dev/null; do pause 30; done
+until [ "$(epoch)" -ge 1 ] 2>/dev/null; do pause 5; done
 [ "$1" = signer ] && exec /app/bin/mithril-signer -vvv
 
 /app/bin/mithril-aggregator -vvv serve &
@@ -32,9 +32,11 @@ server=$!
 # The marker records the genesis certificate, so a restart never creates a
 # second one.
 until [ -f /mithril/genesis-created ]; do
-  pause 60
+  pause 10
   kill -0 "$server" || exit 1
-  if /app/bin/mithril-aggregator -vvv genesis bootstrap; then
+  # This release supports two eras. The bootstrap era reader starts the
+  # network in the first, Pythagoras, whose certificates the client verifies.
+  if /app/bin/mithril-aggregator -vvv genesis bootstrap --mithril-era pythagoras; then
     touch /mithril/genesis-created
   fi
 done
