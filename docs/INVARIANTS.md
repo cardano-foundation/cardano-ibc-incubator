@@ -248,7 +248,7 @@ Fixed regressions in `validators/client_delay.test.ak` and
 - Zero-delay connections remain immediately usable.
 - Header verification and history pruning retain their lower-bound time input.
 
-See [Tendermint connection delays](docs/tendermint-connection-delays.md) for the
+See [Tendermint connection delays](tendermint-connection-delays.md) for the
 elapsed-time guarantee and deployment requirements for historical metadata.
 
 ### Registered Client Identity And Staged Verification
@@ -461,7 +461,7 @@ and transfer modules and require their original datum and full value to survive.
 
 `validators/spending_channel/chan_upgrade.test.ak` and Gateway's
 `cardano/gateway/src/tx/test/channel-upgrade.service.spec.ts` cover the
-connection-replacement protocol described in [channel upgrades](docs/channel-upgrades.md):
+connection-replacement protocol described in [channel upgrades](channel-upgrades.md):
 
 - The deployment authority proposes the replacement connection. Ordering,
   version and channel identity remain fixed. Ordinary steps authenticate
@@ -1139,7 +1139,7 @@ counters. A funded payment-key signer need not be the deployment authority.
 The dedicated ledger-bound heartbeat clock enforces a six-hour minimum interval
 and is preserved by ordinary operations. Gateway schedules idle heartbeats and
 Hermes follows its suggested delay. See the
-[heartbeat rules](docs/probabilistic-light-client.md#permissionless-hoststate-heartbeats).
+[heartbeat rules](probabilistic-light-client.md#permissionless-hoststate-heartbeats).
 
 ### Client Root Updates
 
@@ -1458,13 +1458,13 @@ checks in `validators/migration_adversarial.test.ak` and
   accounting.
 
 The operator/cache regressions and independent guard controls are also required
-by the migration CI jobs. See [compatible redeployment](docs/state-preserving-redeployment.md)
+by the migration CI jobs. See [compatible redeployment](state-preserving-redeployment.md)
 for retained native runs and the remaining deployment qualifications. This is
 different from replacing a channel connection or recovering a Cosmos client.
 
 ## Commitment And Wire Compatibility
 
-The public interface is specified in [the commitment codec](docs/cardano-commitment-codec.md).
+The public interface is specified in [the commitment codec](cardano-commitment-codec.md).
 `scripts/ci/check-aiken-wire-schema.mjs` protects HostState, Tendermint client and
 consensus states, connection ends, channels, packet-lane datums, channel upgrades
 and error receipts, including their referenced types. Its negative controls in
@@ -1489,8 +1489,8 @@ These are Go state-machine and adapter checks, not Aiken property labels. Shared
 verification lives in `cosmos/cardano-probabilistic-light-client-core/state`.
 Test filenames below are relative to that directory unless an adapter is named.
 The supported format is snapshot storage version `2`. Inline version `0` and
-other markers are rejected. See [bounded verification](docs/probabilistic-bounded-verification.md)
-for the work calculation and [the client design](docs/probabilistic-light-client.md)
+other markers are rejected. See [bounded verification](probabilistic-bounded-verification.md)
+for the work calculation and [the client design](probabilistic-light-client.md)
 for the verification rules.
 
 Native block evidence does not independently authenticate stake amounts in an
@@ -1546,7 +1546,7 @@ leaves state unchanged. Committed verified misbehaviour freezes the client.
 The adapter keeper fixtures and Hermes operation-event tests additionally check
 event collection for the supported update types.
 
-The [native Injective readiness run](tests/injective-probabilistic-lifecycle/READINESS.md)
+The [native Injective readiness run](../tests/injective-probabilistic-lifecycle/READINESS.md)
 uses Hermes and CometBFT with synthetic source history. It does not establish
 the full production Cardano-to-Injective lifecycle.
 
@@ -1591,8 +1591,8 @@ Coverage must be read at the layer that actually executes the check:
 
 The exact intended Injective application, approved chain parameters and complete
 production-component lifecycle still need retained deployment evidence. See the
-remaining gates in the [readiness report](tests/injective-probabilistic-lifecycle/READINESS.md),
-[channel upgrades](docs/channel-upgrades.md) and
-[compatible redeployment](docs/state-preserving-redeployment.md).
+remaining gates in the [readiness report](../tests/injective-probabilistic-lifecycle/READINESS.md),
+[channel upgrades](channel-upgrades.md) and
+[compatible redeployment](state-preserving-redeployment.md).
 Passing iterations, labels, size measurements or targeted mutants alone do not
 establish sufficient assurance for production custody.
