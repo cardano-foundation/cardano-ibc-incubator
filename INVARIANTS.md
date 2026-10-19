@@ -1,10 +1,16 @@
-# Aiken Property And Fuzzing Invariants
+# Protocol Invariants And Test Coverage
 
-This document records the protocol invariants currently exercised by the
-Aiken labeled property/regression suite, with fuzzed cases in key areas. It is
-a catalog of existing regression and generated checks. CI enforces the generated
-property inventory and selected distributions; the catalog is not a completeness
-or production-safety claim.
+This document records invariants exercised by the Cardano Aiken suite, compiled
+validator tests and the Cosmos-side probabilistic light client. It distinguishes
+generated properties, fixed regressions and retained integration evidence. CI
+enforces the Aiken property inventory and selected distributions. This catalog
+is not a completeness or production-safety claim.
+
+The Cardano-hosted Tendermint client and the Cosmos-hosted Cardano probabilistic
+client have different authorization and recovery rules. Their checks are listed
+separately below. The probabilistic-client section describes the October 16,
+2026 release: v8 `v0.1.8` or v10 `v0.1.5` with shared core `v0.1.6`.
+Paths beginning `lib/` or `validators/` are relative to `cardano/onchain`.
 
 ## Index
 
@@ -12,6 +18,9 @@ or production-safety claim.
 - [Composable Fixtures](#composable-fixtures)
 - [Client Update, Recovery, And Misbehaviour](#client-update-recovery-and-misbehaviour)
   - [Header Update Transitions](#header-update-transitions)
+  - [Connection Delay Anchors](#connection-delay-anchors)
+  - [Registered Client Identity And Staged Verification](#registered-client-identity-and-staged-verification)
+  - [Authenticated Tendermint Client Upgrades](#authenticated-tendermint-client-upgrades)
   - [HostState Coupling](#hoststate-coupling)
   - [Client Recovery](#client-recovery)
   - [Misbehaviour Detection](#misbehaviour-detection)
@@ -20,7 +29,9 @@ or production-safety claim.
   - [Connection Open Try](#connection-open-try)
   - [Connection Open Ack](#connection-open-ack)
   - [Channel Handshakes And Close](#channel-handshakes-and-close)
+  - [Channel Connection Upgrades](#channel-connection-upgrades)
 - [Packet Lifecycle](#packet-lifecycle)
+  - [Packet Lanes And Funded Transfers](#packet-lanes-and-funded-transfers)
   - [SendPacket](#sendpacket)
   - [SendPacket Transaction Coupling](#sendpacket-transaction-coupling)
   - [RecvPacket](#recvpacket)
@@ -42,6 +53,8 @@ or production-safety claim.
   - [Batch Membership Verification](#batch-membership-verification)
   - [Non-Membership Verification](#non-membership-verification)
 - [HostState Root Transitions](#hoststate-root-transitions)
+  - [Port Binding](#port-binding)
+  - [Permissionless Heartbeats](#permissionless-heartbeats)
   - [Client Root Updates](#client-root-updates)
   - [Connection Root Updates](#connection-root-updates)
   - [Channel Root Updates](#channel-root-updates)
@@ -53,6 +66,7 @@ or production-safety claim.
   - [Active-Shard Duplicate Detection](#active-shard-duplicate-detection)
   - [Archived-Shard Duplicate Detection](#archived-shard-duplicate-detection)
   - [Active Shard Authority](#active-shard-authority)
+  - [Bounded Registry Capacity](#bounded-registry-capacity)
 - [Trace Registry Rollover](#trace-registry-rollover)
   - [Valid Rollover Transition](#valid-rollover-transition)
   - [Directory Bucket Isolation](#directory-bucket-isolation)
@@ -60,6 +74,9 @@ or production-safety claim.
   - [New Active Shard Freshness](#new-active-shard-freshness)
   - [Rollover Voucher Mint Coupling](#rollover-voucher-mint-coupling)
   - [Append Rollover Lookup Model](#append-rollover-lookup-model)
+- [Shutdown And Compatible Redeployment](#shutdown-and-compatible-redeployment)
+- [Commitment And Wire Compatibility](#commitment-and-wire-compatibility)
+- [Probabilistic Cardano Client](#probabilistic-cardano-client)
 - [Follow-Up Tasks](#follow-up-tasks)
 - [Current Coverage Boundary](#current-coverage-boundary)
 
@@ -70,9 +87,10 @@ not consume deep fuzz iterations or contribute labels to the fuzz coverage gate.
 The historical scenario suffixes below remain a description of those regressions;
 they are not all mandatory fuzz labels.
 
-Generated properties use `fuzz.unit.*`, `fuzz.contract.*`, or `fuzz.model.*` labels.
-Some existing generated properties retain `regression.*` labels; a label's name is
-not evidence of diversity. CI discovers every property from source, rejects
+Scenario labels include `fuzz.unit.*`, `fuzz.contract.*`, `fuzz.model.*` and
+historical `regression.*` labels. Other generated properties compare independent
+models directly. A label's name is not evidence of diversity.
+CI discovers every property from source, rejects
 unused/discarded generated parameters, and compares deep reports with the actual
 smoke inventory. Every property must receive the minimum deep execution budget.
 
@@ -83,9 +101,12 @@ buckets are labelled from actual generated values. These checks are not a proof
 of semantic coverage, and syntactically using a seed alone does not establish it.
 
 Aiken `ProtocolTxFixture` checks only explicitly invoked handlers. Compiled
-transaction coverage comes from the Deno channel and funds jobs, all required
-by the stable `Cardano Onchain Aiken` aggregate. The critical-guard mutation job is
-also required when Aiken fuzzing runs.
+transaction coverage comes from the Deno channel, packet-lane, shutdown and
+funds suites and the migration jobs. These are dependencies of the stable
+`Cardano Onchain Aiken` aggregate when the corresponding CI work runs. The
+critical-guard mutation job is also required when Aiken fuzzing runs. The
+workflow's change detector and documentation gate determine which work is run
+or reused. This does not make every check unconditional on every PR.
 
 ## Composable Fixtures
 
@@ -101,10 +122,11 @@ Reusable fuzz fixture plumbing lives in
   reference inputs, outputs, mint, redeemers, datums, before/after model
   states, mutation metadata, and validator checks.
 
-All Boolean-returning fuzz properties now use this DSL assertion shape. Valid
-fixtures flow through `valid_check(...).assert_valid`, and near-valid mutations
-flow through `mutated_check(...).assert_rejected`. The packet SendPacket
-properties use the fuller composable fixture pattern:
+Properties using this DSL pass valid fixtures through
+`valid_check(...).assert_valid` and near-valid mutations through
+`mutated_check(...).assert_rejected`. Other properties use direct assertions or
+independent model comparisons. The packet SendPacket fixtures use the fuller
+composable fixture pattern:
 
 - build a valid `SendPacketFixture` from a model packet;
 - pipe it through named mutations such as `mutate_wrong_sequence`;
@@ -123,14 +145,14 @@ the fixture and collect the validator checks against that transaction shape.
 This gives new fuzz targets a common shape without forcing each protocol area
 to use the same domain-specific fixture type.
 
-Some validator properties intentionally remain as Aiken `test ... fail` cases.
+Some validator checks intentionally remain as Aiken `test ... fail` cases.
 Those validators abort through hard `expect` failures rather than returning a
 Boolean rejection result, and Aiken does not provide a local catch mechanism for
-turning that abort into a `TxFixture` check. Those tests still carry
-CI-enforced labels, while the DSL covers the properties where the validator or
-model check returns an inspectable accept/reject Boolean.
+turning that abort into a `TxFixture` check. Generated failure cases participate
+in the property inventory. Fixed failure fixtures remain smoke checks. The DSL
+covers checks whose validator or model returns an inspectable Boolean.
 
-The fuzz suite currently covers:
+The original property and regression groups include:
 
 - client update and misbehaviour transition checks in
   `cardano/onchain/lib/ibc/client/ics-007-tendermint-client/client_datum.test.ak`,
@@ -158,7 +180,18 @@ The fuzz suite currently covers:
 - trace-registry rollover transitions in
   `cardano/onchain/validators/trace_registry_rollover.test.ak`.
 
+Additional suites cover packet lanes, staged Tendermint verification, upgrades,
+shutdown and compatible redeployment. Their sources are listed with the
+invariants below. The generated property list comes from
+`node scripts/ci/aiken-property-inventory.mjs`, not from this hand-maintained
+catalog. Fixed tests and the Go and Deno suites are not counted as generated
+Aiken properties.
+
 ## Client Update, Recovery, And Misbehaviour
+
+This section concerns clients stored on Cardano, primarily Tendermint clients.
+It does not describe the Cosmos-hosted probabilistic client's admission,
+observation sessions or governance recovery.
 
 Historical scenario suffixes:
 
@@ -188,7 +221,7 @@ Covered by `unit.client.update.valid_adjacent`,
 The update properties construct client datum transitions around generated
 heights and require `update_state` to accept both adjacent and non-adjacent
 header updates. The mutation commits the wrong consensus state for the submitted
-header and must be rejected, proving these invariants:
+header and must be rejected, checking these invariants:
 
 - A valid update can advance to the immediately next height.
 - A valid update can advance to a non-adjacent higher height.
@@ -218,13 +251,56 @@ Fixed regressions in `validators/client_delay.test.ak` and
 See [Tendermint connection delays](docs/tendermint-connection-delays.md) for the
 elapsed-time guarantee and deployment requirements for historical metadata.
 
+### Registered Client Identity And Staged Verification
+
+`lib/ibc/utils/validator_utils.test.ak` and
+`lib/ibc/core/ics-002-client-semantics/registry.test.ak` check that registered
+client types bind the exact script, datum token, proof policy and canonical
+identifier.
+Two client types using the same numeric sequence do not share an identity or
+commitment namespace. The critical-guard mutants exercise these bindings.
+
+The staged Tendermint implementation is checked by
+`lib/ibc/client/ics-007-tendermint-client/multitx/session.test.ak` and
+`validators/spending_multitx_client.test.ak`:
+
+- Session tokens bind the verification plan and owner. Validator ordering,
+  duplicate rejection and accumulated voting power remain checked across
+  batches. A batch contains at most six validators and a set at most 256.
+- Intermediate work does not install a new canonical client state. Finalization
+  binds the completed session to the live client parameters and authenticated
+  trusted consensus history. It records processing time from the finite upper
+  validity bound.
+- The staged client rejects its direct-update constructor. An incomplete,
+  foreign or incorrectly burned session cannot authorize finalization.
+- Two authenticated conflicting headers can freeze the client without
+  rewriting its consensus history. Fixed regressions check both header orders,
+  retained-history conflicts and malformed session/burn combinations.
+
+These Cardano session tokens are distinct from the public Cosmos observation
+sessions described under the probabilistic client below.
+
+### Authenticated Tendermint Client Upgrades
+
+`validators/client_upgrade.test.ak` checks the Cardano Tendermint client's
+upgrade path. Both replacement client and consensus state require proofs of
+the committed upgrade values under the old trusted root. Swapped proofs,
+changed paths, forged state, rollback and an expired or frozen client are
+rejected. A revision change may reset height. Within one revision height must
+advance. Submitter-supplied trust settings cannot change the retained policy.
+The temporary upgrade consensus state cannot authorize packet proofs.
+
+This is separate from the Cardano probabilistic client, which intentionally
+rejects `MsgUpgradeClient` because it defines no authenticated upgrade
+commitment authorizing client-state replacement.
+
 ### HostState Coupling
 
 Covered by `contract.client.update.invalid_wrong_host_redeemer` and
 `contract.client.update.invalid_missing_host_state`.
 
 The spending-client properties use minimal transactions that fail before
-expensive Tendermint verification. They prove these invariants:
+expensive Tendermint verification. They check these invariants:
 
 - A client update must be co-spent with HostState.
 - The co-spent HostState must use the `UpdateClient` redeemer branch.
@@ -237,7 +313,7 @@ Covered by `contract.client.recovery.valid_expired`,
 `contract.client.recovery.invalid_missing_authority`.
 
 The recovery properties exercise the withdrawal validator with an inactive
-subject client and a newer active substitute client. They prove these
+subject client and a newer active substitute client. They check these
 invariants:
 
 - Both expired and frozen subject clients can recover from a compatible active
@@ -253,7 +329,7 @@ Covered by `unit.client.misbehaviour.valid_same_height_conflict`,
 `unit.client.misbehaviour.invalid_wrong_client_id`.
 
 The misbehaviour properties exercise the detection logic for conflicting
-headers and time-order violations. They prove these invariants:
+headers and time-order violations. They check these invariants:
 
 - Same-height headers with different block hashes are detected as
   misbehaviour.
@@ -275,7 +351,7 @@ Covered by `unit.client.frozen.rejects_update`.
 
 The frozen-client property constructs a non-zero frozen height and checks that
 client status is `Frozen`. Since the spending client validator requires
-`Active` status before accepting updates, this proves that a frozen client is
+`Active` status before accepting updates, this checks that a frozen client is
 not updateable.
 
 ## Connection And Channel Handshakes
@@ -310,7 +386,7 @@ near-valid ConnOpenTry transaction and runs the connection minting validator,
 HostState CreateConnection validator, and connection datum transition against
 the same fixture. The invalid tx property mutates only the counterparty
 client-state proof value. The remaining proof-shape and HostState-redeemer properties are
-smoke/regression checks for narrow redeemer gates. Together they prove these
+smoke/regression checks for narrow redeemer gates. Together they check these
 invariants:
 
 - A ConnOpenTry output datum must be in `TryOpen` state and carry the minted
@@ -330,7 +406,7 @@ Covered by `unit.conn.open_ack.valid` and
 The valid property exercises the pure connection datum transition from Init to
 Open with a concrete counterparty connection identifier. The proof-height
 unit property checks that an OpenAck proof redeemer cannot silently use a
-different proof height. These properties prove these invariants:
+different proof height. These properties check these invariants:
 
 - ConnOpenAck must move a connection from `Init` to `Open`.
 - ConnOpenAck must set the counterparty connection id while preserving the
@@ -345,7 +421,7 @@ Covered by `contract.chan.open_ack.valid`, `contract.chan.open_confirm.valid`,
 
 The channel properties exercise the shared channel datum transition functions
 for OpenAck, OpenConfirm, CloseInit, and CloseConfirm. The closed-channel
-property covers the local send-packet open-channel predicate. They prove these
+property covers the local send-packet open-channel predicate. They check these
 invariants:
 
 - ChanOpenAck must move a channel from `Init` to `Open` and commit the
@@ -362,7 +438,7 @@ invariants:
 The fixed regressions in
 `validators/spending_channel/transfer_close_confirm.test.ak` additionally run
 the transfer callback, close-confirm mint policy, channel spending validator,
-HostState update, and ICS-23 proof verifier on the same transaction. They prove:
+HostState update, and ICS-23 proof verifier on the same transaction. They check:
 
 - An authenticated proof of a closed counterparty channel permits local
   ICS-20 close-confirm and commits the closed channel end in HostState.
@@ -381,7 +457,69 @@ The off-chain deployment test checks that close-confirm exposes a mint handler
 in the compiled blueprint. Gateway close-confirm builder tests cover both mock
 and transfer modules and require their original datum and full value to survive.
 
+### Channel Connection Upgrades
+
+`validators/spending_channel/chan_upgrade.test.ak` and Gateway's
+`cardano/gateway/src/tx/test/channel-upgrade.service.spec.ts` cover the
+connection-replacement protocol described in [channel upgrades](docs/channel-upgrades.md):
+
+- The deployment authority proposes the replacement connection. Ordering,
+  version and channel identity remain fixed. Ordinary steps authenticate
+  counterparty state through the current connection.
+- Flushing stops sends and records the exact send-sequencer boundary.
+  Completion certifies every drained packet lane and rechecks the replacement
+  client and counterparty deadline. In-flight commitments or missing lanes
+  prevent completion.
+- OPEN requires the counterparty to have opened on its replacement connection.
+  The new receive floor rejects packets settled before handover. A partially
+  completed handover can finish after its recorded deadline.
+- Cancellation and timeout advance error receipts monotonically.
+  A closed channel cannot be reopened. Upgrade transactions cannot move escrow,
+  vouchers or unrelated script state.
+
+The supported counterparty is ibc-go v8. The v10 adapter rejects channel-upgrade
+proofs. These tests do not close the composed live migration gate documented
+in the channel-upgrade runbook.
+
 ## Packet Lifecycle
+
+The Gateway's transfer RPCs use packet lanes. The older channel-datum handlers
+remain for other packet paths and regression fixtures. Their 64-entry bound
+and HostState co-spend requirements below describe that channel-datum path,
+not the lane-based transfer path.
+
+### Packet Lanes And Funded Transfers
+
+The lane helpers in `lib/ibc/core/ics-004/packet_lanes.test.ak`,
+`packet_lane_datum.test.ak` and `packet_lane_state.test.ak` check:
+
+- The lane count is fixed between 1 and 64. Canonical port/channel identity and
+  `sequence % lane_count` determine the lane. Invalid identifiers, zero
+  sequences and overflow are rejected.
+- Every lane transition consumes its authenticated token and creates one exact
+  continuation. It preserves identity, verifies sequential Merkle witnesses
+  and increments the lane version once per spent output.
+- Each lane retains at most 64 combined commitments, receipts and
+  acknowledgements. Receive replay and stale proofs below the prune floor are
+  rejected. Each lane has its own entry bound.
+- Balance maps have at most eight asset entries. Compaction conserves each
+  asset's combined obligation across two authenticated lanes without changing
+  packet roots. It cannot replace packet execution or bypass pending refunds.
+
+`cardano/offchain/src/packet-lane-transactions.test.ts` executes compiled
+validators through the shared transaction builders. Its fixtures cover funded
+intent admission and cancellation, batched sends, independent lane settlement,
+same-lane sequential witnesses, stale completion rebuilding, rollback reload,
+native returns, voucher mint/refund and timeout-on-close. Repeated multi-asset
+round trips check accounting reclamation at capacity.
+
+Normal lane packet transactions do not spend HostState or the channel datum.
+Their packet policies still authenticate the channel, client, callback and
+counterparty proofs. Send sequencing is a separate authenticated output.
+The destination snapshot engine verifies tracked lane continuations before
+exposing packet roots. Go regressions in
+`cosmos/cardano-probabilistic-light-client-core/packet_lane_commitment_test.go`
+reject malformed identities, changed layouts and superseded outputs.
 
 Historical scenario suffixes:
 
@@ -414,6 +552,9 @@ Historical scenario suffixes:
 
 ### SendPacket
 
+This subsection and the following channel-datum fixtures describe the retained
+HostState-coupled path. Lane-based transfers are covered separately above.
+
 Covered by `unit.packet.send.valid`, `unit.packet.send.invalid_wrong_sequence`,
 `unit.packet.send.invalid_missing_commitment_root_update`, and
 `unit.packet.send.invalid_wrong_transfer_callback`, with the collection bound
@@ -422,7 +563,7 @@ covered by `unit.packet.send.invalid_commitment_capacity`, plus the composed
 
 The SendPacket unit properties build a valid open-channel channel-datum
 packet-send transition and then mutate exactly one field per negative case.
-They do not run the full composed packet transaction. They prove these
+They do not run the full composed packet transaction. They check these
 invariants:
 
 - A valid send increments `next_sequence_send` and inserts the exact packet
@@ -453,7 +594,7 @@ The transaction-level SendPacket property runs the real `spending_channel`
 validator against a transaction-shaped fixture. The fixture includes the
 channel input and continuation output, module co-spend redeemer, HostState
 `HandlePacket` redeemer, SendPacket operation marker mint, connection and
-client reference inputs, and the packet commitment update. It proves these
+client reference inputs, and the packet commitment update. It checks these
 invariants:
 
 - A SendPacket channel spend must be coupled to the HostState packet branch.
@@ -491,7 +632,7 @@ receive policy's timeout boundary is covered by `succeed_recv_packet`,
 
 The RecvPacket unit properties construct an unordered channel-datum receive
 transition that writes the receipt and acknowledgement commitment, then mutate
-the input datum to already contain the receipt. They prove these invariants:
+the input datum to already contain the receipt. They check these invariants:
 
 - A valid unordered receive records a receipt for the packet sequence.
 - A valid receive records the acknowledgement commitment for the packet
@@ -521,7 +662,7 @@ the input datum to already contain the receipt. They prove these invariants:
 
 The atomic receive transaction fixture executes the real receive marker policy
 and HostState validator over the same inputs, outputs, and redeemers. This
-proves that both validators accept one canonical transition rather than merely
+checks that both validators accept one canonical transition rather than merely
 accepting independently constructed states.
 
 ### AcknowledgePacket
@@ -533,7 +674,7 @@ and escrow-shard callback cases in
 
 The acknowledgement unit properties construct a near-valid source-side channel
 datum packet commitment and apply success and error acknowledgement bytes. They
-prove these invariants:
+check these invariants:
 
 - A valid acknowledgement consumes the packet commitment.
 - Success acknowledgement bytes must be the canonical marshalled acknowledgement
@@ -564,7 +705,7 @@ fixtures. The `spending_channel/prune_packet_history_contract.test.ak`
 regression executes the prune marker, channel, HostState, and proof validators
 against one shared transaction.
 
-The cleanup transition proves these invariants:
+The cleanup transition checks these invariants:
 
 - Packet history remains authoritative on-chain; Gateway or relayer state is
   not needed to recover the live IBC state root.
@@ -599,7 +740,7 @@ and escrow-shard callback cases in
 `spending_channel/timeout_packet.test.ak`.
 
 The timeout unit properties construct committed channel datum packets and apply
-unordered and ordered timeout transitions. They prove these invariants:
+unordered and ordered timeout transitions. They check these invariants:
 
 - A valid unordered timeout consumes the packet commitment and keeps the channel
   open.
@@ -626,7 +767,7 @@ sequences:
 - initial open channel -> SendPacket output state -> TimeoutPacket output state.
 
 They run each step against the relevant channel datum transition helper and
-then assert the final modeled state. They prove these invariants:
+then assert the final modeled state. They check these invariants:
 
 - A packet accepted by the send transition can be consumed by the ack
   transition using the send output as the next model input.
@@ -642,6 +783,10 @@ then assert the final modeled state. They prove these invariants:
   step.
 
 ## Transfer Module Accounting
+
+This section catalogs the module-root and escrow-shard callback fixtures.
+Lane-funded intents, deposit liquidity and lane balance accounting are covered
+under [packet lanes and funded transfers](#packet-lanes-and-funded-transfers).
 
 Historical scenario suffixes:
 
@@ -675,12 +820,14 @@ Covered by `contract.transfer.invalid_capability_relocation` and the focused
 wrong-credential and incomplete-capability-set tests in
 `cardano/onchain/lib/ibc/utils/validator_utils.test.ak`.
 
-Once a port is bound, its module authority is immutable: HostState records the
-registered script credential, port token, and module token; callback discovery
-accepts only that exact capability pair at that credential; and a transfer
-root transition must preserve both tokens at the original full address. A
+During ordinary packet operations, a bound port's module authority is fixed.
+HostState records the registered script credential, port token and module token.
+Callback discovery accepts only that capability pair at that credential.
+A transfer root transition preserves both tokens at the original full address. A
 public callback can therefore neither relocate the root to an attacker script
 nor substitute an unrelated UTxO that merely carries the derived port token.
+An authorized compatible redeployment changes the implementation through its
+separate authenticated handover and commitment update.
 
 ### Native Token Escrow And Refunds
 
@@ -698,7 +845,7 @@ properties check exact value deltas for small focused accounting fixtures. The
 validator-level properties build full `spending_transfer_module` transactions
 with the channel redeemer, module callback or operator redeemer, HostState
 co-spend, operation-specific voucher or escrow-shard redeemer, and escrow shard
-inputs/outputs where the transition requires them. They prove these invariants:
+inputs/outputs where the transition requires them. They check these invariants:
 
 - A native send must increase the matching escrow shard by exactly the transfer
   amount.
@@ -740,7 +887,7 @@ properties check exact voucher-policy mint or burn values. The validator-level
 properties build full `spending_transfer_module` transactions for voucher send,
 sink-chain receive, and error acknowledgement refund paths, including the
 channel packet redeemer, module redeemer, HostState co-spend, and voucher policy
-redeemer expected by the module validator. They prove these invariants:
+redeemer expected by the module validator. They check these invariants:
 
 - Sending vouchers from a sink chain must burn exactly the packet amount.
 - Error acknowledgements for sink-chain voucher sends must remint exactly the
@@ -763,7 +910,7 @@ and `contract.transfer.invalid_wrong_native_refund_amount_rejected`.
 The mutation properties add one malicious difference to otherwise near-valid
 accounting fixtures. The full validator-level mutations currently cover wrong
 send escrow deltas and wrong native-token timeout refund amounts; the remaining
-mutation labels are helper-level accounting checks. Together, they prove these
+mutation labels are helper-level accounting checks. Together, they check these
 invariants:
 
 - A transaction that mints any extra voucher-policy asset beyond the expected
@@ -825,7 +972,7 @@ validator-level properties build a first-seen voucher mint transaction with a
 matching trace-registry shard update, channel callback, reference NFT output,
 and CIP-68 metadata datum, then run the real `minting_voucher` policy. Each
 invalid validator property mutates one metadata or reference-asset component.
-They prove these invariants:
+They check these invariants:
 
 - The display `name` must be derived from the base denomination.
 - The display `ticker` must be derived from the base denomination.
@@ -848,7 +995,7 @@ with the voucher output, reference NFT metadata output, active trace shard input
 and output, trace directory reference input, channel packet redeemer, transfer
 module callback redeemer, and trace-registry redeemer. It then runs both the
 `minting_voucher` policy and the `trace_registry` spend validator against that
-same transaction fixture. It proves these invariants:
+same transaction fixture. It checks these invariants:
 
 - The first voucher mint and trace-registry append are accepted together for
   the same full denom.
@@ -868,7 +1015,7 @@ Covered by `unit.voucher.existing_mint.rejects_reference_nft`,
 `minting_voucher.test.test_refund_voucher_fails_with_wrong_metadata_mapping`.
 
 The existing-mapping property constructs the mint value for an already-registered
-voucher mapping and mutates it by adding a reference NFT. It proves this
+voucher mapping and mutates it by adding a reference NFT. It checks this
 invariant:
 
 - Existing voucher mappings may mint only the user voucher asset; reference NFT
@@ -904,7 +1051,7 @@ Covered by `contract.proof.membership.valid`,
 
 The membership properties use a real two-level ICS-23 proof accepted by the
 `verifying_proof` minting validator, then mutate exactly one proof argument.
-They prove these invariants:
+They check these invariants:
 
 - A valid membership proof mints the proof marker only for the exact committed
   path, value, and consensus root.
@@ -921,7 +1068,7 @@ Covered by `contract.proof.batch.valid_two_items`,
 `contract.proof.batch.invalid_missing_item`.
 
 The batch properties require the proof validator to verify each submitted item
-and reject a vacuous empty batch. They prove these invariants:
+and reject a vacuous empty batch. They check these invariants:
 
 - A batch with two valid membership items is accepted.
 - A batch fails when any item binds the proof to the wrong path.
@@ -936,7 +1083,7 @@ Covered by `contract.proof.nonmembership.valid` and
 
 The non-membership properties use a real ICS-23 non-existence proof for a
 packet receipt path, then mutate the requested path to an existing neighboring
-key from the proof. They prove these invariants:
+key from the proof. They check these invariants:
 
 - A valid non-membership proof mints the proof marker for the absent key.
 - A non-membership proof cannot be reused to prove absence of an existing key.
@@ -974,14 +1121,25 @@ Covered by `contract.host.bind_port.invalid_unauthorized`,
 `unit.host.bind_port.invalid_identifier`, with deterministic boundary fixtures
 for the tenth HostState port and tenth module capability token.
 
-Port registration proves these invariants:
+Port registration checks these invariants:
 
-- Only the immutable HostState deployment authority may register a port.
+- Only the deployment authority recorded in HostState may register a port.
 - The singleton HostState can retain at most ten permanent port registrations.
 - Port numbers are non-negative and fit the at-most-eight-byte decimal postfix
   used by the capability-token naming scheme.
 - A legitimate tenth registration remains executable within the ledger size
   and execution-unit budgets enforced by CI.
+
+### Permissionless Heartbeats
+
+Fixed regressions in `validators/host_state_stt.test.ak` check root-preserving
+heartbeats, independent relayer authorization, missing clock rejection and
+shutdown restrictions. Wire-version-5 heartbeats preserve the IBC root and
+counters. A funded payment-key signer need not be the deployment authority.
+The dedicated ledger-bound heartbeat clock enforces a six-hour minimum interval
+and is preserved by ordinary operations. Gateway schedules idle heartbeats and
+Hermes follows its suggested delay. See the
+[heartbeat rules](docs/probabilistic-light-client.md#permissionless-hoststate-heartbeats).
 
 ### Client Root Updates
 
@@ -992,7 +1150,7 @@ Covered by `contract.host.update_client.valid`,
 The UpdateClient properties construct a HostState UTxO plus a client UTxO,
 commit the old client state into the old HostState root, and require the
 validator to accept only the transition whose new root exactly applies the
-client-state update. The mutations prove these invariants:
+client-state update. The mutations check these invariants:
 
 - A client datum change must be reflected in the new HostState root.
 - An arbitrary or stale HostState root cannot authorize an updated client UTxO.
@@ -1006,7 +1164,7 @@ Covered by `contract.host.update_connection.valid` and
 The UpdateConnection properties construct a HostState UTxO plus a connection
 UTxO, commit the old connection end into the old HostState root, and require the
 validator to accept only the transition whose new root commits the updated
-connection end. The mutation proves these invariants:
+connection end. The mutation checks these invariants:
 
 - A connection datum change must be reflected in the new HostState root.
 - The HostState root cannot stay unchanged while a connection UTxO changes.
@@ -1020,7 +1178,7 @@ Covered by `contract.host.update_channel.valid`,
 The UpdateChannel properties construct a HostState UTxO plus a channel UTxO and
 require the channel-end update branch to commit only the channel end. The
 mutation changes packet/sequence fields under the UpdateChannel redeemer and
-must be rejected, proving these invariants:
+must be rejected, checking these invariants:
 
 - Channel-end changes must be reflected in the new HostState root.
 - Packet commitments, receipts, acknowledgements, sequence fields, and packet
@@ -1040,10 +1198,10 @@ Covered by `contract.host.handle_packet.valid_send`,
 `contract.host.handle_packet.invalid_ack_capacity`, and
 `contract.host.handle_packet.invalid_wrong_packet_key`.
 
-The HandlePacket properties construct HostState plus channel UTxO transitions
-for packet commitment insertion, packet receipt insertion, and packet commitment
-deletion. These represent send, receive, acknowledge, and timeout root effects.
-The mutations prove these invariants:
+These channel-datum HandlePacket properties construct HostState plus channel
+UTxO transitions for packet commitment insertion, packet receipt insertion and
+packet commitment deletion. These represent send, receive, acknowledge and timeout root effects.
+The mutations check these invariants:
 
 - Packet effects must use the packet-root HostState branch.
 - Send-like packet commitment insertion must update the committed packet key.
@@ -1089,7 +1247,7 @@ satisfy these invariants:
 Covered by `contract.trace.append.invalid_missing_voucher_mint`.
 
 The mutation replaces the expected voucher mint with an unrelated voucher asset.
-The append must be rejected, proving these invariants:
+The append must be rejected, checking these invariants:
 
 - A trace append must be coupled to the voucher mint for the same voucher hash.
 - A registry write cannot be authorized by an arbitrary voucher-policy mint.
@@ -1099,7 +1257,7 @@ The append must be rejected, proving these invariants:
 Covered by `contract.trace.append.invalid_wrong_bucket`.
 
 The mutation spends and updates a shard whose bucket does not match the voucher
-hash bucket. The append must be rejected, proving these invariants:
+hash bucket. The append must be rejected, checking these invariants:
 
 - A trace entry may only be inserted into the bucket derived from its voucher
   hash.
@@ -1110,7 +1268,7 @@ hash bucket. The append must be rejected, proving these invariants:
 Covered by `contract.trace.append.invalid_duplicate_active_hash`.
 
 The mutation starts from an active shard that already contains the inserted
-voucher hash. The append must be rejected, proving these invariants:
+voucher hash. The append must be rejected, checking these invariants:
 
 - The active shard cannot contain duplicate voucher hashes.
 - Re-appending an already registered trace is rejected.
@@ -1120,7 +1278,7 @@ voucher hash. The append must be rejected, proving these invariants:
 Covered by `contract.trace.append.invalid_duplicate_archived_hash`.
 
 The mutation provides an archived shard reference containing the inserted
-voucher hash. The append must be rejected, proving these invariants:
+voucher hash. The append must be rejected, checking these invariants:
 
 - A voucher hash cannot be reinserted if it already exists in an archived shard.
 - Duplicate detection covers historical shards listed by the directory, not only
@@ -1131,7 +1289,7 @@ voucher hash. The append must be rejected, proving these invariants:
 Covered by `contract.trace.append.invalid_inactive_shard`.
 
 The mutation spends an archived shard while the directory names a different
-active shard. The append must be rejected, proving these invariants:
+active shard. The append must be rejected, checking these invariants:
 
 - Only the currently active shard for a bucket may be appended.
 - Archived shards cannot be mutated through the append path.
@@ -1146,7 +1304,7 @@ Covered by
 and
 `trace_registry_capacity.test.trace_registry_capacity_rejects_ninth_archive_and_ninth_hop`.
 
-These boundary fixtures prove these invariants:
+These boundary fixtures check these invariants:
 
 - A full denom is at most 256 UTF-8 bytes and contains at most eight trace hops.
 - A shard contains at most 32 entries and its encoded datum is at most 3,072
@@ -1199,7 +1357,7 @@ valid transition must satisfy these invariants:
 Covered by `contract.trace.rollover.invalid_non_target_bucket_changed`.
 
 The mutation changes only an unrelated non-target bucket. The rollover must be
-rejected, proving these invariants:
+rejected, checking these invariants:
 
 - Rollover may modify only the target bucket.
 - Non-target buckets must remain byte-for-byte unchanged.
@@ -1210,7 +1368,7 @@ rejected, proving these invariants:
 Covered by `contract.trace.rollover.invalid_old_shard_not_preserved`.
 
 The mutation changes the archived copy of the previous active shard. The
-rollover must be rejected, proving these invariants:
+rollover must be rejected, checking these invariants:
 
 - The archived shard must preserve the previous active shard contents exactly.
 - Existing trace entries cannot be dropped, replaced, or rewritten during
@@ -1222,7 +1380,7 @@ rollover must be rejected, proving these invariants:
 Covered by `contract.trace.rollover.invalid_new_shard_not_exact_entry`.
 
 The mutation adds an extra old entry to the new active shard. The rollover must
-be rejected, proving these invariants:
+be rejected, checking these invariants:
 
 - The new active shard must contain exactly the newly inserted trace entry.
 - The new active shard cannot inherit old shard entries.
@@ -1234,7 +1392,7 @@ be rejected, proving these invariants:
 Covered by `contract.trace.rollover.invalid_missing_voucher_mint`.
 
 The mutation removes the matching voucher mint while leaving the new shard NFT
-mint. The rollover must be rejected, proving these invariants:
+mint. The rollover must be rejected, checking these invariants:
 
 - A rollover registry write must be coupled to a matching voucher mint.
 - Minting only the new active shard NFT is not sufficient authorization.
@@ -1242,7 +1400,7 @@ mint. The rollover must be rejected, proving these invariants:
   voucher asset flow.
 
 `trace_registry_rollover.test.trace_registry_rollover_insert_rejects_before_shard_capacity`
-also proves that callers cannot force early rollovers to create cheap empty
+also checks that callers cannot force early rollovers to create cheap empty
 archives.
 
 ### Append Rollover Lookup Model
@@ -1254,7 +1412,7 @@ existing trace entry to reach that limit, rolls the bucket to a new active shard
 containing a newly inserted trace entry, and then performs lookup-style
 assertions across the active and archived shard sets. It also runs the
 shard-side and directory-side rollover validators for the rollover step. It
-proves these invariants:
+checks these invariants:
 
 - A trace entry appended before rollover remains discoverable after the old
   active shard becomes archived.
@@ -1265,61 +1423,176 @@ proves these invariants:
 - Rollover preserves historical lookup reachability instead of replacing the
   old active shard with only the new entry.
 
+## Shutdown And Compatible Redeployment
+
+Shutdown is covered by `lib/ibc/utils/shutdown.test.ak`,
+`validators/host_state_stt.test.ak` and the compiled tests in
+`cardano/offchain/src/shutdown.fuzz.test.ts` and `shutdown-drain.test.ts`.
+The checks include:
+
+- Entering shutdown requires the deployment authority and a finite upper
+  validity bound. The grace period is at least 24 hours from that bound.
+  New objects are blocked while permitted existing-state updates can drain
+  outstanding work.
+- Reclamation burns the exact state identity, preserves unrelated assets and
+  returns the required reserves to the authorized recipient. One refund cannot
+  pay for two reclaimed objects or fund transaction fees from their reserves.
+- Outstanding vouchers and registered transfer shards retain their return
+  dependencies. Finalization cannot discard a live transfer root.
+
+Compatible redeployment is a separate protocol. The generated and fixed Aiken
+checks in `validators/migration_adversarial.test.ak` and
+`validators/migration_packet_model.test.ak` are complemented by compiled
+`cardano/offchain/src/migration.test.ts` and `migration-accounting.test.ts`:
+
+- Governance authorizes the exact successor implementation and addresses after
+  the configured delay. Executors cannot substitute their own contracts.
+- Each bounded move preserves authenticated identity, datum, reference script,
+  non-ADA assets and reserves. Fees and additional deposits come from the
+  executor. Pending claims cannot disappear or settle twice.
+- Activation requires all object counters and the committed escrow inventory
+  to be complete. Existing routes, voucher identities and backing survive.
+  Ordinary traffic pauses during handover and cannot bypass the migration gate.
+- A separate emergency quorum can tighten restrictions. Permission restoration
+  requires delayed governance. Shutdown or retirement cannot bypass migration
+  accounting.
+
+The operator/cache regressions and independent guard controls are also required
+by the migration CI jobs. See [compatible redeployment](docs/state-preserving-redeployment.md)
+for retained native runs and the remaining deployment qualifications. This is
+different from replacing a channel connection or recovering a Cosmos client.
+
+## Commitment And Wire Compatibility
+
+The public interface is specified in [the commitment codec](docs/cardano-commitment-codec.md).
+`scripts/ci/check-aiken-wire-schema.mjs` protects HostState, Tendermint client and
+consensus states, connection ends, channels, packet-lane datums, channel upgrades
+and error receipts, including their referenced types. Its negative controls in
+`check-aiken-wire-schema.test.mjs` reject consumed constructor, field order,
+field type and field-count changes.
+
+Regenerating the lock with a higher schema version cannot approve a changed
+destination layout. A separate reviewed fingerprint remains pinned. Existing
+hosts need compatible decoders or an explicitly coordinated transition.
+
+Cross-language vectors already exist in
+`cosmos/cardano-probabilistic-light-client-core/commitmentcodec/codec_test.go`,
+`packet_lanes_test.go` and the observation transport tests. They check exact
+encodings and malformed-record rejection. Commitment proofs authenticate the
+original bytes. Decoded semantic equivalence cannot authorize a different root.
+The schema lock, commitment codecs, snapshot storage marker and verification
+generation are separate compatibility boundaries.
+
+## Probabilistic Cardano Client
+
+These are Go state-machine and adapter checks, not Aiken property labels. Shared
+verification lives in `cosmos/cardano-probabilistic-light-client-core/state`.
+Test filenames below are relative to that directory unless an adapter is named.
+The supported format is snapshot storage version `2`. Inline version `0` and
+other markers are rejected. See [bounded verification](docs/probabilistic-bounded-verification.md)
+for the work calculation and [the client design](docs/probabilistic-light-client.md)
+for the verification rules.
+
+Native block evidence does not independently authenticate stake amounts in an
+uncertified allocation. The stake-omission fixtures and bounded-verification
+document describe cases where restoring availability requires authorized
+recovery rather than an automatically constructible challenge.
+
+- `verification_state_test.go` and `snapshot_map_test.go` check bounded public
+  records, shared immutable pages and selective updates. Snapshot objects and
+  host observation-clock state belong to the application's authenticated store
+  and export/import state, not an external service.
+- `mithril_bootstrap_test.go` checks that bounded initialization finishes with
+  certification of the exact bootstrap stake table. The initial checkpoint
+  trusts the operator's configured Cardano context. Bootstrap certification
+  starts no uncertified-allocation response window.
+- `native_settlement_test.go`, `cross_epoch_settlement_test.go` and
+  `observation_zero_stake_test.go` distinguish native eligibility in the block's
+  epoch from qualification against the anchor table. An absent anchor stake row
+  contributes zero. A malformed stored row remains an error. Registration age,
+  recent production and capped settlement credit remain independently checked.
+- `observation_capacity_test.go` and the v8 adapter's
+  `staged_session_safety_test.go` check the maximum supported workload and
+  interference by another submitter. Authentic uploads must respect the
+  protocol's segment sizes. Retries and repeated completion cannot consume
+  another submitter's remaining activation budget.
+- `observation_native_test.go`, `observation_expiry_test.go` and the v8 adapter's
+  `staged_session_expiry_test.go` check public sessions with no signer owner.
+  Permissionless discard and cleanup preserve unexpired sessions in the active
+  verification generation. New sessions expire after 24 hours of the shared
+  host observation clock, which excludes interrupted intervals.
+  Cleanup uses the same expiry predicate. Neither saved progress nor arbitrary
+  new sessions extend the client's trust lifetime or an allocation's deadline.
+- `epoch_usability_test.go`, `mithril_stake_test.go` and
+  `host_continuity_test.go` check the six-hour response window for uncertified
+  allocations. Interrupted host intervals pause unfinished windows. Certified
+  and already usable allocations remain usable. Matching certification ends
+  the remaining stake wait, while a contradicting certificate freezes the
+  client. Activation and proofs require a completed host block after their
+  applicable cutoff.
+- `checkpoint_expiry_snapshot_test.go` checks expiry against the latest
+  committed checkpoint's authenticated Cardano time. Rootless checkpoints can
+  renew the client without publishing a new IBC proof root. Uploads and table
+  proposals alone cannot renew it or reserve activation after expiry.
+- `observation_native_test.go`, `retained_evidence_test.go` and
+  `recovery_retry_test.go` check receipt-backed historical challenges and
+  authorized recovery. Recovery pins a compatible active substitute and
+  advances the verification generation. Discarded-generation proofs and
+  sessions cannot become valid again through cleanup or retry.
+
+The v8 adapter's `admission_challenge_test.go` checks a receipt-backed challenge
+through `MsgUpdateClient`, CheckTx, ReCheckTx and committed execution. Admission
+leaves state unchanged. Committed verified misbehaviour freezes the client.
+The adapter keeper fixtures and Hermes operation-event tests additionally check
+event collection for the supported update types.
+
+The [native Injective readiness run](tests/injective-probabilistic-lifecycle/READINESS.md)
+uses Hermes and CometBFT with synthetic source history. It does not establish
+the full production Cardano-to-Injective lifecycle.
+
 ## Follow-Up Tasks
 
 - Add execution-coverage feedback and a retained corpus of cases that reach new
   behavior. The scheduled campaign currently samples fresh random histories.
-- Extend compiled funds histories to ordered channels, multiple channels, and
-  first-seen voucher registration with trace-registry rollover.
+- Extend randomized compiled funds histories to ordered and multiple channels
+  and first-seen voucher registration with trace-registry rollover. Existing
+  fixed packet-lane tests already exercise first-seen registration and returns.
 - Exercise client creation, updates and misbehaviour together with packet
   histories rather than supplying an authenticated counterparty reference state.
-- Add more independent guard mutants, including proof-path binding and
-  authorization checks. The current four mutants are a detection baseline,
-  not a mutation score for the protocol.
+- Extend the targeted guard mutants in `scripts/ci/check-aiken-mutations.mjs`.
+  Current controls cover registered-client identity and proof policy, receive
+  replay, send/refund amounts and send-commitment binding. They are a detection
+  baseline, not a mutation score for the protocol.
 - Add `assert_rejected_by` helpers to the Aiken fixture DSL to identify the
   intended rejecting predicate in composed handler tests.
-- Add cross-language golden fixtures for shared CBOR, protobuf, commitments,
-  proof paths, voucher asset names and CIP-68 metadata.
+- Extend the existing cross-language fixtures when public encodings change and
+  demonstrate the decoder/deployment transition before using changed bytes.
 
 ## Current Coverage Boundary
 
-The current fuzzing suite does not yet provide property-level invariant
-coverage for:
+Coverage must be read at the layer that actually executes the check:
 
-- client creation,
-- full end-to-end connection handshake validator contexts,
-- full end-to-end channel handshake validator contexts,
-- full end-to-end receive, acknowledgement, and timeout packet validator
-  contexts beyond the composed SendPacket atomicity fixture, receive
-  successor/callback contract fixtures, and first-seen sink voucher mint
-  contract fixture,
-- full end-to-end voucher metadata validator contexts beyond first-seen
-  voucher mint plus trace-registry coupling,
-- full validator contexts for misbehaviour freezing.
+- Aiken helper and `ProtocolTxFixture` tests execute explicitly selected
+  predicates or handlers. Fixed packet sequences and staged-client freezing
+  fixtures are regressions, not generated whole-protocol histories.
+- Deno channel-action fuzzing and compiled funds histories execute the selected
+  transaction scripts. The stateful funds campaign uses one unordered channel
+  and registered voucher metadata with harness-supplied counterparty consensus
+  references. It does not advance a real counterparty client for every step.
+- Fixed packet-lane transactions add first-seen voucher registration, native
+  returns, batching, rollback reload and multi-asset accounting. They do not
+  turn those cases into randomized multi-channel or ordered funds histories.
+- Compiled migration, shutdown and independent packet-model checks cover their
+  own transitions. They do not establish every combination with live client,
+  connection, channel-upgrade and packet lifecycles.
+- Go unit/keeper fixtures and retained native application runs cover the
+  destination client separately. A synthetic source history is not a complete
+  live Cardano-to-Injective deployment rehearsal.
 
-Client update logic is covered by `fuzz.unit.client.update.*` and the
-HostState-binding checks by `regression.contract.client.update.*`. The receive
-successor/callback fixtures run the receive marker and HostState `HandlePacket`
-validators together; their current CI labels are
-`regression.contract.packet.recv.*`. Misbehaviour detection also has unit-level
-coverage under `fuzz.unit.client.misbehaviour.*` and
-`regression.unit.client.misbehaviour.*`. These checks do not establish full
-end-to-end coverage for every validator in those operations.
-
-The gaps above describe coverage beyond these existing CI-enforced checks;
-there may also be unit or integration tests elsewhere.
-Aiken handler fixtures execute the handlers explicitly called by each test.
-Fixed packet model sequences remain regression tests. Labels describe scenarios;
-they do not establish whole-transaction or state-space coverage.
-
-The Deno suite executes compiled validators for channel actions and bounded
-funds histories on a single unordered channel. It checks overlapping packets,
-varied settlement order, replay rejection, escrow and voucher accounting, and
-preservation of unrelated state after submitted transactions. Voucher histories
-start with registered metadata. Counterparty consensus references are supplied
-by the harness rather than advanced through client update transactions.
-
-Randomized first-seen voucher registration, cross-channel histories, ordered
-funds histories and end-to-end client/connection lifecycles remain outside this
-model. Neither passing iterations nor the four targeted mutants establish
-sufficient assurance for production custody.
+The exact intended Injective application, approved chain parameters and complete
+production-component lifecycle still need retained deployment evidence. See the
+remaining gates in the [readiness report](tests/injective-probabilistic-lifecycle/READINESS.md),
+[channel upgrades](docs/channel-upgrades.md) and
+[compatible redeployment](docs/state-preserving-redeployment.md).
+Passing iterations, labels, size measurements or targeted mutants alone do not
+establish sufficient assurance for production custody.
