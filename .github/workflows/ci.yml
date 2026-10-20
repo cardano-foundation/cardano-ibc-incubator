@@ -1131,6 +1131,7 @@ jobs:
           cache-dependency-path: |
             cardano/gateway/package-lock.json
             proto-types/package-lock.json
+            packages/cardano-ibc-planner/package-lock.json
             packages/cardano-ibc-tx-builder/package-lock.json
             packages/cardano-ibc-trace-registry/package-lock.json
             packages/cardano-ibc-tx-builder-runtime/package-lock.json
@@ -1167,6 +1168,9 @@ jobs:
 
       - name: Install gateway and runtime dependencies
         run: |
+          npm ci --prefix packages/cardano-ibc-planner
+          npm run --prefix packages/cardano-ibc-planner build
+          rm -rf packages/cardano-ibc-planner/node_modules
           npm ci --prefix packages/cardano-ibc-tx-builder
           npm run --prefix packages/cardano-ibc-tx-builder build
           npm ci --prefix packages/cardano-ibc-trace-registry
@@ -1208,7 +1212,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: proto-types/package-lock.json
+          cache-dependency-path: |
+            proto-types/package-lock.json
+            packages/cardano-ibc-tx-builder/package-lock.json
+            packages/cardano-ibc-trace-registry/package-lock.json
+            packages/cardano-ibc-tx-builder-runtime/package-lock.json
 
       - name: Setup Go for ICS-20 vectors
         uses: actions/setup-go@v7
@@ -1241,7 +1249,10 @@ jobs:
 
       - name: Check frozen commitment codec vectors
         run: |
-          npm ci --prefix packages/cardano-ibc-tx-builder-runtime
+          for package in cardano-ibc-tx-builder cardano-ibc-trace-registry cardano-ibc-tx-builder-runtime; do
+            npm ci --prefix "packages/$package"
+            npm run --prefix "packages/$package" build
+          done
           node tests/ibc-state-commitment/generate-codec.mjs --check
 
       - name: Check pinned ICS-20 JSON vectors
