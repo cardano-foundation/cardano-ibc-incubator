@@ -357,7 +357,7 @@ fn destination_chain_id_for_network(
         RouteChain::Cosmos => {
             if cosmos_profile_semantics(network)? != IbcSemantics::Classic {
                 return Err(format!(
-                    "Cosmos profile '{}' uses IBC v2 semantics. Cardano/Hermes v2 route and token-swap testing is deferred; select v8-classic or v10-classic for current tests.",
+                    "Cosmos profile '{}' uses IBC v2 semantics. Cardano/Hermes v2 route and token-transfer testing is deferred; select v8-classic or v10-classic for current tests.",
                     network
                 ));
             }

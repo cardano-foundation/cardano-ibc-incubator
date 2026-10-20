@@ -159,7 +159,7 @@ fi
 test_dir="$(mktemp -d "${TMPDIR:-/tmp}/caribic-cosmos-demo-test.XXXXXX")"
 trap 'rm -rf "$test_dir"' EXIT
 script_dir="$(cd "$(dirname "$0")" && pwd)"
-demo_script="$script_dir/run_direct_token_swap.sh"
+demo_script="$script_dir/run_direct_token_transfer.sh"
 fake_binary="$test_dir/fake-hermes"
 ln -s "$script_dir/$(basename "$0")" "$fake_binary"
 
@@ -205,7 +205,7 @@ FAKE_STATE_DIR="$test_dir/success-state"
 FAKE_HERMES_LOG="$test_dir/success.log"
 mkdir -p "$FAKE_STATE_DIR"
 success_output="$(run_demo 2>&1)"
-grep -qF "Direct Cardano-to-v8-classic Classic compatibility demo completed." <<<"$success_output"
+grep -qF "Direct Cardano-to-v8-classic Classic token transfer demo completed." <<<"$success_output"
 [[ -f "$FAKE_STATE_DIR/stability-retried" ]]
 [[ ! -f "$FAKE_STATE_DIR/cardano-commitment" ]]
 [[ ! -f "$FAKE_STATE_DIR/cosmos-commitment" ]]

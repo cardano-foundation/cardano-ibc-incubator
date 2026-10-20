@@ -6,10 +6,17 @@ Cardano connects directly to the selected target chain.
 
 ## Quick run
 
-For the local Osmosis demo:
+The local DevKit runtime supports the Cosmos transfer demo:
 
 ```bash
 caribic start --clean
+caribic chain start --chain cosmos --network v8-classic
+caribic demo token-transfer --chain cosmos --network v8-classic
+```
+
+For the Osmosis swap demo, use a compatible running Cardano runtime:
+
+```bash
 caribic chain start --chain osmosis --network local
 caribic setup route --from cardano --to osmosis --to-network local
 caribic demo token-swap --chain osmosis --network local
@@ -17,14 +24,14 @@ caribic demo token-swap --chain osmosis --network local
 
 The demo command calls [`chains/osmosis/scripts/run_direct_token_swap.sh`](../../chains/osmosis/scripts/run_direct_token_swap.sh). That script sets up the Osmosis swap contracts and submits the direct Cardano-to-Osmosis swap.
 
-For the local Injective transfer-leg demo:
+For the Injective transfer demo, first configure the [Cardano preprod runtime and funded Hermes keys](../../caribic/README.md#full-test-cardano-preprod-to-injective-testnet):
 
 ```bash
-caribic start --clean
-caribic chain start --chain injective --network local
-caribic setup route --from cardano --to injective --to-network local
-caribic demo token-swap --chain injective --network local
+caribic setup route --from cardano --to injective --to-network testnet
+caribic demo token-transfer --chain injective --network testnet
 ```
+
+This transfers a Cardano mock token to Injective and independently transfers INJ to Cardano. It does not execute a swap.
 
 ## Direct Route Requirements
 

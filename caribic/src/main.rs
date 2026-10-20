@@ -27,7 +27,9 @@ mod utils;
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum DemoType {
-    /// Starts the token-swap demo preset using a running bridge plus selected chain/network
+    /// Transfers tokens between Cardano and Cosmos or Injective
+    TokenTransfer,
+    /// Swaps a Cardano token through an Osmosis pool
     TokenSwap,
 }
 
@@ -251,11 +253,11 @@ enum Commands {
         #[command(subcommand)]
         command: SetupCommand,
     },
-    /// Starts a demo preset. Usage: `caribic demo token-swap --chain cosmos --network v8-classic`
+    /// Starts a demo preset. Usage: `caribic demo token-transfer --chain cosmos --network v8-classic`
     Demo {
         #[arg(value_enum)]
         use_case: DemoType,
-        /// Optional chain selector for demos that support multiple chains (currently token-swap)
+        /// Target chain (defaults to Cosmos for transfers and Osmosis for swaps)
         #[arg(long, value_enum)]
         chain: Option<start::OptionalChainId>,
         /// Optional network profile for the selected demo chain (for example: local, testnet)
@@ -493,6 +495,20 @@ async fn main() {
 #[cfg(test)]
 mod cli_tests {
     use super::*;
+
+    #[test]
+    fn transfer_and_swap_demo_names_select_different_workflows() {
+        for (name, expected) in [
+            ("token-transfer", DemoType::TokenTransfer),
+            ("token-swap", DemoType::TokenSwap),
+        ] {
+            let args = Args::try_parse_from(["caribic", "demo", name]).unwrap();
+            match args.command {
+                Commands::Demo { use_case, .. } => assert_eq!(use_case, expected),
+                _ => panic!("expected demo command"),
+            }
+        }
+    }
 
     #[test]
     fn local_start_has_one_provisioner() {

@@ -26,7 +26,7 @@ The implementation adheres to the [inter-blockchain communication protocol](http
 - [Getting Started](#getting-started)
 - [Testing Against Cosmos Chains](#testing-against-cosmos-chains)
 - [Demo: Direct Cosmos Routes](#demo-direct-cosmos-routes)
-- [Demo: Cross-chain Token Swap](#demo-cross-chain-token-swap)
+- [Demo: Cross-chain Token Transfer](#demo-cross-chain-token-transfer)
 - [Additional Resources](#additional-resources)
 - [Contributing](#contributing)
 
@@ -296,7 +296,7 @@ The migrated local network currently pairs with Cosmos `v8-classic`:
 caribic setup route --from cardano --to cosmos --to-network v8-classic
 ```
 
-## Demo: Cross-chain token swap
+## Demo: Cross-chain token transfer
 
 Local demos currently use Cosmos `v8-classic`.
 
@@ -304,7 +304,7 @@ Local demos currently use Cosmos `v8-classic`.
 caribic start
 caribic chain start --chain cosmos --network v8-classic
 caribic setup route --from cardano --to cosmos --to-network v8-classic
-caribic demo token-swap --chain cosmos --network v8-classic
+caribic demo token-transfer --chain cosmos --network v8-classic
 ```
 
 ## Useful commands for local networks

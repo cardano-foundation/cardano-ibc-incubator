@@ -394,7 +394,7 @@ COSMOS_CHAIN_ID="${COSMOS_CHAIN_ID:-v8-classic-1}"
 CARDANO_COSMOS_CHANNEL_ID="${CARDANO_COSMOS_CHANNEL_ID:-}"
 COSMOS_CARDANO_CHANNEL_ID="${COSMOS_CARDANO_CHANNEL_ID:-}"
 CARDANO_RECEIVER="${CARDANO_RECEIVER:-247570b8ba7dc725e9ff37e9757b8148b4d5a125958edac2fd4417b8}"
-CARDANO_SEND_AMOUNT="${CARIBIC_TOKEN_SWAP_AMOUNT:-12345}"
+CARDANO_SEND_AMOUNT="${CARIBIC_TOKEN_TRANSFER_AMOUNT:-12345}"
 COSMOS_RETURN_AMOUNT="${COSMOS_RETURN_AMOUNT:-12345}"
 COSMOS_RETURN_DENOM="${COSMOS_RETURN_DENOM:-utest}"
 HANDLER_JSON="${HANDLER_JSON:-$repo_root/cardano/offchain/deployments/handler.json}"
@@ -524,7 +524,7 @@ assert_commitments_match \
   "$BASELINE_COSMOS_SEQUENCES"
 
 if [[ "$DEMO_DIRECTION" == "round-trip" ]]; then
-  echo "Direct Cardano-to-${COSMOS_PROFILE} Classic compatibility demo completed."
+  echo "Direct Cardano-to-${COSMOS_PROFILE} Classic token transfer demo completed."
 else
   echo "Direct Cardano-to-${COSMOS_PROFILE} Classic transfer completed."
 fi
