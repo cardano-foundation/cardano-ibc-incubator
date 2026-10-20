@@ -11,6 +11,11 @@ COPY packages/cardano-ibc-trace-registry /workspace/packages/cardano-ibc-trace-r
 COPY packages/cardano-ibc-tx-builder /workspace/packages/cardano-ibc-tx-builder
 COPY packages/cardano-ibc-tx-builder-runtime /workspace/packages/cardano-ibc-tx-builder-runtime
 
+# Runtime source imports the transaction builder's compiled submodules.
+RUN npm ci --prefix /workspace/packages/cardano-ibc-tx-builder \
+  && npm run --prefix /workspace/packages/cardano-ibc-tx-builder build \
+  && rm -rf /workspace/packages/cardano-ibc-tx-builder/node_modules
+
 # The peer graph still contains legacy constraints, but the committed lockfile
 # makes the accepted resolution reproducible.
 RUN npm ci --ignore-scripts --legacy-peer-deps \
