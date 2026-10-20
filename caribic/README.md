@@ -91,7 +91,7 @@ Injective startup note:
 
 Cosmos compatibility-profile note:
 
-- `v8-classic` and `v10-classic` are pinned local simd chains supported by direct Cardano route setup and the token-swap compatibility demo.
+- `v8-classic` and `v10-classic` are pinned local simd chains supported by direct Cardano route setup and the token-transfer compatibility demo.
 - `v10-v2` is selectable and runnable, but Cardano/Hermes IBC v2 route and transfer testing is intentionally deferred.
 - A start recreates deterministic genesis by default; pass `--chain-flag stateful=true` to retain `~/.caribic/cosmos-profiles/<profile>`.
 - Full profile metadata and endpoints are documented in [`chains/cosmos/README.md`](../chains/cosmos/README.md).
@@ -170,23 +170,29 @@ caribic create-connection --a-chain cardano-devnet --b-chain localosmosis
 caribic create-channel --a-chain cardano-devnet --b-chain localosmosis --a-port transfer --b-port transfer
 ```
 
-### `caribic demo token-swap`
+### `caribic demo token-transfer`
 
-`caribic demo token-swap` prepares direct Cardano-to-target transfer routes and runs the selected local demo against those direct channel ids.
+`caribic demo token-transfer` prepares direct Cardano-to-Cosmos or Cardano-to-Injective routes and runs token transfers against those channel ids. It defaults to Cosmos `v8-classic`. The Injective demo sends a Cardano mock token to Injective and independently sends funded INJ to Cardano.
 
 The Cosmos selector supports the currently testable Classic profiles:
 
 ```bash
 caribic setup route --from cardano --to cosmos --to-network v8-classic
-caribic demo token-swap --chain cosmos --network v8-classic
+caribic demo token-transfer --chain cosmos --network v8-classic
 
 caribic setup route --from cardano --to cosmos --to-network v10-classic
-caribic demo token-swap --chain cosmos --network v10-classic
+caribic demo token-transfer --chain cosmos --network v10-classic
 ```
 
 Selecting `v10-v2` is recognized but returns an explicit deferred-testing
 error until the Cardano/Hermes IBC v2 workflow is implemented and ready to
 exercise.
+
+`CARIBIC_TOKEN_TRANSFER_AMOUNT` sets the outgoing Cardano token amount in base units. It defaults to `12345`.
+
+### `caribic demo token-swap`
+
+`caribic demo token-swap --chain osmosis --network local` creates an Osmosis pool and swap contracts, exchanges the bridged Cardano token for OSMO and transfers the result to Cardano. It requires a compatible Cardano runtime. The current local DevKit fixture supports only the Cosmos `v8-classic` transfer demo.
 
 If your machine is slower, tune retry windows in `caribic/config/default-config.json` (or whichever file you pass via `--config`).
 
@@ -430,10 +436,10 @@ This creates the `08-cardano-probabilistic` client on Injective testnet and the 
 ### 7. Exercise the route
 
 ```bash
-caribic demo token-swap --chain injective --network testnet
+caribic demo token-transfer --chain injective --network testnet
 ```
 
-On Injective this runs the direct token-transfer legs (Cardano → Injective and back). A DEX-style swap leg currently exists only for Osmosis (via the `crosschain_swaps` wasm contract).
+This sends a Cardano mock token to Injective and independently sends funded INJ to Cardano. Use `token-swap` only for the Osmosis workflow that executes an exchange.
 
 ### 8. Run the swap dapp against preprod + Injective testnet
 

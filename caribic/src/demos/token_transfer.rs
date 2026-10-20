@@ -1,0 +1,286 @@
+use std::path::Path;
+
+use crate::{
+    logger,
+    route_setup::{self, RouteChain, RouteEndpoint},
+    start::{self, CoreServiceId, HealthTarget, OptionalChainId},
+    stop::stop_relayer,
+    utils::execute_script,
+};
+
+pub async fn run_token_transfer_demo(
+    project_root_path: &Path,
+    chain: Option<OptionalChainId>,
+    network: Option<&str>,
+) -> Result<(), String> {
+    if chain == Some(OptionalChainId::Osmosis) {
+        return Err("The Osmosis demo executes a swap. Use `caribic demo token-swap --chain osmosis` instead.".to_string());
+    }
+    if crate::local_network::is_local(project_root_path) {
+        if chain.unwrap_or(OptionalChainId::Cosmos) != OptionalChainId::Cosmos {
+            return Err("The DevKit token-transfer demo requires --chain cosmos --network v8-classic, the only fixture with a matching Cardano clock. Select that fixture.".into());
+        }
+        crate::chains::cosmos_profiles::validate_route_state(
+            project_root_path,
+            network.unwrap_or("v8-classic"),
+        )?;
+        return start::with_local_heartbeat(project_root_path, || {
+            run_token_transfer_demo_without_daemon(project_root_path, chain, network)
+        });
+    }
+    let relayer_path = project_root_path.join("relayer");
+    let uses_direct_cosmos_relay =
+        chain.unwrap_or(OptionalChainId::Cosmos) == OptionalChainId::Cosmos;
+    let relayer_was_running = uses_direct_cosmos_relay
+        && matches!(
+            start::check_health_target(
+                project_root_path,
+                HealthTarget::Core(CoreServiceId::Hermes)
+            ),
+            Ok((true, _))
+        );
+
+    let stop_result = if relayer_was_running {
+        logger::verbose("Stopping the Hermes daemon while the demo relays exact packet sequences");
+        stop_relayer(relayer_path.as_path());
+        match start::check_health_target(
+            project_root_path,
+            HealthTarget::Core(CoreServiceId::Hermes),
+        ) {
+            Ok((false, _)) => Ok(()),
+            Ok((true, _)) => Err(
+                "ERROR: Hermes daemon is still running; refusing to race the deterministic Cosmos packet relay"
+                    .to_string(),
+            ),
+            Err(error) => Err(format!(
+                "ERROR: Could not verify that the Hermes daemon stopped: {error}"
+            )),
+        }
+    } else {
+        Ok(())
+    };
+
+    let demo_result = stop_result
+        .and_then(|()| run_token_transfer_demo_without_daemon(project_root_path, chain, network));
+    let restart_result = if relayer_was_running {
+        start::start_hermes_daemon()
+            .map_err(|error| format!("Token demo finished, but Hermes restart failed: {error}"))
+    } else {
+        Ok(())
+    };
+
+    match (demo_result, restart_result) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(demo_error), Ok(())) => Err(demo_error),
+        (Ok(()), Err(restart_error)) => Err(restart_error),
+        (Err(demo_error), Err(restart_error)) => {
+            Err(format!("{demo_error}; additionally, {restart_error}"))
+        }
+    }
+}
+
+fn run_token_transfer_demo_without_daemon(
+    project_root_path: &Path,
+    chain: Option<OptionalChainId>,
+    network: Option<&str>,
+) -> Result<(), String> {
+    let resolved_chain = chain.unwrap_or(OptionalChainId::Cosmos);
+    let default_network = match resolved_chain {
+        OptionalChainId::Cosmos => "v8-classic",
+        _ => "local",
+    };
+    let network_label = network.unwrap_or(default_network);
+    let route_chain = match resolved_chain {
+        OptionalChainId::Osmosis => unreachable!("Osmosis transfers must not run the swap demo"),
+        OptionalChainId::Injective => RouteChain::Injective,
+        OptionalChainId::Cosmos => RouteChain::Cosmos,
+        OptionalChainId::Cheqd => {
+            return Err(
+                "ERROR: Token-transfer demo is not implemented for chain 'cheqd'.".to_string(),
+            )
+        }
+    };
+
+    let transfer_route = route_setup::setup_transfer_route(
+        project_root_path,
+        RouteEndpoint::new(RouteChain::Cardano, None),
+        RouteEndpoint::new(route_chain, Some(network_label.to_string())),
+    )?;
+
+    logger::log("PASS: Direct token-transfer route is ready");
+    for line in transfer_route.summary_lines() {
+        logger::log(&format!("  {}", line));
+    }
+
+    match resolved_chain {
+        OptionalChainId::Injective => run_direct_injective_token_transfer(
+            project_root_path,
+            network_label,
+            transfer_route.cardano_chain_id.as_str(),
+            transfer_route.destination_chain_id.as_str(),
+            transfer_route.direct_channel_pair.a_channel_id.as_str(),
+            transfer_route.direct_channel_pair.b_channel_id.as_str(),
+        ),
+        OptionalChainId::Cosmos => run_direct_cosmos_profile_token_transfer(
+            project_root_path,
+            network_label,
+            transfer_route.cardano_chain_id.as_str(),
+            transfer_route.destination_chain_id.as_str(),
+            transfer_route.direct_channel_pair.a_channel_id.as_str(),
+            transfer_route.direct_channel_pair.b_channel_id.as_str(),
+        ),
+        OptionalChainId::Osmosis | OptionalChainId::Cheqd => {
+            unreachable!("unsupported transfer chain returned earlier")
+        }
+    }
+}
+
+fn run_direct_cosmos_profile_token_transfer(
+    project_root_path: &Path,
+    profile: &str,
+    cardano_chain_id: &str,
+    cosmos_chain_id: &str,
+    cardano_cosmos_channel_id: &str,
+    cosmos_cardano_channel_id: &str,
+) -> Result<(), String> {
+    let script_path = project_root_path
+        .join("chains")
+        .join("cosmos")
+        .join("scripts")
+        .join("run_direct_token_transfer.sh");
+    let script = script_path
+        .to_str()
+        .ok_or_else(|| "ERROR: Invalid Cosmos compatibility demo script path".to_string())?;
+    let project_root = project_root_path
+        .to_str()
+        .ok_or_else(|| "ERROR: Invalid project root path".to_string())?;
+
+    execute_script(
+        project_root_path,
+        script,
+        Vec::new(),
+        Some(vec![
+            ("CARIBIC_PROJECT_ROOT", project_root),
+            ("COSMOS_PROFILE", profile),
+            ("CARDANO_CHAIN_ID", cardano_chain_id),
+            ("COSMOS_CHAIN_ID", cosmos_chain_id),
+            ("CARDANO_COSMOS_CHANNEL_ID", cardano_cosmos_channel_id),
+            ("COSMOS_CARDANO_CHANNEL_ID", cosmos_cardano_channel_id),
+        ]),
+    )
+    .map_err(|error| {
+        format!(
+            "ERROR: Failed to run the {} Classic compatibility demo: {}",
+            profile, error
+        )
+    })?;
+
+    logger::log(&format!(
+        "PASS: Direct Cardano-to-{} Classic token transfer demo completed",
+        profile
+    ));
+    Ok(())
+}
+
+fn run_direct_injective_token_transfer(
+    project_root_path: &Path,
+    network: &str,
+    cardano_chain_id: &str,
+    injective_chain_id: &str,
+    cardano_injective_channel_id: &str,
+    injective_cardano_channel_id: &str,
+) -> Result<(), String> {
+    let script_path = project_root_path
+        .join("chains")
+        .join("injective")
+        .join("scripts")
+        .join("run_direct_token_transfer.sh");
+    let script = script_path
+        .to_str()
+        .ok_or_else(|| "ERROR: Invalid run_direct_token_transfer.sh path".to_string())?;
+    let project_root = project_root_path
+        .to_str()
+        .ok_or_else(|| "ERROR: Invalid project root path".to_string())?;
+    let injective_dir = project_root_path.join("chains").join("injective");
+    let injective_dir = injective_dir
+        .to_str()
+        .ok_or_else(|| "ERROR: Invalid Injective path".to_string())?;
+
+    execute_script(
+        project_root_path,
+        script,
+        Vec::new(),
+        Some(vec![
+            ("CARIBIC_PROJECT_ROOT", project_root),
+            ("CARIBIC_INJECTIVE_DIR", injective_dir),
+            ("INJECTIVE_NETWORK", network),
+            ("CARDANO_CHAIN_ID", cardano_chain_id),
+            ("INJECTIVE_CHAIN_ID", injective_chain_id),
+            ("CARDANO_INJECTIVE_CHANNEL_ID", cardano_injective_channel_id),
+            ("INJECTIVE_CARDANO_CHANNEL_ID", injective_cardano_channel_id),
+        ]),
+    )
+    .map_err(|error| {
+        format!(
+            "ERROR: Failed to run direct Injective token transfer demo: {}",
+            error
+        )
+    })?;
+
+    logger::log("PASS: Direct Cardano-to-Injective token transfer demo completed");
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Command;
+
+    #[tokio::test]
+    async fn devkit_transfer_demo_rejects_unsupported_counterparts_before_daemon_actions() {
+        let root = std::env::temp_dir().join(format!(
+            "caribic-demo-preflight-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join(".caribic")).unwrap();
+        std::fs::write(root.join(".caribic-network"), "local\n").unwrap();
+        for chain in [
+            Some(OptionalChainId::Injective),
+            Some(OptionalChainId::Cheqd),
+        ] {
+            let error = run_token_transfer_demo(&root, chain, None)
+                .await
+                .unwrap_err();
+            assert!(
+                error.contains(
+                    "DevKit token-transfer demo requires --chain cosmos --network v8-classic"
+                ),
+                "{error}"
+            );
+        }
+        let error =
+            run_token_transfer_demo(&root, Some(OptionalChainId::Cosmos), Some("v10-classic"))
+                .await
+                .unwrap_err();
+        assert!(
+            error.contains("supported only by the local v8-classic Cosmos fixture"),
+            "{error}"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cosmos_profile_demo_script_is_fail_closed() {
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../chains/cosmos/scripts/test_run_direct_token_transfer.sh");
+        let status = Command::new("bash")
+            .arg(&script)
+            .status()
+            .unwrap_or_else(|error| panic!("failed to run {}: {error}", script.display()));
+        assert!(status.success(), "{} failed", script.display());
+    }
+}

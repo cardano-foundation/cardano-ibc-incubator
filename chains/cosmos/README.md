@@ -15,7 +15,7 @@ simapp with this repository's matching `08-cardano-probabilistic` light client.
 
 The canonical machine-readable values are in [`profiles.yml`](profiles.yml).
 The v10 simapp contains upstream IBC v2 transfer routing. Cardano/Hermes route
-and token-swap compatibility tests remain Classic-only for now, so selecting
+and token-transfer compatibility tests remain Classic-only for now, so selecting
 `v10-v2` for either workflow returns an explicit deferred-testing error.
 
 ## Classic compatibility across v8 and v10
@@ -169,7 +169,7 @@ Genesis explicitly allows both `07-tendermint` and
 used for the Classic return leg. These public keys and mnemonics are strictly
 for local testing.
 
-## Classic Cardano routes and token-swap demo
+## Classic Cardano routes and token-transfer demo
 
 Start the Cardano stack and one Classic profile, then select that same profile
 for route setup and the demo:
@@ -178,7 +178,7 @@ for route setup and the demo:
 caribic start --clean
 caribic chain start --chain cosmos --network v8-classic
 caribic setup route --from cardano --to cosmos --to-network v8-classic
-caribic demo token-swap --chain cosmos --network v8-classic
+caribic demo token-transfer --chain cosmos --network v8-classic
 ```
 
 Use `v10-classic` in all three profile arguments to run the same Classic flow

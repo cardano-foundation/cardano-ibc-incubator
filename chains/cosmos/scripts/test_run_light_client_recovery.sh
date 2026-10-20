@@ -307,7 +307,7 @@ fake_simd() {
 
 fake_direct_transfer() {
   [[ "$COSMOS_DEMO_DIRECTION" == "cardano-to-cosmos" ]]
-  [[ "$CARIBIC_TOKEN_SWAP_AMOUNT" == "12345" ]]
+  [[ "$CARIBIC_TOKEN_TRANSFER_AMOUNT" == "12345" ]]
   [[ "$CARDANO_SEND_DENOM" == "mock-token" ]]
   [[ "$CARDANO_CLIENT_ID" == "08-cardano-probabilistic-0" ]]
 
@@ -385,7 +385,7 @@ case "$(basename "$0")" in
     fake_simd "$@"
     exit $?
     ;;
-  fake-direct-token-swap)
+  fake-direct-token-transfer)
     fake_direct_transfer "$@"
     exit $?
     ;;
@@ -397,7 +397,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 recovery_script="$script_dir/run_light_client_recovery.sh"
 fake_hermes_bin="$test_dir/fake-hermes"
 fake_simd_bin="$test_dir/fake-simd"
-fake_direct_script="$test_dir/fake-direct-token-swap"
+fake_direct_script="$test_dir/fake-direct-token-transfer"
 fake_deno_bin="$test_dir/fake-deno"
 printf '{}\n' >"$test_dir/handler.json"
 ln -s "$script_dir/$(basename "$0")" "$fake_hermes_bin"
@@ -412,7 +412,7 @@ run_recovery() {
     CARIBIC_PROJECT_ROOT="$test_dir/repo" \
     HERMES_BIN="$fake_hermes_bin" \
     SIMD_BIN="$fake_simd_bin" \
-    DIRECT_TOKEN_SWAP_SCRIPT="$fake_direct_script" \
+    DIRECT_TOKEN_TRANSFER_SCRIPT="$fake_direct_script" \
     DENO_BIN="$fake_deno_bin" \
     HANDLER_JSON="$test_dir/handler.json" \
     ESCROW_READER_SCRIPT="$script_dir/../../../cardano/offchain/scripts/recovery-escrow.ts" \

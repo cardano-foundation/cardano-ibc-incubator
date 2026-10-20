@@ -16,7 +16,7 @@ use crate::{
 
 const HERMES_BUILD_PROGRESS_LOG_INTERVAL_SECS: u64 = 10;
 const HERMES_BUILD_POLL_INTERVAL_SECS: u64 = 2;
-const DEVKIT_DAPP_LIMITATION: &str = "The swap UI is not supported on the local network yet. Use `caribic demo token-swap --chain cosmos --network v8-classic`.";
+const DEVKIT_DAPP_LIMITATION: &str = "The swap UI is not supported on the local network yet. Use `caribic demo token-transfer --chain cosmos --network v8-classic`.";
 
 fn requires_injective_testnet_route(network: config::CoreCardanoNetwork) -> bool {
     network.is_public_testnet()
