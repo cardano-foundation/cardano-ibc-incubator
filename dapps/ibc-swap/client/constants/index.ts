@@ -53,10 +53,7 @@ export const FORWARD_TIMEOUT =
   RUNTIME_FORWARD_TIMEOUT || DEFAULT_FORWARD_TIMEOUT;
 
 // common Cosmos urls query
-export const queryAllDenomTracesUrl = '/ibc/apps/transfer/v1/denoms';
-export const queryChannelsPrefixUrl = `/ibc/core/channel/v1/channels`;
 export const queryPacketForwardParamsUrl = `/ibc/apps/packetforward/v1/params`;
-export const queryAllChannelsUrl = `${queryChannelsPrefixUrl}?pagination.count_total=true&pagination.limit=10000`;
 export const OSMOSIS_CHAIN_ID = 'localosmosis';
 export const cosmosChainsSupported = cosmosRuntimeChains.length
   ? cosmosRuntimeChains.map((chain) => chain.id)
