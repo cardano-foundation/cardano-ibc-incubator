@@ -2262,7 +2262,7 @@ fn ensure_gateway_built(
             execute_script(&package_dir, "npm", vec!["ci"], None)?;
         }
 
-        // Tracked dist files still need the package's runtime dependencies.
+        // Reuse package output from an earlier local build.
         if package_dir.join("dist").exists() {
             continue;
         }

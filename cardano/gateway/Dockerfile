@@ -35,6 +35,10 @@ COPY --from=protos /usr/src/proto-types /usr/proto-types
 COPY ./manifests /usr/src/app/manifests
 
 # Build local file dependencies that publish compiled artifacts from dist/.
+RUN npm ci --prefix /usr/packages/cardano-ibc-planner \
+  && npm run --prefix /usr/packages/cardano-ibc-planner build \
+  && rm -rf /usr/packages/cardano-ibc-planner/node_modules
+
 RUN npm ci --prefix /usr/packages/cardano-ibc-trace-registry \
   && npm run --prefix /usr/packages/cardano-ibc-trace-registry build
 

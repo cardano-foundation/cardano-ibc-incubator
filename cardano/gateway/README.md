@@ -116,8 +116,23 @@ own Ogmios data and the HTTP epoch provider configured by `CARDANO_EPOCH_PARAMS_
 
 ## Installation
 
+From the repository root, build the local packages before installing the Gateway. Their compiled output is generated locally.
+
 ```bash
-$ npm install
+npm ci --prefix proto-types
+npm run --prefix proto-types build
+for package in cardano-ibc-planner cardano-ibc-tx-builder cardano-ibc-trace-registry cardano-ibc-tx-builder-runtime
+do
+  npm ci --prefix "packages/$package"
+  npm run --prefix "packages/$package" build
+done
+rm -rf packages/cardano-ibc-planner/node_modules
+for package in cardano-ibc-tx-builder cardano-ibc-trace-registry cardano-ibc-tx-builder-runtime
+do
+  npm ci --prefix "packages/$package" --omit=dev
+done
+cd cardano/gateway
+npm ci
 ```
 
 ## Running the app
