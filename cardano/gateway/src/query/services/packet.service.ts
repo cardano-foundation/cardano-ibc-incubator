@@ -50,7 +50,6 @@ import {
   GrpcInternalException,
   GrpcNotFoundException,
 } from '~@/exception/grpc_exceptions';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof, serializeNonExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
@@ -73,7 +72,6 @@ export class PacketService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
-    @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(HISTORY_SERVICE) private historyService: HistoryService,
     @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
     private readonly ibcTreeStore: IbcTreeStateStore,
@@ -112,20 +110,14 @@ export class PacketService {
   }
 
   private async getProofContext(requestedHeight?: bigint) {
-    const lightClientMode =
-      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
-      'stake-weighted-stability';
-
     return resolveProofContextForQuery({
       ibcTreeStore: this.ibcTreeStore,
       logger: this.logger,
       lucidService: this.lucidService,
-      mithrilService: this.mithrilService,
       historyService: this.historyService,
       ibcTreeCacheService: this.ibcTreeCacheService,
       context: 'queryPacketProof',
       requestedHeight,
-      lightClientMode,
     });
   }
 

@@ -64,6 +64,7 @@ export function clientStateWithHistory(
     record(0n, 0n),
     h,
     specs,
+    [],
   );
   const consensus = record(
     BigInt(now) * 1_000_000n,
@@ -239,7 +240,7 @@ export async function deploymentScenario() {
         );
         const clientKey = `clients/07-tendermint-${sequence}/clientState`;
         const consensusKey =
-          `clients/07-tendermint-${sequence}/consensusStates/${height}`;
+          `clients/07-tendermint-${sequence}/consensusStates/1-${height}`;
         const client_state_siblings = await tree.getSiblings(clientKey);
         tree.set(clientKey, encode(client));
         const consensus_state_siblings = await tree.getSiblings(consensusKey);
@@ -427,6 +428,7 @@ export async function deploymentScenario() {
           record(fromText("remote"), ""),
           [fromText(connectionId)],
           fromText("ics20-1"),
+          0n,
         );
         const key = `channelEnds/ports/mock/channels/${channelId}`;
         const channel_siblings = await tree.getSiblings(key);
@@ -460,6 +462,7 @@ export async function deploymentScenario() {
             new Map(),
             record(0n, 0n),
             record(0n, 0n),
+            new Constr(0, [new Constr(1, []), new Constr(1, []), 0n]),
           ),
           fromText("mock"),
           record(channelNft.policy_id, channelNft.name),
@@ -494,13 +497,24 @@ export async function deploymentScenario() {
       },
       async topUp(lovelace: bigint) {
         const input = await host();
+        const old = await hostDatum();
+        // A heartbeat stamps both clocks with hostTx's upper validity bound.
+        const validTo = BigInt(emulator.now() + 60_000);
         await api.submit(
           hostTx(
             input,
-            await successor(await hostDatum()),
+            {
+              ...old,
+              state: {
+                ...old.state,
+                version: old.state.version + 1n,
+                last_update_time: validTo,
+              },
+              control: { ...old.control, last_heartbeat_time: validTo },
+            },
             "Heartbeat",
             lovelace,
-          ).addSignerKey((await hostDatum()).deployer),
+          ).addSignerKey(old.deployer),
           "top up HostState",
         );
       },

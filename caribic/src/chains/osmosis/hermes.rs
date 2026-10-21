@@ -4,7 +4,9 @@ use crate::chains::hermes_support::{
     self, HermesAddressType, HermesCosmosChainProfile, HermesEventSource, HermesGasPrice,
     HermesTrustThreshold,
 };
-use crate::chains::network_limits::{HERMES_CONSERVATIVE_MAX_TX_SIZE, OSMOSIS_MAX_TX_GAS};
+use crate::chains::network_limits::{
+    HERMES_CONSERVATIVE_MAX_TX_SIZE, LOCAL_MAX_TX_GAS, LOCAL_MAX_TX_SIZE, OSMOSIS_MAX_TX_GAS,
+};
 use crate::chains::osmosis::config as osmosis_config;
 use crate::process::hermes::HermesCli;
 
@@ -120,14 +122,14 @@ fn local_chain_profile() -> HermesCosmosChainProfile {
         address_type: Some(HermesAddressType::Cosmos),
         store_prefix: "ibc",
         default_gas: 5_000_000,
-        max_gas: OSMOSIS_MAX_TX_GAS,
+        max_gas: LOCAL_MAX_TX_GAS,
         gas_price: HermesGasPrice {
             price: "0.1",
             denom: "uosmo",
         },
         gas_multiplier: "2.0",
         max_msg_num: 20,
-        max_tx_size: HERMES_CONSERVATIVE_MAX_TX_SIZE,
+        max_tx_size: LOCAL_MAX_TX_SIZE,
         // The local Cardano devnet runs on a fixed backdated clock so stake
         // registration cutoffs remain deterministic. Local Cosmos chains use
         // wall-clock CometBFT timestamps, so local handshakes need enough
@@ -159,10 +161,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn osmosis_profiles_use_network_gas_and_project_size_caps() {
-        for profile in [local_chain_profile(), testnet_chain_profile()] {
-            assert_eq!(profile.max_gas, OSMOSIS_MAX_TX_GAS);
-            assert_eq!(profile.max_tx_size, HERMES_CONSERVATIVE_MAX_TX_SIZE);
-        }
+    fn osmosis_profiles_match_their_destination_limits() {
+        let local = local_chain_profile();
+        assert_eq!(local.max_gas, LOCAL_MAX_TX_GAS);
+        assert_eq!(local.max_tx_size, LOCAL_MAX_TX_SIZE);
+
+        let public = testnet_chain_profile();
+        assert_eq!(public.max_gas, OSMOSIS_MAX_TX_GAS);
+        assert_eq!(public.max_tx_size, HERMES_CONSERVATIVE_MAX_TX_SIZE);
     }
 }

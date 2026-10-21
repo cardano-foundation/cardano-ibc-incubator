@@ -150,6 +150,9 @@ export interface BridgeManifestSpendChannelRefValidators {
   send_packet?: BridgeManifestReferredValidator;
   timeout_packet?: BridgeManifestReferredValidator;
   prune_packet_history?: BridgeManifestReferredValidator;
+  chan_upgrade?: BridgeManifestReferredValidator;
+  chan_upgrade_handshake?: BridgeManifestReferredValidator;
+  chan_upgrade_finish?: BridgeManifestReferredValidator;
 }
 /**
  * @name BridgeManifestSpendChannelValidator
@@ -999,6 +1002,9 @@ function createBaseBridgeManifestSpendChannelRefValidators(): BridgeManifestSpen
     send_packet: undefined,
     timeout_packet: undefined,
     prune_packet_history: undefined,
+    chan_upgrade: undefined,
+    chan_upgrade_handshake: undefined,
+    chan_upgrade_finish: undefined,
   };
 }
 /**
@@ -1039,6 +1045,18 @@ export const BridgeManifestSpendChannelRefValidators = {
     if (message.prune_packet_history !== undefined) {
       BridgeManifestReferredValidator.encode(message.prune_packet_history, writer.uint32(74).fork()).ldelim();
     }
+    if (message.chan_upgrade !== undefined) {
+      BridgeManifestReferredValidator.encode(message.chan_upgrade, writer.uint32(82).fork()).ldelim();
+    }
+    if (message.chan_upgrade_handshake !== undefined) {
+      BridgeManifestReferredValidator.encode(
+        message.chan_upgrade_handshake,
+        writer.uint32(90).fork(),
+      ).ldelim();
+    }
+    if (message.chan_upgrade_finish !== undefined) {
+      BridgeManifestReferredValidator.encode(message.chan_upgrade_finish, writer.uint32(98).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): BridgeManifestSpendChannelRefValidators {
@@ -1075,6 +1093,15 @@ export const BridgeManifestSpendChannelRefValidators = {
         case 9:
           message.prune_packet_history = BridgeManifestReferredValidator.decode(reader, reader.uint32());
           break;
+        case 10:
+          message.chan_upgrade = BridgeManifestReferredValidator.decode(reader, reader.uint32());
+          break;
+        case 11:
+          message.chan_upgrade_handshake = BridgeManifestReferredValidator.decode(reader, reader.uint32());
+          break;
+        case 12:
+          message.chan_upgrade_finish = BridgeManifestReferredValidator.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1102,6 +1129,12 @@ export const BridgeManifestSpendChannelRefValidators = {
       obj.timeout_packet = BridgeManifestReferredValidator.fromJSON(object.timeout_packet);
     if (isSet(object.prune_packet_history))
       obj.prune_packet_history = BridgeManifestReferredValidator.fromJSON(object.prune_packet_history);
+    if (isSet(object.chan_upgrade))
+      obj.chan_upgrade = BridgeManifestReferredValidator.fromJSON(object.chan_upgrade);
+    if (isSet(object.chan_upgrade_handshake))
+      obj.chan_upgrade_handshake = BridgeManifestReferredValidator.fromJSON(object.chan_upgrade_handshake);
+    if (isSet(object.chan_upgrade_finish))
+      obj.chan_upgrade_finish = BridgeManifestReferredValidator.fromJSON(object.chan_upgrade_finish);
     return obj;
   },
   toJSON(message: BridgeManifestSpendChannelRefValidators): unknown {
@@ -1142,6 +1175,18 @@ export const BridgeManifestSpendChannelRefValidators = {
       (obj.prune_packet_history = message.prune_packet_history
         ? BridgeManifestReferredValidator.toJSON(message.prune_packet_history)
         : undefined);
+    message.chan_upgrade !== undefined &&
+      (obj.chan_upgrade = message.chan_upgrade
+        ? BridgeManifestReferredValidator.toJSON(message.chan_upgrade)
+        : undefined);
+    message.chan_upgrade_handshake !== undefined &&
+      (obj.chan_upgrade_handshake = message.chan_upgrade_handshake
+        ? BridgeManifestReferredValidator.toJSON(message.chan_upgrade_handshake)
+        : undefined);
+    message.chan_upgrade_finish !== undefined &&
+      (obj.chan_upgrade_finish = message.chan_upgrade_finish
+        ? BridgeManifestReferredValidator.toJSON(message.chan_upgrade_finish)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<BridgeManifestSpendChannelRefValidators>, I>>(
@@ -1174,6 +1219,17 @@ export const BridgeManifestSpendChannelRefValidators = {
     }
     if (object.prune_packet_history !== undefined && object.prune_packet_history !== null) {
       message.prune_packet_history = BridgeManifestReferredValidator.fromPartial(object.prune_packet_history);
+    }
+    if (object.chan_upgrade !== undefined && object.chan_upgrade !== null) {
+      message.chan_upgrade = BridgeManifestReferredValidator.fromPartial(object.chan_upgrade);
+    }
+    if (object.chan_upgrade_handshake !== undefined && object.chan_upgrade_handshake !== null) {
+      message.chan_upgrade_handshake = BridgeManifestReferredValidator.fromPartial(
+        object.chan_upgrade_handshake,
+      );
+    }
+    if (object.chan_upgrade_finish !== undefined && object.chan_upgrade_finish !== null) {
+      message.chan_upgrade_finish = BridgeManifestReferredValidator.fromPartial(object.chan_upgrade_finish);
     }
     return message;
   },

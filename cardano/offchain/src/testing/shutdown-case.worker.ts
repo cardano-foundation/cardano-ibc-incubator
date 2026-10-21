@@ -7,6 +7,7 @@ import { deploymentScenario } from "./shutdown-model.ts";
 type Model = {
   phase: "active" | "grace" | "ready";
   allocatedClients: number;
+  heartbeat: boolean;
   inventory: Record<string, number>;
 };
 type Real = Awaited<ReturnType<typeof deploymentScenario>>;
@@ -15,9 +16,12 @@ class Command implements fc.AsyncCommand<Model, Real> {
   constructor(readonly action: Action) {}
   check(model: Readonly<Model>) {
     const { kind } = this.action;
-    if (["client", "channel", "top-up", "enter"].includes(kind)) {
+    if (["client", "channel", "enter"].includes(kind)) {
       return model.phase === "active";
     }
+    // A top-up is a heartbeat. HostState accepts one per six-hour cooldown,
+    // which the active phase's few blocks never span.
+    if (kind === "top-up") return model.phase === "active" && !model.heartbeat;
     if (kind === "connection") {
       return model.phase === "active" && model.allocatedClients > 0;
     }
@@ -48,6 +52,7 @@ class Command implements fc.AsyncCommand<Model, Real> {
         break;
       case "top-up":
         await real.topUp(BigInt(value) * 1_000_000n);
+        model.heartbeat = true;
         break;
       case "enter":
         await real.enter(value % 3 + 1);
@@ -85,6 +90,7 @@ async function checkCase(actions: Action[]) {
   const model: Model = {
     phase: "active",
     allocatedClients: 0,
+    heartbeat: false,
     inventory: {
       client: 0,
       connection: 0,

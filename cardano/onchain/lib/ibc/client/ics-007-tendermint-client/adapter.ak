@@ -1,10 +1,12 @@
 use aiken/collection/list
+use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum as tendermint_datum
 use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/consensus_history.{Witness}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_002_client_semantics/client_view.{ClientStateView, ClientView}
 use ibc/core/ics_002_client_semantics/types/client.{Status, Unknown}
+use ibc/implementation/commitment_codec as commitment_codec
 
 pub const client_type = "07-tendermint"
 
@@ -44,10 +46,26 @@ pub fn view(
   )
 }
 
+type CommitmentDatum {
+  state: ClientStateView,
+  token: AuthToken,
+  history_root: ByteArray,
+}
+
 /// Used only after the factory or client spend authenticates the transition.
+/// HostState commits the frozen public payload bytes. Decode only its envelope and tip
+/// here, keeping proof specifications and upgrade paths opaque. The registered
+/// client validator validates their contents in the same transaction.
 pub fn commitment_view(datum: Data) -> ClientView {
-  expect client: tendermint_datum.ClientDatum = datum
-  project(client, Unknown)
+  expect client: CommitmentDatum = datum
+  expect state: commitment_codec.ClientPayload = client.state.client_state
+  ClientView {
+    state: client.state,
+    token: client.token,
+    latest_height: state.latest_height,
+    status: Unknown,
+    timestamps: [],
+  }
 }
 
 fn project(client: tendermint_datum.ClientDatum, status: Status) -> ClientView {

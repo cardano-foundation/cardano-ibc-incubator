@@ -1,3 +1,12 @@
+FROM golang:1.26.9 AS client-preparation
+WORKDIR /src/cosmos/cardano-probabilistic-light-client-v8
+COPY ./cosmos/cardano-probabilistic-light-client-core /src/cosmos/cardano-probabilistic-light-client-core
+COPY ./cosmos/cardano-probabilistic-light-client-v8 /src/cosmos/cardano-probabilistic-light-client-v8
+# Mithril certificate verification uses blst, which needs cgo. Link statically
+# so the binary runs in the Node image.
+RUN CGO_ENABLED=1 CGO_CFLAGS="-O2 -D__BLST_PORTABLE__" GOWORK=off go build -trimpath -tags netgo,osusergo \
+  -ldflags '-linkmode external -extldflags "-static"' -o /prepare-client ./cmd/prepare-client
+
 # Image proto type
 FROM node:22@sha256:8a34c4ab3ea2c5cd194f07e317b2a8f09461d3c8b05c4e34c8ccd56d56024c4d AS protos
 
@@ -16,6 +25,8 @@ ARG MAIN_CONTEXT=cardano/gateway
 # Create app directory
 WORKDIR /usr/src/app
 ENV NODE_PATH=/usr/src/app/node_modules
+ENV CARDANO_CLIENT_PREPARER=/usr/local/bin/cardano-client-prepare
+COPY --from=client-preparation /prepare-client /usr/local/bin/cardano-client-prepare
 
 # Bundle app source
 COPY ${MAIN_CONTEXT} .
@@ -24,6 +35,10 @@ COPY --from=protos /usr/src/proto-types /usr/proto-types
 COPY ./manifests /usr/src/app/manifests
 
 # Build local file dependencies that publish compiled artifacts from dist/.
+RUN npm ci --prefix /usr/packages/cardano-ibc-planner \
+  && npm run --prefix /usr/packages/cardano-ibc-planner build \
+  && rm -rf /usr/packages/cardano-ibc-planner/node_modules
+
 RUN npm ci --prefix /usr/packages/cardano-ibc-trace-registry \
   && npm run --prefix /usr/packages/cardano-ibc-trace-registry build
 

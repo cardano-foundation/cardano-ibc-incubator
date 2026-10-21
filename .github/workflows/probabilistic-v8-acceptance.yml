@@ -1,0 +1,52 @@
+name: Local v8 probabilistic recovery acceptance
+
+on:
+  pull_request:
+    paths:
+      - 'cosmos/cardano-probabilistic-light-client-core/**'
+      - 'cosmos/cardano-probabilistic-light-client-v8/**'
+      - 'cosmos/cardano-probabilistic-light-client-v10/**'
+      - 'caribic/**'
+      - 'chains/cosmos/**'
+      - '.github/workflows/probabilistic-v8-acceptance.yml'
+  workflow_dispatch:
+
+jobs:
+  host-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: cosmos/cardano-probabilistic-light-client-core/go.mod
+          cache-dependency-path: cosmos/cardano-probabilistic-light-client-core/go.sum
+      - name: Check adapter parity
+        run: node scripts/ci/check-light-client-parity.mjs
+      - name: Test the shared verifier and host interruption policy
+        working-directory: cosmos/cardano-probabilistic-light-client-core
+        run: go test ./...
+  challenge-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: cosmos/cardano-probabilistic-light-client-v8/go.mod
+          cache-dependency-path: cosmos/cardano-probabilistic-light-client-v8/go.sum
+      - name: Verify signed staged challenges and recovery
+        working-directory: cosmos/cardano-probabilistic-light-client-v8
+        env:
+          GOWORK: off
+        run: |
+          set -o pipefail
+          go test . -run 'TestOnlySnapshotStorage|TestAppAdmitsSnapshotChallenge|TestSignedPartialStakeUpload|TestSignedMaximumObservation|TestAppFollowingEpochActivation|TestAppFailedStagedRecovery|TestStakeOmission' -count=1 -v 2>&1 | tee /tmp/caribic-v8-acceptance.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: local-v8-snapshot-format
+          include-hidden-files: true
+          path: |
+            .caribic/test-artifacts/
+            /tmp/caribic-v8-acceptance.log

@@ -83,7 +83,7 @@ func run(input io.Reader, output io.Writer) error {
 		}
 		vrfKeyHash := blake2b.Sum256(result.VrfKey)
 		metadata = append(metadata, blockMetadata{
-			BlockHash:   block.Hash(),
+			BlockHash:   block.Hash().String(),
 			BlockNumber: block.BlockNumber(),
 			Slot:        block.SlotNumber(),
 			PoolIDHex:   block.IssuerVkey().Hash().String(),

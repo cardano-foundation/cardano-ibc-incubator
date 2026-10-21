@@ -1,35 +1,46 @@
 #!/usr/bin/env python3
 """Clock profile for the owned rehearsal's actual probabilistic counterparty.
 
-The supported verifier fixes its producer registration cutoff at 2026-01-01.
-Genesis registration is conservatively represented by slot 1, because slot 0
-means missing evidence. A newly created September-2026 chain cannot qualify any
-producer. Keep the verifier and registration facts intact; use a historical
-disposable genesis and a shared relative offset computed once before startup.
+The verifier requires six calendar months of registration age at its anchor.
+A backdated genesis alone does not qualify fresh pools. The owned fixture must
+produce real history while its clocks advance before any IBC client is created.
+Twenty million one-second slots leave a margin beyond six calendar months.
 """
 import datetime
+from fractions import Fraction
 import time
 
 UTC = datetime.timezone.utc
-REGISTRATION_CUTOFF = datetime.datetime(2026, 1, 1, tzinfo=UTC)
 REHEARSAL_START = datetime.datetime(2025, 12, 29, tzinfo=UTC)
+POOL_AGING_SECONDS = 20_000_000
+
+
+def require_mature_history(genesis, tip):
+    if genesis.get('slotLength') != 1 or type(tip.get('slot')) is not int or tip['slot'] < POOL_AGING_SECONDS:
+        raise ValueError('Restored network does not contain the required mature canonical history')
+
+
+def proof_readiness_timeout(genesis):
+    # Twenty-four blocks at the selected mainnet interval can take longer
+    # than ten minutes. This changes only the harness wait, never proof rules.
+    return 1800 if (genesis.get('securityParam') == 2160 and
+                    Fraction(str(genesis.get('activeSlotsCoeff', 0))) == Fraction(1, 20)) else 600
 
 
 def initial_offset(now=None):
     return int(REHEARSAL_START.timestamp()) - int(time.time() if now is None else now)
 
 
-def require_qualified_genesis(genesis):
+def require_aging_headroom(genesis, now=None):
     if genesis.get('slotLength') != 1:
         raise ValueError('Migration rehearsal requires one-second Cardano slots')
     start = datetime.datetime.fromisoformat(genesis['systemStart'].replace('Z', '+00:00'))
     if start.tzinfo is None:
         raise ValueError('Migration rehearsal genesis systemStart must include its UTC offset')
-    # With one-second slots, ceil(cutoff - systemStart) must exceed the
-    # authenticated genesis registration slot (1) for the strict comparison.
-    if (REGISTRATION_CUTOFF - start).total_seconds() <= 1:
+    current = time.time() if now is None else now
+    if start.timestamp() + POOL_AGING_SECONDS + 259200 > current:
         raise ValueError(
-            'Genesis cannot qualify its pools under the supported 2026-01-01 registration cutoff. '
+            'Genesis leaves insufficient clock headroom for real pool aging and the rehearsal. '
             'Create a fresh owned rehearsal with --clock-offset-seconds "$(python3 '
             'scripts/ci/aiken-contract-migration/migration-clock-profile.py)"; preserve verifier rules and registration evidence.'
         )

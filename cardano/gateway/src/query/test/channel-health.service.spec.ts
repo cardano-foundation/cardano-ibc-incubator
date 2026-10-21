@@ -4,7 +4,6 @@ import { ConfigService } from '@nestjs/config';
 import { ChannelService } from '../services/channel.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { HistoryService } from '../services/history.service';
 import { decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 
@@ -30,6 +29,7 @@ function makeChannelDatum(ordering: 'Ordered' | 'Unordered', pendingSequences: b
         connection_hops: [toHex('connection-0')],
         version: toHex('ics20-1'),
       },
+      upgrade: { pending: null, error_receipt: null, recv_start_sequence: 0n },
       next_sequence_send: 9n,
       next_sequence_recv: 1n,
       next_sequence_ack: 1n,
@@ -46,9 +46,10 @@ function makeChannelDatum(ordering: 'Ordered' | 'Unordered', pendingSequences: b
   };
 }
 
-function makeService() {
+function makeService(packetState?: any) {
   const lucidService = {
-    LucidImporter: {},
+    LucidImporter: { Data: { from: jest.fn() } },
+    findUtxoByUnit: jest.fn(),
     getChannelTokenUnit: jest.fn(() => ['policy', 'channel-token']),
     findUtxoAtWithUnit: jest.fn(async () => ({
       txHash: 'channel-utxo',
@@ -68,6 +69,7 @@ function makeService() {
       get: jest.fn((key: string) => {
         if (key === 'deployment') {
           return {
+            packetState,
             validators: {
               spendChannel: {
                 address: 'addr_test1...',
@@ -80,7 +82,6 @@ function makeService() {
     } as unknown as ConfigService,
     lucidService as unknown as LucidService,
     {} as KupoService,
-    {} as MithrilService,
     {} as HistoryService,
     {} as any,
       createTestTreeStore(),
@@ -124,4 +125,38 @@ describe('ChannelService.getChannelHealth', () => {
       pending_packet_commitment_count: '1',
     });
   });
+  it('reports lane obligations and disables sending on an unordered flushing channel', async () => {
+    const { packetLaneTokenName, sendSequencerTokenName } = await import('@cardano-ibc/tx-builder/dist/packet-lanes');
+    const datum: any = makeChannelDatum('Unordered', []);
+    datum.state.channel.state = 'Flushing';
+    datum.state.upgrade.pending = { flushed_lanes: 1n, counterparty_upgrade: null };
+    (decodeChannelDatum as jest.Mock).mockResolvedValue(datum);
+    const packetState = { laneCount: 2, state: { scriptHash: 'aa'.repeat(28) } };
+    const { service, lucidService } = makeService(packetState);
+    const data: Record<string, any> = {};
+    for (const lane of [0, 1]) {
+      data[packetState.state.scriptHash + packetLaneTokenName('transfer', 'channel-0', lane, 2)] = {
+        fields: [toHex('transfer'), toHex('channel-0'), BigInt(lane), 2n, 0n, '',
+          new Map(lane === 1 ? [[5n, 'aa']] : []), new Map(), new Map([[2n, 'bb']])],
+      };
+    }
+    data[packetState.state.scriptHash + sendSequencerTokenName('transfer', 'channel-0')] = {
+      fields: [toHex('transfer'), toHex('channel-0'), '', 11n],
+    };
+    lucidService.LucidImporter.Data.from.mockImplementation((value: string) => data[value]);
+    lucidService.findUtxoByUnit.mockImplementation(async (unit: string) => ({ datum: unit, assets: { [unit]: 1n } }));
+    const response = await service.getChannelHealth('channel-0');
+    expect(response).toMatchObject({
+      status: 'blocked', sending_available: false, next_sequence_send: '11',
+      pending_packet_commitment_sequences: ['5'],
+      flushing: { certified_lane_count: '1', remaining_lane_count: '1', awaiting_counterparty_upgrade: true },
+      packet_lanes: [
+        { lane: 0, certified_empty: true, pending_packet_commitment_sequences: [] },
+        { lane: 1, certified_empty: false, pending_packet_commitment_sequences: ['5'] },
+      ],
+    });
+    lucidService.findUtxoByUnit.mockRejectedValue(new Error('endpoint unavailable'));
+    await expect(service.getChannelHealth('channel-0')).rejects.toThrow('endpoint unavailable');
+  });
+
 });

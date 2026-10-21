@@ -102,7 +102,7 @@ Deno.test("tree witness verifier authenticates inclusion exclusion and the share
 
 Deno.test("tree witness verifier rejects malformed inputs", () => {
   const siblings = Array(64).fill(EMPTY_HASH);
-  for (const size of [0, 63, 65]) {
+  for (const size of [0, 63, 65, 66]) {
     assertThrows(
       () =>
         verifyIbcTreeWitness(
@@ -112,7 +112,6 @@ Deno.test("tree witness verifier rejects malformed inputs", () => {
           VECTOR_ROOT,
         ),
       Error,
-      "exactly 64 siblings",
     );
   }
   for (const invalid of ["", "00", "00".repeat(33), "g0".repeat(32)]) {
@@ -247,7 +246,7 @@ Deno.test("incremental tree validates byte hex before mutation", () => {
   }
 });
 
-Deno.test("incremental tree fails closed on path collisions including exclusion witnesses", () => {
+Deno.test("incremental tree rejects corrupted cached paths including exclusion witnesses", () => {
   const db = new DatabaseSync(":memory:");
   try {
     const tree = new IncrementalIbcTree(db);
@@ -257,23 +256,24 @@ Deno.test("incremental tree fails closed on path collisions including exclusion 
       0,
       16,
     );
-    // Simulate a second full key with the same truncated SHA-256 path without
-    // weakening production hashing or requiring a 64-bit collision search.
+    // A key stored under another key's route is cache corruption. Genuine
+    // collisions require both full key hashes to have the same first eight bytes.
     db.prepare("UPDATE ibc_tree_leaves SET key = ? WHERE path = ?")
       .run(Buffer.from("other-full-key"), path);
-    assertThrows(() => tree.set("target", "02"), Error, "path collision");
-    assertThrows(() => tree.set("target", ""), Error, "path collision");
-    assertThrows(() => tree.get("target"), Error, "path collision");
-    assertThrows(() => tree.getSiblings("target"), Error, "path collision");
+    assertThrows(() => tree.set("target", "02"), Error, "leaf path");
+    assertThrows(() => tree.set("target", ""), Error, "leaf path");
+    assertThrows(() => tree.get("target"), Error, "leaf path");
+    assertThrows(() => tree.getSiblings("target"), Error, "leaf path");
     assertEquals(tree.getRoot(), root);
     assertEquals(tree.entries(), [["other-full-key", "01"]]);
     assertThrows(() => tree.assertIntegrity(), Error, "rebuild");
-    assertThrows(() =>
-      db.prepare(
-        "INSERT INTO ibc_tree_leaves (key, path, value) VALUES (?, ?, ?)",
-      )
-        .run(Buffer.from("third-full-key"), path, "03")
-    );
+    // Multiple records may now occupy one route, but fabricated cached paths
+    // must still fail the complete integrity check.
+    db.prepare(
+      "INSERT INTO ibc_tree_leaves (key, path, value) VALUES (?, ?, ?)",
+    )
+      .run(Buffer.from("third-full-key"), path, "03");
+    assertThrows(() => tree.assertIntegrity(), Error, "rebuild");
   } finally {
     db.close();
   }

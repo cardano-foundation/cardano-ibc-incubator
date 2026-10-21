@@ -1,301 +1,72 @@
 package cardanodatum
 
 import (
-	"bytes"
-	"sort"
-	"strings"
-
-	"encoding/hex"
-
 	errorsmod "cosmossdk.io/errors"
+	codec "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core/commitmentcodec"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	connectiontypes "github.com/cosmos/ibc-go/v8/modules/core/03-connection/types"
 	channeltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
-	tmStruct "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
-	"github.com/fxamacker/cbor/v2"
+	tm "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
 )
 
-const (
-	CBOR_TAG_MAGIC_NUMBER = 121
-)
-
-func decodeHexToString(data []byte) string {
-	hexText := string(data[:])
-	hexBytes, _ := hex.DecodeString(hexText)
-	return string(hexBytes)
-}
-
-func (datumClientState ClientStateDatum) Cmp(tmClient *tmStruct.ClientState) error {
-	// chainIdString := decodeHexToString(datumClientState.ChainId[:])
-	chainIdString := string(datumClientState.ChainId[:])
-	if chainIdString != tmClient.ChainId {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ClientState: Chain Id mismatch, expect %s, got %s",
-			tmClient.ChainId,
-			chainIdString,
-		)
+func (datum *ClientStateDatum) UnmarshalCBOR(data []byte) error {
+	value, _, err := codec.DecodeClientState(data)
+	if err != nil {
+		return err
 	}
-	if datumClientState.TrustLevel.Denominator != tmClient.TrustLevel.Denominator ||
-		datumClientState.TrustLevel.Numerator != tmClient.TrustLevel.Numerator {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ClientState: TrustLevel mismatch, expect %v, got %v",
-			tmClient.TrustLevel,
-			datumClientState.TrustLevel,
-		)
-	}
-	if datumClientState.TrustingPeriod != uint64(tmClient.TrustingPeriod) {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ClientState: TrustingPeriod mismatch, expect %v, got %v",
-			uint64(tmClient.TrustingPeriod),
-			datumClientState.TrustingPeriod,
-		)
-	}
-	if datumClientState.UnbondingPeriod != uint64(tmClient.UnbondingPeriod) {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ClientState: UnbondingPeriod mismatch, expect %v, got %v",
-			uint64(tmClient.UnbondingPeriod),
-			datumClientState.UnbondingPeriod,
-		)
-	}
-	if datumClientState.MaxClockDrift != uint64(tmClient.MaxClockDrift) {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ClientState: MaxClockDrift mismatch, expect %v, got %v",
-			uint64(tmClient.MaxClockDrift),
-			datumClientState.MaxClockDrift,
-		)
-	}
-	if datumClientState.FrozenHeight.RevisionHeight != tmClient.FrozenHeight.RevisionHeight ||
-		datumClientState.FrozenHeight.RevisionNumber != tmClient.FrozenHeight.RevisionNumber {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ClientState: FrozenHeight mismatch, expect %s, got %s",
-			tmClient.FrozenHeight,
-			clienttypes.Height{
-				RevisionNumber: datumClientState.FrozenHeight.RevisionNumber,
-				RevisionHeight: datumClientState.FrozenHeight.RevisionHeight,
-			},
-		)
-	}
-
-	if datumClientState.LatestHeight.RevisionHeight != tmClient.LatestHeight.RevisionHeight ||
-		datumClientState.LatestHeight.RevisionNumber != tmClient.LatestHeight.RevisionNumber {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ClientState: LatestHeight mismatch, expect %s, got %s",
-			tmClient.LatestHeight,
-			clienttypes.Height{
-				RevisionNumber: datumClientState.LatestHeight.RevisionNumber,
-				RevisionHeight: datumClientState.LatestHeight.RevisionHeight,
-			},
-		)
-	}
-
-	// TODO: Compare proof specs (when required).
+	*datum = ClientStateDatum(value)
 	return nil
 }
 
-func (datumConsensusState ConsensusStateDatum) Cmp(tmConsensusState *tmStruct.ConsensusState) error {
-	if datumConsensusState.Timestamp != tmConsensusState.GetTimestamp() {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ConsensusState: Timestamp mismatch, expect %v, got %v",
-			tmConsensusState.GetTimestamp(),
-			datumConsensusState.Timestamp,
-		)
+func (datum ClientStateDatum) Cmp(expected *tm.ClientState) error {
+	if expected == nil {
+		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, "ClientState: expected state missing")
 	}
-
-	if !bytes.Equal(datumConsensusState.NextValidatorsHash, tmConsensusState.NextValidatorsHash) {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ConsensusState: NextValidatorsHash mismatch, expect %v, got %v",
-			tmConsensusState.NextValidatorsHash,
-			datumConsensusState.NextValidatorsHash,
-		)
-	}
-
-	if !bytes.Equal(datumConsensusState.Root.Hash, tmConsensusState.Root.Hash) {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ConsensusState: RootHash mismatch, expect %v, got %v",
-			tmConsensusState.Root.Hash,
-			datumConsensusState.Root.Hash,
-		)
-	}
-
-	return nil
+	return wrapComparison(codec.ClientStateDatum(datum).Compare(codec.TendermintClientStateValue{
+		ChainId: expected.ChainId, TrustLevel: TrustLevelDatum{Numerator: expected.TrustLevel.Numerator, Denominator: expected.TrustLevel.Denominator},
+		TrustingPeriod: expected.TrustingPeriod, UnbondingPeriod: expected.UnbondingPeriod, MaxClockDrift: expected.MaxClockDrift,
+		FrozenHeight: HeightDatum{RevisionNumber: expected.FrozenHeight.RevisionNumber, RevisionHeight: expected.FrozenHeight.RevisionHeight},
+		LatestHeight: HeightDatum{RevisionNumber: expected.LatestHeight.RevisionNumber, RevisionHeight: expected.LatestHeight.RevisionHeight},
+		ProofSpecs:   expected.ProofSpecs, UpgradePath: expected.UpgradePath,
+		AllowUpdateAfterExpiry: expected.AllowUpdateAfterExpiry, AllowUpdateAfterMisbehaviour: expected.AllowUpdateAfterMisbehaviour,
+	}))
 }
 
-func (datumConnectionEnd ConnectionEndDatum) Cmp(tmConnectionEnd connectiontypes.ConnectionEnd) error {
-	clientIdString := string(datumConnectionEnd.ClientId[:])
-	if clientIdString != tmConnectionEnd.ClientId {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ConnectionEnd: ClientId mismatch, expect %s, got %v",
-			tmConnectionEnd.ClientId,
-			clientIdString,
-		)
+func (datum ConsensusStateDatum) Cmp(expected *tm.ConsensusState) error {
+	if expected == nil {
+		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, "ConsensusState: expected state missing")
 	}
-	if len(datumConnectionEnd.Versions) != len(tmConnectionEnd.Versions) {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ConnectionEnd: Versions length mismatch, expect %v, got %v",
-			len(tmConnectionEnd.Versions),
-			len(datumConnectionEnd.Versions),
-		)
-	}
-	for i, versionValue := range datumConnectionEnd.Versions {
-		identifier := string(versionValue.Identifier[:])
-		if identifier != tmConnectionEnd.Versions[i].Identifier {
-			return errorsmod.Wrapf(
-				clienttypes.ErrFailedMembershipVerification,
-				"ConnectionEnd: Versions.Identifier mismatch, expect %s, got %s",
-				tmConnectionEnd.Versions[i].Identifier,
-				identifier,
-			)
-		}
-		if len(versionValue.Features) != len(tmConnectionEnd.Versions[i].Features) {
-			return errorsmod.Wrapf(
-				clienttypes.ErrFailedMembershipVerification,
-				"ConnectionEnd: Versions.Features length mismatch, expect %v, got %v",
-				len(tmConnectionEnd.Versions[i].Features),
-				len(versionValue.Features),
-			)
-		}
-		features := []string{}
-		expectedFeatures := tmConnectionEnd.Versions[i].Features
-		for _, featureValue := range versionValue.Features {
-			features = append(features, string(featureValue[:]))
-		}
-		sort.Strings(features)
-		sort.Strings(expectedFeatures)
-		if strings.Join(features[:], ",") != strings.Join(expectedFeatures[:], ",") {
-			return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, "ConnectionEnd: Versions.Features content mismatch")
-		}
-	}
-
-	datumConnectionEndStateNumber := (datumConnectionEnd.State.(cbor.Tag)).Number
-	datumConnectionEndState := connectiontypes.State(datumConnectionEndStateNumber - CBOR_TAG_MAGIC_NUMBER)
-	if datumConnectionEndState != tmConnectionEnd.State {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ConnectionEnd: State mismatch, expect %s, got %v",
-			tmConnectionEnd.State,
-			datumConnectionEndState,
-		)
-	}
-	counterPartyClientId := string(datumConnectionEnd.Counterparty.ClientId[:])
-	if counterPartyClientId != tmConnectionEnd.Counterparty.ClientId {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ConnectionEnd: Counterparty ClientId mismatch, expect %s, got %s",
-			tmConnectionEnd.Counterparty.ClientId,
-			counterPartyClientId,
-		)
-	}
-	counterPartyConnectionId := string(datumConnectionEnd.Counterparty.ConnectionId[:])
-	if counterPartyConnectionId != tmConnectionEnd.Counterparty.ConnectionId {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ConnectionEnd: Counterparty ConnectionId mismatch, expect %s, got %s",
-			tmConnectionEnd.Counterparty.ConnectionId,
-			counterPartyConnectionId,
-		)
-	}
-
-	if !bytes.Equal(datumConnectionEnd.Counterparty.Prefix.KeyPrefix, tmConnectionEnd.Counterparty.Prefix.KeyPrefix) {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ConnectionEnd: Counterparty Prefix mismatch, expect %v, got %v",
-			tmConnectionEnd.Counterparty.Prefix.KeyPrefix,
-			datumConnectionEnd.Counterparty.Prefix.KeyPrefix,
-		)
-	}
-
-	if datumConnectionEnd.DelayPeriod != tmConnectionEnd.DelayPeriod {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"ConnectionEnd: DelayPeriod mismatch, expect %v, got %v",
-			tmConnectionEnd.DelayPeriod,
-			datumConnectionEnd.DelayPeriod,
-		)
-	}
-	return nil
+	return wrapComparison(codec.ConsensusStateDatum(datum).Compare(codec.ConsensusStateValue{
+		Timestamp: expected.GetTimestamp(), NextValidatorsHash: expected.NextValidatorsHash, Root: expected.Root.Hash,
+	}))
 }
 
-func (channelDatum ChannelDatum) Cmp(expectedChannel channeltypes.Channel) error {
-	channelDatumStateNumber := (channelDatum.State.(cbor.Tag)).Number
-	channelDatumStateNumberState := channeltypes.State(channelDatumStateNumber - CBOR_TAG_MAGIC_NUMBER)
-	if channelDatumStateNumberState != expectedChannel.State {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"Channel: State mismatch, expect %s, got %s",
-			expectedChannel.State,
-			channelDatumStateNumberState,
-		)
+func (datum ConnectionEndDatum) Cmp(expected connectiontypes.ConnectionEnd) error {
+	versions := make([]codec.ConnectionVersionValue, len(expected.Versions))
+	for i, version := range expected.Versions {
+		if version == nil {
+			return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, "ConnectionEnd: missing version")
+		}
+		versions[i] = codec.ConnectionVersionValue{Identifier: version.Identifier, Features: version.Features}
 	}
+	return wrapComparison(codec.ConnectionEndDatum(datum).Compare(codec.ConnectionEndValue{
+		ClientId: expected.ClientId, Versions: versions, State: uint64(expected.State),
+		CounterpartyClientId: expected.Counterparty.ClientId, CounterpartyConnectionId: expected.Counterparty.ConnectionId,
+		CounterpartyPrefix: expected.Counterparty.Prefix.KeyPrefix, DelayPeriod: expected.DelayPeriod,
+	}))
+}
 
-	channelDatumOrderingNumber := (channelDatum.Ordering.(cbor.Tag)).Number
-	channelDatumOrderingNumberState := channeltypes.Order(channelDatumOrderingNumber - CBOR_TAG_MAGIC_NUMBER)
-	if channelDatumOrderingNumberState != expectedChannel.Ordering {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"Channel: Ordering mismatch, expect %s, got %s",
-			expectedChannel.Ordering,
-			channelDatumOrderingNumberState,
-		)
-	}
+func (datum ChannelDatum) Cmp(expected channeltypes.Channel) error {
+	return wrapComparison(codec.ChannelDatum(datum).Compare(codec.ChannelValue{
+		State: uint64(expected.State), Ordering: uint64(expected.Ordering),
+		CounterpartyPortId: expected.Counterparty.PortId, CounterpartyChannelId: expected.Counterparty.ChannelId,
+		ConnectionHops: expected.ConnectionHops, Version: expected.Version, UpgradeSequence: channelUpgradeSequence(expected),
+	}))
+}
 
-	counterpartyPortId := string(channelDatum.Counterparty.PortId[:])
-	if counterpartyPortId != expectedChannel.Counterparty.PortId {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"Channel: Counterparty PortId mismatch, expect %s, got %s",
-			expectedChannel.Counterparty.PortId,
-			counterpartyPortId,
-		)
-	}
-	counterpartyChannelId := string(channelDatum.Counterparty.ChannelId[:])
-	if counterpartyChannelId != expectedChannel.Counterparty.ChannelId {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"Channel: Counterparty ChannelId mismatch, expect %s, got %s",
-			expectedChannel.Counterparty.ChannelId,
-			counterpartyChannelId,
-		)
-	}
-
-	if len(channelDatum.ConnectionHops) != len(expectedChannel.ConnectionHops) {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"Channel: ConnectionHops length mismatch, expect %v, got %v",
-			len(expectedChannel.ConnectionHops),
-			len(channelDatum.ConnectionHops),
-		)
-	}
-	hops := []string{}
-	expectedHops := expectedChannel.ConnectionHops
-	for _, hopsValue := range channelDatum.ConnectionHops {
-		hops = append(hops, string(hopsValue[:]))
-	}
-	sort.Strings(hops)
-	sort.Strings(expectedHops)
-	if strings.Join(hops[:], ",") != strings.Join(expectedHops[:], ",") {
-		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, "Channel: ConnectionHops content mismatch")
-	}
-
-	versionString := string(channelDatum.Version[:])
-	if versionString != expectedChannel.Version {
-		return errorsmod.Wrapf(
-			clienttypes.ErrFailedMembershipVerification,
-			"Channel: Version mismatch, expect %s, got %s",
-			expectedChannel.Version,
-			versionString,
-		)
+func wrapComparison(err error) error {
+	if err != nil {
+		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, err.Error())
 	}
 	return nil
 }

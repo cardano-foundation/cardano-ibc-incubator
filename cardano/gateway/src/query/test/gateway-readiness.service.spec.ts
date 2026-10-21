@@ -1,4 +1,3 @@
-import { ConfigService } from '@nestjs/config';
 import { GatewayReadinessService } from '../services/gateway-readiness.service';
 import { resolveProofHeightForCurrentRoot } from '../services/proof-context';
 
@@ -8,9 +7,7 @@ jest.mock('../services/proof-context', () => ({
 
 describe('GatewayReadinessService', () => {
   let service: GatewayReadinessService;
-  let configServiceMock: { get: jest.Mock };
   let lucidServiceMock: { findUtxoAtHostStateNFT: jest.Mock };
-  let mithrilServiceMock: Record<string, unknown>;
   let historyServiceMock: {
     findTransactionEvidenceByHash: jest.Mock;
     findTxByHash: jest.Mock;
@@ -18,25 +15,16 @@ describe('GatewayReadinessService', () => {
   };
 
   beforeEach(() => {
-    configServiceMock = {
-      get: jest.fn().mockReturnValue('stake-weighted-stability'),
-    };
     lucidServiceMock = {
       findUtxoAtHostStateNFT: jest.fn(),
     };
-    mithrilServiceMock = {};
     historyServiceMock = {
       findTransactionEvidenceByHash: jest.fn(),
       findTxByHash: jest.fn(),
       findLatestBlock: jest.fn(),
     };
 
-    service = new GatewayReadinessService(
-      configServiceMock as unknown as ConfigService,
-      lucidServiceMock as any,
-      mithrilServiceMock as any,
-      historyServiceMock as any,
-    );
+    service = new GatewayReadinessService(lucidServiceMock as any, historyServiceMock as any);
   });
 
   afterEach(() => {
@@ -57,7 +45,6 @@ describe('GatewayReadinessService', () => {
     await expect(service.getReadinessStatus()).resolves.toEqual({
       status: 'ready',
       reason: 'ready',
-      lightClientMode: 'stake-weighted-stability',
       liveHostStateTxHash: 'ab'.repeat(32),
       proofHeight: '1234',
       detail: 'Current HostState root is ready for proof serving',
@@ -76,7 +63,6 @@ describe('GatewayReadinessService', () => {
     expect(resolveProofHeightForCurrentRoot).toHaveBeenCalledWith(
       expect.objectContaining({
         context: 'health/ready',
-        lightClientMode: 'stake-weighted-stability',
         maxAttempts: 1,
         delayMs: 0,
       }),
@@ -100,7 +86,6 @@ describe('GatewayReadinessService', () => {
     await expect(service.getReadinessStatus()).resolves.toEqual({
       status: 'not_ready',
       reason: 'waiting_for_yaci_history',
-      lightClientMode: 'stake-weighted-stability',
       liveHostStateTxHash: 'cd'.repeat(32),
       proofHeight: null,
       detail:

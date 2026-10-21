@@ -27,7 +27,9 @@ mod utils;
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum DemoType {
-    /// Starts the token-swap demo preset using a running bridge plus selected chain/network
+    /// Transfers tokens between Cardano and Cosmos or Injective
+    TokenTransfer,
+    /// Swaps a Cardano token through an Osmosis pool
     TokenSwap,
 }
 
@@ -35,6 +37,10 @@ enum DemoType {
 pub(crate) enum LightClientTest {
     /// Recover an expired probabilistic client through the ibc-go governance authority path
     RecoverClient,
+    /// Check signed staged challenges and recovery on isolated v8 applications
+    ChallengeRecovery,
+    /// Check committed deadline orderings and host interruption with the snapshot format
+    DeadlineOrdering,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
@@ -51,8 +57,6 @@ enum StartTarget {
     Dapp,
     /// Starts only the Hermes relayer
     Relayer,
-    /// Deprecated and disabled; retained for historical reference only
-    Mithril,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
@@ -71,8 +75,6 @@ enum StopTarget {
     Gateway,
     /// Stops only the Hermes relayer
     Relayer,
-    /// Stops only the Mithril services
-    Mithril,
 }
 
 #[derive(Parser)]
@@ -156,9 +158,6 @@ enum Commands {
         /// Cleans up the local environment before starting the services
         #[arg(long, default_value_t = false)]
         clean: bool,
-        /// Deprecated and disabled; use the default stake-weighted-stability light-client mode
-        #[arg(long, default_value_t = false)]
-        with_mithril: bool,
         /// Optional network profile for the managed Cardano runtime (local, preprod, preview)
         #[arg(long)]
         network: Option<String>,
@@ -166,7 +165,7 @@ enum Commands {
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
     },
-    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, dapp, demo, gateway, relayer, mithril
+    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, dapp, demo, gateway, relayer
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
@@ -254,11 +253,11 @@ enum Commands {
         #[command(subcommand)]
         command: SetupCommand,
     },
-    /// Starts a demo preset. Usage: `caribic demo token-swap --chain cosmos --network v8-classic`
+    /// Starts a demo preset. Usage: `caribic demo token-transfer --chain cosmos --network v8-classic`
     Demo {
         #[arg(value_enum)]
         use_case: DemoType,
-        /// Optional chain selector for demos that support multiple chains (currently token-swap)
+        /// Target chain (defaults to Cosmos for transfers and Osmosis for swaps)
         #[arg(long, value_enum)]
         chain: Option<start::OptionalChainId>,
         /// Optional network profile for the selected demo chain (for example: local, testnet)
@@ -422,10 +421,9 @@ async fn main() {
         Commands::Start {
             target,
             clean,
-            with_mithril,
             network,
             chain_flag,
-        } => commands::run_start(target, clean, with_mithril, network, chain_flag).await,
+        } => commands::run_start(target, clean, network, chain_flag).await,
         Commands::Keys { command } => commands::run_keys(project_root_path, command),
         Commands::HealthCheck { service } => {
             commands::run_health_check(project_root_path, service.as_deref())
@@ -497,6 +495,20 @@ async fn main() {
 #[cfg(test)]
 mod cli_tests {
     use super::*;
+
+    #[test]
+    fn transfer_and_swap_demo_names_select_different_workflows() {
+        for (name, expected) in [
+            ("token-transfer", DemoType::TokenTransfer),
+            ("token-swap", DemoType::TokenSwap),
+        ] {
+            let args = Args::try_parse_from(["caribic", "demo", name]).unwrap();
+            match args.command {
+                Commands::Demo { use_case, .. } => assert_eq!(use_case, expected),
+                _ => panic!("expected demo command"),
+            }
+        }
+    }
 
     #[test]
     fn local_start_has_one_provisioner() {

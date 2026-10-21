@@ -9,7 +9,7 @@ use aiken/primitive/bytearray
 use aiken/primitive/int
 use aiken/primitive/string
 use cardano/address.{Address, Credential, Script, VerificationKey}
-use cardano/assets.{PolicyId, Value, add, from_asset, zero}
+use cardano/assets.{PolicyId, Value, add, from_asset, quantity_of, zero}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Redeemer, Spend,
   Transaction, placeholder,
@@ -37,7 +37,8 @@ use ibc/core/ics_003_connection_semantics/types/keys as connection_keys
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/core/ics_004/channel_datum.{
-  ChannelDatum, ChannelDatumState, max_packet_entries_per_channel,
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+  max_packet_entries_per_channel,
 }
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, PrunePacketHistory as PruneChannelPacketHistory, RecvPacket,
@@ -166,7 +167,7 @@ test module_registration_cbor_matches_offchain_codec() {
 
 test host_state_datum_decodes_injective_compatibility_fixture() {
   let fixture =
-    #"d87984d8798701582042424242424242424242424242424242424242424242424242424242424242420203048007581c24242424242424242424242424242424242424242424242424242424581c17171717171717171717171717171717171717171717171717171717d87985a1487472616e73666572d87983581c11111111111111111111111111111111111111111111111111111111d87982581c222222222222222222222222222222222222222222222222222222224101d87982581c333333333333333333333333333333333333333333333333333333334102d87980000000"
+    #"d87984d8798701582042424242424242424242424242424242424242424242424242424242424242420203048007581c24242424242424242424242424242424242424242424242424242424581c17171717171717171717171717171717171717171717171717171717d87986a1487472616e73666572d87983581c11111111111111111111111111111111111111111111111111111111d87982581c222222222222222222222222222222222222222222222222222222224101d87982581c333333333333333333333333333333333333333333333333333333334102d8798000000000"
   expect Some(data) = cbor.deserialise(fixture)
   expect decoded: HostStateDatum = data
 
@@ -183,6 +184,7 @@ test host_state_datum_decodes_injective_compatibility_fixture() {
     nft_policy: #"24242424242424242424242424242424242424242424242424242424",
     deployer: #"17171717171717171717171717171717171717171717171717171717",
     control: HostStateControl {
+      last_heartbeat_time: 0,
       port_registry: [
         Pair(
           "transfer",
@@ -228,6 +230,7 @@ fn test_host_state_datum_with_control(
     nft_policy,
     deployer: trusted_deployer,
     control: HostStateControl {
+      last_heartbeat_time: 0,
       port_registry,
       shutdown,
       live_clients: 0,
@@ -264,6 +267,7 @@ fn test_channel(state: channel_state.ChannelState) -> Channel {
     },
     connection_hops: ["connection-0"],
     version: "ics20-1",
+    upgrade_sequence: 0,
   }
 }
 
@@ -283,6 +287,7 @@ fn test_channel_datum(
       packet_commitment,
       packet_receipt: [],
       packet_acknowledgement: [],
+      upgrade: initial_upgrade_state,
     },
     port_id: "transfer",
     token: test_channel_token(),
@@ -657,7 +662,27 @@ fn spend_host_state_with_backup(
     None,
     redeemer,
     test_host_ref(),
-    Transaction { ..placeholder, inputs, outputs, extra_signatories },
+    Transaction {
+      ..placeholder,
+      inputs,
+      outputs,
+      extra_signatories,
+      validity_range: when redeemer is {
+        Heartbeat -> {
+          expect Some(output) =
+            list.find(
+              outputs,
+              fn(o) {
+                quantity_of(o.value, test_nft_policy(), host_state_token_name) == 1
+              },
+            )
+          expect InlineDatum(raw) = output.datum
+          expect datum: HostStateDatum = raw
+          interval.between(0, datum.state.last_update_time)
+        }
+        _ -> placeholder.validity_range
+      },
+    },
   )
 }
 
@@ -714,31 +739,6 @@ test backup_claim_rejects_root_mutation() {
 
 test backup_claim_rejects_deployment_without_backup() {
   !claim_backup_as("", named_backup, [named_backup], False)
-}
-
-test old_deployer_cannot_heartbeat_after_backup_claim() {
-  let old_state = test_host_state(empty_ibc_state_root, 1)
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      last_update_time: old_state.last_update_time + 1,
-    }
-  let input = test_host_input(old_state)
-  let Input { output_reference: reference, output: old_output } = input
-  let old_datum =
-    HostStateDatum {
-      ..test_host_state_datum(old_state, test_nft_policy()),
-      deployer: named_backup,
-    }
-  let new_datum = HostStateDatum { ..old_datum, state: new_state }
-  !spend_host_state_with_backup(
-    Heartbeat,
-    [Input(reference, Output { ..old_output, datum: InlineDatum(old_datum) })],
-    [Output { ..test_host_output(new_state), datum: InlineDatum(new_datum) }],
-    [trusted_deployer],
-    named_backup,
-  )
 }
 
 type HostCase =
@@ -884,6 +884,7 @@ fn test_consensus_state(seed: Int) -> ConsensusState {
 
 fn test_client_state(latest_height: Height) -> ClientState {
   ClientState {
+    upgrade_path: [],
     chain_id: "chain-0",
     trust_level: UncheckedRational { numerator: 1, denominator: 3 },
     trusting_period: 1000,
@@ -1118,6 +1119,7 @@ fn test_channel_datum_full(
       packet_acknowledgement,
       minimum_receive_proof_height: height_mod.zero_height(),
       maximum_receive_proof_height: height_mod.zero_height(),
+      upgrade: initial_upgrade_state,
     },
     port_id: "transfer",
     token: test_channel_token(),
@@ -1316,7 +1318,7 @@ test host_create_client_rejects_counterfeit_client_policy() fail {
   let client_state_siblings = full_empty_siblings()
   let client_state_key = client_keys.full_client_state_path("07-tendermint-0")
   let consensus_state_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-0", "1")
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "0-1")
   let client_state_value = cbor.serialise(client_datum.state.client_state)
   let root_after_client_state =
     ibc_state_commitment.apply_update(
@@ -1364,7 +1366,7 @@ test host_create_client_rejects_datum_token_missing_from_output() fail {
   let client_state_siblings = full_empty_siblings()
   let client_state_key = client_keys.full_client_state_path("07-tendermint-0")
   let consensus_state_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-0", "1")
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "0-1")
   let client_state_value = cbor.serialise(client_datum.state.client_state)
   let root_after_client_state =
     ibc_state_commitment.apply_update(
@@ -1539,9 +1541,9 @@ fn prepare_host_update_client_capacity() -> Pair<HostStateRedeemer, Transaction>
     test_updated_client_datum_with_consensus_insert(seed)
   let client_state_key = client_keys.full_client_state_path("07-tendermint-0")
   let old_consensus_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-0", "1")
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "0-1")
   let new_consensus_key =
-    client_keys.full_client_consensus_state_path("07-tendermint-0", "2")
+    client_keys.full_client_consensus_state_path("07-tendermint-0", "0-2")
   let old_client_state_value =
     cbor.serialise(input_client_datum.state.client_state)
   let new_client_state_value =
@@ -3203,6 +3205,7 @@ test host_handle_packet_accepts_timeout_on_already_closed_channel() {
         proof_close: empty_proof(),
         proof_height: test_height(1),
         next_sequence_recv: 1,
+        counterparty_upgrade_sequence: 0,
       },
       test_channel_input_full(input_channel_datum),
       [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
@@ -5031,7 +5034,7 @@ test host_state_heartbeat_preserves_ibc_state() {
   spend_host_state_with_signatories(
     Heartbeat,
     [test_host_input(old_state)],
-    [test_host_output(new_state)],
+    [test_heartbeat_output(new_state)],
     [trusted_deployer],
   )
 }
@@ -5048,7 +5051,7 @@ test host_state_heartbeat_finds_host_output_first() {
   spend_host_state_with_signatories(
     Heartbeat,
     [test_host_input(old_state)],
-    [test_host_output(new_state), ..test_unrelated_outputs(8)],
+    [test_heartbeat_output(new_state), ..test_unrelated_outputs(8)],
     [trusted_deployer],
   )
 }
@@ -5064,7 +5067,7 @@ test host_state_heartbeat_finds_host_output_middle() {
   let outputs =
     list.concat(
       test_unrelated_outputs(4),
-      [test_host_output(new_state), ..test_unrelated_outputs(4)],
+      [test_heartbeat_output(new_state), ..test_unrelated_outputs(4)],
     )
 
   spend_host_state_with_signatories(
@@ -5084,29 +5087,13 @@ test host_state_heartbeat_finds_host_output_last() {
       last_update_time: old_state.last_update_time + 1,
     }
   let outputs =
-    list.concat(test_unrelated_outputs(8), [test_host_output(new_state)])
+    list.concat(test_unrelated_outputs(8), [test_heartbeat_output(new_state)])
 
   spend_host_state_with_signatories(
     Heartbeat,
     [test_host_input(old_state)],
     outputs,
     [trusted_deployer],
-  )
-}
-
-test host_state_heartbeat_rejects_unauthorized_signer() fail {
-  let old_state = test_host_state(#"11", 1000)
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      last_update_time: old_state.last_update_time + 1,
-    }
-
-  spend_host_state(
-    Heartbeat,
-    [test_host_input(old_state)],
-    [test_host_output(new_state)],
   )
 }
 
@@ -5123,7 +5110,7 @@ test host_state_heartbeat_rejects_root_change() fail {
   spend_host_state_with_signatories(
     Heartbeat,
     [test_host_input(old_state)],
-    [test_host_output(new_state)],
+    [test_heartbeat_output(new_state)],
     [trusted_deployer],
   )
 }
@@ -5141,19 +5128,7 @@ test host_state_heartbeat_rejects_counter_change() fail {
   spend_host_state_with_signatories(
     Heartbeat,
     [test_host_input(old_state)],
-    [test_host_output(new_state)],
-    [trusted_deployer],
-  )
-}
-
-test host_state_heartbeat_rejects_stale_timestamp() fail {
-  let old_state = test_host_state(#"11", 1000)
-  let new_state = HostState { ..old_state, version: old_state.version + 1 }
-
-  spend_host_state_with_signatories(
-    Heartbeat,
-    [test_host_input(old_state)],
-    [test_host_output(new_state)],
+    [test_heartbeat_output(new_state)],
     [trusted_deployer],
   )
 }
@@ -5190,7 +5165,17 @@ test host_state_heartbeat_rejects_shutdown_state() fail {
       address,
       value: from_asset(nft_policy, host_state_token_name, 1),
       datum: InlineDatum(
-        test_host_state_datum_with_shutdown(new_state, nft_policy, shutdown),
+        HostStateDatum {
+          ..test_host_state_datum_with_shutdown(new_state, nft_policy, shutdown),
+          control: HostStateControl {
+            ..test_host_state_datum_with_shutdown(
+              new_state,
+              nft_policy,
+              shutdown,
+            ).control,
+            last_heartbeat_time: new_state.last_update_time,
+          },
+        },
       ),
       reference_script: None,
     }
@@ -5363,7 +5348,7 @@ fn state_value_heartbeat(input_extra: Value, output_extra: Value) -> Bool {
       last_update_time: old_state.last_update_time + 1,
     }
   let input = test_host_input(old_state)
-  let output = test_host_output(new_state)
+  let output = test_heartbeat_output(new_state)
   let input =
     Input {
       ..input,
@@ -5534,8 +5519,9 @@ fn containment_host_case(operation: Int) -> HostCase {
         Transaction {
           ..placeholder,
           inputs: [test_host_input(old)],
-          outputs: [test_host_output(next)],
-          extra_signatories: [trusted_deployer],
+          outputs: [test_heartbeat_output(next)],
+          extra_signatories: [],
+          validity_range: interval.between(1_000, 2_000),
         },
       )
     }
@@ -6019,7 +6005,7 @@ fn create_registered_client(
   let client = ClientDatum { ..test_client_datum(1, seed), token }
   let state_key = client_keys.full_client_state_path(commitment_id)
   let consensus_key =
-    client_keys.full_client_consensus_state_path(commitment_id, "1")
+    client_keys.full_client_consensus_state_path(commitment_id, "0-1")
   let state_value = cbor.serialise(client.state.client_state)
   let client_state_siblings = full_empty_siblings()
   let after_client =
@@ -6131,5 +6117,89 @@ fn registered_client_cases() -> Fuzzer<client_registry_fixtures.RegistryCase> {
     seed,
     reverse,
     reverse_references,
+  )
+}
+
+fn test_heartbeat_output(state: HostState) -> Output {
+  let output = test_host_output(state)
+  expect InlineDatum(raw) = output.datum
+  expect datum: HostStateDatum = raw
+  Output {
+    ..output,
+    datum: InlineDatum(
+      HostStateDatum {
+        ..datum,
+        control: HostStateControl {
+          ..datum.control,
+          last_heartbeat_time: state.last_update_time,
+        },
+      },
+    ),
+  }
+}
+
+test heartbeat_does_not_depend_on_current_deployer() {
+  let old_state = test_host_state(empty_ibc_state_root, 1)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      last_update_time: old_state.last_update_time + 1,
+    }
+  let input = test_host_input(old_state)
+  let Input { output_reference: reference, output: old_output } = input
+  let old_datum =
+    HostStateDatum {
+      ..test_host_state_datum(old_state, test_nft_policy()),
+      deployer: named_backup,
+    }
+  let new_datum =
+    HostStateDatum {
+      ..old_datum,
+      state: new_state,
+      control: HostStateControl {
+        ..old_datum.control,
+        last_heartbeat_time: new_state.last_update_time,
+      },
+    }
+  spend_host_state_with_backup(
+    Heartbeat,
+    [Input(reference, Output { ..old_output, datum: InlineDatum(old_datum) })],
+    [
+      Output {
+        ..test_heartbeat_output(new_state),
+        datum: InlineDatum(new_datum),
+      },
+    ],
+    [trusted_deployer],
+    named_backup,
+  )
+}
+
+test host_state_heartbeat_accepts_independent_relayer() {
+  let old_state = test_host_state(#"11", 1000)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      last_update_time: old_state.last_update_time + 1,
+    }
+
+  spend_host_state(
+    Heartbeat,
+    [test_host_input(old_state)],
+    [test_heartbeat_output(new_state)],
+  )
+}
+
+test host_state_heartbeat_rejects_missing_heartbeat_clock() fail {
+  let old_state = test_host_state(#"11", 1000)
+  let new_state = HostState { ..old_state, version: old_state.version + 1 }
+
+  spend_host_state_with_signatories(
+    Heartbeat,
+    [test_host_input(old_state)],
+    [test_host_output(new_state)],
+    [trusted_deployer],
   )
 }

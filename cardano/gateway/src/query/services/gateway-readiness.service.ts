@@ -1,12 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
 import { resolveProofHeightForCurrentRoot } from './proof-context';
 import { getStabilityPolicy } from './stability-scoring';
 
-type GatewayLightClientMode = 'mithril' | 'stake-weighted-stability';
 type GatewayReadinessReason = 'ready' | 'waiting_for_yaci_history' | 'waiting_for_stability' | 'history_status_unknown';
 
 type GatewayHistoryReadinessStatus = {
@@ -23,7 +20,6 @@ type GatewayHistoryReadinessStatus = {
 type GatewayReadinessStatus = {
   status: 'ready' | 'not_ready';
   reason: GatewayReadinessReason;
-  lightClientMode: GatewayLightClientMode;
   liveHostStateTxHash: string | null;
   proofHeight: string | null;
   detail: string;
@@ -54,14 +50,11 @@ export class GatewayReadinessService {
   private readonly logger = new Logger(GatewayReadinessService.name);
 
   constructor(
-    private readonly configService: ConfigService,
     private readonly lucidService: LucidService,
-    private readonly mithrilService: MithrilService,
     @Inject(HISTORY_SERVICE) private readonly historyService: HistoryService,
   ) {}
 
   async getReadinessStatus(): Promise<GatewayReadinessStatus> {
-    const lightClientMode = this.getLightClientMode();
     let liveHostStateTxHash: string | null = null;
 
     try {
@@ -72,10 +65,8 @@ export class GatewayReadinessService {
         resolveProofHeightForCurrentRoot({
           logger: this.logger,
           lucidService: this.lucidService,
-          mithrilService: this.mithrilService,
           historyService: this.historyService,
           context: 'health/ready',
-          lightClientMode,
           maxAttempts: 1,
           delayMs: 0,
         }),
@@ -87,7 +78,6 @@ export class GatewayReadinessService {
       return {
         status: 'ready',
         reason: 'ready',
-        lightClientMode,
         liveHostStateTxHash,
         proofHeight: proofHeight.toString(),
         detail: 'Current HostState root is ready for proof serving',
@@ -100,7 +90,6 @@ export class GatewayReadinessService {
       return {
         status: 'not_ready',
         reason: history.reason,
-        lightClientMode,
         liveHostStateTxHash,
         proofHeight: null,
         detail:
@@ -111,10 +100,6 @@ export class GatewayReadinessService {
         history,
       };
     }
-  }
-
-  private getLightClientMode(): GatewayLightClientMode {
-    return this.configService.get('cardanoLightClientMode') === 'mithril' ? 'mithril' : 'stake-weighted-stability';
   }
 
   private async buildHistoryReadinessStatus(

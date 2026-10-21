@@ -6,7 +6,6 @@ import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { HistoryService } from '../services/history.service';
 import { loadSync, ServiceDefinition } from '@grpc/proto-loader';
@@ -24,10 +23,7 @@ describe('QueryService queryEvents', () => {
     } as unknown as Logger;
 
     const configServiceMock = {
-      get: jest.fn().mockImplementation((key: string) => {
-        if (key === 'cardanoLightClientMode') return 'stake-weighted-stability';
-        return undefined;
-      }),
+      get: jest.fn().mockReturnValue(undefined),
     } as unknown as ConfigService;
 
     const historyServiceMock = {
@@ -43,7 +39,6 @@ describe('QueryService queryEvents', () => {
       {} as KupoService,
       historyServiceMock,
       {} as MiniProtocalsService,
-      {} as MithrilService,
       {} as DenomTraceService,
       {} as any,
       createTestTreeStore(),

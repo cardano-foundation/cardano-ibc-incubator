@@ -1,23 +1,44 @@
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { gunzipSync, gzipSync } from 'node:zlib';
+import { resolve } from 'node:path';
+import { QueryIBCHeaderRequest, QueryIBCHeaderResponse } from '@cardano-ibc/proto-types/build/ibc/core/types/v1/query';
+import { QueryNewClientRequest, QueryNewClientResponse, QueryLatestHeightRequest, QueryLatestHeightResponse } from '@cardano-ibc/proto-types/ibc/core/client/v1/query';
+import { QueryMithrilStakeCertificatesRequest, QueryMithrilStakeCertificatesResponse } from '@cardano-ibc/proto-types/ibc/core/types/v1/query';
+import * as grpc from '@grpc/grpc-js';
+import { Cbor, CborArray, CborBytes, CborUInt } from '@harmoniclabs/cbor';
 import { createPacketStateMock } from '../../shared/testing/packet-state-test-mock';
 import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   ClientState as ClientStateProbabilistic,
-  ConsensusState as ConsensusStateProbabilistic,
+  MithrilStakeCertificates,
   ProbabilisticHeader,
+  ProbabilisticBlock,
+  EpochContext,
+  ConsensusState,
 } from '@cardano-ibc/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic';
 import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { HistoryService } from '../services/history.service';
 import { bech32 } from 'bech32';
+import { queryPraosNoncesAtPoint } from '../../shared/helpers/ogmios';
+import { MithrilService } from '../../shared/modules/mithril/mithril.service';
+import { HttpService } from '@nestjs/axios';
+import { productionAtAnchor } from '../services/pool-production';
 
+jest.mock('../../shared/helpers/ogmios', () => ({
+  ...jest.requireActual('../../shared/helpers/ogmios'),
+  queryPraosNoncesAtPoint: jest.fn(),
+}));
+
+// Settlement fixtures begin after more than six months of registration history.
+const MATURE_POOL_SLOT = 20_000_000n;
 const STABILITY_SLOT_ORIGIN_NS = 1_700_000_000_000_000_000n;
-const timestampForSlot = (slot: bigint) => STABILITY_SLOT_ORIGIN_NS + slot * 1_000_000_000n;
+const timestampForSlot = (slot: bigint) => STABILITY_SLOT_ORIGIN_NS + (MATURE_POOL_SLOT + slot) * 1_000_000_000n;
 const operationalCertificatePoolId = (byte: number) => bech32.encode('pool', bech32.toWords(Buffer.alloc(28, byte)));
 const stabilityDescendantBlocks = Array.from({ length: 24 }, (_, index) => {
   const height = 101 + index;
@@ -26,245 +47,184 @@ const stabilityDescendantBlocks = Array.from({ length: 24 }, (_, index) => {
     height,
     hash: `hash-${height}`,
     prevHash: index === 0 ? 'anchor-hash' : `hash-${height - 1}`,
-    slotNo: slot,
+    slotNo: MATURE_POOL_SLOT + slot,
     epochNo: 7,
     timestampUnixNs: timestampForSlot(slot),
     slotLeader: `pool-${String.fromCharCode(97 + (index % 5))}`,
   };
 });
 
-describe('QueryService stability anchor contract', () => {
-  let service: QueryService;
-  let loggerMock: {
-    log: jest.Mock;
-    warn: jest.Mock;
-    error: jest.Mock;
-    debug: jest.Mock;
-  };
-  let lucidServiceMock: {
-    decodeDatum: jest.Mock;
-    findUtxoAtHostStateNFT: jest.Mock;
-    LucidImporter: {
-      SLOT_CONFIG_NETWORK: {
-        Preview: {
-          zeroTime: number;
-          slotLength: number;
-        };
+let service: QueryService;
+let loggerMock: {
+  log: jest.Mock;
+  warn: jest.Mock;
+  error: jest.Mock;
+  debug: jest.Mock;
+};
+let lucidServiceMock: {
+  decodeDatum: jest.Mock;
+  findUtxoAtHostStateNFT: jest.Mock;
+  LucidImporter: {
+    SLOT_CONFIG_NETWORK: {
+      Preview: {
+        zeroTime: number;
+        slotLength: number;
       };
     };
   };
-  let historyServiceMock: {
-    findLatestBlock: jest.Mock;
-    findBlockByHeight: jest.Mock;
-    findDescendantBlocks: jest.Mock;
-    findEpochContextAtBlock: jest.Mock;
-    findOperationalCertificateCountersAtBlock: jest.Mock;
-    findBridgeBlocks: jest.Mock;
-    findHostStateUtxoAtOrBeforeBlockNo: jest.Mock;
-    findTransactionEvidenceByHash: jest.Mock;
+};
+let historyServiceMock: {
+  findLatestBlock: jest.Mock;
+  findBlockByHeight: jest.Mock;
+  findDescendantBlocks: jest.Mock;
+  findObservedPoolProductionAtBlock: jest.Mock;
+  findEpochContextAtBlock: jest.Mock;
+  findOperationalCertificateCountersAtBlock: jest.Mock;
+  findBridgeBlocks: jest.Mock;
+  findHostStateUtxoAtOrBeforeBlockNo: jest.Mock;
+  findTransactionEvidenceByHash: jest.Mock;
+};
+let miniProtocalsServiceMock: {
+  fetchBlockCbor: jest.Mock;
+  fetchBlocksCbor: jest.Mock;
+  extractBlockHeaderCbor: jest.Mock;
+};
+
+beforeEach(() => {
+  loggerMock = {
+    log: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
   };
-  let miniProtocalsServiceMock: {
-    fetchBlocksCbor: jest.Mock;
-    extractBlockHeaderCbor: jest.Mock;
-  };
 
-  beforeEach(() => {
-    loggerMock = {
-      log: jest.fn(),
-      warn: jest.fn(),
-      error: jest.fn(),
-      debug: jest.fn(),
-    };
-
-    const configServiceMock = {
-      get: jest.fn().mockImplementation((key: string) => {
-        if (key === 'cardanoLightClientMode') return 'stake-weighted-stability';
-        if (key === 'cardanoChainId') return 'cardano-devnet';
-        if (key === 'cardanoNetwork') return 'Preview';
-        if (key === 'cardanoClientMaxClockDriftSeconds') return 17;
-        if (key === 'deployment') {
-          return {
-            packetState: { state: { scriptHash: 'cc'.repeat(28) }, laneCount: 16 },
-            hostStateNFT: {
-              policyId: 'a'.repeat(56),
-              name: 'b'.repeat(64),
-            },
-          };
-        }
-        return undefined;
-      }),
-    } as unknown as ConfigService;
-
-    historyServiceMock = {
-      findLatestBlock: jest.fn().mockResolvedValue({
-        height: 105,
-        hash: 'latest-hash',
-        prevHash: 'hash-104',
-        slotNo: 1050n,
-        epochNo: 7,
-        timestampUnixNs: timestampForSlot(1050n),
-        slotLeader: 'pool-e',
-      }),
-      findBlockByHeight: jest.fn().mockImplementation(async (height: bigint) => {
-        if (height === 98n) {
-          return {
-            height: 98,
-            hash: 'hash-98',
-            prevHash: 'hash-97',
-            slotNo: 980n,
-            epochNo: 7,
-            timestampUnixNs: timestampForSlot(980n),
-            slotLeader: 'pool-z',
-          };
-        }
+  const configServiceMock = {
+    get: jest.fn().mockImplementation((key: string) => {
+      if (key === 'ogmiosEndpoint') return 'ws://bootstrap-node';
+      if (key === 'cardanoRandomnessStabilisationWindowSlots') return '100';
+      if (key === 'cardanoChainId') return 'cardano-devnet';
+      if (key === 'cardanoNetwork') return 'Preview';
+      if (key === 'cardanoClientMaxClockDriftSeconds') return 17;
+      if (key === 'deployment') {
         return {
-          height: 100,
-          hash: 'anchor-hash',
-          prevHash: 'prev-hash',
-          slotNo: 1000n,
-          epochNo: 7,
-          timestampUnixNs: timestampForSlot(1000n),
-          slotLeader: 'pool-a',
+          packetState: { state: { scriptHash: 'cc'.repeat(28) }, laneCount: 16 },
+          hostStateNFT: {
+            policyId: 'a'.repeat(56),
+            name: 'b'.repeat(64),
+          },
         };
-      }),
-      findDescendantBlocks: jest.fn().mockResolvedValue(stabilityDescendantBlocks),
-      findEpochContextAtBlock: jest.fn().mockResolvedValue({
-        epoch: 7,
-        stakeDistribution: [
-          {
-            poolId: 'pool-a',
-            stake: 200n,
-            relativeStakeNumerator: 1n,
-            relativeStakeDenominator: 5n,
-            vrfKeyHash: 'aa'.repeat(32),
-            firstRegistrationSlot: 1n,
-          },
-          {
-            poolId: 'pool-b',
-            stake: 200n,
-            relativeStakeNumerator: 1n,
-            relativeStakeDenominator: 5n,
-            vrfKeyHash: 'bb'.repeat(32),
-            firstRegistrationSlot: 1n,
-          },
-          {
-            poolId: 'pool-c',
-            stake: 200n,
-            relativeStakeNumerator: 1n,
-            relativeStakeDenominator: 5n,
-            vrfKeyHash: 'cc'.repeat(32),
-            firstRegistrationSlot: 1n,
-          },
-          {
-            poolId: 'pool-d',
-            stake: 200n,
-            relativeStakeNumerator: 1n,
-            relativeStakeDenominator: 5n,
-            vrfKeyHash: 'dd'.repeat(32),
-            firstRegistrationSlot: 1n,
-          },
-          {
-            poolId: 'pool-e',
-            stake: 200n,
-            relativeStakeNumerator: 1n,
-            relativeStakeDenominator: 5n,
-            vrfKeyHash: 'ee'.repeat(32),
-            firstRegistrationSlot: 1n,
-          },
-        ],
-        verificationContext: {
-          epochNonce: '11'.repeat(32),
-          slotsPerKesPeriod: 129600,
-          activeSlotCoefficientNumerator: 1n,
-          activeSlotCoefficientDenominator: 20n,
-          maxKesEvolutions: 62,
-          currentEpochStartSlot: 900n,
-          currentEpochEndSlotExclusive: 3000n,
-        },
-      }),
-      findOperationalCertificateCountersAtBlock: jest.fn().mockResolvedValue(
-        new Map([
-          [operationalCertificatePoolId(0xff), 9n],
-          [operationalCertificatePoolId(0), 3n],
-          [operationalCertificatePoolId(0x11), 0n],
-        ]),
-      ),
-      findBridgeBlocks: jest.fn().mockResolvedValue([
-        {
-          height: 99,
-          hash: 'hash-99',
-          prevHash: 'hash-98',
-          slotNo: 990n,
+      }
+      return undefined;
+    }),
+  } as unknown as ConfigService;
+
+  historyServiceMock = {
+    findObservedPoolProductionAtBlock: jest.fn().mockImplementation(async (point) => ({ epoch: BigInt(point.epochNo), pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) })),
+    findLatestBlock: jest.fn().mockResolvedValue({
+      height: 105,
+      hash: 'latest-hash',
+      prevHash: 'hash-104',
+      slotNo: MATURE_POOL_SLOT + 1050n,
+      epochNo: 7,
+      timestampUnixNs: timestampForSlot(1050n),
+      slotLeader: 'pool-e',
+    }),
+    findBlockByHeight: jest.fn().mockImplementation(async (height: bigint) => {
+      if (height === 98n) {
+        return {
+          height: 98,
+          hash: 'hash-98',
+          prevHash: 'hash-97',
+          slotNo: MATURE_POOL_SLOT + 980n,
           epochNo: 7,
-          timestampUnixNs: timestampForSlot(990n),
+          timestampUnixNs: timestampForSlot(980n),
           slotLeader: 'pool-z',
+        };
+      }
+      return {
+        height: 100,
+        hash: 'anchor-hash',
+        prevHash: 'prev-hash',
+        slotNo: MATURE_POOL_SLOT + 1000n,
+        epochNo: 7,
+        timestampUnixNs: timestampForSlot(1000n),
+        slotLeader: 'pool-a',
+      };
+    }),
+    findDescendantBlocks: jest.fn().mockResolvedValue(stabilityDescendantBlocks),
+    findEpochContextAtBlock: jest.fn().mockResolvedValue({
+      epoch: 7,
+      stakeDistribution: [
+        {
+          poolId: 'pool-a',
+          stake: 200n,
+          relativeStakeNumerator: 1n,
+          relativeStakeDenominator: 5n,
+          vrfKeyHash: 'aa'.repeat(32),
+          firstRegistrationSlot: 1n,
         },
-      ]),
-      findHostStateUtxoAtOrBeforeBlockNo: jest.fn().mockResolvedValue({
-        txHash: 'host-state-tx',
-        txId: 1,
-        outputIndex: 0,
-        address: 'addr_test1...',
-        assetsPolicy: 'a'.repeat(56),
-        assetsName: 'b'.repeat(64),
-        datumHash: 'cd'.repeat(32),
-        datum: 'datum-cbor',
-        blockNo: 99,
-        blockId: 99,
-        index: 0,
-      }),
-      findTransactionEvidenceByHash: jest.fn().mockResolvedValue({
-        txHash: 'host-state-tx',
-        blockNo: 99,
-        txIndex: 0,
-        txCborHex: '01',
-        txBodyCborHex: '02',
-        redeemers: [],
-      }),
-    };
-
-    lucidServiceMock = {
-      decodeDatum: jest.fn().mockResolvedValue({ state: { ibc_state_root: 'ab'.repeat(32) } }),
-      findUtxoAtHostStateNFT: jest.fn(),
-      LucidImporter: {
-        SLOT_CONFIG_NETWORK: {
-          Preview: {
-            zeroTime: 1_700_000_000_000,
-            slotLength: 1_000,
-          },
+        {
+          poolId: 'pool-b',
+          stake: 200n,
+          relativeStakeNumerator: 1n,
+          relativeStakeDenominator: 5n,
+          vrfKeyHash: 'bb'.repeat(32),
+          firstRegistrationSlot: 1n,
         },
+        {
+          poolId: 'pool-c',
+          stake: 200n,
+          relativeStakeNumerator: 1n,
+          relativeStakeDenominator: 5n,
+          vrfKeyHash: 'cc'.repeat(32),
+          firstRegistrationSlot: 1n,
+        },
+        {
+          poolId: 'pool-d',
+          stake: 200n,
+          relativeStakeNumerator: 1n,
+          relativeStakeDenominator: 5n,
+          vrfKeyHash: 'dd'.repeat(32),
+          firstRegistrationSlot: 1n,
+        },
+        {
+          poolId: 'pool-e',
+          stake: 200n,
+          relativeStakeNumerator: 1n,
+          relativeStakeDenominator: 5n,
+          vrfKeyHash: 'ee'.repeat(32),
+          firstRegistrationSlot: 1n,
+        },
+      ],
+      verificationContext: {
+        epochNonce: '11'.repeat(32),
+        slotsPerKesPeriod: 129600,
+        activeSlotCoefficientNumerator: 1n,
+        activeSlotCoefficientDenominator: 20n,
+        maxKesEvolutions: 62,
+        currentEpochStartSlot: MATURE_POOL_SLOT + 900n,
+        currentEpochEndSlotExclusive: MATURE_POOL_SLOT + 3000n,
       },
-    };
-    miniProtocalsServiceMock = {
-      fetchBlocksCbor: jest.fn().mockImplementation(async (blocks: unknown[]) => blocks.map(() => Buffer.from([1]))),
-      extractBlockHeaderCbor: jest.fn((blockCbor: Buffer) => Buffer.alloc(860, blockCbor[0] ?? 0)),
-    };
-
-    service = new QueryService(
-      loggerMock as unknown as Logger,
-      configServiceMock,
-      lucidServiceMock as unknown as LucidService,
-      {} as KupoService,
-      historyServiceMock as unknown as HistoryService,
-      miniProtocalsServiceMock as unknown as MiniProtocalsService,
-      {} as MithrilService,
-      {} as DenomTraceService,
-      {} as any,
-      createTestTreeStore(),
-      createPacketStateMock() as any,
-    );
-  });
-
-  it('bootstraps unchanged HostState and packet roots at a later settled height', async () => {
-    const response = await service.queryNewClient({ height: 100n } as any);
-    const client = ClientStateProbabilistic.decode(response.client_state!.value);
-    const consensus = ConsensusStateProbabilistic.decode(response.consensus_state!.value);
-    expect(client.latest_height?.revision_height).toBe(100n);
-    expect(consensus.packet_state_snapshot.length).toBeGreaterThan(0);
-  });
-
-  it('populates flattened epoch verifier fields in the initial probabilistic client payload', async () => {
-    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
+    }),
+    findOperationalCertificateCountersAtBlock: jest.fn().mockResolvedValue(
+      new Map([
+        [operationalCertificatePoolId(0xff), 9n],
+        [operationalCertificatePoolId(0), 3n],
+        [operationalCertificatePoolId(0x11), 0n],
+      ]),
+    ),
+    findBridgeBlocks: jest.fn().mockResolvedValue([
+      {
+        height: 99,
+        hash: 'hash-99',
+        prevHash: 'hash-98',
+        slotNo: MATURE_POOL_SLOT + 990n,
+        epochNo: 7,
+        timestampUnixNs: timestampForSlot(990n),
+        slotLeader: 'pool-z',
+      },
+    ]),
+    findHostStateUtxoAtOrBeforeBlockNo: jest.fn().mockResolvedValue({
       txHash: 'host-state-tx',
       txId: 1,
       outputIndex: 0,
@@ -273,68 +233,121 @@ describe('QueryService stability anchor contract', () => {
       assetsName: 'b'.repeat(64),
       datumHash: 'cd'.repeat(32),
       datum: 'datum-cbor',
-      blockNo: 100,
-      blockId: 100,
+      blockNo: 99,
+      blockId: 99,
       index: 0,
-    });
-    lucidServiceMock.decodeDatum.mockResolvedValue({
-      state: {
-        ibc_state_root: 'ab'.repeat(32),
-      },
-    });
-
-    const response = await service.queryNewClient({ height: 100n } as any);
-    const clientState = ClientStateProbabilistic.decode(response.client_state!.value);
-    const consensusState = ConsensusStateProbabilistic.decode(response.consensus_state!.value);
-
-    expect(clientState.epoch_contexts).toHaveLength(1);
-    expect(clientState.epoch_nonce).toHaveLength(32);
-    expect(clientState.epoch_nonce).toEqual(clientState.epoch_contexts[0].epoch_nonce);
-    expect(clientState.epoch_stake_distribution).toEqual(clientState.epoch_contexts[0].stake_distribution);
-    expect(clientState.slots_per_kes_period).toBe(129600n);
-    expect(clientState.active_slot_coefficient_numerator).toBe(1n);
-    expect(clientState.active_slot_coefficient_denominator).toBe(20n);
-    expect(clientState.epoch_contexts[0].stake_distribution[0].relative_stake_numerator).toBe(1n);
-    expect(clientState.epoch_contexts[0].stake_distribution[0].relative_stake_denominator).toBe(5n);
-    expect(clientState.current_epoch_start_slot).toBe(900n);
-    expect(clientState.current_epoch_end_slot_exclusive).toBe(3000n);
-    expect(clientState.system_start_unix_ns).toBe(STABILITY_SLOT_ORIGIN_NS);
-    expect(clientState.slot_length_ns).toBe(1_000_000_000n);
-    expect(clientState.latest_checkpoint_height).toEqual(clientState.latest_height);
-    expect(clientState.latest_checkpoint_block_hash).toBe('anchor-hash');
-    expect(clientState.latest_checkpoint_epoch).toBe(7n);
-    expect(clientState.latest_checkpoint_slot).toBe(1000n);
-    expect(clientState.latest_checkpoint_timestamp).toBe(timestampForSlot(1000n));
-    expect(clientState.max_clock_drift).toEqual({ seconds: 17n, nanos: 0 });
-    expect(clientState.max_kes_evolutions).toBe(62n);
-    expect(clientState.operational_certificate_counter_history_start_height).toEqual(clientState.latest_height);
-    expect(
-      clientState.latest_checkpoint_operational_certificate_counters.map((counter) => ({
-        poolId: Buffer.from(counter.pool_id).toString('hex'),
-        sequenceNumber: counter.sequence_number,
-      })),
-    ).toEqual([
-      { poolId: '00'.repeat(28), sequenceNumber: 3n },
-      { poolId: 'ff'.repeat(28), sequenceNumber: 9n },
-    ]);
-    expect(consensusState.timestamp).toBe(timestampForSlot(1000n));
-    expect(historyServiceMock.findOperationalCertificateCountersAtBlock).toHaveBeenCalledWith(
-      expect.objectContaining({ height: 100, hash: 'anchor-hash' }),
-    );
-  });
-
-  it('rejects stability new-client creation without an exact operational certificate response', async () => {
-    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
+    }),
+    findTransactionEvidenceByHash: jest.fn().mockResolvedValue({
       txHash: 'host-state-tx',
-      datum: 'datum-cbor',
-      blockNo: 100,
-    });
-    historyServiceMock.findOperationalCertificateCountersAtBlock.mockResolvedValue(undefined);
+      blockNo: 99,
+      txIndex: 0,
+      txCborHex: '01',
+      txBodyCborHex: '02',
+      redeemers: [],
+    }),
+  };
 
-    await expect(service.queryNewClient({ height: 100n } as any)).rejects.toThrow(
-      'operational certificate counter snapshot is unavailable',
+  lucidServiceMock = {
+    decodeDatum: jest.fn().mockResolvedValue({ state: { ibc_state_root: 'ab'.repeat(32) } }),
+    findUtxoAtHostStateNFT: jest.fn(),
+    LucidImporter: {
+      SLOT_CONFIG_NETWORK: {
+        Preview: {
+          zeroTime: 1_700_000_000_000,
+          slotLength: 1_000,
+        },
+      },
+    },
+  };
+  miniProtocalsServiceMock = {
+    fetchBlockCbor: jest.fn().mockResolvedValue(Buffer.from([0])),
+    fetchBlocksCbor: jest.fn().mockImplementation(async (blocks: unknown[]) => blocks.map(() => Buffer.from([1]))),
+    extractBlockHeaderCbor: jest.fn((blockCbor: Buffer) =>
+      blockCbor[0] === 0
+        ? Buffer.from(
+            Cbor.encode(
+              new CborArray([
+                new CborArray([new CborUInt(100), new CborUInt(MATURE_POOL_SLOT + 1000n), new CborBytes(Buffer.alloc(32, 5))]),
+                new CborBytes(new Uint8Array()),
+              ]),
+            ).toBuffer(),
+          )
+        : Buffer.alloc(860, blockCbor[0] ?? 0),
+    ),
+  };
+
+  service = new QueryService(
+    loggerMock as unknown as Logger,
+    configServiceMock,
+    lucidServiceMock as unknown as LucidService,
+    {} as KupoService,
+    historyServiceMock as unknown as HistoryService,
+    miniProtocalsServiceMock as unknown as MiniProtocalsService,
+    {} as DenomTraceService,
+    {} as any,
+    createTestTreeStore(),
+    createPacketStateMock() as any,
+  );
+});
+
+describe('QueryService stability anchor contract', () => {
+  it('rejects a starting height before this instance has a HostState UTxO', async () => {
+    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValueOnce(undefined);
+    await expect(service.queryNewClient({ height: 100n } as any)).rejects.toThrow('HostState UTxO does not exist');
+    expect(historyServiceMock.findOperationalCertificateCountersAtBlock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unsupported destination storage format before building evidence', async () => {
+    const client = ClientStateProbabilistic.fromPartial({ storage_version: 0 });
+    await expect(service.queryIBCHeader({ height: 101n, trusted_height: 100n,
+      probabilistic_client_state: ClientStateProbabilistic.encode(client).finish() } as any))
+      .rejects.toThrow('Unsupported probabilistic client storage format');
+  });
+
+
+
+
+
+
+
+
+
+
+  it.each([null, undefined])('rejects an epoch rollover with an unobserved pool whose registration slot is %s', async (missing) => {
+    const table = await historyServiceMock.findEpochContextAtBlock();
+    table.stakeDistribution.push({
+      ...table.stakeDistribution[0],
+      poolId: 'pool-f',
+      firstRegistrationSlot: missing,
+    });
+    for (const entry of table.stakeDistribution) entry.relativeStakeDenominator = 6n;
+    const anchor = await historyServiceMock.findBlockByHeight(100n);
+    historyServiceMock.findBlockByHeight.mockImplementation(async (height: bigint) =>
+      height === 99n
+        ? { ...anchor, height: 99, epochNo: 6, slotNo: MATURE_POOL_SLOT + 990n }
+        : anchor,
+    );
+    historyServiceMock.findEpochContextAtBlock.mockImplementation(async (block: { epochNo: number }) =>
+      block.epochNo === 6
+        ? { ...table, epoch: 6, verificationContext: {
+            ...table.verificationContext,
+            currentEpochStartSlot: MATURE_POOL_SLOT,
+            currentEpochEndSlotExclusive: MATURE_POOL_SLOT + 1000n,
+          } }
+        : table,
+    );
+    historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
+
+    await expect(service.queryIBCHeader({ height: 100n, trusted_height: 99n } as any)).rejects.toThrow(
+      'First registration slot unavailable for pool pool-f in epoch 7',
     );
   });
+
+
+
+
+
+
 
   it('normalizes equal trusted and anchor heights to the previous trusted block for stability headers', async () => {
     historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
@@ -364,6 +377,86 @@ describe('QueryService stability anchor contract', () => {
     expect(header.anchor_block?.header_cbor).toHaveLength(0);
     expect(header.descendant_blocks.every((block) => block.block_cbor.length === 0)).toBe(true);
     expect(header.descendant_blocks.every((block) => block.header_cbor.length === 860)).toBe(true);
+  });
+
+  it('selects an idle maintenance checkpoint from source blocks without a new proof anchor', async () => {
+    historyServiceMock.findLatestBlock.mockResolvedValue({ height: 124 });
+    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue(null);
+    historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
+    miniProtocalsServiceMock.fetchBlocksCbor.mockResolvedValue(
+      Array.from({ length: 25 }, (_, index) => Buffer.from([index + 1])),
+    );
+    const context = ClientStateProbabilistic.fromPartial({ storage_version: 2,
+      slot_length_ns: 1_000_000_000n,
+      current_epoch: 7n,
+      latest_checkpoint_height: { revision_height: 99n },
+      latest_checkpoint_settlement_credit: { epoch: 7n, reference: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, numerator: Uint8Array.of(1), denominator: Uint8Array.of(5) })) },
+      latest_checkpoint_pool_production: { epoch: 7n, pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
+    });
+    const latestProof = jest.spyOn(service, 'latestCertifiedHeight');
+    const response = await service.queryIBCHeader({ height: 0n, trusted_height: 99n, checkpoint_only: true, probabilistic_client_state: ClientStateProbabilistic.encode(context).finish() });
+    const header = ProbabilisticHeader.decode(response.header!.value);
+    expect(header.is_checkpoint).toBe(true);
+    expect(header.anchor_block?.height?.revision_height).toBe(100n);
+    expect(header.host_state_tx_hash).toBe('');
+    expect(header.new_epoch_context).toBeUndefined();
+    expect(latestProof).not.toHaveBeenCalled();
+    historyServiceMock.findLatestBlock.mockResolvedValue({ height: 123 });
+    expect((await service.queryIBCHeader({ height: 0n, trusted_height: 99n, checkpoint_only: true, probabilistic_client_state: ClientStateProbabilistic.encode(context).finish() })).header).toBeUndefined();
+  });
+
+  it('serves exact rootless challenge evidence when the real block has no HostState transaction', async () => {
+    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue(null);
+    historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
+    miniProtocalsServiceMock.fetchBlocksCbor.mockResolvedValue(
+      Array.from({ length: 25 }, (_, index) => Buffer.from([index + 1])),
+    );
+    const context = ClientStateProbabilistic.fromPartial({ storage_version: 2,
+      slot_length_ns: 1_000_000_000n,
+      current_epoch: 7n,
+      latest_checkpoint_height: { revision_height: 99n },
+      latest_checkpoint_settlement_credit: { epoch: 7n, reference: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, numerator: Uint8Array.of(1), denominator: Uint8Array.of(5) })) },
+      latest_checkpoint_pool_production: { epoch: 7n, pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
+    });
+    const response = await service.queryIBCHeader({ height: 100n, trusted_height: 99n, checkpoint_only: true, probabilistic_client_state: ClientStateProbabilistic.encode(context).finish() });
+    const header = ProbabilisticHeader.decode(response.header!.value);
+    expect(header.is_checkpoint).toBe(true);
+    expect(header.anchor_block?.height?.revision_height).toBe(100n);
+    expect(header.anchor_block?.block_cbor).toEqual(Buffer.from([1]));
+    expect(header.anchor_block?.header_cbor).toHaveLength(0);
+    expect(header.host_state_tx_hash).toBe('');
+    expect(header.new_epoch_context).toBeUndefined();
+    expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
+  });
+
+  it('uses the destination credit reference when deciding whether an update can settle', async () => {
+    historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
+    const client = ClientStateProbabilistic.fromPartial({ storage_version: 2,
+      slot_length_ns: 1_000_000_000n,
+      current_epoch: 7n,
+      latest_checkpoint_height: { revision_height: 99n },
+      latest_checkpoint_settlement_credit: { epoch: 7n, reference: [] },
+      latest_checkpoint_pool_production: { epoch: 7n, pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
+    });
+    // These five producers have enough submitted stake, but only 250 basis
+    // points of settlement credit against this destination reference.
+    await expect(
+      service.queryIBCHeader({
+        height: 100n,
+        trusted_height: 99n,
+        checkpoint_only: true,
+        probabilistic_client_state: ClientStateProbabilistic.encode(client).finish(),
+      }),
+    ).rejects.toThrow('qualified unique stake');
+    client.latest_checkpoint_height!.revision_height = 98n;
+    await expect(
+      service.queryIBCHeader({
+        height: 100n,
+        trusted_height: 99n,
+        checkpoint_only: true,
+        probabilistic_client_state: ClientStateProbabilistic.encode(client).finish(),
+      }),
+    ).rejects.toThrow('does not match trusted_height');
   });
 
   it('fits a minimum root update by keeping full CBOR only on its HostState anchor', async () => {
@@ -415,7 +508,7 @@ describe('QueryService stability anchor contract', () => {
         height,
         hash: `hash-${height}`,
         prevHash: `hash-${height - 1}`,
-        slotNo: slot,
+        slotNo: MATURE_POOL_SLOT + slot,
         epochNo: 7,
         timestampUnixNs: timestampForSlot(slot),
         slotLeader: `pool-${String.fromCharCode(97 + (height % 5))}`,
@@ -440,8 +533,8 @@ describe('QueryService stability anchor contract', () => {
 
     expect(header.is_checkpoint).toBe(true);
     expect(header.trusted_height?.revision_height).toBe(100n);
-    expect(header.anchor_block?.height?.revision_height).toBe(133n);
-    expect(header.bridge_blocks).toHaveLength(32);
+    expect(header.anchor_block?.height?.revision_height).toBe(197n);
+    expect(header.bridge_blocks).toHaveLength(96);
     expect(header.anchor_block?.block_cbor).toHaveLength(1);
     expect(header.anchor_block?.header_cbor).toHaveLength(0);
     expect(header.bridge_blocks.every((block) => block.block_cbor.length === 1)).toBe(true);
@@ -466,7 +559,7 @@ describe('QueryService stability anchor contract', () => {
         height,
         hash: `hash-${height}`,
         prevHash: `hash-${height - 1}`,
-        slotNo: slot,
+        slotNo: MATURE_POOL_SLOT + slot,
         epochNo: epochForHeight(height),
         timestampUnixNs: timestampForSlot(slot),
         slotLeader: `pool-${String.fromCharCode(97 + (height % 5))}`,
@@ -525,8 +618,8 @@ describe('QueryService stability anchor contract', () => {
           activeSlotCoefficientNumerator: 1n,
           activeSlotCoefficientDenominator: 20n,
           maxKesEvolutions: 62,
-          currentEpochStartSlot,
-          currentEpochEndSlotExclusive,
+          currentEpochStartSlot: MATURE_POOL_SLOT + currentEpochStartSlot,
+          currentEpochEndSlotExclusive: MATURE_POOL_SLOT + currentEpochEndSlotExclusive,
         },
       };
     };
@@ -575,13 +668,13 @@ describe('QueryService stability anchor contract', () => {
       expect(anchorHeight).toBeGreaterThan(trustedHeight);
       expect(anchorHeight).toBeLessThanOrEqual(targetHeight);
       expect(header.bridge_blocks).toHaveLength(Number(anchorHeight - trustedHeight - 1n));
-      expect(header.bridge_blocks.length).toBeLessThanOrEqual(32);
+      expect(header.bridge_blocks.length).toBeLessThanOrEqual(96);
       expect(response.header!.value.length).toBeLessThanOrEqual(768 * 1024);
       expect(anchorEpoch - trustedEpoch).toBeLessThanOrEqual(1);
       if (anchorEpoch !== trustedEpoch) {
         expect(header.new_epoch_context?.epoch).toBe(BigInt(anchorEpoch));
       } else {
-        expect(header.new_epoch_context).toBeUndefined();
+        if (header.new_epoch_context) { expect(header.new_epoch_context.epoch).toBe(BigInt(anchorEpoch + 1)); expect(header.descendant_blocks.some((block) => block.epoch === BigInt(anchorEpoch + 1))).toBe(true); }
       }
 
       if (anchorHeight < targetHeight) {
@@ -598,7 +691,7 @@ describe('QueryService stability anchor contract', () => {
     }
 
     expect(trustedHeight).toBe(targetHeight);
-    expect(headers.map((header) => header.anchor_block!.height!.revision_height)).toEqual([109n, 142n, 175n, 200n]);
+    expect(headers.map((header) => header.anchor_block!.height!.revision_height)).toEqual([175n, 200n]);
     expect(
       headers.some(
         (header) =>
@@ -609,14 +702,17 @@ describe('QueryService stability anchor contract', () => {
     expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
   });
 
-  it('reduces checkpoint distance to fit authenticated full blocks within the payload limit', async () => {
+  it.each([
+ { bodyBytes: 24 * 1024 },
+ { bodyBytes: 40 * 1024 },
+ ])('builds a complete logical workload with $bodyBytes-byte bodies', async ({ bodyBytes }) => {
     const blockAt = (height: number) => {
       const slot = 1000n + BigInt(height - 100) * 10n;
       return {
         height,
         hash: `hash-${height}`,
         prevHash: `hash-${height - 1}`,
-        slotNo: slot,
+        slotNo: MATURE_POOL_SLOT + slot,
         epochNo: 7,
         timestampUnixNs: timestampForSlot(slot),
         slotLeader: `pool-${String.fromCharCode(97 + (height % 5))}`,
@@ -633,7 +729,7 @@ describe('QueryService stability anchor contract', () => {
       Array.from({ length: 24 }, (_, index) => blockAt(Number(anchorHeight) + index + 1)),
     );
     miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (blocks: unknown[]) =>
-      blocks.map(() => Buffer.alloc(24 * 1024, 1)),
+      blocks.map(() => Buffer.alloc(bodyBytes, 1)),
     );
 
     const response = await service.queryIBCHeader({ height: 200n, trusted_height: 100n } as any);
@@ -642,17 +738,16 @@ describe('QueryService stability anchor contract', () => {
     expect(header.is_checkpoint).toBe(true);
     const distance = Number(header.anchor_block!.height!.revision_height - 100n);
     expect(distance).toBeGreaterThan(0);
-    expect(distance).toBeLessThan(33);
+    expect(distance).toBe(97);
     expect(header.bridge_blocks).toHaveLength(distance - 1);
-    expect(header.anchor_block!.block_cbor).toHaveLength(24 * 1024);
+    expect(header.anchor_block!.block_cbor).toHaveLength(bodyBytes);
     expect(header.anchor_block!.header_cbor).toHaveLength(0);
     expect(
-      header.bridge_blocks.every((block) => block.block_cbor.length === 24 * 1024 && block.header_cbor.length === 0),
+      header.bridge_blocks.every((block) => block.block_cbor.length === bodyBytes && block.header_cbor.length === 0),
     ).toBe(true);
     expect(response.header!.value).toHaveLength(ProbabilisticHeader.encode(header).finish().length);
-    expect(response.header!.value.length).toBeLessThanOrEqual(768 * 1024);
-    expect(response.header!.value.length).toBeGreaterThan(700_000);
-    expect(miniProtocalsServiceMock.fetchBlocksCbor).toHaveBeenCalledTimes(2);
+    expect(response.header!.value.length).toBeGreaterThan(900_000);
+    expect(miniProtocalsServiceMock.fetchBlocksCbor).toHaveBeenCalledTimes(1);
   });
 
   it('does not return the live HostState tx height as latest stability height when the root was not accepted', async () => {
@@ -686,7 +781,7 @@ describe('QueryService stability anchor contract', () => {
       height: 1136,
       hash: 'hash-1136',
       prevHash: 'hash-1135',
-      slotNo: 4452n,
+      slotNo: MATURE_POOL_SLOT + 4452n,
       epochNo: 0,
       timestampUnixNs: timestampForSlot(4452n),
       slotLeader: 'pool-a',
@@ -707,4 +802,553 @@ describe('QueryService stability anchor contract', () => {
     expect(header.host_state_tx_hash).toBe('');
     expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
   });
+
+  it('keeps the logical catch-up window for staged observations with large bodies', async () => {
+    const blockAt = (height: number) => {
+      const slot = 1000n + BigInt(height - 100) * 10n;
+      return { height, hash: `hash-${height}`, prevHash: `hash-${height - 1}`, slotNo: MATURE_POOL_SLOT + slot,
+        epochNo: 7, timestampUnixNs: timestampForSlot(slot), slotLeader: `pool-${String.fromCharCode(97 + (height % 5))}` };
+    };
+    historyServiceMock.findBlockByHeight.mockImplementation(async (height: bigint) => blockAt(Number(height)));
+    historyServiceMock.findBridgeBlocks.mockImplementation(async (trusted: bigint, anchor: bigint) =>
+      Array.from({ length: Number(anchor - trusted - 1n) }, (_, index) => blockAt(Number(trusted) + index + 1)));
+    historyServiceMock.findDescendantBlocks.mockImplementation(async (anchor: bigint) =>
+      Array.from({ length: 24 }, (_, index) => blockAt(Number(anchor) + index + 1)));
+    miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (blocks: unknown[]) =>
+      blocks.map(() => Buffer.alloc(80 * 1024, 1)));
+    const context = ClientStateProbabilistic.fromPartial({ storage_version: 2, current_epoch: 7n,
+      slot_length_ns: 1_000_000_000n, latest_checkpoint_height: { revision_height: 100n },
+      latest_checkpoint_settlement_credit: { epoch: 7n, reference: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, numerator: Uint8Array.of(1), denominator: Uint8Array.of(5) })) },
+      latest_checkpoint_pool_production: { epoch: 7n, pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
+    });
+    const response = await service.queryIBCHeader({ height: 200n, trusted_height: 100n, checkpoint_only: false,
+      probabilistic_client_state: ClientStateProbabilistic.encode(context).finish() });
+    const header = ProbabilisticHeader.decode(response.header!.value);
+    expect(header.anchor_block!.height!.revision_height).toBe(197n);
+    expect(header.bridge_blocks).toHaveLength(96);
+    expect(response.header!.value.length).toBeGreaterThan(5 * 1024 * 1024 / 2);
+    expect(header.descendant_blocks).toHaveLength(24);
+    expect(header.descendant_blocks.every((block) => block.block_cbor.length === 0)).toBe(true);
+    expect(historyServiceMock.findObservedPoolProductionAtBlock).not.toHaveBeenCalled();
+  });
 });
+
+describe('historical Hermes challenge request', () => {
+  const fixture = JSON.parse(
+    readFileSync(
+      resolve(
+        __dirname,
+        '../../../../../cosmos/cardano-probabilistic-light-client-core/testdata/challenge-settlement.json',
+      ),
+      'utf8',
+    ),
+  );
+
+  it('requires saved context instead of falling back to observer estimates', async () => {
+    await expect(
+      service.queryIBCHeader({
+        height: 100n,
+        trusted_height: 99n,
+        checkpoint_only: true,
+        probabilistic_client_state: new Uint8Array(),
+      }),
+    ).rejects.toThrow('Historical destination client context is required');
+    expect(historyServiceMock.findObservedPoolProductionAtBlock).not.toHaveBeenCalled();
+  });
+
+  it('serves enough descendants under the historical production and capped credit rules', async () => {
+    // Start with the protobuf request from the Hermes challenge test. Its
+    // epoch is restored from the pre-proposal rootless snapshot. Advance the
+    // fixture chain point so its producers also meet the rolling age rule.
+    const request = QueryIBCHeaderRequest.decode(Buffer.from(fixture.request_hex, 'hex'));
+    const context = ClientStateProbabilistic.decode(request.probabilistic_client_state);
+    context.storage_version = 2;
+    context.latest_checkpoint_slot += MATURE_POOL_SLOT;
+    context.latest_checkpoint_timestamp = timestampForSlot(990n);
+    context.epoch_contexts[0].epoch_start_slot += MATURE_POOL_SLOT;
+    context.epoch_contexts[0].epoch_end_slot_exclusive += MATURE_POOL_SLOT;
+    request.probabilistic_client_state = ClientStateProbabilistic.encode(context).finish();
+    expect(context.current_epoch).toBe(7n);
+    expect(context.latest_checkpoint_height?.revision_height).toBe(99n);
+    expect(context.latest_checkpoint_settlement_credit?.reference).toEqual([]);
+    historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
+    historyServiceMock.findEpochContextAtBlock.mockResolvedValue({
+      epoch: 7,
+      stakeDistribution: context.epoch_contexts[0].stake_distribution.map((row) => ({
+        poolId: row.pool_id,
+        stake: row.stake,
+        relativeStakeNumerator: row.relative_stake_numerator,
+        relativeStakeDenominator: row.relative_stake_denominator,
+        vrfKeyHash: Buffer.from(row.vrf_key_hash).toString('hex'),
+        firstRegistrationSlot: row.first_registration_slot,
+      })),
+      verificationContext: {
+        epochNonce: '11'.repeat(32),
+        slotsPerKesPeriod: 129600,
+        activeSlotCoefficientNumerator: 1n,
+        activeSlotCoefficientDenominator: 20n,
+        maxKesEvolutions: 62,
+        currentEpochStartSlot: MATURE_POOL_SLOT + 900n,
+        currentEpochEndSlotExclusive: MATURE_POOL_SLOT + 3000n,
+      },
+    });
+    const descendants = (producers: string[]) =>
+      producers.map((slotLeader, index) => ({
+        ...stabilityDescendantBlocks[index % 24],
+        height: 101 + index,
+        hash: `hash-${101 + index}`,
+        prevHash: index === 0 ? 'anchor-hash' : `hash-${100 + index}`,
+        slotNo: MATURE_POOL_SLOT + 1010n + BigInt(index) * 10n,
+        timestampUnixNs: timestampForSlot(1010n + BigInt(index) * 10n),
+        slotLeader,
+      }));
+    historyServiceMock.findDescendantBlocks.mockResolvedValue(descendants(fixture.short_descendants));
+    await expect(service.queryIBCHeader(request)).rejects.toThrow('qualified unique stake');
+    historyServiceMock.findDescendantBlocks.mockResolvedValue(descendants(fixture.long_descendants));
+    miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (blocks: unknown[]) =>
+      blocks.map((_, index) => Buffer.from([index + 1])),
+    );
+    const response = await service.queryIBCHeader(request);
+    const header = ProbabilisticHeader.decode(response.header!.value);
+    expect(header.is_checkpoint).toBe(true);
+    expect(header.anchor_block?.height?.revision_height).toBe(100n);
+    expect(header.descendant_blocks).toHaveLength(fixture.long_descendants.length);
+    expect(historyServiceMock.findObservedPoolProductionAtBlock).not.toHaveBeenCalled();
+  });
+});
+
+describe('QueryService Mithril-certified stake', () => {
+  // The certificate sealed in `epoch` certifies epoch-1's stake. Epoch e is
+  // signed by key-e and names key-(e+1).
+  const certificate = (epoch: number) =>
+    JSON.stringify({
+      epoch,
+      aggregate_verification_key: `key-${epoch}`,
+      protocol_message: {
+        message_parts: {
+          current_epoch: `${epoch}`,
+          cardano_stake_distribution_epoch: `${epoch - 1}`,
+          cardano_stake_distribution_merkle_root: 'ab'.repeat(32),
+          next_aggregate_verification_key: `key-${epoch + 1}`,
+          next_protocol_parameters: 'cd'.repeat(32),
+        },
+      },
+    });
+  const stake = Object.fromEntries(['a', 'b', 'c', 'd', 'e'].map((pool) => [`pool-${pool}`, 200]));
+  const useMithril = (distributions: Record<number, Record<string, number>>) => {
+    const get = (service as any).configService.get as jest.Mock;
+    const implementation = get.getMockImplementation()!;
+    get.mockImplementation((key: string) =>
+      key === 'mithrilEndpoint' ? 'http://mithril-aggregator:8080/aggregator' : implementation(key),
+    );
+    (service as any).mithrilService = {
+      getCardanoStakeDistributionByEpoch: jest.fn(
+        async (epoch: number) =>
+          distributions[epoch] && {
+            epoch,
+            hash: '',
+            certificate_hash: `certificate-${epoch}`,
+            stake_distribution: distributions[epoch],
+            created_at: '',
+          },
+      ),
+      getCertificateJsonByHash: jest.fn(async (hash: string) => certificate(Number(hash.split('-')[1]) + 1)),
+    };
+  };
+
+  it('serves the certificates that extend a client anchor', async () => {
+    useMithril({ 6: stake, 7: stake });
+    const response = await service.queryMithrilStakeCertificates({ mithril_epoch: 7n });
+    expect(response.client_message?.type_url).toBe('/ibc.lightclients.probabilistic.v1.MithrilStakeCertificates');
+    const message = MithrilStakeCertificates.decode(response.client_message!.value);
+    expect(message.certificates.map((json) => JSON.parse(json).epoch)).toEqual([7, 8]);
+    // Epoch 8's stake is not certified yet.
+    await expect(service.queryMithrilStakeCertificates({ mithril_epoch: 9n })).resolves.toEqual({});
+    await expect(service.queryMithrilStakeCertificates({ mithril_epoch: 0n })).rejects.toThrow('positive epoch');
+  });
+});
+
+// These witnesses also run through native verification and both SDK keepers.
+describe('native epoch-boundary catch-up', () => {
+  for (const name of ['size', 'count', 'control', 'combined']) {
+    it(`advances the ${name} case within the supported encoded budget`, async () => {
+      const path = resolve(process.cwd(), '../../cosmos/cardano-probabilistic-light-client-core/testdata');
+      const fixture = JSON.parse(gunzipSync(readFileSync(`${path}/native-boundary-${name}.json.gz`)).toString());
+      const original = ProbabilisticHeader.fromJSON(fixture.header);
+      const client = ClientStateProbabilistic.fromJSON(fixture.size_client ?? fixture.client);
+      client.storage_version = 2;
+      const trustedHeight = client.latest_checkpoint_height!.revision_height;
+      const fullBlocks = [...original.bridge_blocks, original.anchor_block!, ...original.descendant_blocks];
+      const records = fullBlocks.map((block) => ({
+        height: Number(block.height!.revision_height), hash: block.hash,
+        prevHash: '', slotNo: block.slot, epochNo: Number(block.epoch), timestampUnixNs: block.timestamp,
+        slotLeader: client.epoch_stake_distribution[(name === 'count' || name === 'combined') && block.epoch === 7n
+          ? (block.height!.revision_height < 977n ? Number(block.height!.revision_height - 966n) : 0)
+          : Number((block.height!.revision_height - 967n) % 11n)].pool_id,
+      }));
+      const trusted = { height: Number(trustedHeight), hash: client.latest_checkpoint_block_hash,
+        slotNo: client.latest_checkpoint_slot, epochNo: 7, timestampUnixNs: client.latest_checkpoint_timestamp,
+        slotLeader: client.epoch_stake_distribution[0].pool_id, prevHash: '' };
+      historyServiceMock.findBlockByHeight.mockImplementation(async (height) => records.find((block) => BigInt(block.height) === height) ?? (height === trustedHeight ? trusted : null));
+      historyServiceMock.findBridgeBlocks.mockImplementation(async (from, to) => records.filter((block) => BigInt(block.height) > from && BigInt(block.height) < to));
+      historyServiceMock.findDescendantBlocks.mockImplementation(async (height, limit) => records.filter((block) => BigInt(block.height) > height).slice(0, limit));
+      historyServiceMock.findEpochContextAtBlock.mockImplementation(async (block) => {
+        const context = (block.epochNo === 8 ? original.new_epoch_context : client.epoch_contexts[0])!;
+        return {
+          epoch: block.epochNo,
+          stakeDistribution: context.stake_distribution.map((entry) => ({
+            poolId: entry.pool_id, stake: entry.stake, relativeStakeNumerator: entry.relative_stake_numerator,
+            relativeStakeDenominator: entry.relative_stake_denominator, vrfKeyHash: Buffer.from(entry.vrf_key_hash).toString('hex'), firstRegistrationSlot: entry.first_registration_slot,
+          })),
+          verificationContext: {
+            epochNonce: Buffer.from(context.epoch_nonce).toString('hex'), slotsPerKesPeriod: Number(context.slots_per_kes_period),
+            activeSlotCoefficientNumerator: 1n, activeSlotCoefficientDenominator: 20n, maxKesEvolutions: 62,
+            currentEpochStartSlot: context.epoch_start_slot, currentEpochEndSlotExclusive: context.epoch_end_slot_exclusive,
+          },
+        };
+      });
+      miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (blocks: Array<{ hash: string }>) => blocks.map((block) => Buffer.from(fullBlocks.find((witness) => witness.hash === block.hash)!.block_cbor)));
+      miniProtocalsServiceMock.extractBlockHeaderCbor.mockImplementation((body, hash) => MiniProtocalsService.prototype.extractBlockHeaderCbor(body, hash));
+      const response = await service.queryStabilityIBCHeader({
+        height: 1031n, trusted_height: trustedHeight, checkpoint_only: false,
+        probabilistic_client_state: ClientStateProbabilistic.encode(client).finish(),
+      });
+      const header = ProbabilisticHeader.decode(response.header!.value);
+      expect(header.anchor_block!.epoch).toBe(8n);
+      expect(header.is_checkpoint).toBe(true);
+      expect(header.descendant_blocks.length).toBeGreaterThanOrEqual(24);
+      expect(response.header!.value.length).toBeLessThanOrEqual(12 * 1024 * 1024);
+      if (name === 'control') expect(response.header!.value.length).toBeLessThan(768 * 1024);
+      else expect(response.header!.value.length).toBeGreaterThan(768 * 1024);
+      if (name === 'count') expect(header.bridge_blocks.length).toBeGreaterThan(32);
+      if (name === 'combined') { expect(header.anchor_block!.height!.revision_height).toBe(1007n); expect(header.new_epoch_context!.epoch).toBe(8n); }
+      if (name === 'combined') {
+        // An anchored client is never offered an epoch 8 table that Mithril's
+        // epoch 6 distribution contradicts.
+        const certified = Object.fromEntries(header.new_epoch_context!.stake_distribution.map((entry) => [entry.pool_id, Number(entry.stake)]));
+        const [first] = Object.keys(certified);
+        const mithril = { getCardanoStakeDistributionByEpoch: jest.fn() };
+        (service as any).mithrilService = mithril;
+        const get = (service as any).configService.get as jest.Mock;
+        const implementation = get.getMockImplementation()!;
+        get.mockImplementation((key) => key === 'mithrilEndpoint' ? 'http://mithril-aggregator:8080/aggregator' : implementation(key));
+        const anchored = { height: 1031n, trusted_height: trustedHeight, checkpoint_only: false,
+          probabilistic_client_state: ClientStateProbabilistic.encode({ ...client, mithril_epoch: 7n }).finish() };
+        mithril.getCardanoStakeDistributionByEpoch.mockImplementation(async (epoch) => epoch === 6 ? { epoch, stake_distribution: { ...certified, [first]: certified[first] + 1 } } : undefined);
+        await expect(service.queryStabilityIBCHeader(anchored)).rejects.toThrow("differs from Mithril's certified epoch 6 distribution");
+        mithril.getCardanoStakeDistributionByEpoch.mockImplementation(async (epoch) => epoch === 6 ? { epoch, stake_distribution: certified } : undefined);
+        expect((await service.queryStabilityIBCHeader(anchored)).header).toEqual(response.header);
+        get.mockImplementation(implementation);
+      }
+      if (process.env.UPDATE_NATIVE_BOUNDARY_FIXTURE === '1') writeFileSync(`${path}/gateway-boundary-${name}.pb.gz`, gzipSync(response.header!.value));
+      expect(Buffer.from(response.header!.value)).toEqual(gunzipSync(readFileSync(`${path}/gateway-boundary-${name}.pb.gz`)));
+
+    });
+  }
+});
+
+
+describe('bounded boundary workload', () => {
+  const workloads = [40, 80, 96].flatMap((kib) =>
+    [34, 64, 96].flatMap((tail) => [0, 12, 24].map((delay) => ({ kib, tail, delay }))),
+  );
+  it.each(workloads)(
+    'advances with $tail tail blocks, $kib KiB bodies and $delay delayed qualified blocks',
+    async ({ kib, tail, delay }) => {
+      const path = resolve(process.cwd(), '../../cosmos/cardano-probabilistic-light-client-core/testdata');
+      const fixture = JSON.parse(gunzipSync(readFileSync(`${path}/native-boundary-combined.json.gz`)).toString());
+      const client = ClientStateProbabilistic.fromJSON(fixture.client);
+      client.storage_version = 2;
+      const original = ProbabilisticHeader.fromJSON(fixture.header);
+      const trusted = 966;
+      const firstNext = trusted + tail + 1;
+      const context = (epoch: number) => {
+        const row = epoch === 7 ? client.epoch_contexts[0] : original.new_epoch_context!;
+        return {
+          epoch,
+          stakeDistribution: row.stake_distribution.map((entry) => ({
+            poolId: entry.pool_id,
+            stake: entry.stake,
+            relativeStakeNumerator: entry.relative_stake_numerator,
+            relativeStakeDenominator: entry.relative_stake_denominator,
+            vrfKeyHash: Buffer.from(entry.vrf_key_hash).toString('hex'),
+            firstRegistrationSlot: entry.first_registration_slot,
+          })),
+          verificationContext: {
+            epochNonce: Buffer.from(row.epoch_nonce).toString('hex'),
+            slotsPerKesPeriod: Number(row.slots_per_kes_period),
+            maxKesEvolutions: 62,
+            activeSlotCoefficientNumerator: 1n,
+            activeSlotCoefficientDenominator: 20n,
+            currentEpochStartSlot: row.epoch_start_slot,
+            currentEpochEndSlotExclusive: row.epoch_end_slot_exclusive,
+          },
+        };
+      };
+      const at = (height: number) => {
+        const epoch = height < firstNext ? 7 : 8;
+        const slot = client.current_epoch_end_slot_exclusive + BigInt(height - firstNext) * 10n;
+        const index = epoch === 7 || height < firstNext + delay ? 0 : (height - firstNext - delay) % 11;
+        return {
+          height,
+          hash: `block-${height}`,
+          prevHash: `block-${height - 1}`,
+          slotNo: slot,
+          epochNo: epoch,
+          timestampUnixNs: client.system_start_unix_ns + slot * client.slot_length_ns,
+          slotLeader: client.epoch_stake_distribution[index].pool_id,
+        };
+      };
+      client.latest_checkpoint_slot = at(trusted).slotNo;
+      client.latest_checkpoint_timestamp = at(trusted).timestampUnixNs;
+      historyServiceMock.findBlockByHeight.mockImplementation(async (height) => at(Number(height)));
+      historyServiceMock.findBridgeBlocks.mockImplementation(async (from: bigint, to: bigint) =>
+        Array.from({ length: Number(to - from - 1n) }, (_, i) => at(Number(from) + i + 1)),
+      );
+      historyServiceMock.findDescendantBlocks.mockImplementation(async (height, limit) =>
+        Array.from({ length: limit }, (_, i) => at(Number(height) + i + 1)),
+      );
+      historyServiceMock.findEpochContextAtBlock.mockImplementation(async (block) => context(block.epochNo));
+      miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (blocks) =>
+        blocks.map(() => Buffer.alloc(kib * 1024)),
+      );
+      miniProtocalsServiceMock.extractBlockHeaderCbor.mockImplementation(() => Buffer.alloc(1000));
+      const attempt = service.queryStabilityIBCHeader({
+        height: BigInt(firstNext),
+        trusted_height: 966n,
+        checkpoint_only: false,
+        probabilistic_client_state: ClientStateProbabilistic.encode(client).finish(),
+      });
+      const response = await attempt;
+      const header = ProbabilisticHeader.decode(response.header!.value);
+      expect(header.anchor_block!.height!.revision_height).toBeGreaterThan(966n);
+      expect(response.header!.value.length).toBeLessThanOrEqual(97 * (96 * 1024 + 512) + 31 * 2048 + 2_000_000);
+      expect(1 + header.bridge_blocks.length + header.descendant_blocks.length).toBeLessThanOrEqual(128);
+      if (header.anchor_block!.epoch === 7n) {
+        expect(header.new_epoch_context!.epoch).toBe(8n);
+        expect(
+          [...header.bridge_blocks, header.anchor_block!].reduce((sum, block) => sum + block.block_cbor.length, 0),
+        ).toBeLessThanOrEqual(97 * 96 * 1024);
+      }
+    },
+  );
+});
+
+// Opt-in process used by the native Injective checkpoint acceptance driver.
+// QueryService and the gRPC wire are real. Signed history replaces external
+// Cardano history and block-body services in this disposable fixture.
+(process.env.CHECKPOINT_ACCEPTANCE_DIR ? it : it.skip)(
+  'serves signed idle history for the Hermes checkpoint acceptance worker',
+  async () => {
+    const root = process.env.CHECKPOINT_ACCEPTANCE_DIR!;
+    const client = ClientStateProbabilistic.decode(readFileSync(`${root}/source-client.pb`));
+    const history = JSON.parse(readFileSync(`${root}/gateway-history.json`, 'utf8'));
+    let blocks = history.blocks.map((entry: any) => ProbabilisticBlock.decode(Buffer.from(entry.protobuf, 'hex')));
+    let contexts = [
+      client.epoch_contexts[0],
+      ...history.contexts.map((raw: string) => EpochContext.decode(Buffer.from(raw, 'hex'))),
+    ];
+    const recordsFor = (items: any[]) =>
+      items.map((block: any) => ({
+        height: Number(block.height.revision_height),
+        hash: block.hash,
+        prevHash: '',
+        slotNo: block.slot,
+        epochNo: Number(block.epoch),
+        timestampUnixNs: block.timestamp,
+        slotLeader: client.epoch_stake_distribution[Number((block.height.revision_height - 967n) % 11n)].pool_id,
+      }));
+    let records = recordsFor(blocks);
+    const sourceText = readFileSync(`${root}/source-history.json`, 'utf8').replace(
+      /(:\s*)([0-9]{16,})(?=[,}])/g,
+      '$1"$2"',
+    );
+    const later = JSON.parse(sourceText).Later;
+    const honestBlocks = blocks;
+    const honestContexts = contexts;
+    let switched = false;
+    const selectBranch = () => {
+      const fork = process.env.CHECKPOINT_GATEWAY_WITNESS === '1' && existsSync(`${root}/witness-fork`);
+      if (fork !== switched) {
+        blocks = fork ? later.Blocks.map((block: any) => ProbabilisticBlock.fromJSON(block)) : honestBlocks;
+        contexts = fork ? [client.epoch_contexts[0], ...later.Contexts.map((context: any) => EpochContext.fromJSON(context))] : honestContexts;
+        records = recordsFor(blocks);
+        switched = fork;
+      }
+    };
+    const trusted = {
+      height: 966,
+      hash: client.latest_checkpoint_block_hash,
+      prevHash: '',
+      slotNo: client.latest_checkpoint_slot,
+      epochNo: 7,
+      timestampUnixNs: client.latest_checkpoint_timestamp,
+      slotLeader: client.epoch_stake_distribution[0].pool_id,
+    };
+    const visible = () => Number(readFileSync(`${root}/source-tip`, 'utf8').trim());
+    historyServiceMock.findLatestBlock.mockImplementation(
+      async () => records.find((block: any) => block.height === visible()) ?? trusted,
+    );
+    historyServiceMock.findBlockByHeight.mockImplementation(async (height: bigint) =>
+      height === 966n
+        ? trusted
+        : (records.find((block: any) => BigInt(block.height) === height && block.height <= visible()) ?? null),
+    );
+    historyServiceMock.findBridgeBlocks.mockImplementation(async (from: bigint, to: bigint) =>
+      records.filter(
+        (block: any) => BigInt(block.height) > from && BigInt(block.height) < to && block.height <= visible(),
+      ),
+    );
+    historyServiceMock.findDescendantBlocks.mockImplementation(async (height: bigint, limit: number) =>
+      records.filter((block: any) => BigInt(block.height) > height && block.height <= visible()).slice(0, limit),
+    );
+    historyServiceMock.findEpochContextAtBlock.mockImplementation(async (block: any) => {
+      const context = contexts.find((context: any) => context.epoch === BigInt(block.epochNo));
+      return {
+        epoch: block.epochNo,
+        stakeDistribution: context.stake_distribution.map((row: any) => ({
+          poolId: row.pool_id,
+          stake: row.stake,
+          relativeStakeNumerator: row.relative_stake_numerator,
+          relativeStakeDenominator: row.relative_stake_denominator,
+          vrfKeyHash: Buffer.from(row.vrf_key_hash).toString('hex'),
+          firstRegistrationSlot: row.first_registration_slot,
+        })),
+        verificationContext: {
+          epochNonce: Buffer.from(context.epoch_nonce).toString('hex'),
+          slotsPerKesPeriod: Number(context.slots_per_kes_period),
+          activeSlotCoefficientNumerator: client.active_slot_coefficient_numerator,
+          activeSlotCoefficientDenominator: client.active_slot_coefficient_denominator,
+          maxKesEvolutions: Number(client.max_kes_evolutions),
+          currentEpochStartSlot: context.epoch_start_slot,
+          currentEpochEndSlotExclusive: context.epoch_end_slot_exclusive,
+        },
+      };
+    });
+    miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (requested: Array<{ hash: string }>) =>
+      requested.map((block) => Buffer.from(blocks.find((witness: any) => witness.hash === block.hash).block_cbor)),
+    );
+    miniProtocalsServiceMock.extractBlockHeaderCbor.mockImplementation((body, hash) =>
+      MiniProtocalsService.prototype.extractBlockHeaderCbor(body, hash),
+    );
+    const get = (service as any).configService.get as jest.Mock;
+    const fallback = get.getMockImplementation()!;
+    const readiness = process.env.READINESS_MITHRIL_ENDPOINT;
+    const values: Record<string, unknown> = {
+      cardanoRandomnessStabilisationWindowSlots: String(client.randomness_stabilisation_window_slots),
+    };
+    if (readiness) {
+      const raw = JSON.parse(sourceText);
+      const consensus = ConsensusState.fromJSON(raw.Consensus);
+      Object.assign(values, {
+        mithrilEndpoint: readiness,
+        cardanoChainId: client.chain_id,
+        cardanoClientTrustingPeriodSeconds: 172800,
+        cardanoClientMaxClockDriftSeconds: Number(client.max_clock_drift!.seconds),
+        deployment: {
+          packetState: { state: { scriptHash: Buffer.from(client.packet_lane_policy_id).toString('hex') } },
+          hostStateNFT: { policyId: Buffer.from(client.host_state_nft_policy_id).toString('hex'), name: Buffer.from(client.host_state_nft_token_name).toString('hex') },
+        },
+      });
+      Object.assign(historyServiceMock, {
+        findInitialPoolRegistryAtBlock: jest.fn().mockResolvedValue(client.latest_checkpoint_pool_registry),
+      });
+      historyServiceMock.findObservedPoolProductionAtBlock.mockImplementation(async (point) =>
+        point.height === 966 ? client.latest_checkpoint_pool_production : productionAtAnchor(
+          client, records.filter((block: any) => block.height < point.height), point,
+        ),
+      );
+      historyServiceMock.findOperationalCertificateCountersAtBlock.mockResolvedValue(new Map(
+        client.latest_checkpoint_operational_certificate_counters.map((row) => [bech32.encode('pool', bech32.toWords(row.pool_id)), row.sequence_number]),
+      ));
+      jest.mocked(queryPraosNoncesAtPoint).mockResolvedValue(client.latest_checkpoint_nonce_state as never);
+      lucidServiceMock.LucidImporter.SLOT_CONFIG_NETWORK.Preview = {
+        zeroTime: Number(client.system_start_unix_ns / 1_000_000n),
+        slotLength: Number(client.slot_length_ns / 1_000_000n),
+      };
+      lucidServiceMock.decodeDatum.mockResolvedValue({ state: { ibc_state_root: Buffer.from(consensus.ibc_state_root).toString('hex') } });
+      (service as any).packetState.snapshot.mockResolvedValue(consensus.packet_state_snapshot);
+      const initialHeader = Cbor.encode(new CborArray([new CborArray([
+        new CborUInt(966), new CborUInt(trusted.slotNo), new CborBytes(client.latest_checkpoint_nonce_state!.last_applied_block_nonce),
+      ])])).toBuffer();
+      miniProtocalsServiceMock.fetchBlockCbor.mockResolvedValue(Buffer.alloc(0));
+      miniProtocalsServiceMock.extractBlockHeaderCbor.mockImplementation((body, hash) =>
+        hash === trusted.hash ? initialHeader : MiniProtocalsService.prototype.extractBlockHeaderCbor(body, hash),
+      );
+    }
+    get.mockImplementation((key) => values[key] ?? fallback(key));
+    if (readiness) (service as any).mithrilService = new MithrilService(new HttpService(), (service as any).configService);
+    const server = new grpc.Server();
+    const method = {
+      path: '/ibc.core.types.v1.Query/IBCHeader',
+      requestStream: false,
+      responseStream: false,
+      requestSerialize: (value: any) => Buffer.from(QueryIBCHeaderRequest.encode(value).finish()),
+      requestDeserialize: (bytes: Buffer) => QueryIBCHeaderRequest.decode(bytes),
+      responseSerialize: (value: any) => Buffer.from(QueryIBCHeaderResponse.encode(value).finish()),
+      responseDeserialize: (bytes: Buffer) => QueryIBCHeaderResponse.decode(bytes),
+    };
+    server.addService(
+      {
+        IBCHeader: method,
+        LatestHeight: { ...method, path: '/ibc.core.client.v1.Query/LatestHeight', requestSerialize: (v: any) => Buffer.from(QueryLatestHeightRequest.encode(v).finish()), requestDeserialize: (v: Buffer) => QueryLatestHeightRequest.decode(v), responseSerialize: (v: any) => Buffer.from(QueryLatestHeightResponse.encode(v).finish()), responseDeserialize: (v: Buffer) => QueryLatestHeightResponse.decode(v) },
+        NewClient: { ...method, path: '/ibc.core.client.v1.Query/NewClient', requestSerialize: (v: any) => Buffer.from(QueryNewClientRequest.encode(v).finish()), requestDeserialize: (v: Buffer) => QueryNewClientRequest.decode(v), responseSerialize: (v: any) => Buffer.from(QueryNewClientResponse.encode(v).finish()), responseDeserialize: (v: Buffer) => QueryNewClientResponse.decode(v) },
+        MithrilStakeCertificates: { ...method, path: '/ibc.core.types.v1.Query/MithrilStakeCertificates', requestSerialize: (v: any) => Buffer.from(QueryMithrilStakeCertificatesRequest.encode(v).finish()), requestDeserialize: (v: Buffer) => QueryMithrilStakeCertificatesRequest.decode(v), responseSerialize: (v: any) => Buffer.from(QueryMithrilStakeCertificatesResponse.encode(v).finish()), responseDeserialize: (v: Buffer) => QueryMithrilStakeCertificatesResponse.decode(v) },
+      },
+      {
+        LatestHeight: async (_call: any, callback: any) => {
+          try { callback(null, visible() === 966 ? { height: 966n } : await service.latestCertifiedHeight()); }
+          catch (error) { callback({ code: grpc.status.FAILED_PRECONDITION, message: String(error) }); }
+        },
+        NewClient: async (call: any, callback: any) => {
+          try {
+            if (!readiness) throw new Error('Readiness bootstrap is not configured');
+            appendFileSync(`${root}/bootstrap-requests.jsonl`, JSON.stringify({ sequence: call.request.initialization_sequence, height: String(call.request.height) }) + '\n');
+            if (call.request.initialization_sequence > 2 && existsSync(`${root}/pause-bootstrap`)) throw new Error('Interrupted bootstrap fixture');
+            callback(null, await service.queryNewClient(call.request));
+          } catch (error) { callback({ code: grpc.status.FAILED_PRECONDITION, message: String(error) }); }
+        },
+        MithrilStakeCertificates: async (call: any, callback: any) => {
+          try { callback(null, await service.queryMithrilStakeCertificates(call.request)); }
+          catch (error) { callback({ code: grpc.status.FAILED_PRECONDITION, message: String(error) }); }
+        },
+        IBCHeader: async (call: any, callback: any) => {
+          try {
+            selectBranch();
+            const response = await service.queryStabilityIBCHeader(call.request);
+            if (response.header) {
+              const header = ProbabilisticHeader.decode(response.header.value);
+              appendFileSync(
+                `${root}/gateway-${process.env.CHECKPOINT_GATEWAY_PORT ?? '15001'}.jsonl`,
+                JSON.stringify({
+                  trusted: String(header.trusted_height?.revision_height),
+                  anchor: String(header.anchor_block?.height?.revision_height),
+                  checkpoint: header.is_checkpoint,
+                  epoch: String(header.new_epoch_context?.epoch ?? ''),
+                }) + '\n',
+              );
+            }
+            callback(null, response);
+          } catch (error) {
+            console.error(error);
+            callback({ code: grpc.status.FAILED_PRECONDITION, message: String(error) });
+          }
+        },
+      },
+    );
+    await new Promise<void>((resolve, reject) =>
+      server.bindAsync(
+        `127.0.0.1:${process.env.CHECKPOINT_GATEWAY_PORT ?? '15001'}`,
+        grpc.ServerCredentials.createInsecure(),
+        (error: Error) => (error ? reject(error) : resolve()),
+      ),
+    );
+    writeFileSync(`${root}/gateway-${process.env.CHECKPOINT_GATEWAY_PORT ?? '15001'}.ready`, 'ready');
+    try {
+      while (!existsSync(`${root}/gateway.stop`)) await new Promise((resolve) => setTimeout(resolve, 100));
+    } finally {
+      server.forceShutdown();
+    }
+  },
+  12 * 3_600_000,
+);

@@ -1,0 +1,169 @@
+package state
+
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"math"
+
+	storetypes "cosmossdk.io/store/types"
+	"github.com/blinklabs-io/gouroboros/cbor"
+)
+
+type retainedVerification struct {
+	Expires   uint64
+	Reference []byte
+	Height    uint64
+}
+
+func retentionPrefix(namespace []byte) []byte {
+	return append([]byte("snapshots/v2/retention/"), namespace...)
+}
+func retentionKey(cs *ClientState, kind RetentionKind, id []byte) []byte {
+	return append(append(binary.BigEndian.AppendUint64(retentionPrefix(cs.StorageNamespace), cs.VerificationGeneration), byte(kind)), id...)
+}
+func retainVerification(store storetypes.KVStore, cs *ClientState, kind RetentionKind, id, reference []byte, height, expires uint64) error {
+	key := retentionKey(cs, kind, id)
+	raw, err := cbor.Encode(retainedVerification{expires, bytes.Clone(reference), height})
+	if err != nil {
+		return err
+	}
+	old := store.Get(key)
+	if len(old) > 0 {
+		if !bytes.Equal(old, raw) {
+			return fmt.Errorf("retained verification index is immutable")
+		}
+		return nil
+	}
+	store.Set(key, raw)
+	return nil
+}
+func retentionDeadline(cs *ClientState, now uint64) uint64 {
+	duration := uint64(cs.TrustingPeriod) + uint64(SharedSnapshotChallengePeriod)
+	if math.MaxUint64-now < duration {
+		return math.MaxUint64
+	}
+	return now + duration
+}
+func retainCheckpoint(store storetypes.KVStore, cs *ClientState, cp *verificationCheckpoint, reference []byte) error {
+	id := binary.BigEndian.AppendUint64(nil, cp.Height)
+	if err := pinVerificationCheckpoint(store, cp, namespaceOwner(cs.StorageNamespace, cs.VerificationGeneration, OwnerRetainedCheckpoint, id)); err != nil {
+		return err
+	}
+	return retainVerification(store, cs, RetainCheckpoint, id, reference, cp.Height, retentionDeadline(cs, cp.Timestamp))
+}
+func cleanupRetainedVerification(ctx Context, cdc StateCodec, shared, private storetypes.KVStore, cs *ClientState) error {
+	scope, err := verificationScope(cs)
+	if err != nil {
+		return err
+	}
+	prefix := retentionPrefix(cs.StorageNamespace)
+	cursor := private.Get([]byte("verificationCleanupCursor"))
+	start := prefix
+	if len(cursor) > 0 {
+		start = append(bytes.Clone(cursor), 0)
+	}
+	iterator := shared.Iterator(start, storetypes.PrefixEndBytes(prefix))
+	type record struct{ Key, Value []byte }
+	var records []record
+	for ; iterator.Valid() && len(records) < 8; iterator.Next() {
+		records = append(records, record{bytes.Clone(iterator.Key()), bytes.Clone(iterator.Value())})
+	}
+	more := iterator.Valid()
+	iterator.Close()
+	now := ctx.BlockTime().UnixNano()
+	if now <= 0 {
+		return fmt.Errorf("invalid cleanup host time")
+	}
+	for _, record := range records {
+		if len(record.Key) < len(prefix)+9 {
+			return fmt.Errorf("invalid retention index")
+		}
+		gen := binary.BigEndian.Uint64(record.Key[len(prefix):])
+		kind := RetentionKind(record.Key[len(prefix)+8])
+		id := record.Key[len(prefix)+9:]
+		var retained retainedVerification
+		if _, err := cbor.Decode(record.Value, &retained); err != nil {
+			return err
+		}
+		discarded := gen < cs.VerificationGeneration
+		if gen > cs.VerificationGeneration || (!discarded && kind != RetainSession && retained.Expires > uint64(now)) {
+			continue
+		}
+		old := *cs
+		old.VerificationGeneration = gen
+		switch kind {
+		case RetainSession:
+			session, err := loadObservationSession(shared, &old, id)
+			if err != nil {
+				return err
+			}
+			if !discarded {
+				expired, err := session.expired(ctx)
+				if err != nil {
+					return err
+				}
+				if !expired {
+					continue
+				}
+			}
+			if err := releaseObservationSession(shared, &old, id, session); err != nil {
+				return err
+			}
+			shared.Delete(observationSessionKey(old.StorageNamespace, gen, id))
+		case RetainReceipt:
+			// Keep discovery and query authorization while another session,
+			// proposal or completed alternative still needs this receipt.
+			refs := shared.Get(objectKey("objectRefs", scope, objectReceipt, [32]byte(id)))
+			if !discarded && len(refs) == 8 && binary.BigEndian.Uint64(refs) > 1 {
+				continue
+			}
+			if err := pinSnapshotObject(shared, scope, objectReceipt, [32]byte{}, namespaceOwner(old.StorageNamespace, gen, OwnerRetainedReceipt, id)); err != nil {
+				return err
+			}
+			if err := pinVerificationCheckpoint(shared, &verificationCheckpoint{Scope: scope}, namespaceOwner(old.StorageNamespace, gen, OwnerReceiptCheckpoint, id)); err != nil {
+				return err
+			}
+		case RetainCheckpoint:
+			if !discarded && (retained.Height == cs.LatestCheckpointHeight.RevisionHeight || retained.Height == cs.LatestHeight.RevisionHeight) {
+				continue
+			}
+			if err := pinVerificationCheckpoint(shared, &verificationCheckpoint{Scope: scope}, namespaceOwner(old.StorageNamespace, gen, OwnerRetainedCheckpoint, id)); err != nil {
+				return err
+			}
+			private.Delete(ownedCheckpointKey(gen, retained.Height))
+			height := NewHeight(0, retained.Height)
+			// Normal queries hide discarded generations. Read the stored record
+			// directly so cleanup can preserve a replacement at the same height.
+			if raw := private.Get(consensusStateKey(height)); len(raw) > 0 {
+				consensus, err := cdc.DecodeConsensus(raw)
+				if err != nil {
+					return err
+				}
+				if consensus != nil && consensus.VerificationGeneration == gen {
+					deleteConsensusState(private, height)
+					deleteConsensusMetadata(private, height)
+				}
+			}
+		case RetainEpochProposal:
+			epoch := binary.BigEndian.Uint64(id)
+			if !discarded && epoch > cs.CurrentEpoch {
+				continue
+			}
+			if err := pinSnapshotObject(shared, scope, objectReceipt, [32]byte{}, namespaceOwner(old.StorageNamespace, gen, OwnerEpochProposal, id)); err != nil {
+				return err
+			}
+			shared.Delete(activatedEpochKey(&old, epoch))
+			shared.Delete(stakeWindowKey(&old, epoch))
+		default:
+			return fmt.Errorf("unknown retention record kind")
+		}
+		shared.Delete(record.Key)
+	}
+	if more && len(records) > 0 {
+		private.Set([]byte("verificationCleanupCursor"), records[len(records)-1].Key)
+	} else {
+		private.Delete([]byte("verificationCleanupCursor"))
+	}
+	return nil
+}

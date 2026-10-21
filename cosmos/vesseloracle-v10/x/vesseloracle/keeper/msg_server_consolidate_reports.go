@@ -29,7 +29,8 @@ func (k msgServer) consolidateDeparturePort(vesselData []types.Vessel) (depport 
 	maxPort := ""
 	maxCount := 0
 	for port, count := range portMap {
-		if count > maxCount {
+		// Prefer the lexicographically smallest port when counts tie.
+		if count > maxCount || (count == maxCount && port < maxPort) {
 			maxPort = port
 			maxCount = count
 		}
@@ -155,7 +156,7 @@ func (k msgServer) ConsolidateVesselData(ctx sdk.Context, imo string) (*types.Co
 
 		var consolidateDataReport = types.ConsolidatedDataReport{
 			Imo:            imo,
-			Ts:             uint64(time.Now().Unix()),
+			Ts:             uint64(ctx.BlockTime().Unix()),
 			TotalSamples:   int32(len(vesselData)),
 			EtaOutliers:    numOutliers,
 			EtaMeanCleaned: etaMeanCleaned,

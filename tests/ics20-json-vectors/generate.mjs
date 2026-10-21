@@ -59,7 +59,7 @@ const GO_GENERATORS = [
     profile: "ibcGoV10",
     module: "github.com/cosmos/ibc-go/v10",
     version: "v10.2.0",
-    directory: "cosmos/cardano-mithril-light-client-v10",
+    directory: "cosmos/cardano-probabilistic-light-client-v10",
   },
 ];
 
@@ -178,7 +178,7 @@ function runGoGenerator(configuration) {
       encoding: "utf8",
       env: {
         ...process.env,
-        GOTOOLCHAIN: "go1.25.13",
+        GOTOOLCHAIN: "go1.26.9",
         GOWORK: "off",
       },
       maxBuffer: 10 * 1024 * 1024,

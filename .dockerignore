@@ -59,13 +59,6 @@
 **/.upstream/**
 **/dist
 **/dist/**
-# The Gateway consumes these tracked local packages through file: dependencies,
-# whose package entry points are the committed dist files. The trace-registry
-# package is built explicitly by the Gateway Dockerfile instead.
-!packages/cardano-ibc-planner/dist/
-!packages/cardano-ibc-planner/dist/**
-!packages/cardano-ibc-tx-builder/dist/
-!packages/cardano-ibc-tx-builder/dist/**
 !cardano/vendor/uplc/dist/
 !cardano/vendor/uplc/dist/**
 **/.next
@@ -77,3 +70,6 @@
 **/*.sk
 **/*mnemonic*
 caribic/config/*.local.*
+
+# Built for the target platform in the Gateway image.
+cardano/gateway/bin/

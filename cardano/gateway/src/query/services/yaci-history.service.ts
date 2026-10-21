@@ -11,6 +11,7 @@ import {
   queryCurrentEpochVerificationData,
   queryEpochContextAtPoint,
   queryOperationalCertificateCountersAtPoint,
+  queryInitialPoolParametersAtPoint,
 } from '../../shared/helpers/ogmios';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { BoundedCache } from '../../shared/helpers/bounded-cache';
@@ -28,6 +29,7 @@ import {
 } from './history.service';
 
 import { reconstructHistoricalIbcTree } from './historical-ibc-tree';
+import { initialPoolRegistry, InitialPoolEvent } from './pool-registry-initialization';
 import { readLocalEpochStake } from './local-epoch-stake';
 import { YaciRestClient } from '../../shared/helpers/yaci-rest';
 import { YaciRestHistory, type RestOutput, type RestTransaction } from '../../shared/helpers/yaci-rest-history';
@@ -378,6 +380,134 @@ export class YaciHistoryService implements HistoryService {
       const end = await source.api.block(last);
       if (!end) throw new Error('Yaci descendant block is unavailable');
       return [...blocks, this.mapRestBlock(end)];
+    });
+  }
+
+  // Initialization trusts these configured providers. Subsequent registrations
+  // and production are derived by the client from authenticated block bodies.
+  async findInitialPoolRegistryAtBlock(block: HistoryBlock, requiredPools: string[] = []) {
+    const endpoint = this.configService.get<string>('ogmiosEndpoint');
+    if (!endpoint) throw new Error('Ogmios endpoint is required for client initialization');
+    const parameters = await queryInitialPoolParametersAtPoint(endpoint, { slot: block.slotNo, hash: block.hash });
+    const source = this.restHistory();
+    return source.snapshot(block.height, async (anchor) => {
+      if (anchor.hash !== block.hash) throw new StaleIbcTreeStateError('Initialization point changed');
+      let events: InitialPoolEvent[] = [];
+      const provider = this.configService.get<string>('cardanoPoolRegistrationHistoryEndpoint')?.replace(/\/+$/, '');
+      const indexedPools = new Set<string>();
+      const blocks = new Set<number>();
+      for (const path of ['pools/registrations', 'pools/retirements']) {
+        for await (const row of source.pages(path)) {
+          const height = Number(row.block_number ?? row.block);
+          if (!Number.isSafeInteger(height) || height < 0) throw new Error('Invalid initial pool history block');
+          if (height <= block.height) {
+            indexedPools.add(normalizePoolId(row.pool_id));
+            if (!provider) blocks.add(height);
+          }
+        }
+      }
+      for (const height of [...blocks].sort((a, b) => a - b)) {
+        for (const tx of await source.blockTransactions(height)) {
+          if (!tx.valid) continue;
+          const certificates = tx.body.certs();
+          for (let index = 0; certificates && index < certificates.len(); index++) {
+            const certificate = certificates.get(index);
+            const registration = certificate.as_pool_registration();
+            const retirement = certificate.as_pool_retirement();
+            const position = { slot: BigInt(tx.block.slot), epoch: BigInt(tx.block.epoch), order: tx.index * 4096 + index };
+            if (registration) {
+              const pool = registration.pool_params();
+              events.push({ ...position, pool: normalizePoolId(pool.operator().to_hex()), vrf: Buffer.from(pool.vrf_keyhash().to_hex(), 'hex') });
+            } else if (retirement) {
+              events.push({ ...position, pool: normalizePoolId(retirement.pool().to_hex()), retirement: retirement.epoch() });
+            }
+          }
+        }
+      }
+      if (provider) {
+        const pools = [...new Set([...parameters.current.map((r) => r.pool_id), ...indexedPools, ...requiredPools])];
+        events = await this.initialPoolProviderEvents(provider, pools, block);
+      }
+      const registry = initialPoolRegistry(BigInt(block.epochNo), parameters.genesis, events);
+      const registered = new Map(registry.pools.filter((r) => r.registered).map((r) => [r.registration!.pool_id, r.registration!]));
+      if (registered.size !== parameters.current.length || parameters.current.some((r) =>
+        !Buffer.from(registered.get(r.pool_id)?.vrf_key_hash ?? []).equals(Buffer.from(r.vrf_key_hash)))) {
+        throw new Error('Initial pool history does not match the node registry at the selected block');
+      }
+      return registry;
+    });
+  }
+
+  private async initialPoolProviderEvents(endpoint: string, pools: string[], point: HistoryBlock): Promise<InitialPoolEvent[]> {
+    const events: InitialPoolEvent[] = [];
+    const transactions = new Map<string, Promise<{ tx: any; block: any }>>();
+    const transaction = (hash: string) => {
+      if (!transactions.has(hash)) transactions.set(hash, (async () => {
+        const tx: any = await this.fetchBlockfrostJson(new URL(`${endpoint}/txs/${hash}`), 'initial pool transaction');
+        const block = await this.fetchBlockfrostJson(new URL(`${endpoint}/blocks/${tx.block}`), 'initial pool block');
+        return { tx, block };
+      })());
+      return transactions.get(hash)!;
+    };
+    for (let offset = 0; offset < pools.length; offset += POOL_REGISTRATION_LOOKUP_BATCH_SIZE) {
+      await Promise.all(pools.slice(offset, offset + POOL_REGISTRATION_LOOKUP_BATCH_SIZE).map(async (pool) => {
+        for (let page = 1; page <= 100; page++) {
+          const url = new URL(`${endpoint}/pools/${pool}/updates`);
+          url.search = new URLSearchParams({ order: 'asc', count: '100', page: String(page) }).toString();
+          const rows = await this.fetchBlockfrostArray(url, 'initial pool history') as any[];
+          for (const row of rows) {
+            if (!['registered', 'retired'].includes(row.action) || !/^[0-9a-f]{64}$/.test(row.tx_hash))
+              throw new Error('Invalid initial pool history event');
+            const { tx, block } = await transaction(row.tx_hash);
+            if (![tx.slot, tx.index, block.height, block.epoch, row.cert_index].every((n) => Number.isSafeInteger(n) && n >= 0))
+              throw new Error('Invalid initial pool history position');
+            if (block.height > point.height) continue;
+            const registered = row.action === 'registered';
+            const certificates = await this.fetchBlockfrostArray(new URL(`${endpoint}/txs/${row.tx_hash}/${registered ? 'pool_updates' : 'pool_retires'}`), 'initial pool certificates') as any[];
+            const matching = certificates.filter((c) => c.cert_index === row.cert_index && normalizePoolId(c.pool_id) === pool);
+            if (matching.length !== 1) throw new Error('Initial pool certificate is missing or ambiguous');
+            const certificate = matching[0];
+            const event: InitialPoolEvent = { pool, slot: BigInt(tx.slot), epoch: BigInt(block.epoch), order: tx.index * 4096 + row.cert_index };
+            if (registered) {
+              if (!/^[0-9a-f]{64}$/.test(certificate.vrf_key)) throw new Error('Initial pool VRF binding is missing');
+              event.vrf = Buffer.from(certificate.vrf_key, 'hex');
+            } else {
+              if (!Number.isSafeInteger(certificate.retiring_epoch) || certificate.retiring_epoch <= block.epoch)
+                throw new Error('Invalid initial pool retirement');
+              event.retirement = BigInt(certificate.retiring_epoch);
+            }
+            events.push(event);
+          }
+          if (rows.length < 100) return;
+        }
+        throw new Error('Initial pool history exceeds 100 pages');
+      }));
+    }
+    return events;
+  }
+
+  async findObservedPoolProductionAtBlock(block: HistoryBlock) {
+    const source = this.restHistory();
+    return source.snapshot(block.height, async (anchor) => {
+      if (anchor.hash !== block.hash)
+        throw new StaleIbcTreeStateError('Observed production anchor changed');
+      const rows: Array<{ epoch: number; slot_leader: string }> = [];
+      for (let epoch = Math.max(0, block.epochNo - 5); epoch <= block.epochNo; epoch++) {
+        for (const row of await source.epochBlocks(epoch)) {
+          if (row.number <= anchor.number) rows.push(row);
+        }
+      }
+      const pools = new Map<string, { pool_id: string; completed_epochs_bitmap: number; produced_current_epoch: boolean }>();
+      for (const row of rows) {
+        if (!row.slot_leader) continue;
+        const pool = normalizePoolId(row.slot_leader);
+        const record = pools.get(pool) ?? { pool_id: pool, completed_epochs_bitmap: 0, produced_current_epoch: false };
+        const distance = block.epochNo - Number(row.epoch);
+        if (distance === 0) record.produced_current_epoch = true;
+        else if (distance >= 1 && distance <= 5) record.completed_epochs_bitmap |= 1 << (distance - 1);
+        if (record.completed_epochs_bitmap || record.produced_current_epoch) pools.set(pool, record);
+      }
+      return { epoch: BigInt(block.epochNo), pools: [...pools.values()].sort((a, b) => a.pool_id.localeCompare(b.pool_id)) };
     });
   }
 

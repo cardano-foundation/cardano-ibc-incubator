@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Configure/run Hermes with only disposable migration-rehearsal keys and endpoints."""
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
 import subprocess
+from migration_endpoints import loopback_address
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -26,6 +28,7 @@ def main():
     if not artifacts.is_relative_to(ROOT / '.deployment-smoke') or not artifacts.is_dir():
         p.error('Expected existing disposable bridge artifacts')
     config = artifacts / 'hermes.toml'
+    providers = json.loads((runtime / 'compose.json').read_text())
     keys = artifacts / 'hermes-keys'
     snapshot = artifacts / 'hermes-bridge-manifest.json'
     env = dict(os.environ, FAKETIME_DONT_FAKE_MONOTONIC='1')
@@ -48,8 +51,8 @@ def main():
         template = template.replace('enabled = true\nhost = \'127.0.0.1\'\nport = 3002', 'enabled = false\nhost = \'127.0.0.1\'\nport = 3002')
         for old, new in [('http://localhost:5001', 'http://127.0.0.1:5501'),
                          ('__CARDANO_BRIDGE_MANIFEST_PATH__', str(snapshot)),
-                         ('__CARDANO_SIGNING_KUPO_URL__', 'http://127.0.0.1:2742'),
-                         ('__CARDANO_SIGNING_OGMIOS_URL__', 'http://127.0.0.1:2637'),
+                         ('__CARDANO_SIGNING_KUPO_URL__', 'http://' + loopback_address(providers, 'devkit', 1442)),
+                         ('__CARDANO_SIGNING_OGMIOS_URL__', 'http://' + loopback_address(providers, 'devkit', 1337)),
                          ("# key_store_folder = '/Users/yourusername/.hermes/keys'", f"key_store_folder = '{keys}'"),
                          ("max_block_time = '20000ms'", "max_block_time = '40s'"),
                          ("clock_drift = '5s'", "clock_drift = '10s'"),
@@ -71,11 +74,11 @@ key_store_folder = '{keys}'
 address_type = {{ derivation = 'cosmos' }}
 store_prefix = 'ibc'
 default_gas = 5000000
-max_gas = 75000000
+max_gas = 600000000
 gas_price = {{ price = 0.0025, denom = 'stake' }}
 gas_multiplier = 1.8
 max_msg_num = 20
-max_tx_size = 1000000
+max_tx_size = 8388608
 clock_drift = '10s'
 max_block_time = '10s'
 trusting_period = '10days'
@@ -106,7 +109,11 @@ compat_mode = '0.38'
             import time
             import urllib.request
             import urllib.error
-            deadline = time.monotonic() + 600
+            spec = importlib.util.spec_from_file_location('migration_clock_profile', Path(__file__).with_name('migration-clock-profile.py'))
+            clock = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(clock)
+            genesis = json.loads((runtime / 'runtime/genesis-shelley.json').read_text())
+            deadline = time.monotonic() + clock.proof_readiness_timeout(genesis)
             while True:
                 try:
                     with urllib.request.urlopen('http://127.0.0.1:8800/health/ready', timeout=30) as response:

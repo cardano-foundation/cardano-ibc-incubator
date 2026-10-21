@@ -27,7 +27,7 @@ validator channel(
       expect redeemer != ReclaimChannel
       expect [
         open_ack, open_confirm, close_init, close_confirm, recv, send, timeout,
-        ack, prune,
+        ack, prune, upgrade, upgrade_handshake, upgrade_finish,
       ] = operations
       spending_channel.validate(
         False,
@@ -40,6 +40,9 @@ validator channel(
         timeout,
         ack,
         prune,
+        upgrade,
+        upgrade_handshake,
+        upgrade_finish,
         host_policy,
         datum,
         redeemer,

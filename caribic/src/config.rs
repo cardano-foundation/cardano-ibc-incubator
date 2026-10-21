@@ -44,10 +44,6 @@ impl CoreCardanoNetwork {
         }
     }
 
-    pub fn uses_local_mithril(self) -> bool {
-        matches!(self, Self::Local)
-    }
-
     pub fn is_public_testnet(self) -> bool {
         matches!(self, Self::Preprod | Self::Preview)
     }
@@ -73,7 +69,6 @@ impl CoreCardanoNetwork {
 pub struct Config {
     pub project_root: String,
     pub chains: Chains,
-    pub mithril: Mithril,
     pub health: Health,
     pub cardano: Cardano,
 }
@@ -87,20 +82,6 @@ pub struct Chains {
 pub struct CardanoChain {
     pub chain_id: String,
     pub message_port_id: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Mithril {
-    pub enabled: bool,
-    pub aggregator_url: String,
-    pub genesis_verification_key: String,
-    pub genesis_secret_key: String,
-    pub chain_observer_type: String,
-    pub cardano_node_dir: String,
-    pub cardano_node_version: String,
-    pub aggregator_image: String,
-    pub client_image: String,
-    pub signer_image: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -129,10 +110,11 @@ pub struct CardanoNetworkProfiles {
 pub struct CardanoNetworkProfile {
     pub chain_id: String,
     pub network_magic: u64,
-    pub mithril_aggregator_url: String,
-    pub mithril_genesis_verification_key: String,
     pub handler_json_path: String,
     pub bridge_manifest_path: Option<String>,
+    /// Public Mithril aggregator. The local network runs its own.
+    #[serde(default)]
+    pub mithril_aggregator_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -160,8 +142,7 @@ fn default_cardano_network_profiles() -> CardanoNetworkProfiles {
         local: CardanoNetworkProfile {
             chain_id: "cardano-devnet".to_string(),
             network_magic: 42,
-            mithril_aggregator_url: "http://mithril-aggregator:8080/aggregator".to_string(),
-            mithril_genesis_verification_key: "5b33322c3235332c3138362c3230312c3137372c31312c3131372c3133352c3138372c3136372c3138312c3138382c32322c35392c3230362c3130352c3233312c3135302c3231352c33302c37382c3231322c37362c31362c3235322c3138302c37322c3133342c3133372c3234372c3136312c36385d".to_string(),
+            mithril_aggregator_url: None,
             handler_json_path: "../../cardano/offchain/deployments/handler.json".to_string(),
             bridge_manifest_path: Some(
                 "../../cardano/offchain/deployments/bridge-manifest.json".to_string(),
@@ -170,12 +151,10 @@ fn default_cardano_network_profiles() -> CardanoNetworkProfiles {
         preprod: CardanoNetworkProfile {
             chain_id: "cardano-preprod".to_string(),
             network_magic: 1,
-            mithril_aggregator_url:
+            mithril_aggregator_url: Some(
                 "https://aggregator.release-preprod.api.mithril.network/aggregator".to_string(),
-            mithril_genesis_verification_key:
-                "e2ea7ff3d783299ae9f12ea3c4e425ec70073c17613f1d7de4dd2ebf59c24ef4".to_string(),
-            handler_json_path: "../../manifests/preprod/cardano-preprod-handler.json"
-                .to_string(),
+            ),
+            handler_json_path: "../../manifests/preprod/cardano-preprod-handler.json".to_string(),
             bridge_manifest_path: Some(
                 "../../manifests/preprod/cardano-preprod-bridge-manifest.json".to_string(),
             ),
@@ -188,10 +167,9 @@ fn default_preview_network_profile() -> CardanoNetworkProfile {
     CardanoNetworkProfile {
         chain_id: "cardano-preview".to_string(),
         network_magic: 2,
-        mithril_aggregator_url:
+        mithril_aggregator_url: Some(
             "https://aggregator.pre-release-preview.api.mithril.network/aggregator".to_string(),
-        mithril_genesis_verification_key:
-            "5b3132372c37332c3132342c3136312c362c3133372c3133312c3231332c3230372c3131372c3139382c38352c3137362c3139392c3136322c3234312c36382c3132332c3131392c3134352c31332c3233322c3234332c34392c3232392c322c3234392c3230352c3230352c33392c3233352c34345d".to_string(),
+        ),
         handler_json_path: "../../manifests/preview/cardano-preview-handler.json".to_string(),
         bridge_manifest_path: Some(
             "../../manifests/preview/cardano-preview-bridge-manifest.json".to_string(),
@@ -227,8 +205,6 @@ impl Config {
 
     fn resolve_runtime_paths(mut config: Self, config_path: &Path) -> Self {
         config.project_root = Self::resolve_path_from_config_dir(config_path, &config.project_root);
-        config.mithril.cardano_node_dir =
-            Self::resolve_path_from_config_dir(config_path, &config.mithril.cardano_node_dir);
         config.cardano.networks.local.handler_json_path = Self::resolve_path_from_config_dir(
             config_path,
             &config.cardano.networks.local.handler_json_path,

@@ -48,9 +48,6 @@ describe('ChannelService channel listings', () => {
           },
         };
       }
-      if (key === 'cardanoLightClientMode') {
-        return 'stake-weighted-stability';
-      }
       return undefined;
     }),
   };
@@ -98,7 +95,6 @@ describe('ChannelService channel listings', () => {
       configService as any,
       lucidService as any,
       kupoService as any,
-      {} as any,
       {} as any,
       {} as any,
       createTestTreeStore(),

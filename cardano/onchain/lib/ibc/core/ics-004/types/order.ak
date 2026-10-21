@@ -1,3 +1,5 @@
+// Frozen public commitment primitive. Keep its constructors and order unchanged.
+// See docs/cardano-commitment-codec.md.
 /// Order defines if a channel is ORDERED or UNORDERED
 pub type Order {
   /// zero-value for channel ordering

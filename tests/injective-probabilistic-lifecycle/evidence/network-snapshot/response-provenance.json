@@ -1,0 +1,20 @@
+{
+  "consensus-params": {
+    "url": "https://testnet.sentry.lcd.injective.network/cosmos/consensus/v1/params",
+    "grpc-metadata-x-cosmos-block-height": "143753794",
+    "date": "Wed, 14 Oct 2026 19:22:26 GMT",
+    "response_sha256": "c39c39fe3d8303db9e672f55ddbe092a4807b7da599bd1c6480dff2e81da5610"
+  },
+  "txfees-params": {
+    "url": "https://testnet.sentry.lcd.injective.network/injective/txfees/v1beta1/params",
+    "grpc-metadata-x-cosmos-block-height": "143753794",
+    "date": "Wed, 14 Oct 2026 19:22:26 GMT",
+    "response_sha256": "0f3833f70a7d96f8e06318061a8d141d2d31b9667f7676599d0a284dc52686d5"
+  },
+  "gov-params": {
+    "url": "https://testnet.sentry.lcd.injective.network/cosmos/gov/v1/params/voting",
+    "grpc-metadata-x-cosmos-block-height": "143753794",
+    "date": "Wed, 14 Oct 2026 19:22:26 GMT",
+    "response_sha256": "f9d3865582620c8fb99d9820deba1c21d69f7e7a0c31f367f5f2fa5bd60fc9a6"
+  }
+}

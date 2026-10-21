@@ -2,7 +2,7 @@ use cardano/address.{Credential}
 use cardano/transaction.{OutputReference, Transaction}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/multitx/client_redeemer.{
-  ReclaimClient, SpendMultitxClientRedeemer,
+  SpendMultitxClientRedeemer,
 }
 use ibc/implementation/spending_multitx_client
 use ibc/migration/auth as migration
@@ -28,7 +28,7 @@ validator client(
       expect
         migration.operation_allowed(transaction, registry_policy, generation, 2)
       expect redeemer: SpendMultitxClientRedeemer = raw
-      expect redeemer != ReclaimClient
+      // validate(False, ...) rejects retirement in this wrapper.
       spending_multitx_client.validate(
         False,
         host_policy,

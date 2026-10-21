@@ -110,45 +110,6 @@ pub fn get_cardano_tip_state(
     }
 }
 
-pub enum CardanoQuery {
-    #[allow(dead_code)]
-    Epoch,
-}
-
-impl CardanoQuery {
-    fn as_str(&self) -> &'static str {
-        match self {
-            CardanoQuery::Epoch => "epoch",
-        }
-    }
-}
-
-pub fn get_cardano_state(
-    project_root_dir: &Path,
-    query: CardanoQuery,
-) -> Result<u64, Box<dyn std::error::Error>> {
-    let cardano_tip_state = get_cardano_tip_state(project_root_dir)?;
-    let cardano_tip_json: Value = serde_json::from_str(&cardano_tip_state)?;
-    let epoch_json = cardano_tip_json.get(query.as_str());
-    if let Some(epoch) = epoch_json {
-        epoch.as_u64().ok_or_else(|| {
-            format!(
-                "Failed to parse {} from cardano-node: {}",
-                query.as_str(),
-                cardano_tip_state
-            )
-            .into()
-        })
-    } else {
-        Err(format!(
-            "Failed to extract {} from cardano-node: {}",
-            query.as_str(),
-            cardano_tip_state
-        )
-        .into())
-    }
-}
-
 pub fn replace_text_in_file(path: &Path, pattern: &str, replacement: &str) -> io::Result<()> {
     let content = fs::read_to_string(path)?;
     let re = Regex::new(pattern).map_err(io::Error::other)?;
@@ -339,7 +300,8 @@ pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn st
 
     for i in 0..file_count {
         let mut file = archive.by_index(i)?;
-        let outpath = destination.join(file.name());
+        let file_name = file.name()?.into_owned();
+        let outpath = destination.join(&file_name);
 
         if i == 1 {
             if let Some(parent) = outpath.parent() {
@@ -347,7 +309,7 @@ pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn st
             }
         }
 
-        if file.name().ends_with('/') {
+        if file_name.ends_with('/') {
             fs::create_dir_all(&outpath)?;
         } else {
             if let Some(p) = outpath.parent() {
@@ -367,7 +329,7 @@ pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn st
             }
         }
 
-        progress_bar.set_message(file.name().to_string());
+        progress_bar.set_message(file_name);
         progress_bar.inc(1);
     }
 
@@ -449,5 +411,59 @@ pub fn get_user_ids() -> (String, String) {
     {
         // Default UID/GID for other systems (Windows, etc.)
         ("1000".to_string(), "1000".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::SystemTime;
+    use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
+
+    #[test]
+    fn unzip_repository_archive_preserves_files_and_executable_permissions() {
+        let unique = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root =
+            std::env::temp_dir().join(format!("caribic-unzip-{}-{unique}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let archive_path = root.join("repository.zip");
+        let destination = root.join("repository");
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        let mut archive = ZipWriter::new(File::create(&archive_path).unwrap());
+        archive.add_directory("repository-main/", options).unwrap();
+        archive
+            .start_file("repository-main/README.md", options)
+            .unwrap();
+        archive.write_all(b"Repository contents\n").unwrap();
+        archive
+            .start_file(
+                "repository-main/scripts/start.sh",
+                options.unix_permissions(0o755),
+            )
+            .unwrap();
+        archive.write_all(b"#!/bin/sh\nexit 0\n").unwrap();
+        archive.finish().unwrap();
+
+        unzip_file(&archive_path, &destination).unwrap();
+
+        assert_eq!(
+            fs::read(destination.join("README.md")).unwrap(),
+            b"Repository contents\n"
+        );
+        let script = destination.join("scripts/start.sh");
+        assert_eq!(fs::read(&script).unwrap(), b"#!/bin/sh\nexit 0\n");
+        assert!(!destination.join("repository-main").exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(script).unwrap().permissions().mode() & 0o777,
+                0o755
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 }

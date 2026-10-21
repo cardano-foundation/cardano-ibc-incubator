@@ -150,7 +150,8 @@ export function assertStateDrained(
       if (group.kind === "channel") {
         if (!utxo.datum) throw new Error("Channel has no datum");
         const [state] = datumFields(Data.from(utxo.datum), 3);
-        const commitments = datumFields(state, 9)[4];
+        // ChannelDatumState ends with the channel's upgrade state.
+        const commitments = datumFields(state, 10)[4];
         if (!(commitments instanceof Map) || commitments.size !== 0) {
           throw new Error(
             `Channel ${utxo.txHash}#${utxo.outputIndex} still has unsettled packets`,

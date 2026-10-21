@@ -5,7 +5,6 @@ import { QueryClientConnectionsResponse } from '@cardano-ibc/proto-types/build/i
 import { GrpcInvalidArgumentException, GrpcNotFoundException } from '../../exception/grpc_exceptions';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ConnectionService } from '../services/connection.service';
 import { HistoryService } from '../services/history.service';
@@ -38,7 +37,6 @@ describe('ConnectionService ClientConnections query', () => {
       {} as ConfigService,
       lucidService as unknown as LucidService,
       {} as KupoService,
-      {} as MithrilService,
       {} as HistoryService,
       {} as IbcTreeCacheService,
       createTestTreeStore(),

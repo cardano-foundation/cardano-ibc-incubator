@@ -441,7 +441,9 @@ test migration_budget_update_rejects_long_witness() fail {
 
 test migration_budget_update_rejects_wrong_sibling_size() fail {
   let key = "witness-boundary"
-  let siblings = [#"00", ..list.repeat(zero, 63)]
+  // The first item remains a sibling rather than a collision descriptor.
+  // A nonzero malformed second sibling also avoids empty-node compression.
+  let siblings = [zero, #"01", ..list.repeat(zero, 62)]
   // Supply the root of this malformed witness, so removing the size guard
   // actually accepts it. A zero root would also fail root authentication.
   let malformed_root = reference_root(builtin.sha2_256(key), zero, siblings)

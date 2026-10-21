@@ -22,8 +22,9 @@ use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as c
 use ibc/core/ics_003_connection_semantics/types/keys as conn_keys_mod
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, ChanCloseConfirm, ChanCloseInit, ChanOpenAck,
   ChanOpenConfirm, PrunePacketHistory, RecvPacket, SendPacket,
@@ -74,6 +75,9 @@ type MockData {
   timeout_packet_policy_id: PolicyId,
   acknowledge_packet_policy_id: PolicyId,
   prune_packet_history_policy_id: PolicyId,
+  chan_upgrade_policy_id: PolicyId,
+  chan_upgrade_handshake_policy_id: PolicyId,
+  chan_upgrade_finish_policy_id: PolicyId,
   channel_sequence: ByteArray,
   channel_token: AuthToken,
   base_token: AuthToken,
@@ -106,6 +110,7 @@ fn host_state_datum(
     nft_policy,
     deployer: #"00000000000000000000000000000000000000000000000000000000",
     control: HostStateControl {
+      last_heartbeat_time: 0,
       port_registry: [],
       shutdown,
       live_clients: 0,
@@ -270,6 +275,7 @@ fn setup() -> MockData {
 
   let client_state =
     ClientState {
+      upgrade_path: [],
       chain_id: "testchain1-1",
       trust_level,
       trusting_period: 1209600000000000,
@@ -368,6 +374,9 @@ fn setup() -> MockData {
     timeout_packet_policy_id: "mock timeout_packet_policy_id",
     acknowledge_packet_policy_id: "mock acknowledge_packet_policy_id",
     prune_packet_history_policy_id: "mock prune_packet_history_policy_id",
+    chan_upgrade_policy_id: "mock chan_upgrade_policy_id",
+    chan_upgrade_handshake_policy_id: "mock chan_upgrade_handshake_policy_id",
+    chan_upgrade_finish_policy_id: "mock chan_upgrade_finish_policy_id",
     channel_sequence,
     channel_token,
     base_token,
@@ -450,6 +459,7 @@ fn check_prune_spending_channel(
       },
       connection_hops: [mock_data.connection_id],
       version: "ics20-1",
+      upgrade_sequence: 0,
     }
   let input_channel_datum =
     ChannelDatum {
@@ -466,6 +476,7 @@ fn check_prune_spending_channel(
           revision_number: 1,
           revision_height: 10,
         },
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -532,6 +543,9 @@ fn check_prune_spending_channel(
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
     mock_data.prune_packet_history_policy_id,
+    mock_data.chan_upgrade_policy_id,
+    mock_data.chan_upgrade_handshake_policy_id,
+    mock_data.chan_upgrade_finish_policy_id,
     mock_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_redeemer,
@@ -645,6 +659,9 @@ fn run_spending_channel_transition(
           mock_data.timeout_packet_policy_id,
           mock_data.acknowledge_packet_policy_id,
           mock_data.prune_packet_history_policy_id,
+          mock_data.chan_upgrade_policy_id,
+          mock_data.chan_upgrade_handshake_policy_id,
+          mock_data.chan_upgrade_finish_policy_id,
           mock_data.host_state_nft_policy_id,
           Some(input_channel_datum),
           spend_channel_redeemer,
@@ -684,6 +701,7 @@ fn send_packet_spending_channel_tx_with_witness(
       },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
   let input_channel_datum =
     ChannelDatum {
@@ -697,6 +715,7 @@ fn send_packet_spending_channel_tx_with_witness(
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -922,6 +941,7 @@ test chan_open_ack_succeed() {
       counterparty: ChannelCounterparty { port_id: "port-1", channel_id: "" },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -936,6 +956,7 @@ test chan_open_ack_succeed() {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -974,6 +995,7 @@ test chan_open_ack_succeed() {
       },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
 
   let output_channel_datum =
@@ -988,6 +1010,7 @@ test chan_open_ack_succeed() {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1138,6 +1161,9 @@ test chan_open_ack_succeed() {
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
     mock_data.prune_packet_history_policy_id,
+    mock_data.chan_upgrade_policy_id,
+    mock_data.chan_upgrade_handshake_policy_id,
+    mock_data.chan_upgrade_finish_policy_id,
     mock_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
@@ -1160,6 +1186,7 @@ test chan_open_confirm_succeed() {
       },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -1174,6 +1201,7 @@ test chan_open_confirm_succeed() {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1362,6 +1390,9 @@ test chan_open_confirm_succeed() {
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
     mock_data.prune_packet_history_policy_id,
+    mock_data.chan_upgrade_policy_id,
+    mock_data.chan_upgrade_handshake_policy_id,
+    mock_data.chan_upgrade_finish_policy_id,
     mock_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
@@ -1384,6 +1415,7 @@ test recv_packet_succeed() {
       },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -1398,6 +1430,7 @@ test recv_packet_succeed() {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1617,6 +1650,9 @@ test recv_packet_succeed() {
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
     mock_data.prune_packet_history_policy_id,
+    mock_data.chan_upgrade_policy_id,
+    mock_data.chan_upgrade_handshake_policy_id,
+    mock_data.chan_upgrade_finish_policy_id,
     mock_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
@@ -1651,6 +1687,7 @@ test send_packet_succeed() {
       },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -1665,6 +1702,7 @@ test send_packet_succeed() {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1746,6 +1784,9 @@ test send_packet_succeed() {
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
     mock_data.prune_packet_history_policy_id,
+    mock_data.chan_upgrade_policy_id,
+    mock_data.chan_upgrade_handshake_policy_id,
+    mock_data.chan_upgrade_finish_policy_id,
     mock_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
@@ -1782,6 +1823,7 @@ test timeout_packet_succeed() {
       },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -1796,6 +1838,7 @@ test timeout_packet_succeed() {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -2025,6 +2068,9 @@ test timeout_packet_succeed() {
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
     mock_data.prune_packet_history_policy_id,
+    mock_data.chan_upgrade_policy_id,
+    mock_data.chan_upgrade_handshake_policy_id,
+    mock_data.chan_upgrade_finish_policy_id,
     mock_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
@@ -2059,6 +2105,7 @@ test acknowledge_packet_succeed() {
       },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -2073,6 +2120,7 @@ test acknowledge_packet_succeed() {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -2287,6 +2335,9 @@ test acknowledge_packet_succeed() {
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
     mock_data.prune_packet_history_policy_id,
+    mock_data.chan_upgrade_policy_id,
+    mock_data.chan_upgrade_handshake_policy_id,
+    mock_data.chan_upgrade_finish_policy_id,
     mock_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
@@ -2309,6 +2360,7 @@ test chan_close_init_succeed() {
       },
       connection_hops: [],
       version: "fake-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -2323,6 +2375,7 @@ test chan_close_init_succeed() {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: "port-0",
       token: fake_data.channel_token,
@@ -2383,6 +2436,9 @@ test chan_close_init_succeed() {
     fake_data.timeout_packet_policy_id,
     fake_data.acknowledge_packet_policy_id,
     fake_data.prune_packet_history_policy_id,
+    fake_data.chan_upgrade_policy_id,
+    fake_data.chan_upgrade_handshake_policy_id,
+    fake_data.chan_upgrade_finish_policy_id,
     fake_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
@@ -2404,6 +2460,7 @@ test chan_close_init_fails_without_closed_channel_continuation() fail {
       },
       connection_hops: [],
       version: "fake-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -2418,6 +2475,7 @@ test chan_close_init_fails_without_closed_channel_continuation() fail {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: "port-0",
       token: fake_data.channel_token,
@@ -2457,6 +2515,9 @@ test chan_close_init_fails_without_closed_channel_continuation() fail {
     fake_data.timeout_packet_policy_id,
     fake_data.acknowledge_packet_policy_id,
     fake_data.prune_packet_history_policy_id,
+    fake_data.chan_upgrade_policy_id,
+    fake_data.chan_upgrade_handshake_policy_id,
+    fake_data.chan_upgrade_finish_policy_id,
     fake_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     ChanCloseInit,
@@ -2479,6 +2540,7 @@ test chan_close_init_fails_without_host_state_co_spend() fail {
       },
       connection_hops: [],
       version: "fake-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -2493,6 +2555,7 @@ test chan_close_init_fails_without_host_state_co_spend() fail {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: "port-0",
       token: fake_data.channel_token,
@@ -2528,6 +2591,9 @@ test chan_close_init_fails_without_host_state_co_spend() fail {
     fake_data.timeout_packet_policy_id,
     fake_data.acknowledge_packet_policy_id,
     fake_data.prune_packet_history_policy_id,
+    fake_data.chan_upgrade_policy_id,
+    fake_data.chan_upgrade_handshake_policy_id,
+    fake_data.chan_upgrade_finish_policy_id,
     fake_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
@@ -2550,6 +2616,7 @@ test chan_close_confirm_succeed() {
       },
       connection_hops: [],
       version: "fake-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -2564,6 +2631,7 @@ test chan_close_confirm_succeed() {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: "port-0",
       token: fake_data.channel_token,
@@ -2603,7 +2671,12 @@ test chan_close_confirm_succeed() {
 
   let proof_height = Height { revision_number: 1, revision_height: 13 }
 
-  let spend_channel_redeemer = ChanCloseConfirm { proof_init, proof_height }
+  let spend_channel_redeemer =
+    ChanCloseConfirm {
+      proof_init,
+      proof_height,
+      counterparty_upgrade_sequence: 0,
+    }
 
   spending_channel.spend_channel.spend(
     #"",
@@ -2616,6 +2689,9 @@ test chan_close_confirm_succeed() {
     fake_data.timeout_packet_policy_id,
     fake_data.acknowledge_packet_policy_id,
     fake_data.prune_packet_history_policy_id,
+    fake_data.chan_upgrade_policy_id,
+    fake_data.chan_upgrade_handshake_policy_id,
+    fake_data.chan_upgrade_finish_policy_id,
     fake_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,

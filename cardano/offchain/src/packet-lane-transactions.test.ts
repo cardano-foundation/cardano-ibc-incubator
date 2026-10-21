@@ -1111,9 +1111,10 @@ Deno.test("timeout on close proves closure and receipt absence at the same authe
   const bytes = (field: number, hex: string) =>
     (field * 8 + 2).toString(16).padStart(2, "0") +
     (hex.length / 2).toString(16).padStart(2, "0") + hex;
+  // A cancelled upgrade left the closed counterparty at upgrade sequence 2.
   const closed = "08041001" +
     bytes(3, bytes(1, fromText("transfer")) + bytes(2, fromText("channel-0"))) +
-    bytes(4, remoteConnection) + bytes(5, fromText("ics20-1"));
+    bytes(4, remoteConnection) + bytes(5, fromText("ics20-1")) + "3002";
   const membership = await membershipProof(
     fromText("channelEnds/ports/transfer/channels/channel-7"),
     closed,
@@ -1145,6 +1146,7 @@ Deno.test("timeout on close proves closure and receipt absence at the same authe
     height,
     absence,
     membership.proof,
+    2n,
     liquidity,
     f.emulator.now(),
     f.emulator.now() + 60_000,

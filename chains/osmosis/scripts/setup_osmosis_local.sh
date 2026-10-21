@@ -8,9 +8,9 @@ MONIKER='val'
 STATE='false'
 LOCAL_GENESIS_TIME="${OSMOSIS_LOCAL_GENESIS_TIME:-2025-12-31T23:59:00Z}"
 
-# Osmosis mainnet capacity snapshot, observed 2026-08-27.
-BLOCK_MAX_BYTES=3000000
-BLOCK_MAX_GAS=300000000
+# Capacity for local probabilistic-client updates. Production limits need a separate approved upgrade.
+BLOCK_MAX_BYTES=16777216
+BLOCK_MAX_GAS=600000000
 EVIDENCE_MAX_AGE_NUM_BLOCKS=100000
 EVIDENCE_MAX_AGE_DURATION=172800000000000
 EVIDENCE_MAX_BYTES=1048576
@@ -18,8 +18,8 @@ STAKING_UNBONDING_TIME=1209600s
 STAKING_MAX_VALIDATORS=70
 STAKING_MAX_ENTRIES=7
 STAKING_HISTORICAL_ENTRIES=10000
-MEMPOOL_MAX_TX_BYTES=1048576
-RPC_MAX_BODY_BYTES=4000000
+MEMPOOL_MAX_TX_BYTES=12582912
+RPC_MAX_BODY_BYTES=20000000
 
 MNEMONIC="bottom loan skill merry east cradle onion journey palm apology verb edit desert impose absurd oil bubble sweet glove shallow size build burst effort"
 POOLSMNEMONIC="traffic cool olive pottery elegant innocent aisle dial genuine install shy uncle ride federal soon shift flight program cave famous provide cute pole struggle"
@@ -261,6 +261,12 @@ grep -q "^max_tx_bytes = $MEMPOOL_MAX_TX_BYTES$" "$CONFIG_FOLDER/config.toml" ||
 sed -i "s/^max_body_bytes = .*/max_body_bytes = $RPC_MAX_BODY_BYTES/" "$CONFIG_FOLDER/config.toml"
 grep -q "^max_body_bytes = $RPC_MAX_BODY_BYTES$" "$CONFIG_FOLDER/config.toml" || {
     echo "Could not configure max_body_bytes in $CONFIG_FOLDER/config.toml" >&2
+    exit 1
+}
+
+sed -i 's/^max-recv-msg-size = .*/max-recv-msg-size = 16777216/' "$CONFIG_FOLDER/app.toml"
+grep -q '^max-recv-msg-size = 16777216$' "$CONFIG_FOLDER/app.toml" || {
+    echo "Could not configure the gRPC receive limit." >&2
     exit 1
 }
 

@@ -14,6 +14,10 @@ two Cardano-facing async-ICQ query paths are:
 /vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport
 ```
 
+Consolidated reports use the block timestamp in Unix seconds. When departure
+ports have the same highest report count, consolidation selects the
+lexicographically smallest port identifier.
+
 ## Integration
 
 A Cosmos SDK 0.53 application can construct the keeper with

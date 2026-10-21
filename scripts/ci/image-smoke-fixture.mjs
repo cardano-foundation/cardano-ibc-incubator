@@ -25,6 +25,7 @@ export function smokeManifest() {
   validators.spend_channel.ref_validator = Object.fromEntries([
     'acknowledge_packet', 'chan_close_confirm', 'chan_close_init', 'chan_open_ack',
     'chan_open_confirm', 'recv_packet', 'prune_packet_history', 'send_packet', 'timeout_packet',
+    'chan_upgrade', 'chan_upgrade_handshake', 'chan_upgrade_finish',
   ].map(name => [name, validator()]));
   const packet_state = {
     format: 'packet-lanes-v1', lane_count: 16,
@@ -37,7 +38,7 @@ export function smokeManifest() {
   };
   const host_state_nft = { policy_id: '22'.repeat(28), token_name: '6962635f686f73745f7374617465' };
   return {
-    schema_version: 5,
+    schema_version: 6,
     consensus_history_format: 'proof-backed-v1',
     deploymentMode: 'legacy',
     deployment_id: 'cardano-devnet:' + host_state_nft.policy_id + '.' + host_state_nft.token_name,
@@ -174,7 +175,7 @@ async function main() {
       next_connection_sequence: 0n, next_channel_sequence: 0n, bound_port: [], last_update_time: 0n },
     nft_policy: manifest.host_state_nft.policy_id, deployer: '66'.repeat(28),
     control: { port_registry: new Map(), shutdown: 'Active',
-      live_clients: 0n, live_connections: 0n, live_channels: 0n },
+      live_clients: 0n, live_connections: 0n, live_channels: 0n, last_heartbeat_time: 0n },
   }, lucid);
   const handler = fixtureHandler(manifest, datum, protocolParameters(lucid.PROTOCOL_PARAMETERS_DEFAULT.costModels));
   const server = createServer(handler);

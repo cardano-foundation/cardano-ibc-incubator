@@ -58,6 +58,13 @@ export class BridgeManifestService {
               ),
               send_packet: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.send_packet),
               timeout_packet: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.timeout_packet),
+              chan_upgrade: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.chan_upgrade),
+              chan_upgrade_handshake: this.toGrpcRefValidator(
+                manifest.validators.spend_channel.ref_validator.chan_upgrade_handshake,
+              ),
+              chan_upgrade_finish: this.toGrpcRefValidator(
+                manifest.validators.spend_channel.ref_validator.chan_upgrade_finish,
+              ),
             },
           },
           spend_transfer_module: this.toGrpcValidator(manifest.validators.spend_transfer_module),

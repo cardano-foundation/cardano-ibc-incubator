@@ -15,7 +15,7 @@ simapp with this repository's matching `08-cardano-probabilistic` light client.
 
 The canonical machine-readable values are in [`profiles.yml`](profiles.yml).
 The v10 simapp contains upstream IBC v2 transfer routing. Cardano/Hermes route
-and token-swap compatibility tests remain Classic-only for now, so selecting
+and token-transfer compatibility tests remain Classic-only for now, so selecting
 `v10-v2` for either workflow returns an explicit deferred-testing error.
 
 ## Classic compatibility across v8 and v10
@@ -126,6 +126,15 @@ genesis. Preserve the existing home when needed with:
 caribic chain start --chain cosmos --network v10-classic --chain-flag stateful=true
 ```
 
+To run beside another local profile, set `COMPOSE_PROJECT_NAME` and
+`COSMOS_PROFILES_STATE_DIR` for the chain commands. The port variables use the
+profile name with underscores, for example `COSMOS_V8_CLASSIC_RPC_PORT`,
+`COSMOS_V8_CLASSIC_GRPC_PORT`, `COSMOS_V8_CLASSIC_REST_PORT` and
+`COSMOS_V8_CLASSIC_P2P_PORT`. Caribic uses the selected ports for health checks
+and Hermes configuration too. `CARIBIC_HERMES_DIR` selects a separate Hermes
+configuration, key store, log and PID directory for Caribic and this demo.
+Use an absolute directory and keep these settings consistent across the run.
+
 State is stored under `~/.caribic/cosmos-profiles/<profile>`. RPC endpoints use
 the host ports in the table; for example:
 
@@ -160,7 +169,7 @@ Genesis explicitly allows both `07-tendermint` and
 used for the Classic return leg. These public keys and mnemonics are strictly
 for local testing.
 
-## Classic Cardano routes and token-swap demo
+## Classic Cardano routes and token-transfer demo
 
 Start the Cardano stack and one Classic profile, then select that same profile
 for route setup and the demo:
@@ -169,7 +178,7 @@ for route setup and the demo:
 caribic start --clean
 caribic chain start --chain cosmos --network v8-classic
 caribic setup route --from cardano --to cosmos --to-network v8-classic
-caribic demo token-swap --chain cosmos --network v8-classic
+caribic demo token-transfer --chain cosmos --network v8-classic
 ```
 
 Use `v10-classic` in all three profile arguments to run the same Classic flow

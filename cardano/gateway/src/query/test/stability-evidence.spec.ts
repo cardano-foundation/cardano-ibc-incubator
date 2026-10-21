@@ -25,6 +25,10 @@ async function expectGrpcError(
   throw new Error(`Expected ${gatewayCode} gRPC error`);
 }
 
+// Settlement producers have more than six months of registration history.
+const MATURE_POOL_SLOT = 20_000_000n;
+const timestampForSlot = (slot: bigint) => 1_700_000_000_000_000_000n + (MATURE_POOL_SLOT + slot) * 1_000_000_000n;
+
 describe('stability-evidence', () => {
   const policy = (overrides: Partial<StabilityPolicy> = {}): StabilityPolicy => ({
     ...getStabilityPolicy(),
@@ -40,9 +44,9 @@ describe('stability-evidence', () => {
     height: 100,
     hash: 'anchor-hash',
     prevHash: 'anchor-prev',
-    slotNo: 1000n,
+    slotNo: MATURE_POOL_SLOT + 1000n,
     epochNo: 7,
-    timestampUnixNs: 1_000_000_000n,
+    timestampUnixNs: timestampForSlot(1000n),
     slotLeader: 'pool-a',
   };
 
@@ -51,27 +55,27 @@ describe('stability-evidence', () => {
       height: 101,
       hash: 'hash-101',
       prevHash: 'anchor-hash',
-      slotNo: 1010n,
+      slotNo: MATURE_POOL_SLOT + 1010n,
       epochNo: 7,
-      timestampUnixNs: 1_100_000_000n,
+      timestampUnixNs: timestampForSlot(1010n),
       slotLeader: 'pool-a',
     },
     {
       height: 102,
       hash: 'hash-102',
       prevHash: 'hash-101',
-      slotNo: 1020n,
+      slotNo: MATURE_POOL_SLOT + 1020n,
       epochNo: 7,
-      timestampUnixNs: 1_200_000_000n,
+      timestampUnixNs: timestampForSlot(1020n),
       slotLeader: 'pool-b',
     },
     {
       height: 103,
       hash: 'hash-103',
       prevHash: 'hash-102',
-      slotNo: 1030n,
+      slotNo: MATURE_POOL_SLOT + 1030n,
       epochNo: 7,
-      timestampUnixNs: 1_300_000_000n,
+      timestampUnixNs: timestampForSlot(1030n),
       slotLeader: 'pool-c',
     },
   ];
@@ -81,18 +85,18 @@ describe('stability-evidence', () => {
       height: 98,
       hash: 'hash-98',
       prevHash: 'hash-97',
-      slotNo: 980n,
+      slotNo: MATURE_POOL_SLOT + 980n,
       epochNo: 7,
-      timestampUnixNs: 980_000_000n,
+      timestampUnixNs: timestampForSlot(980n),
       slotLeader: 'pool-x',
     },
     {
       height: 99,
       hash: 'hash-99',
       prevHash: 'hash-98',
-      slotNo: 990n,
+      slotNo: MATURE_POOL_SLOT + 990n,
       epochNo: 7,
-      timestampUnixNs: 990_000_000n,
+      timestampUnixNs: timestampForSlot(990n),
       slotLeader: 'pool-y',
     },
   ];
@@ -130,8 +134,8 @@ describe('stability-evidence', () => {
     activeSlotCoefficientNumerator: 1n,
     activeSlotCoefficientDenominator: 20n,
     maxKesEvolutions: 62,
-    currentEpochStartSlot: 900n,
-    currentEpochEndSlotExclusive: 1200n,
+    currentEpochStartSlot: MATURE_POOL_SLOT + 900n,
+    currentEpochEndSlotExclusive: MATURE_POOL_SLOT + 1200n,
   };
 
   const anchorEpochContext = {
@@ -141,13 +145,14 @@ describe('stability-evidence', () => {
   };
 
   const historyServiceMock = {
+    findObservedPoolProductionAtBlock: jest.fn().mockImplementation(async (point) => ({ epoch: BigInt(point.epochNo), pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) })),
     findLatestBlock: jest.fn().mockResolvedValue({
       height: 105,
       hash: 'latest-hash',
       prevHash: 'hash-104',
-      slotNo: 1050n,
+      slotNo: MATURE_POOL_SLOT + 1050n,
       epochNo: 7,
-      timestampUnixNs: 1_500_000_000n,
+      timestampUnixNs: timestampForSlot(1050n),
       slotLeader: 'pool-e',
     }),
     findBlockByHeight: jest.fn().mockImplementation(async (height: bigint) => {
@@ -156,9 +161,9 @@ describe('stability-evidence', () => {
           height: 97,
           hash: 'hash-97',
           prevHash: 'hash-96',
-          slotNo: 970n,
+          slotNo: MATURE_POOL_SLOT + 970n,
           epochNo: 7,
-          timestampUnixNs: 970_000_000n,
+          timestampUnixNs: timestampForSlot(970n),
           slotLeader: 'pool-z',
         };
       }
@@ -236,7 +241,7 @@ describe('stability-evidence', () => {
             height: 97,
             hash: 'trusted-hash',
             prevHash: 'hash-96',
-            slotNo: 970n,
+            slotNo: MATURE_POOL_SLOT + 970n,
           };
         }
         return null;
@@ -322,18 +327,18 @@ describe('stability-evidence', () => {
         height: 104,
         hash: 'hash-104',
         prevHash: 'hash-103',
-        slotNo: 1040n,
+        slotNo: MATURE_POOL_SLOT + 1040n,
         epochNo: 7,
-        timestampUnixNs: 1_400_000_000n,
+        timestampUnixNs: timestampForSlot(1040n),
         slotLeader: 'pool-d',
       },
       {
         height: 105,
         hash: 'hash-105',
         prevHash: 'hash-104',
-        slotNo: 1200n,
+        slotNo: MATURE_POOL_SLOT + 1200n,
         epochNo: 8,
-        timestampUnixNs: 1_500_000_000n,
+        timestampUnixNs: timestampForSlot(1200n),
         slotLeader: 'pool-e',
       },
     ]);
@@ -446,9 +451,9 @@ describe('stability-evidence', () => {
           height: 97,
           hash: 'trusted-hash',
           prevHash: 'hash-96',
-          slotNo: 970n,
+          slotNo: MATURE_POOL_SLOT + 970n,
           epochNo: 5,
-          timestampUnixNs: 970_000_000n,
+          timestampUnixNs: timestampForSlot(970n),
           slotLeader: 'pool-z',
         };
       }
@@ -473,9 +478,9 @@ describe('stability-evidence', () => {
           height: 97,
           hash: 'hash-97',
           prevHash: 'hash-96',
-          slotNo: 970n,
+          slotNo: MATURE_POOL_SLOT + 970n,
           epochNo: 7,
-          timestampUnixNs: 970_000_000n,
+          timestampUnixNs: timestampForSlot(970n),
           slotLeader: 'pool-z',
         };
       }

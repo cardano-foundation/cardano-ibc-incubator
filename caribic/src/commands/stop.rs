@@ -37,7 +37,7 @@ pub fn run_stop(
     }
 
     let active_network = config::active_core_cardano_network(project_root_path);
-    let core_cardano_network = resolve_stop_network(network.as_deref(), active_network)?;
+    resolve_stop_network(network.as_deref(), active_network)?;
 
     match target {
         Some(StopTarget::All) | None => {
@@ -47,7 +47,7 @@ pub fn run_stop(
             stop_all_managed_optional_chain_networks(project_root_path, "cheqd")?;
             stop_all_managed_optional_chain_networks(project_root_path, "injective")?;
             bridge_down(project_root_path);
-            network_down(project_root_path, core_cardano_network)?;
+            network_down(project_root_path)?;
             logger::log("\nAll services stopped successfully");
         }
         Some(StopTarget::Bridge) => {
@@ -59,7 +59,7 @@ pub fn run_stop(
             logger::log("\nIBC Swap dapp stopped successfully");
         }
         Some(StopTarget::Network) => {
-            network_down(project_root_path, core_cardano_network)?;
+            network_down(project_root_path)?;
             logger::log("\nCardano Network stopped successfully");
         }
         Some(StopTarget::Demo) => {
@@ -76,21 +76,6 @@ pub fn run_stop(
         Some(StopTarget::Relayer) => {
             stop::stop_relayer(project_root_path.join("relayer").as_path());
             logger::log("\nRelayer stopped successfully");
-        }
-        Some(StopTarget::Mithril) => {
-            if crate::local_network::is_local(project_root_path) {
-                logger::log("DevKit does not start Mithril services");
-            } else if core_cardano_network.uses_local_mithril() {
-                stop::stop_mithril(project_root_path.join("chains/mithrils").as_path());
-                logger::log(
-                    "\nMithril stopped successfully (mithril-aggregator, mithril-signer-1, mithril-signer-2)",
-                );
-            } else {
-                logger::log(&format!(
-                    "\nUsing public Mithril {}; no local Mithril containers to stop",
-                    core_cardano_network.as_str()
-                ));
-            }
         }
     }
 
@@ -128,17 +113,9 @@ fn stop_all_managed_optional_chain_networks(
     Ok(())
 }
 
-/// Stops the local Cardano network and Mithril services.
-fn network_down(
-    project_root_path: &Path,
-    active_network: config::CoreCardanoNetwork,
-) -> Result<(), String> {
-    stop::stop_cardano_network(project_root_path)?;
-
-    if active_network.uses_local_mithril() && !crate::local_network::is_local(project_root_path) {
-        stop::stop_mithril(project_root_path.join("chains/mithrils").as_path());
-    }
-    Ok(())
+/// Stops the managed Cardano network, including the local Mithril services.
+fn network_down(project_root_path: &Path) -> Result<(), String> {
+    stop::stop_cardano_network(project_root_path)
 }
 
 /// Stops bridge-facing components that are safe to restart independently.

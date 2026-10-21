@@ -12,7 +12,16 @@ export const WIRE_SCHEMA_ROOTS = Object.freeze([
   'ibc/client/ics_007_tendermint_client/consensus_state/ConsensusState',
   'ibc/core/ics_003_connection_semantics/types/connection_end/ConnectionEnd',
   'ibc/core/ics_004/types/channel/Channel',
+  'ibc/core/ics_004/packet_lane_datum/PacketLaneDatum',
+  'ibc/core/ics_004/types/upgrade/Upgrade',
+  'ibc/core/ics_004/types/upgrade/ErrorReceipt',
 ]);
+
+// Reviewed destination interface, inventoried in docs/cardano-commitment-codec.md.
+// `update --version` must not update this pin. Changing it requires reviewing
+// decoder support and the transition for existing deployments separately.
+export const DESTINATION_WIRE_SCHEMA_FINGERPRINT =
+  'sha256:b576f49042da52f431f2f200a4f88801e4a50b4191e296e98ac40e89903c0f2a';
 
 export const LOCK_FORMAT_VERSION = 1;
 export const DEFAULT_BLUEPRINT_PATH = 'cardano/onchain/plutus.json';
@@ -215,6 +224,17 @@ export function fingerprintWireSchema(schema) {
   return `sha256:${hash}`;
 }
 
+export function requireDestinationWireCompatibility(
+  schema,
+  reviewedFingerprint = DESTINATION_WIRE_SCHEMA_FINGERPRINT,
+) {
+  if (fingerprintWireSchema(schema) !== reviewedFingerprint) {
+    throw new Error(
+      'protected wire interface differs from the reviewed destination decoders. A schema-version bump does not establish compatibility with deployed readers. Review decoder support and the deployment or codec transition before changing DESTINATION_WIRE_SCHEMA_FINGERPRINT',
+    );
+  }
+}
+
 export function buildWireSchema(blueprint, roots = WIRE_SCHEMA_ROOTS) {
   assertObject(blueprint, 'blueprint');
   assertObject(blueprint.definitions, 'blueprint.definitions');
@@ -307,6 +327,14 @@ export function validateWireSchemaLock(
   if (lock.source !== source) {
     throw new Error(`wire schema lock source must be ${source}`);
   }
+  if (
+    !Array.isArray(lock.roots) ||
+    lock.roots.length === 0 ||
+    lock.roots.some((root) => typeof root !== 'string' || root.length === 0) ||
+    new Set(lock.roots).size !== lock.roots.length
+  ) {
+    throw new Error('wire schema lock roots must be unique non-empty strings');
+  }
   if (canonicalJson(lock.roots) !== canonicalJson(roots)) {
     throw new Error('wire schema lock roots do not match the protected roots');
   }
@@ -337,7 +365,20 @@ export function enforceWireSchemaVersion(
     return { schemaChanged: true, versionChanged: true };
   }
 
-  validateWireSchemaLock(baseLock, validationOptions);
+  // The current checker may add coverage. Validate the previous lock against
+  // its own roots, then require that every old root is still protected.
+  validateWireSchemaLock(baseLock, {
+    ...validationOptions,
+    roots: baseLock.roots,
+  });
+  const removedRoots = baseLock.roots.filter(
+    (root) => !currentLock.roots.includes(root),
+  );
+  if (removedRoots.length > 0) {
+    throw new Error(
+      `protected wire roots were removed: ${removedRoots.join(', ')}`,
+    );
+  }
 
   const schemaChanged =
     canonicalJson(wireSchemaPayload(baseLock)) !==
@@ -505,6 +546,7 @@ function check(options) {
       `wire schema lock is stale; regenerate it with an explicit version bump: node scripts/ci/check-aiken-wire-schema.mjs update --version ${lock.wireSchemaVersion + 1}`,
     );
   }
+  requireDestinationWireCompatibility(expectedLock);
 
   const baseRef = options.baseRef.trim();
   if (baseRef !== '' && !/^0+$/u.test(baseRef)) {
@@ -523,9 +565,18 @@ function update(options) {
   const nextLock = createWireSchemaLock(blueprint, options.version);
 
   if (existsSync(options.lock)) {
-    const currentLock = validateWireSchemaLock(
-      readJson(options.lock, 'wire schema lock'),
+    const previous = readJson(options.lock, 'wire schema lock');
+    const currentLock = validateWireSchemaLock(previous, {
+      roots: previous.roots,
+    });
+    const removedRoots = currentLock.roots.filter(
+      (root) => !nextLock.roots.includes(root),
     );
+    if (removedRoots.length > 0) {
+      throw new Error(
+        `protected wire roots were removed: ${removedRoots.join(', ')}`,
+      );
+    }
     const schemaChanged =
       canonicalJson(wireSchemaPayload(currentLock)) !==
       canonicalJson(wireSchemaPayload(nextLock));

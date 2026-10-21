@@ -77,8 +77,8 @@ describe('Public network stability configuration', () => {
     process.env = { ...originalEnv };
     for (const name of [
       'CARDANO_NETWORK_MAGIC',
-      'CARDANO_LIGHT_CLIENT_MODE',
       'CARDANO_BLOCKFROST_ENDPOINT',
+      'CARDANO_EPOCH_PARAMS_ENDPOINT',
       'CARDANO_STABILITY_ASSUME_STATIC_STAKE',
       'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT',
       'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE',
@@ -95,6 +95,18 @@ describe('Public network stability configuration', () => {
 
   it('uses hosted Blockfrost on Mainnet by default', () => {
     process.env.CARDANO_NETWORK_MAGIC = '764824073';
+    expect(loadConfig().cardanoEpochParamsEndpoint).toBe('https://cardano-mainnet.blockfrost.io/api/v0');
+  });
+
+  it('uses the configured HTTP nonce provider on the explicit local devnet', () => {
+    process.env.CARDANO_NETWORK_MAGIC = '42';
+    process.env.CARDANO_EPOCH_PARAMS_ENDPOINT = 'http://127.0.0.1:62447';
+    expect(loadConfig().cardanoEpochParamsEndpoint).toBe('http://127.0.0.1:62447');
+  });
+
+  it('does not apply the local nonce provider to a public network', () => {
+    process.env.CARDANO_NETWORK_MAGIC = '764824073';
+    process.env.CARDANO_EPOCH_PARAMS_ENDPOINT = 'http://127.0.0.1:62447';
     expect(loadConfig().cardanoEpochParamsEndpoint).toBe('https://cardano-mainnet.blockfrost.io/api/v0');
   });
 
@@ -136,17 +148,9 @@ describe('Public network stability configuration', () => {
 
       expect(loadConfig()).toMatchObject({
         cardanoNetwork: network,
-        cardanoLightClientMode: 'stake-weighted-stability',
         cardanoEpochParamsEndpoint: endpoint,
       });
     });
-  });
-
-  it('does not require a stake snapshot endpoint in Mithril mode', () => {
-    process.env.CARDANO_NETWORK_MAGIC = '764824073';
-    process.env.CARDANO_LIGHT_CLIENT_MODE = 'mithril';
-
-    expect(loadConfig().cardanoLightClientMode).toBe('mithril');
   });
 
   it('keeps the explicit local devnet assumptions available', () => {
@@ -157,7 +161,6 @@ describe('Public network stability configuration', () => {
 
     expect(loadConfig()).toMatchObject({
       cardanoNetwork: 'Custom',
-      cardanoLightClientMode: 'stake-weighted-stability',
       cardanoEpochParamsEndpoint: undefined,
     });
   });
@@ -172,4 +175,29 @@ describe('Local epoch snapshot configuration', () => {
     process.env = { CARDANO_NETWORK_MAGIC: '42', CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT: 'http://nonce:8080' };
     expect(loadConfig().cardanoLocalEpochContextEndpoint).toBe('http://nonce:8080');
   });
+});
+
+describe('Permissionless heartbeat trusting period', () => {
+  const originalEnv = process.env;
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      CARDANO_NETWORK_MAGIC: '42',
+    };
+    delete process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS;
+  });
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('keeps the supported 48-hour default', () => {
+    expect(loadConfig().cardanoClientTrustingPeriodSeconds).toBe(172_800);
+  });
+  it.each(['1', '21600', '86399', '86400', '172799', '-1', '86400.5', 'NaN'])(
+    'rejects a probabilistic trusting period of %s seconds',
+    (value) => {
+      process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS = value;
+      expect(() => loadConfig()).toThrow('must be at least 172800');
+    },
+  );
 });

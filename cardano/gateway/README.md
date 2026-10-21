@@ -66,7 +66,6 @@ Related diagrams:
 
 - [System architecture](../../README.md#architecture)
 - Denom trace lifecycle: `../../docs/denom-trace-mapping.md`
-- Mithril proof flow: `../../docs/mithril-light-client.md#mithril-proof-flow-for-relaying`
 
 ## Bridge Discovery Manifest
 
@@ -98,7 +97,7 @@ Public manifests and public handler startup require `history.format: "cardano-hi
 
 The Gateway now uses two Cardano data planes with different responsibilities:
 
-- Live data plane: `Ogmios + Kupo + Mithril`
+- Live data plane: `Ogmios + Kupo`
 - Historical data plane: `Yaci REST`
 
 Historical queries use Yaci's native block, transaction, asset and address endpoints. Raw blocks authenticate transaction bodies and validity. Historical public roots and private consensus roots must match their on-chain commitments before a proof is returned. PostgreSQL holds application state and the external pool-registration cache. No chain table mirror or bridge projection is required.
@@ -107,7 +106,6 @@ So the runtime split is:
 
 - use `Ogmios` for live chain progression and exact inclusion tracking
 - use `Kupo` for current live UTxO state
-- use `Mithril` for certified Cardano state roots / heights
 - use `Yaci` for historical bridge state and tx evidence
 
 Stake-weighted stability also needs a pool-age lookup because active pools can have registered long before a bridge
@@ -118,8 +116,23 @@ own Ogmios data and the HTTP epoch provider configured by `CARDANO_EPOCH_PARAMS_
 
 ## Installation
 
+From the repository root, build the local packages before installing the Gateway. Their compiled output is generated locally.
+
 ```bash
-$ npm install
+npm ci --prefix proto-types
+npm run --prefix proto-types build
+for package in cardano-ibc-planner cardano-ibc-tx-builder cardano-ibc-trace-registry cardano-ibc-tx-builder-runtime
+do
+  npm ci --prefix "packages/$package"
+  npm run --prefix "packages/$package" build
+done
+rm -rf packages/cardano-ibc-planner/node_modules
+for package in cardano-ibc-tx-builder cardano-ibc-trace-registry cardano-ibc-tx-builder-runtime
+do
+  npm ci --prefix "packages/$package" --omit=dev
+done
+cd cardano/gateway
+npm ci
 ```
 
 ## Running the app

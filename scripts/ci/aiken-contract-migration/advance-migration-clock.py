@@ -6,6 +6,7 @@ The on-chain approval delay and all counterparty verification rules stay intact.
 """
 import argparse
 import datetime
+from fractions import Fraction
 import fcntl
 import json
 import os
@@ -24,24 +25,37 @@ def main():
     p.add_argument('--project', required=True)
     target = p.add_mutually_exclusive_group(required=True)
     target.add_argument('--seconds', type=int)
-    target.add_argument('--until-ms', type=int, help='Stop once a canonical Cardano block reaches this POSIX millisecond timestamp (at most two days ahead)')
+    target.add_argument('--until-ms', type=int, help='Stop once a canonical Cardano block reaches this POSIX millisecond timestamp')
     p.add_argument('--step-seconds', type=int, default=300,
-                   help='Maximum jump between actual blocks (1–300 seconds)')
+                   help='Maximum jump between actual blocks, up to 300 seconds on the default fixture or 86400 on k=2160/f=0.05')
     p.add_argument('--resume', action='store_true', help='Reconcile a pending step before advancing the additional --seconds')
     p.add_argument('--file-clock', action='store_true', help='Use the shared disposable offset file; synchronize Cosmos when finished')
+    p.add_argument('--pool-aging', action='store_true', help='Before IBC bootstrap only: age the explicitly selected k=2160 fixture through real canonical blocks')
     args = p.parse_args()
     runtime = args.runtime.resolve()
+    if args.pool_aging and (runtime / 'fresh-deployment-required.json').exists():
+        p.error('A restored mature network must not repeat pool aging. Check its canonical maturity before creating the fresh bridge.')
     if not runtime.is_relative_to(ROOT/'.deployment-smoke') or not args.project.startswith('cardano-deployment-test-'):
         p.error('Only an explicit disposable deployment-test runtime is supported')
-    if args.seconds is not None and (not 0 <= args.seconds <= 172800 or (args.seconds == 0 and not args.resume)):
-        p.error('Advance at most two days; zero is only valid with --resume')
+    max_advance = 20_000_000 if args.pool_aging else 172800
+    if args.pool_aging and not args.file_clock:
+        p.error('--pool-aging requires the shared --file-clock')
+    if args.seconds is not None and (not 0 <= args.seconds <= max_advance or (args.seconds == 0 and not args.resume)):
+        p.error('Advance exceeds the selected fixture bound; zero is only valid with --resume')
     if args.until_ms is not None and (args.until_ms <= 0 or args.until_ms > int(time.time()*1000)):
         p.error('A disposable clock target must be positive and no later than actual host time')
-    if not 1 <= args.step_seconds <= 300: p.error('Step must be between one and 300 seconds')
     file = runtime/'compose.json'
     config = json.loads(file.read_text())
     genesis = json.loads((runtime/'runtime/genesis-shelley.json').read_text())
     if genesis['networkMagic'] != 42: p.error('Only the owned magic-42 devnet is supported')
+    aging_profile = (genesis['securityParam'] == 2160 and genesis['epochLength'] == 432000 and
+                     genesis['slotLength'] == 1 and Fraction(str(genesis['activeSlotsCoeff'])) == Fraction(1, 20))
+    max_step = 86400 if aging_profile else 300
+    if not 1 <= args.step_seconds <= max_step: p.error(f'Step must be between one and {max_step} seconds')
+    if args.pool_aging and not aging_profile:
+        p.error('Pool aging requires the fresh k=2160, f=0.05, one-second-slot, five-day-epoch fixture')
+    if args.pool_aging and any(runtime.glob('hermes*.toml')):
+        p.error('Pool aging must finish before creating IBC clients or routes')
     lock = (runtime/'clock.lock').open('a')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     def atomic(path, value):
@@ -57,6 +71,12 @@ def main():
         p.error('A prior clock step is unresolved. Inspect clock-pending.json, actual producer settings and canonical history before advancing again')
     state = json.loads(state_file.read_text()) if state_file.exists() else {'offset':json.loads((runtime/'result.json').read_text())['clockOffsetSeconds'],'steps':[]}
     compose = ['docker','compose','-p',args.project,'-f',str(file)]
+    actual_genesis = subprocess.check_output(compose + ['exec', '-T', 'devkit', 'cat',
+        '/clusters/nodes/default/node/genesis/shelley-genesis.json'])
+    if actual_genesis != (runtime/'runtime/genesis-shelley.json').read_bytes():
+        p.error('Actual producer genesis differs from the selected runtime')
+    if args.pool_aging:
+        subprocess.run(['node', str(ROOT/'scripts/ci/aiken-contract-migration/assert-uninitialized-rehearsal.cjs'), str(runtime)], check=True)
     nodes = ['devkit','producer-2','producer-3','producer-4','producer-5']
     if any(node not in config['services'] for node in nodes): p.error('Five forging pools are required')
     if state['offset'] + (args.seconds or 0) > 0: p.error('Do not advance beyond the real host clock')
@@ -87,7 +107,9 @@ def main():
         return points
     def finish_step(pending):
         before, advance, offset = pending['before'], pending['advance'], pending['offset']
-        if offset != state['offset']+advance or not 1 <= advance <= 300:
+        if 'poolAging' in pending and pending['poolAging'] != args.pool_aging:
+            raise RuntimeError('Resume must use the same pool-aging mode as the retained clock intent')
+        if offset != state['offset']+advance or not 1 <= advance <= max_step:
             raise RuntimeError('Pending step does not extend the recorded bounded clock; inspect it manually')
         after = wait('a real block in the advanced clock window',lambda: (point if (point:=tip()).get('slot',0) >= before['slot']+advance-20 else None))
         # A single advancing producer is insufficient: a clock jump can leave
@@ -126,7 +148,7 @@ def main():
     def until_remaining(point):
         return max(0, math.ceil((args.until_ms - genesis_ms - point['slot']*slot_ms)/1000))
     remaining = args.seconds if args.until_ms is None else until_remaining(tip())
-    if remaining > 172800: p.error('Clock target is more than two days ahead of the canonical tip')
+    if remaining > max_advance: p.error('Clock target exceeds the selected fixture advance bound')
     advanced = 0
     wait('all five producers synchronized before clock advancement',
          lambda: synchronized_producers(tip()['slot']-30))
@@ -137,20 +159,20 @@ def main():
             remaining = until_remaining(before)
             if remaining == 0: break
         # Large jumps can leave the local chain outside the node's forecast or
-        # caught-up window. Require an accepted block after each small jump;
+        # caught-up window. Require an accepted block after each bounded jump;
         # never change consensus/genesis settings to make a jump succeed.
         advance = min(remaining, args.step_seconds, int(genesis['epochLength'])-30)
         offset = state['offset']+advance
         advanced += advance
-        if advanced > 172800 or offset > 0:
-            raise RuntimeError('Clock advancement exceeds the disposable two-day or host-time bound')
+        if advanced > max_advance or offset > 0:
+            raise RuntimeError('Clock advancement exceeds the selected fixture or host-time bound')
         target = (datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(seconds=offset)).strftime('%Y-%m-%d %H:%M:%S')
         # An interrupted step may have advanced Cosmos before Cardano. Catch
         # Cardano up without regressing already committed Cosmos timestamps.
         cosmos_offset = max(offset, int(config['services']['cosmos']['environment']['MIGRATION_REHEARSAL_CLOCK_OFFSET_SECONDS']))
         # Persist intent before restarting. A failed step may be resumed only by
         # inspecting these actual producer settings and the canonical tip.
-        pending = {'offset':offset,'before':before,'advance':advance,'fileClock':file_clock}
+        pending = {'offset':offset,'before':before,'advance':advance,'fileClock':file_clock,'poolAging':args.pool_aging}
         atomic(pending_file, json.dumps(pending)+'\n')
         if file_clock:
             atomic(clock_file, f'{offset:+d}s\n')

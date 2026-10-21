@@ -117,12 +117,6 @@ pub async fn download_repository(
     }
 }
 
-#[allow(dead_code)]
-pub async fn download_mithril(mithril_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let url = "https://github.com/input-output-hk/mithril/archive/refs/tags/2437.1.zip";
-    download_repository(url, mithril_path, "mithril").await
-}
-
 pub fn copy_cardano_env_file(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let source = cardano_dir.join(".env.example");
     let destination = cardano_dir.join(".env");
@@ -1285,7 +1279,6 @@ fn write_gateway_env_for_network(
     cardano_dir: &Path,
     clean: bool,
     network: config::CoreCardanoNetwork,
-    light_client_mode: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let profile = config::cardano_network_profile(network);
     let network_magic = profile.network_magic.to_string();
@@ -1345,12 +1338,6 @@ fn write_gateway_env_for_network(
         ("CARDANO_DOCKER_NETWORK", "cardano_ibc_net"),
         ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
         ("CARDANO_NETWORK_MAGIC", network_magic.as_str()),
-        ("CARDANO_LIGHT_CLIENT_MODE", light_client_mode),
-        ("MITHRIL_ENDPOINT", profile.mithril_aggregator_url.as_str()),
-        (
-            "MITHRIL_GENESIS_VERIFICATION_KEY",
-            profile.mithril_genesis_verification_key.as_str(),
-        ),
     ];
 
     for (key, value) in shared_gateway_network_defaults {
@@ -1370,10 +1357,12 @@ fn write_gateway_env_for_network(
                 "CARDANO_CHAIN_HOST",
                 "CARDANO_CHAIN_PORT",
                 "CARDANO_EPOCH_LENGTH",
+                "CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS",
                 "CARDANO_EPOCH_PARAMS_ENDPOINT",
                 "CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT",
                 "CARDANO_DOCKER_NETWORK",
                 "GATEWAY_COMPOSE_PROJECT",
+                "MITHRIL_ENDPOINT",
             ] {
                 if endpoints.get(key).is_none_or(|value| value.is_empty()) {
                     return Err(format!("DevKit container endpoint {key} is missing").into());
@@ -1408,6 +1397,11 @@ fn write_gateway_env_for_network(
         }
         config::CoreCardanoNetwork::Preprod | config::CoreCardanoNetwork::Preview => {
             remove_env_var(&gateway_env, "CARDANO_LOCAL_EPOCH_CONTEXT_ENDPOINT")?;
+            // Public networks use the public Mithril aggregator.
+            match &profile.mithril_aggregator_url {
+                Some(url) => set_or_append_env_var(&gateway_env, "MITHRIL_ENDPOINT", url)?,
+                None => remove_env_var(&gateway_env, "MITHRIL_ENDPOINT")?,
+            }
             // These flags permit deliberately approximate local-dev fallbacks. They must
             // never survive a switch to a public testnet, where historical epoch
             // evidence is reconstructed from the configured public data provider.
@@ -1418,6 +1412,13 @@ fn write_gateway_env_for_network(
             remove_env_var(&gateway_env, "CARDANO_STABILITY_ASSUME_STATIC_STAKE")?;
             remove_env_var(&gateway_env, "CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE")?;
             let epoch_length = network.epoch_length().to_string();
+            // Public testnets currently use Conway's 4*k/f window. These
+            // values follow their Shelley genesis security parameter and f.
+            let randomness_window = if network == config::CoreCardanoNetwork::Preview {
+                "34560"
+            } else {
+                "172800"
+            };
             let preprod_kupo_mode = resolve_preprod_kupo_mode(&gateway_env)?;
             set_or_append_env_var(
                 &gateway_env,
@@ -1437,6 +1438,10 @@ fn write_gateway_env_for_network(
                 ("GATEWAY_DB_HOST", "postgres"),
                 ("GATEWAY_DB_PORT", "5432"),
                 ("CARDANO_EPOCH_LENGTH", epoch_length.as_str()),
+                (
+                    "CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS",
+                    randomness_window,
+                ),
             ];
             for (key, value) in public_testnet_gateway_defaults {
                 set_or_append_env_var(&gateway_env, key, value)?;
@@ -1747,9 +1752,8 @@ pub fn prepare_gateway(
     cardano_dir: &Path,
     clean: bool,
     network: config::CoreCardanoNetwork,
-    light_client_mode: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    write_gateway_env_for_network(cardano_dir, clean, network, light_client_mode)?;
+    write_gateway_env_for_network(cardano_dir, clean, network)?;
     if network.is_public_testnet() {
         let gateway_env = cardano_dir.join("../../cardano/gateway/.env");
         resolve_public_testnet_yaci_checkpoint(&gateway_env, network)?;

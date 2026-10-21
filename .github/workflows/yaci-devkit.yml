@@ -29,7 +29,7 @@ concurrency:
 jobs:
   devkit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@1.91.1
@@ -63,7 +63,8 @@ jobs:
           PY
       - name: Start five producers and verify their native block evidence
         run: |
-          timeout 600 caribic/target/debug/caribic start network
+          # A new network fast-forwards through the five epochs Mithril needs.
+          timeout 2700 caribic/target/debug/caribic start network
           caribic/target/debug/caribic devkit test
           mkdir -p devkit-results/first
           cp .caribic/devkit/*.json devkit-results/first/
@@ -76,7 +77,8 @@ jobs:
           from profile import Runtime
           Runtime().compose('down', '--remove-orphans')
           PY
-          timeout 600 caribic/target/debug/caribic start network
+          # A ready network keeps its clock, but waits for Mithril's latest certificate.
+          timeout 1200 caribic/target/debug/caribic start network
           python3 - <<'PY'
           import json, sys
           from pathlib import Path
@@ -91,7 +93,7 @@ jobs:
           PY
       - name: Verify reset recreates the same configuration and clears history
         run: |
-          timeout 600 caribic/target/debug/caribic start network --clean
+          timeout 2700 caribic/target/debug/caribic start network --clean
           caribic/target/debug/caribic devkit test
           python3 - <<'PY'
           import json, sys
@@ -123,7 +125,7 @@ jobs:
           PY
           python3 chains/cardano/devkit/profile.py status
           python3 chains/cardano/devkit/profile.py stop
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: devkit-results

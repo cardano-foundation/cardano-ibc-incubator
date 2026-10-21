@@ -15,8 +15,9 @@ use ibc/apps/transfer/types/transfer_module_datum.{
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{SendPacket}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -105,6 +106,7 @@ fn check_send_packet_with_data(
       },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -119,6 +121,7 @@ fn check_send_packet_with_data(
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -427,6 +430,9 @@ fn check_send_packet_with_data(
       mock_data.timeout_packet_policy_id,
       mock_data.acknowledge_packet_policy_id,
       mock_data.prune_packet_history_policy_id,
+      mock_data.chan_upgrade_policy_id,
+      mock_data.chan_upgrade_handshake_policy_id,
+      mock_data.chan_upgrade_finish_policy_id,
       mock_data.host_state_nft_policy_id,
       Some(input_channel_datum),
       SendPacket { packet },

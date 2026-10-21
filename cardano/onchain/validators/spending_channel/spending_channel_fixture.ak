@@ -46,6 +46,9 @@ pub type MockData {
   timeout_packet_policy_id: PolicyId,
   acknowledge_packet_policy_id: PolicyId,
   prune_packet_history_policy_id: PolicyId,
+  chan_upgrade_policy_id: PolicyId,
+  chan_upgrade_handshake_policy_id: PolicyId,
+  chan_upgrade_finish_policy_id: PolicyId,
   chan_close_init_policy_id: PolicyId,
   chan_close_confirm_policy_id: PolicyId,
   channel_id: ByteArray,
@@ -199,6 +202,7 @@ pub fn setup() -> MockData {
 
   let client_state =
     ClientState {
+      upgrade_path: [],
       chain_id: "testchain1-1",
       trust_level,
       trusting_period: 1209600000000000,
@@ -303,6 +307,7 @@ pub fn setup() -> MockData {
       nft_policy: host_state_nft_policy_id,
       deployer: "mock deployer key hash",
       control: HostStateControl {
+        last_heartbeat_time: 0,
         port_registry: [Pair(port_id, registration)],
         shutdown: Active,
         live_clients: 0,
@@ -337,6 +342,9 @@ pub fn setup() -> MockData {
     timeout_packet_policy_id: "mock timeout_packet_policy_id",
     acknowledge_packet_policy_id: "mock acknowledge_packet_policy_id",
     prune_packet_history_policy_id: "mock prune_packet_history_policy_id",
+    chan_upgrade_policy_id: "mock chan_upgrade_policy_id",
+    chan_upgrade_handshake_policy_id: "mock chan_upgrade_handshake_policy_id",
+    chan_upgrade_finish_policy_id: "mock chan_upgrade_finish_policy_id",
     chan_close_init_policy_id: "fake chan close init policy id",
     chan_close_confirm_policy_id: "fake chan close init policy id",
     verify_proof_policy_id: "mock verify_proof_policy_id",

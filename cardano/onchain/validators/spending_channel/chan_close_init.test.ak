@@ -3,8 +3,9 @@ use cardano/transaction.{
   Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
 }
 use ibc/client/ics_007_tendermint_client/height as height_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{ChanCloseInit}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -29,6 +30,7 @@ fn check_chan_close_init(mint: Value) {
       },
       connection_hops: [fake_data.connection_id],
       version: "fake version",
+      upgrade_sequence: 0,
     }
 
   let input_channel_datum =
@@ -43,6 +45,7 @@ fn check_chan_close_init(mint: Value) {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id: fake_data.port_id,
       token: fake_data.channel_token,

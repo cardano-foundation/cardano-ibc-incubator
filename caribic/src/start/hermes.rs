@@ -1,8 +1,8 @@
+use crate::chains::hermes_support::hermes_directory;
 use crate::config;
 use crate::logger::{self, log, log_or_show_progress};
 use crate::process::hermes::HermesCli;
 use crate::process::system::SystemChecks;
-use dirs::home_dir;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::fs::{self, OpenOptions};
 #[cfg(unix)]
@@ -21,7 +21,7 @@ const CARDANO_PREVIEW_CHAIN_ID: &str = "cardano-preview";
 const INJECTIVE_TESTNET_CHAIN_ID: &str = "injective-888";
 
 pub(crate) fn hermes_pid_file_path() -> Option<PathBuf> {
-    home_dir().map(|home| home.join(".hermes").join(HERMES_PID_FILE_NAME))
+    hermes_directory().map(|directory| directory.join(HERMES_PID_FILE_NAME))
 }
 
 pub(crate) fn read_hermes_pid_file() -> Option<u32> {
@@ -293,9 +293,9 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
 
     let hermes_binary = require_relayer_hermes_binary()?;
 
-    let home_path = home_dir().ok_or("Could not determine home directory")?;
-    let hermes_log = home_path.join(".hermes/hermes.log");
-    let hermes_config = home_path.join(".hermes/config.toml");
+    let hermes_dir = hermes_directory().ok_or("Could not determine Hermes directory")?;
+    let hermes_log = hermes_dir.join("hermes.log");
+    let hermes_config = hermes_dir.join("config.toml");
     let hermes_err_log = hermes_log.with_extension("err");
     let expected_binary_str = hermes_binary.to_str();
 
@@ -342,7 +342,7 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
 
     log_or_show_progress("Launching Hermes daemon process", &optional_progress_bar);
 
-    fs::create_dir_all(home_path.join(".hermes"))
+    fs::create_dir_all(&hermes_dir)
         .map_err(|e| format!("Failed to create Hermes runtime directory: {}", e))?;
     let _ = fs::remove_file(&hermes_err_log);
 
@@ -400,7 +400,7 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
 
     log(&format!("Hermes started (PID: {})", pid));
     log(&format!("   Logs: {}", hermes_log.display()));
-    log("   Monitor: tail -f ~/.hermes/hermes.log");
+    log(&format!("   Monitor: tail -f {}", hermes_log.display()));
 
     // Verify Hermes survives a short startup window and that the tracked pid really is the
     // expected Hermes daemon command, not just a short-lived child that happened to exist.
@@ -533,8 +533,9 @@ fn parse_toml_quoted_assignment(line: &str, key: &str) -> Option<String> {
 }
 
 fn hermes_chain_ids_from_config() -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let home = home_dir().ok_or("Could not determine home directory")?;
-    let config_path = home.join(".hermes").join("config.toml");
+    let config_path = hermes_directory()
+        .ok_or("Could not determine Hermes directory")?
+        .join("config.toml");
     let config_contents = fs::read_to_string(&config_path).map_err(|error| {
         format!(
             "Failed to read Hermes config at {}: {}",

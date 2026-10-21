@@ -1,14 +1,17 @@
 {
   "formatVersion": 1,
-  "wireSchemaVersion": 3,
+  "wireSchemaVersion": 7,
   "source": "cardano/onchain/plutus.json",
-  "schemaFingerprint": "sha256:91ca26722f066faa7f035a97f2ca3359def9d64db8896db27f218db10cadbbaa",
+  "schemaFingerprint": "sha256:b576f49042da52f431f2f200a4f88801e4a50b4191e296e98ac40e89903c0f2a",
   "roots": [
     "ibc/core/ics_025_handler_interface/host_state/HostStateDatum",
     "ibc/client/ics_007_tendermint_client/client_state/ClientState",
     "ibc/client/ics_007_tendermint_client/consensus_state/ConsensusState",
     "ibc/core/ics_003_connection_semantics/types/connection_end/ConnectionEnd",
-    "ibc/core/ics_004/types/channel/Channel"
+    "ibc/core/ics_004/types/channel/Channel",
+    "ibc/core/ics_004/packet_lane_datum/PacketLaneDatum",
+    "ibc/core/ics_004/types/upgrade/Upgrade",
+    "ibc/core/ics_004/types/upgrade/ErrorReceipt"
   ],
   "definitions": {
     "Bool": {
@@ -56,6 +59,15 @@
         "ref": "ibc/core/ics_023_vector_commitments/ics23/proofs/ProofSpec"
       }
     },
+    "Pairs<ByteArray,Int>": {
+      "type": "map",
+      "keys": {
+        "ref": "ByteArray"
+      },
+      "values": {
+        "ref": "Int"
+      }
+    },
     "Pairs<ByteArray,ibc/core/ics_025_handler_interface/host_state/ModuleRegistration>": {
       "type": "map",
       "keys": {
@@ -63,6 +75,15 @@
       },
       "values": {
         "ref": "ibc/core/ics_025_handler_interface/host_state/ModuleRegistration"
+      }
+    },
+    "Pairs<Int,ByteArray>": {
+      "type": "map",
+      "keys": {
+        "ref": "Int"
+      },
+      "values": {
+        "ref": "ByteArray"
       }
     },
     "aiken/crypto/VerificationKeyHash": {
@@ -150,6 +171,12 @@
               "name": "proof_specs",
               "type": {
                 "ref": "List<ibc/core/ics_023_vector_commitments/ics23/proofs/ProofSpec>"
+              }
+            },
+            {
+              "name": "upgrade_path",
+              "type": {
+                "ref": "List<ByteArray>"
               }
             }
           ]
@@ -349,6 +376,89 @@
         }
       ]
     },
+    "ibc/core/ics_004/packet_lane_datum/PacketLaneDatum": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "PacketLaneDatum",
+          "index": 0,
+          "fields": [
+            {
+              "name": "port_id",
+              "type": {
+                "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "channel_id",
+              "type": {
+                "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "lane",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "lane_count",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "version",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "root",
+              "type": {
+                "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "commitments",
+              "type": {
+                "ref": "Pairs<Int,ByteArray>"
+              }
+            },
+            {
+              "name": "receipts",
+              "type": {
+                "ref": "List<Int>"
+              }
+            },
+            {
+              "name": "acknowledgements",
+              "type": {
+                "ref": "Pairs<Int,ByteArray>"
+              }
+            },
+            {
+              "name": "minimum_receive_proof_height",
+              "type": {
+                "ref": "ibc/client/ics_007_tendermint_client/height/Height"
+              }
+            },
+            {
+              "name": "maximum_receive_proof_height",
+              "type": {
+                "ref": "ibc/client/ics_007_tendermint_client/height/Height"
+              }
+            },
+            {
+              "name": "balances",
+              "type": {
+                "ref": "Pairs<ByteArray,Int>"
+              }
+            }
+          ]
+        }
+      ]
+    },
     "ibc/core/ics_004/types/channel/Channel": {
       "type": "sum",
       "constructors": [
@@ -384,6 +494,12 @@
               "name": "version",
               "type": {
                 "ref": "ByteArray"
+              }
+            },
+            {
+              "name": "upgrade_sequence",
+              "type": {
+                "ref": "Int"
               }
             }
           ]
@@ -460,6 +576,120 @@
           "name": "Closed",
           "index": 4,
           "fields": []
+        },
+        {
+          "name": "Flushing",
+          "index": 5,
+          "fields": []
+        },
+        {
+          "name": "FlushComplete",
+          "index": 6,
+          "fields": []
+        }
+      ]
+    },
+    "ibc/core/ics_004/types/upgrade/ErrorReceipt": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "ErrorReceipt",
+          "index": 0,
+          "fields": [
+            {
+              "name": "sequence",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "message",
+              "type": {
+                "ref": "ByteArray"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_004/types/upgrade/Upgrade": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "Upgrade",
+          "index": 0,
+          "fields": [
+            {
+              "name": "fields",
+              "type": {
+                "ref": "ibc/core/ics_004/types/upgrade/UpgradeFields"
+              }
+            },
+            {
+              "name": "timeout",
+              "type": {
+                "ref": "ibc/core/ics_004/types/upgrade/UpgradeTimeout"
+              }
+            },
+            {
+              "name": "next_sequence_send",
+              "type": {
+                "ref": "Int"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_004/types/upgrade/UpgradeFields": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "UpgradeFields",
+          "index": 0,
+          "fields": [
+            {
+              "name": "ordering",
+              "type": {
+                "ref": "ibc/core/ics_004/types/order/Order"
+              }
+            },
+            {
+              "name": "connection_hops",
+              "type": {
+                "ref": "List<ByteArray>"
+              }
+            },
+            {
+              "name": "version",
+              "type": {
+                "ref": "ByteArray"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_004/types/upgrade/UpgradeTimeout": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "UpgradeTimeout",
+          "index": 0,
+          "fields": [
+            {
+              "name": "height",
+              "type": {
+                "ref": "ibc/client/ics_007_tendermint_client/height/Height"
+              }
+            },
+            {
+              "name": "timestamp",
+              "type": {
+                "ref": "Int"
+              }
+            }
+          ]
         }
       ]
     },
@@ -718,6 +948,12 @@
             },
             {
               "name": "live_channels",
+              "type": {
+                "ref": "Int"
+              }
+            },
+            {
+              "name": "last_heartbeat_time",
               "type": {
                 "ref": "Int"
               }

@@ -7,7 +7,6 @@ import { QueryService } from '../services/query.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { HistoryService } from '../services/history.service';
 import { decodeClientDatum } from '../../shared/types/client-datum';
@@ -38,16 +37,16 @@ function consensusState(marker: string) {
   };
 }
 
-function clientDatum() {
+function clientDatum(latestHeight = LATEST_HEIGHT) {
   const latest = consensusState('33');
   return {
     token: CLIENT_TOKEN,
     history_root: 'ab'.repeat(32),
     state: {
-      clientState: { latestHeight: LATEST_HEIGHT },
-      consensusStates: new Map([[LATEST_HEIGHT, latest]]),
-      processedTimes: new Map([[LATEST_HEIGHT, 3_000n]]),
-      processedHeights: new Map([[LATEST_HEIGHT, 30n]]),
+      clientState: { latestHeight },
+      consensusStates: new Map([[latestHeight, latest]]),
+      processedTimes: new Map([[latestHeight, 3_000n]]),
+      processedHeights: new Map([[latestHeight, 30n]]),
     },
   };
 }
@@ -62,23 +61,26 @@ function archiveDatum(height = ARCHIVED_HEIGHT, clientToken = CLIENT_TOKEN): Con
   };
 }
 
-async function makeFixture(archives: ConsensusStateDatum[]) {
+const consensusPath = (height: { revisionNumber: bigint; revisionHeight: bigint }) =>
+  `clients/07-tendermint-0/consensusStates/${height.revisionNumber}-${height.revisionHeight}`;
+
+async function makeFixture(archives: ConsensusStateDatum[], latestHeight = LATEST_HEIGHT) {
   const committedValues = new Map<string, Buffer>();
   const latest: ConsensusStateDatum = {
     clientToken: CLIENT_TOKEN,
-    height: LATEST_HEIGHT,
+    height: latestHeight,
     consensusState: consensusState('33'),
     processedTime: 3000n,
     processedHeight: 30n,
   };
   committedValues.set(
-    `clients/07-tendermint-0/consensusStates/${LATEST_HEIGHT.revisionHeight}`,
+    consensusPath(latestHeight),
     Buffer.from(await encodeConsensusStateValue(latest.consensusState, Lucid), 'hex'),
   );
   for (const archive of archives) {
     if (archive.clientToken.name === CLIENT_TOKEN.name) {
       committedValues.set(
-        `clients/07-tendermint-0/consensusStates/${archive.height.revisionHeight}`,
+        consensusPath(archive.height),
         Buffer.from(await encodeConsensusStateValue(archive.consensusState, Lucid), 'hex'),
       );
     }
@@ -129,7 +131,6 @@ async function makeFixture(archives: ConsensusStateDatum[]) {
     {} as KupoService,
     historyService as unknown as HistoryService,
     {} as MiniProtocalsService,
-    {} as MithrilService,
     {} as DenomTraceService,
     {} as never,
     {} as IbcTreeStateStore,
@@ -171,7 +172,7 @@ describe('QueryService consensus-state history', () => {
     expect(historyService.findUtxoByUnitAtOrBeforeBlockNo).toHaveBeenCalledWith(CLIENT_UNIT, PROOF_HEIGHT);
     expect(lucidService.findUtxoByUnit).toHaveBeenCalledWith(CLIENT_UNIT);
     expect(lucidService.consensusHistoryRecords).toHaveBeenCalledWith(liveClient);
-    expect(tree.generateProof).toHaveBeenCalledWith('clients/07-tendermint-0/consensusStates/7');
+    expect(tree.generateProof).toHaveBeenCalledWith('clients/07-tendermint-0/consensusStates/0-7');
     expect(response.proof_height.revision_height).toBe(PROOF_HEIGHT);
   });
 
@@ -187,7 +188,7 @@ describe('QueryService consensus-state history', () => {
 
   it('does not expose an archive whose commitment leaf was already pruned', async () => {
     const fixture = await makeFixture([archiveDatum()]);
-    fixture.committedValues.delete('clients/07-tendermint-0/consensusStates/7');
+    fixture.committedValues.delete('clients/07-tendermint-0/consensusStates/0-7');
 
     const heights = await fixture.service.queryConsensusStateHeights({ client_id: '07-tendermint-0' });
 
@@ -196,7 +197,7 @@ describe('QueryService consensus-state history', () => {
 
   it('rejects an archive that does not match the selected snapshot commitment', async () => {
     const fixture = await makeFixture([archiveDatum()]);
-    fixture.committedValues.set('clients/07-tendermint-0/consensusStates/7', Buffer.from('ff', 'hex'));
+    fixture.committedValues.set('clients/07-tendermint-0/consensusStates/0-7', Buffer.from('ff', 'hex'));
 
     await expect(fixture.service.queryConsensusStateHeights({ client_id: '07-tendermint-0' })).rejects.toThrow(
       /does not match the committed IBC state root/,
@@ -229,12 +230,38 @@ describe('QueryService consensus-state history', () => {
     const { service, tree } = await makeFixture([archiveDatum(), later]);
     const heights = await service.queryConsensusStateHeights({ client_id: '07-tendermint-0' });
     expect(heights.consensus_state_heights.map((height) => height.revision_height)).toEqual([7n, 9n]);
-    expect(tree.get).not.toHaveBeenCalledWith('clients/07-tendermint-0/consensusStates/12');
+    expect(tree.get).not.toHaveBeenCalledWith('clients/07-tendermint-0/consensusStates/0-12');
+  });
+
+  it('keeps states archived before a revision upgrade queryable at their own revision', async () => {
+    // The upgrade reset heights, so (0, 2) and the new tip (1, 2) share a revision height.
+    const upgraded = { revisionNumber: 1n, revisionHeight: 2n };
+    (decodeClientDatum as jest.Mock).mockResolvedValue(clientDatum(upgraded));
+    const archives = [
+      archiveDatum({ revisionNumber: 0n, revisionHeight: 2n }),
+      archiveDatum({ revisionNumber: 0n, revisionHeight: 9n }),
+    ];
+    const { service, tree } = await makeFixture(archives, upgraded);
+
+    const heights = await service.queryConsensusStateHeights({ client_id: '07-tendermint-0' });
+    expect(heights.consensus_state_heights.map((height) => [height.revision_number, height.revision_height])).toEqual([
+      [0n, 2n],
+      [0n, 9n],
+      [1n, 2n],
+    ]);
+
+    await service.queryConsensusState({
+      client_id: '07-tendermint-0',
+      revision_number: 0n,
+      revision_height: 2n,
+      latest_height: false,
+    });
+    expect(tree.generateProof).toHaveBeenLastCalledWith('clients/07-tendermint-0/consensusStates/0-2');
   });
 
   it('requires the latest returned state to match the pinned public leaf too', async () => {
     const fixture = await makeFixture([archiveDatum()]);
-    fixture.committedValues.set('clients/07-tendermint-0/consensusStates/9', Buffer.from('ff', 'hex'));
+    fixture.committedValues.set('clients/07-tendermint-0/consensusStates/0-9', Buffer.from('ff', 'hex'));
     await expect(
       fixture.service.queryConsensusState({
         client_id: '07-tendermint-0',

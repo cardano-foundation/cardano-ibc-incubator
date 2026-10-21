@@ -4,4 +4,6 @@ export enum ChannelState {
   TryOpen = 'TryOpen',
   Open = 'Open',
   Close = 'Close',
+  Flushing = 'Flushing',
+  FlushComplete = 'FlushComplete',
 }

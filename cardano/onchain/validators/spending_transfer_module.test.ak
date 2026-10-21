@@ -26,7 +26,9 @@ use ibc/apps/transfer/types/transfer_module_datum.{
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height.{Height}
-use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, ChanOpenAck, ChanOpenConfirm, ChanOpenInit, ChanOpenTry,
   RecvPacket, SendPacket, TimeoutOnClose, TimeoutPacket,
@@ -97,6 +99,7 @@ fn host_state_datum(
     nft_policy,
     deployer: #"00000000000000000000000000000000000000000000000000000000",
     control: HostStateControl {
+      last_heartbeat_time: 0,
       port_registry: [],
       shutdown,
       live_clients: 0,
@@ -208,6 +211,7 @@ fn setup() -> MockData {
           counterparty: ChannelCounterparty { port_id: "", channel_id: "" },
           connection_hops: [],
           version: transfer_module_keys.version,
+          upgrade_sequence: 0,
         },
         next_sequence_send: 1,
         next_sequence_recv: 1,
@@ -215,6 +219,7 @@ fn setup() -> MockData {
         packet_commitment: [],
         packet_receipt: [],
         packet_acknowledgement: [],
+        upgrade: initial_upgrade_state,
       },
       port_id,
       token: channel_token,
@@ -2729,6 +2734,7 @@ fn check_timeout_packet_mint_voucher(use_timeout_on_close: Bool) {
         proof_close: mock.proof,
         proof_height: mock.proof_height,
         next_sequence_recv: 1,
+        counterparty_upgrade_sequence: 0,
       }
     } else {
       TimeoutPacket {
@@ -3175,7 +3181,8 @@ test on_recv_packet_source_accepts_net_receipt_across_stake_credentials() {
   let enterprise = source_recv_receiver_address(receiver)
   let base = enterprise |> with_delegation_key("ssssssssssssssssssssssssssss")
   let other_base =
-    enterprise |> with_delegation_key("tttttttttttttttttttttttttttt")
+    enterprise
+      |> with_delegation_key("tttttttttttttttttttttttttttt")
   validate_source_recv_payout(
     receiver,
     [source_recv_payout(enterprise, 20), source_recv_payout(base, 30)],

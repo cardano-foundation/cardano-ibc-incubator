@@ -25,18 +25,30 @@ clock = load('migration-clock-profile')
 
 
 class References(unittest.TestCase):
-    def test_fresh_genesis_must_precede_the_actual_registration_cutoff(self):
-        # Exact failed CI genesis: more descendants cannot qualify these pools.
-        for start in ['2026-09-14T18:20:59Z', '2026-01-01T00:00:00Z', '2025-12-31T23:59:59Z']:
-            with self.subTest(start=start), self.assertRaisesRegex(ValueError, 'registration cutoff'):
-                clock.require_qualified_genesis({'slotLength': 1, 'systemStart': start})
-        for start in ['2025-12-29T00:00:00Z', '2025-12-31T23:59:58Z']:
-            clock.require_qualified_genesis({'slotLength': 1, 'systemStart': start})
-        with self.assertRaisesRegex(ValueError, 'UTC offset'):
-            clock.require_qualified_genesis({'slotLength': 1, 'systemStart': '2025-12-29T00:00:00'})
+    def test_fresh_fixture_leaves_time_to_age_real_pools_before_ibc_bootstrap(self):
         now = 1_789_667_200
+        for start in ['2026-09-14T18:20:59Z', '2026-03-01T00:00:00Z']:
+            with self.subTest(start=start), self.assertRaisesRegex(ValueError, 'clock headroom'):
+                clock.require_aging_headroom({'slotLength': 1, 'systemStart': start}, now)
+        for start in ['2025-12-29T00:00:00Z', '2026-01-01T00:00:00Z']:
+            clock.require_aging_headroom({'slotLength': 1, 'systemStart': start}, now)
+        with self.assertRaisesRegex(ValueError, 'UTC offset'):
+            clock.require_aging_headroom({'slotLength': 1, 'systemStart': '2025-12-29T00:00:00'}, now)
         self.assertEqual(now + clock.initial_offset(now), 1_766_966_400)
         self.assertEqual(clock.initial_offset(now + 100), clock.initial_offset(now) - 100)
+
+    def test_proof_wait_covers_mainnet_block_intervals_without_changing_the_default_profile(self):
+        self.assertEqual(clock.proof_readiness_timeout({'securityParam': 48, 'activeSlotsCoeff': 0.25}), 600)
+        self.assertEqual(clock.proof_readiness_timeout({'securityParam': 2160, 'activeSlotsCoeff': 0.05}), 1800)
+
+    def test_restored_history_must_already_be_mature_without_another_clock_jump(self):
+        clock.require_mature_history({'slotLength': 1}, {'slot': 20_000_000})
+        clock.require_mature_history({'slotLength': 1}, {'slot': 20_000_001})
+        for tip in [{'slot': 19_999_999}, {'slot': '20000000'}, {}, {'slot': True}]:
+            with self.assertRaisesRegex(ValueError, 'mature canonical history'):
+                clock.require_mature_history({'slotLength': 1}, tip)
+        with self.assertRaisesRegex(ValueError, 'mature canonical history'):
+            clock.require_mature_history({'slotLength': 2}, {'slot': 20_000_000})
 
     def test_funding_requires_the_same_live_outref_amount_and_address(self):
         indexed = [{'transaction_id': 'aa', 'output_index': 0, 'address': 'wallet', 'value': {'coins': 100_000_000_000}}]
@@ -55,6 +67,7 @@ class References(unittest.TestCase):
         config['services']['history'] = {'volumes': []}
         port = 31000
         class Reservation:
+            def setsockopt(self, *_): pass
             def bind(self, address):
                 nonlocal port
                 port += 1
@@ -95,6 +108,44 @@ class References(unittest.TestCase):
         self.assertLess(captured[0].index('case "${LOCAL_FIXTURE_CLOCK}"'),
                         captured[0].index('COPY <<'))
         self.assertIn('--mount=type=tmpfs,target=/tmp', captured[0])
+
+    def test_pool_aging_requires_a_fresh_explicit_consensus_profile(self):
+        devkit = deployment._devkit
+        config = {'services': {name: {'environment': {}, 'volumes': []} for name in devkit.NODES}, 'volumes': {}}
+        config['services']['history'] = {'volumes': []}
+        port = 49152
+        class Reservation:
+            def setsockopt(self, *_): pass
+            def bind(self, address):
+                nonlocal port
+                port += 1
+                self.port = address[1] or port
+            def getsockname(self): return ('127.0.0.1', self.port)
+            def close(self): pass
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(devkit.socket, 'socket', Reservation), patch.object(
+                    devkit.profile.Runtime, 'compose', return_value=json.dumps(config)):
+                instance = devkit.MigrationRuntime(root, 'cardano-deployment-test-aging',
+                    -25_000_000, 432000, 2637, 2742, pool_aging=True)
+            saved = json.loads(instance.compose_file.read_text())
+            self.assertIn('securityParam=2160', (root / 'node.properties').read_text())
+            for name in devkit.NODES:
+                service = saved['services'][name]
+                self.assertEqual(service['environment']['DEVKIT_SECURITY_PARAM'], '2160')
+                self.assertEqual(service['environment']['DEVKIT_BLOCK_TIME'], '20')
+                mounts = [v for v in service['volumes'] if isinstance(v, dict) and v['target'] == '/app/config/node.properties']
+                self.assertEqual(len(mounts), 1)
+                self.assertTrue(mounts[0]['read_only'])
+            self.assertTrue(instance.start_all_producers_before_blocks)
+            self.assertEqual(instance.block_readiness_timeout, 900)
+            before = instance.compose_file.read_bytes()
+            with patch.object(devkit.profile.Runtime, 'compose') as compose:
+                resumed = devkit.MigrationRuntime(root, instance.project, -1, 5000, 2337, 2442, existing=True)
+                compose.assert_not_called()
+            self.assertTrue(resumed.start_all_producers_before_blocks)
+            self.assertEqual(resumed.block_readiness_timeout, 900)
+            self.assertEqual(instance.compose_file.read_bytes(), before)
 
     def fixture(self):
         unit = {'txHash': 'ab' * 32, 'outputIndex': 0, 'address': 'holder', 'scriptRef': {'type': 'PlutusV3', 'script': '43420100'}}
@@ -139,9 +190,9 @@ class References(unittest.TestCase):
 
     def test_startup_requires_preconfigured_witness_without_mutating_node(self):
         node = {'environment': {}, 'volumes': ['node-db:/data']}
-        with self.assertRaisesRegex(ValueError, 'before deployment'):
+        with self.assertRaisesRegex(ValueError, 'loopback'):
             runtime.require_migration_witness(node)
-        node['ports'] = [{'host_ip': '127.0.0.1', 'published': '23001', 'target': 3001}]
+        node['ports'] = [{'host_ip': '127.0.0.1', 'published': '49152', 'target': 3001}]
         original = copy.deepcopy(node)
         runtime.require_migration_witness(node)
         self.assertEqual(node, original)

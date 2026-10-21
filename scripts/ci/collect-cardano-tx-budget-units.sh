@@ -80,4 +80,20 @@ aiken check \
   -m 'spending_tendermint_update_session.{complete_session_requires_client_and_host_threads_and_burn}' \
   -m 'spending_multitx_client.{completed_session_update_fixture_setup_baseline}' \
   -m 'spending_multitx_client.{completed_session_updates_the_client_atomically}' \
+  -m 'spending_channel/chan_upgrade.{init_fixture_setup_baseline}' \
+  -m 'spending_channel/chan_upgrade.{init_proposes_a_replacement_connection}' \
+  -m 'spending_channel/chan_upgrade.{try_fixture_setup_baseline}' \
+  -m 'spending_channel/chan_upgrade.{try_answers_a_crossing_proposal_and_starts_flushing}' \
+  -m 'spending_channel/chan_upgrade.{ack_fixture_setup_baseline}' \
+  -m 'spending_channel/chan_upgrade.{ack_starts_flushing_and_records_the_counterparty_upgrade}' \
+  -m 'spending_channel/chan_upgrade.{confirm_fixture_setup_baseline}' \
+  -m 'spending_channel/chan_upgrade.{confirm_completes_a_certified_flush}' \
+  -m 'spending_channel/chan_upgrade.{flush_fixture_setup_baseline}' \
+  -m 'spending_channel/chan_upgrade.{flush_certifies_eight_lanes_of_a_deployment}' \
+  -m 'spending_channel/chan_upgrade.{open_fixture_setup_baseline}' \
+  -m 'spending_channel/chan_upgrade.{open_moves_the_channel_to_the_replacement_connection}' \
+  -m 'spending_channel/chan_upgrade.{timeout_fixture_setup_baseline}' \
+  -m 'spending_channel/chan_upgrade.{timeout_restores_the_channel_after_the_counterparty_deadline}' \
+  -m 'spending_channel/chan_upgrade.{cancel_fixture_setup_baseline}' \
+  -m 'spending_channel/chan_upgrade.{authority_cancels_while_flushing}' \
   > "$output_json"

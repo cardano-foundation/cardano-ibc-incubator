@@ -39,7 +39,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
         with:
-          toolchain: "1.85.0"
+          toolchain: "1.91.1"
 
       - name: Install local rehearsal dependencies
         run: |
@@ -62,8 +62,13 @@ jobs:
           npm run --prefix cardano/gateway build
           python3 scripts/ci/aiken-contract-migration/test-migration-evidence.py
           node --test scripts/ci/aiken-contract-migration/test-migration-packet-evidence.cjs
+          node --test scripts/ci/aiken-contract-migration/test-migration-lanes.cjs scripts/ci/aiken-contract-migration/test-uninitialized-rehearsal.cjs
+          node --test scripts/ci/aiken-contract-migration/test-owned-runtime-providers.cjs
+          node --test scripts/ci/aiken-contract-migration/test-channel-migration-observation.cjs scripts/ci/aiken-contract-migration/test-channel-upgrade-budget.cjs
+          node --test scripts/ci/aiken-contract-migration/test-rehearsal-json.cjs
           node --test scripts/ci/aiken-contract-migration/test-owned-sdk-rehearsal.cjs
           python3 scripts/ci/aiken-contract-migration/test-deployment-references.py
+          python3 scripts/ci/aiken-contract-migration/test-migration-checkpoint.py
 
       - name: Restore relayer build cache
         uses: actions/cache@v6
@@ -92,11 +97,11 @@ jobs:
 
       - name: Deploy a fresh five-pool V1
         run: |
-          # Match the supported client's fixed producer-registration cutoff.
-          # Compute once; producers retain this relative offset across restarts.
+          # Leave room to age real registrations before creating IBC clients.
+          # Producers retain this relative offset across restarts.
           clock_offset_seconds="$(python3 scripts/ci/aiken-contract-migration/migration-clock-profile.py)"
           python3 scripts/ci/test-cardano-migration-deployment.py \
-            --migration-baseline --pool-count 5 --epoch-length 432000 \
+            --migration-baseline --pool-aging --pool-count 5 --epoch-length 432000 \
             --clock-offset-seconds "$clock_offset_seconds" --ogmios-port 2637 --kupo-port 2742 \
             > .deployment-smoke/baseline-deployment.log 2>&1
           python3 - <<'PY'
@@ -120,7 +125,7 @@ jobs:
 
       - name: Retain public evidence, including failed attempts
         if: always()
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: populated-migration-evidence
           if-no-files-found: error

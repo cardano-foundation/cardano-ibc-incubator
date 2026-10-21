@@ -1,5 +1,5 @@
 import * as Lucid from '@lucid-evolution/lucid';
-import { ChannelDatum, decodeChannelDatum, encodeChannelDatum } from './channel-datum';
+import { ChannelDatum, decodeChannelDatum, encodeChannelDatum, initialChannelUpgradeState } from './channel-datum';
 import { ChannelState } from './state';
 import { Order } from './order';
 
@@ -16,6 +16,7 @@ describe('ChannelDatum packet-history heights', () => {
           },
           connection_hops: [Buffer.from('connection-0').toString('hex')],
           version: Buffer.from('ics20-1').toString('hex'),
+          upgrade_sequence: 0n,
         },
         next_sequence_send: 4n,
         next_sequence_recv: 5n,
@@ -25,6 +26,7 @@ describe('ChannelDatum packet-history heights', () => {
         packet_acknowledgement: new Map([[2n, 'bb']]),
         minimum_receive_proof_height: { revisionNumber: 1n, revisionHeight: 20n },
         maximum_receive_proof_height: { revisionNumber: 1n, revisionHeight: 30n },
+        upgrade: initialChannelUpgradeState(),
       },
       port: Buffer.from('transfer').toString('hex'),
       token: { policyId: '11'.repeat(28), name: '22' },

@@ -1,5 +1,4 @@
 use aiken/cbor
-use aiken/collection/list
 use aiken/collection/pairs
 use aiken/interval
 use cardano/address.{from_verification_key}
@@ -18,20 +17,28 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
+use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_upgrade_pb
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   VerifyMembership, VerifyProofEnvelope, VerifyProofRedeemer,
 }
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
-use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, ChannelUpgradeState, PendingUpgrade,
+} as channel_datum
 use ibc/core/ics_004/channel_redeemer.{
-  ChanCloseConfirm, ChanCloseInit, ChanOpenConfirm, SpendChannelRedeemer,
+  CancelUpgrade, ChanCloseConfirm, ChanCloseInit, ChanOpenConfirm, ChanUpgrade,
+  ChannelUpgradeRedeemer, SpendChannelRedeemer,
 }
+use ibc/core/ics_004/channel_upgrade as upgrade_rules
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{Unordered}
 use ibc/core/ics_004/types/state.{ChannelState, Closed, Open}
+use ibc/core/ics_004/types/upgrade.{
+  ErrorReceipt, Upgrade, UpgradeFields, UpgradeTimeout,
+}
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, IBCModuleRedeemer, OnChanCloseConfirm, OnChanCloseInit,
 }
@@ -44,23 +51,68 @@ use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof,
   MerkleRoot} as merkle
 use ibc/core/ics_024_host_requirements/channel_keys
 use ibc/core/ics_025_handler_interface/host_state.{
-  HostState, HostStateDatum, empty_ibc_state_root,
+  HostState, HostStateControl, HostStateDatum, ModuleRegistration,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  HostStateRedeemer, UpdateChannel,
+  HostStateRedeemer, UpdateChannel, UpgradeChannel,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/testing/sparse_tree
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
 use spending_channel
 use spending_channel/chan_close_confirm
-use spending_channel/spending_channel_fixture.{setup}
+use spending_channel/chan_upgrade_finish
+use spending_channel/spending_channel_fixture.{MockData} as fixtures
 use spending_transfer_module
 use verifying_proof
 
 const shard_policy_id = "mock transfer shard policy id"
 
 const locked_policy_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+// Use the real ICS-20 port, including its registered module capability.
+fn setup() -> MockData {
+  let mock = fixtures.setup()
+  let port_id = "transfer"
+  let port_token =
+    AuthToken {
+      policy_id: mock.port_minting_policy_id,
+      name: port_keys.port_token_name(port_id),
+    }
+  expect host: HostStateDatum =
+    validator_utils.get_inline_datum(mock.host_state_input.output)
+  expect [Pair(_, registration)] = host.control.port_registry
+  let updated_host =
+    HostStateDatum {
+      ..host,
+      control: HostStateControl {
+        ..host.control,
+        port_registry: [
+          Pair(port_id, ModuleRegistration { ..registration, port_token }),
+        ],
+      },
+    }
+  MockData {
+    ..mock,
+    port_id,
+    module_input: Input {
+      ..mock.module_input,
+      output: Output {
+        ..mock.module_input.output,
+        value: assets.from_asset(port_token.policy_id, port_token.name, 1)
+          |> assets.add(mock.module_token.policy_id, mock.module_token.name, 1),
+      },
+    },
+    host_state_input: Input {
+      ..mock.host_state_input,
+      output: Output {
+        ..mock.host_state_input.output,
+        datum: InlineDatum(updated_host),
+      },
+    },
+  }
+}
 
 type Fixture {
   tx: Transaction,
@@ -109,8 +161,29 @@ fn membership_proof(
 }
 
 fn fixture(counterparty_state: ChannelState) -> Fixture {
+  fixture_with_pending(counterparty_state, None)
+}
+
+fn channel_entries(datum: ChannelDatum) -> Pairs<ByteArray, ByteArray> {
+  let channel_key = channel_keys.channel_path(datum.port_id, setup().channel_id)
+  let upgrade_key =
+    channel_keys.channel_upgrade_path(datum.port_id, setup().channel_id)
+  let pending =
+    when channel_datum.upgrade_state(datum.state).pending is {
+      Some(pending) -> [Pair(upgrade_key, cbor.serialise(pending.upgrade))]
+      None -> []
+    }
+  [Pair(channel_key, cbor.serialise(datum.state.channel)), ..pending]
+}
+
+fn fixture_with_pending(
+  counterparty_state: ChannelState,
+  pending: Option<PendingUpgrade>,
+) -> Fixture {
   let mock = setup()
   let proof_height = Height { revision_number: 1, revision_height: 13 }
+  let upgrade: Data =
+    ChannelUpgradeState { pending, error_receipt: None, recv_start_sequence: 0 }
   let channel =
     Channel {
       state: Open,
@@ -121,6 +194,11 @@ fn fixture(counterparty_state: ChannelState) -> Fixture {
       },
       connection_hops: [mock.connection_id],
       version: "ics20-1",
+      upgrade_sequence: if pending == None {
+        0
+      } else {
+        1
+      },
     }
   let input_datum =
     ChannelDatum {
@@ -134,6 +212,7 @@ fn fixture(counterparty_state: ChannelState) -> Fixture {
         packet_acknowledgement: [],
         minimum_receive_proof_height: height_mod.zero_height(),
         maximum_receive_proof_height: height_mod.zero_height(),
+        upgrade,
       },
       port_id: mock.port_id,
       token: mock.channel_token,
@@ -171,28 +250,10 @@ fn fixture(counterparty_state: ChannelState) -> Fixture {
     }
   let module_input = Input { ..mock.module_input, output: module_output }
 
-  let siblings =
-    list.repeat(
-      ibc_state_commitment.empty_hash,
-      ibc_state_commitment.merkle_depth_bits,
-    )
   let channel_key = channel_keys.channel_path(mock.port_id, mock.channel_id)
-  let old_root =
-    ibc_state_commitment.apply_update(
-      empty_ibc_state_root,
-      channel_key,
-      "",
-      cbor.serialise(channel),
-      siblings,
-    )
-  let new_root =
-    ibc_state_commitment.apply_update(
-      old_root,
-      channel_key,
-      cbor.serialise(channel),
-      cbor.serialise(output_datum.state.channel),
-      siblings,
-    )
+  let siblings = sparse_tree.siblings(channel_entries(input_datum), channel_key)
+  let old_root = sparse_tree.root(channel_entries(input_datum))
+  let new_root = sparse_tree.root(channel_entries(output_datum))
   expect original_host: HostStateDatum =
     validator_utils.get_inline_datum(mock.host_state_input.output)
   let old_host =
@@ -263,7 +324,12 @@ fn fixture(counterparty_state: ChannelState) -> Fixture {
       },
     }
 
-  let channel_redeemer = ChanCloseConfirm { proof_init, proof_height }
+  let channel_redeemer =
+    ChanCloseConfirm {
+      proof_init,
+      proof_height,
+      counterparty_upgrade_sequence: channel.upgrade_sequence,
+    }
   let module_redeemer =
     Callback(OnChanCloseConfirm { channel_id: mock.channel_id })
   let host_redeemer = UpdateChannel { channel_siblings: siblings }
@@ -407,8 +473,7 @@ fn module_output(f: Fixture) -> Output {
   output
 }
 
-test transfer_close_confirm_composed_transaction_succeeds() {
-  let f = fixture(Closed)
+fn check_close(f: Fixture) -> Bool {
   let mock = setup()
   expect [channel_input, _, host_input] = f.tx.inputs
   and {
@@ -426,6 +491,9 @@ test transfer_close_confirm_composed_transaction_succeeds() {
       mock.timeout_packet_policy_id,
       mock.acknowledge_packet_policy_id,
       mock.prune_packet_history_policy_id,
+      mock.chan_upgrade_policy_id,
+      mock.chan_upgrade_handshake_policy_id,
+      mock.chan_upgrade_finish_policy_id,
       mock.host_state_nft_policy_id,
       Some(f.input_datum),
       f.channel_redeemer,
@@ -447,6 +515,318 @@ test transfer_close_confirm_composed_transaction_succeeds() {
       f.tx,
     )?,
   }
+}
+
+test transfer_close_confirm_composed_transaction_succeeds() {
+  check_close(fixture(Closed))
+}
+
+fn close_pending_upgrade() -> Fixture {
+  fixture_with_pending(
+    Closed,
+    Some(
+      PendingUpgrade {
+        upgrade: Upgrade {
+          fields: UpgradeFields {
+            ordering: Unordered,
+            connection_hops: ["connection-1"],
+            version: "ics20-1",
+          },
+          timeout: UpgradeTimeout {
+            height: height_mod.zero_height(),
+            timestamp: 0,
+          },
+          next_sequence_send: 0,
+        },
+        timeout_period: 3_600_000,
+        counterparty_upgrade: None,
+        flushed_lanes: 0,
+      },
+    ),
+  )
+}
+
+test close_confirm_preserves_pending_upgrade_as_terminal_history() {
+  let f = close_pending_upgrade()
+  expect [channel_output, _, host_output] = f.tx.outputs
+  expect closed: ChannelDatum = validator_utils.get_inline_datum(channel_output)
+  expect host: HostStateDatum = validator_utils.get_inline_datum(host_output)
+  and {
+    check_close(f)?,
+    closed.state.channel.state == Closed,
+    closed.state.upgrade == f.input_datum.state.upgrade,
+    host.state.ibc_state_root == sparse_tree.root(channel_entries(closed)),
+  }
+}
+
+// Spend the actual close-confirm outputs. All roots and sequential witnesses
+// describe the attempted reopening, so rejection cannot come from a stale root.
+fn cancel_after_close(authority: Bool) -> Bool {
+  let f = close_pending_upgrade()
+  expect check_close(f)
+  let mock = setup()
+  expect [closed_output, _, old_host_output] = f.tx.outputs
+  expect closed: ChannelDatum = validator_utils.get_inline_datum(closed_output)
+  expect old_host: HostStateDatum =
+    validator_utils.get_inline_datum(old_host_output)
+  let sequence = closed.state.channel.upgrade_sequence
+  let receipt =
+    ErrorReceipt { sequence, message: upgrade_rules.invalid_upgrade }
+  let after_upgrade: Data =
+    ChannelUpgradeState {
+      ..channel_datum.upgrade_state(closed.state),
+      pending: None,
+      error_receipt: Some(receipt),
+    }
+  let reopened =
+    ChannelDatum {
+      ..closed,
+      state: ChannelDatumState {
+        ..closed.state,
+        channel: Channel { ..closed.state.channel, state: Open },
+        upgrade: after_upgrade,
+      },
+    }
+  let channel_key = channel_keys.channel_path(closed.port_id, mock.channel_id)
+  let upgrade_key =
+    channel_keys.channel_upgrade_path(closed.port_id, mock.channel_id)
+  let error_key =
+    channel_keys.channel_upgrade_error_path(closed.port_id, mock.channel_id)
+  let old_entries = channel_entries(closed)
+  let channel_entries =
+    [
+      Pair(channel_key, cbor.serialise(reopened.state.channel)),
+      ..pairs.delete_all(old_entries, channel_key)
+    ]
+  let without_upgrade = pairs.delete_all(channel_entries, upgrade_key)
+  let new_entries =
+    [Pair(error_key, cbor.serialise(receipt)), ..without_upgrade]
+  let new_root = sparse_tree.root(new_entries)
+  let channel_input =
+    Input {
+      output_reference: OutputReference {
+        transaction_id: #"9999999999999999999999999999999999999999999999999999999999999999",
+        output_index: 0,
+      },
+      output: closed_output,
+    }
+  let host_input =
+    Input {
+      output_reference: OutputReference {
+        ..channel_input.output_reference,
+        output_index: 2,
+      },
+      output: old_host_output,
+    }
+  let error_path =
+    channel_keys.channel_upgrade_error_path(
+      closed.state.channel.counterparty.port_id,
+      closed.state.channel.counterparty.channel_id,
+    )
+  let error_bz = channel_upgrade_pb.marshal_error_receipt(receipt)
+  let (error_proof, error_root) = membership_proof(error_path, error_bz)
+  expect VerifyMembership {
+    cs,
+    cons_state,
+    height,
+    processed_time,
+    processed_height,
+    delay_time_period,
+    delay_block_period,
+    ..
+  } = f.verify_redeemer
+  let consensus = ConsensusState { ..cons_state, root: error_root }
+  expect connection: ConnectionDatum =
+    validator_utils.get_inline_datum(mock.connection_input.output)
+  let verify_redeemer =
+    VerifyMembership {
+      cs,
+      cons_state: consensus,
+      height,
+      processed_time,
+      processed_height,
+      delay_time_period,
+      delay_block_period,
+      proof: error_proof,
+      path: merkle.apply_prefix(
+        connection.state.counterparty.prefix,
+        merkle.new_merkle_path([error_path]),
+      ),
+      value: error_bz,
+    }
+  expect [connection_input, client_input] = f.tx.reference_inputs
+  expect client: ClientDatum =
+    validator_utils.get_inline_datum(client_input.output)
+  let updated_client =
+    ClientDatum {
+      ..client,
+      state: ClientDatumState {
+        ..client.state,
+        consensus_states: [Pair(height, consensus)],
+      },
+    }
+  let verify_data: Redeemer =
+    VerifyProofEnvelope { proof: verify_redeemer, history_witness: None }
+  let envelope =
+    ChannelUpgradeRedeemer {
+      step: CancelUpgrade {
+        error_receipt: if authority {
+          None
+        } else {
+          Some(receipt)
+        },
+        proof_error_receipt: error_proof,
+        proof_height: height,
+      },
+      channel_siblings: sparse_tree.siblings(old_entries, channel_key),
+      upgrade_siblings: sparse_tree.siblings(channel_entries, upgrade_key),
+      error_receipt_siblings: sparse_tree.siblings(without_upgrade, error_key),
+    }
+  let channel_redeemer = ChanUpgrade(envelope)
+  let channel_data: Redeemer = channel_redeemer
+  let host_data: Redeemer = UpgradeChannel
+  let token_data: Redeemer = mock.channel_token
+  let tx =
+    Transaction {
+      ..f.tx,
+      inputs: [channel_input, host_input],
+      reference_inputs: [
+        connection_input,
+        Input {
+          ..client_input,
+          output: Output {
+            ..client_input.output,
+            datum: InlineDatum(updated_client),
+          },
+        },
+      ],
+      outputs: [
+        Output { ..closed_output, datum: InlineDatum(reopened) },
+        Output {
+          ..old_host_output,
+          datum: InlineDatum(
+            HostStateDatum {
+              ..old_host,
+              state: HostState {
+                ..old_host.state,
+                ibc_state_root: new_root,
+                version: old_host.state.version + 1,
+              },
+            },
+          ),
+        },
+      ],
+      mint: assets.from_asset(mock.chan_upgrade_finish_policy_id, "", 1)
+        |> assets.add(
+            mock.verify_proof_policy_id,
+            "",
+            if authority {
+              0
+            } else {
+              1
+            },
+          ),
+      extra_signatories: if authority {
+        [old_host.deployer]
+      } else {
+        []
+      },
+      redeemers: [
+        Pair(Spend(channel_input.output_reference), channel_data),
+        Pair(Spend(host_input.output_reference), host_data),
+        Pair(Mint(mock.chan_upgrade_finish_policy_id), token_data),
+        ..if authority {
+          []
+        } else {
+          [Pair(Mint(mock.verify_proof_policy_id), verify_data)]
+        }
+      ],
+    }
+  expect
+    ibc_state_commitment.apply_update(
+      old_host.state.ibc_state_root,
+      channel_key,
+      cbor.serialise(closed.state.channel),
+      cbor.serialise(reopened.state.channel),
+      envelope.channel_siblings,
+    ) == sparse_tree.root(channel_entries)
+  expect Some(pending) = channel_datum.upgrade_state(closed.state).pending
+  expect
+    ibc_state_commitment.apply_update(
+      sparse_tree.root(channel_entries),
+      upgrade_key,
+      cbor.serialise(pending.upgrade),
+      "",
+      envelope.upgrade_siblings,
+    ) == sparse_tree.root(without_upgrade)
+  expect
+    ibc_state_commitment.apply_update(
+      sparse_tree.root(without_upgrade),
+      error_key,
+      "",
+      cbor.serialise(receipt),
+      envelope.error_receipt_siblings,
+    ) == new_root
+  expect
+    authority || verifying_proof.verify_proof.mint(
+      VerifyProofEnvelope { proof: verify_redeemer, history_witness: None },
+      mock.verify_proof_policy_id,
+      tx,
+    )
+  expect
+    spending_channel.spend_channel.spend(
+      "mock packet config policy",
+      mock.chan_open_ack_policy_id,
+      mock.chan_open_confirm_policy_id,
+      mock.chan_close_init_policy_id,
+      mock.chan_close_confirm_policy_id,
+      mock.recv_packet_policy_id,
+      mock.send_packet_policy_id,
+      mock.timeout_packet_policy_id,
+      mock.acknowledge_packet_policy_id,
+      mock.prune_packet_history_policy_id,
+      mock.chan_upgrade_policy_id,
+      mock.chan_upgrade_handshake_policy_id,
+      mock.chan_upgrade_finish_policy_id,
+      mock.host_state_nft_policy_id,
+      Some(closed),
+      channel_redeemer,
+      channel_input.output_reference,
+      tx,
+    )
+  expect
+    host_state_stt.host_state_stt.spend(
+      mock.host_state_nft_policy_id,
+      "unused client script",
+      "unused connection script",
+      "mock spend channel script hash",
+      mock.client_minting_policy_id,
+      mock.connection_minting_policy_id,
+      mock.channel_minting_policy_id,
+      "",
+      None,
+      UpgradeChannel,
+      host_input.output_reference,
+      tx,
+    )
+  chan_upgrade_finish.chan_upgrade_finish.mint(
+    mock.client_minting_policy_id,
+    mock.connection_minting_policy_id,
+    mock.verify_proof_policy_id,
+    mock.host_state_nft_policy_id,
+    "mock packet config policy",
+    mock.channel_token,
+    mock.chan_upgrade_finish_policy_id,
+    tx,
+  )
+}
+
+test authority_cancel_cannot_reopen_after_valid_close_confirm() fail {
+  cancel_after_close(True)
+}
+
+test receipt_cancel_cannot_reopen_after_valid_close_confirm() fail {
+  cancel_after_close(False)
 }
 
 test transfer_close_confirm_rejects_proven_open_counterparty() {
@@ -491,7 +871,11 @@ test transfer_close_confirm_rejects_invalid_proof() fail {
   let invalid =
     with_channel_redeemer(
       f,
-      ChanCloseConfirm { proof_init: invalid_proof, proof_height: height },
+      ChanCloseConfirm {
+        proof_init: invalid_proof,
+        proof_height: height,
+        counterparty_upgrade_sequence: 0,
+      },
     )
   let tx =
     Transaction {
@@ -573,7 +957,7 @@ test transfer_close_confirm_rejects_close_init_redeemer() fail {
 
 test transfer_close_confirm_rejects_open_confirm_redeemer() fail {
   let f = fixture(Closed)
-  expect ChanCloseConfirm { proof_init, proof_height } = f.channel_redeemer
+  expect ChanCloseConfirm { proof_init, proof_height, .. } = f.channel_redeemer
   check_module(
     with_channel_redeemer(
       f,

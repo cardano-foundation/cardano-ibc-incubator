@@ -28,8 +28,7 @@ Default host ports:
 - Swap UI: `http://localhost:3000`
 - Explorer UI: `http://localhost:8081`
 
-`ibc-explorer` publishes on `8081` by default because `8080` is already used
-elsewhere in the local bridge stack (for Mithril).
+`ibc-explorer` publishes on `8081` by default.
 
 Default local endpoints target the host-published bridge services:
 

@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1
+ARG INJECTIVE_BUILDER_IMAGE=local/injective-bounded-verification-builder
+ARG INJECTIVE_IMAGE=local/injective-bounded-verification
+FROM ${INJECTIVE_BUILDER_IMAGE} AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY cosmos/cardano-probabilistic-light-client-core /checkpoint/cosmos/cardano-probabilistic-light-client-core
+COPY cosmos/cardano-probabilistic-light-client-v8 /checkpoint/cosmos/cardano-probabilistic-light-client-v8
+COPY chains/cosmos/patch_cardano_probabilistic_light_client.sh /checkpoint/patch.sh
+RUN sh /checkpoint/patch.sh /injective /checkpoint
+RUN --mount=type=cache,target=/go/pkg/mod \
+    path="$(go list -m -f '{{.Dir}}' github.com/cometbft/cometbft)" && \
+    cp -a "$path" /injective/checkpoint-cometbft && \
+    chmod -R u+w /injective/checkpoint-cometbft && \
+    go mod edit -replace github.com/cometbft/cometbft=/injective/checkpoint-cometbft
+COPY chains/cosmos/scripts/checkpoint_fixture_clock.py /checkpoint/clock.py
+RUN python3 /checkpoint/clock.py /injective/checkpoint-cometbft/types/time/time.go
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    GOWORK=off go mod tidy && GOWORK=off go build -mod=readonly -ldflags="-s -w" -o /usr/local/bin/injectived ./cmd/injectived
+FROM ${INJECTIVE_IMAGE} AS node
+COPY --from=builder /usr/local/bin/injectived /usr/local/bin/injectived
+FROM builder AS probe-builder
+COPY --from=probe_src / /injective/cmd/cardano-release-probe/
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    GOWORK=off go build -mod=readonly -ldflags="-s -w" -o /usr/local/bin/cardano-release-probe ./cmd/cardano-release-probe
+FROM node AS probe
+COPY --from=probe-builder /usr/local/bin/cardano-release-probe /usr/local/bin/cardano-release-probe
+ENTRYPOINT ["cardano-release-probe"]

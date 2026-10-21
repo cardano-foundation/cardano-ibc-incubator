@@ -8,8 +8,9 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
 }
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, initial_upgrade_state,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{PrunePacketHistory}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -139,6 +140,7 @@ fn check(mutation: Mutation) -> Bool {
       },
       connection_hops: [mock_data.connection_id],
       version: "ics20-1",
+      upgrade_sequence: 0,
     }
   let input_datum =
     ChannelDatum {
@@ -152,6 +154,7 @@ fn check(mutation: Mutation) -> Bool {
         packet_acknowledgement: acknowledgements,
         minimum_receive_proof_height: floor,
         maximum_receive_proof_height: maximum,
+        upgrade: initial_upgrade_state,
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,

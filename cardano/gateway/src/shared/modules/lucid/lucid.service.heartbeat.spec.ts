@@ -10,6 +10,13 @@ describe('LucidService HostState heartbeat wiring', () => {
     await expect(service.encode('Heartbeat', 'host_state_redeemer')).resolves.toBe('d9050380');
   });
 
+  it('keeps the UpgradeChannel constructor index aligned with the Aiken redeemer', async () => {
+    const service: any = Object.create(LucidService.prototype);
+    service.LucidImporter = LucidImporter;
+
+    await expect(service.encode('UpgradeChannel', 'host_state_redeemer')).resolves.toBe('d9050780');
+  });
+
   it('preserves surplus ADA and unrelated assets in the HostState heartbeat output', async () => {
     const txBuilder: any = {};
     txBuilder.readFrom = jest.fn().mockReturnValue(txBuilder);

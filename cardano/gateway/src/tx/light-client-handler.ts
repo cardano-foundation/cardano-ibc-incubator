@@ -1,6 +1,8 @@
 import type {
   MsgCreateClient,
   MsgCreateClientResponse,
+  MsgUpgradeClient,
+  MsgUpgradeClientResponse,
   MsgRecoverClient,
   MsgRecoverClientResponse,
   MsgUpdateClient,
@@ -18,6 +20,7 @@ export interface LightClientHandler {
   readonly service: {
     createClient(request: MsgCreateClient): Promise<MsgCreateClientResponse>;
     updateClient(request: MsgUpdateClient): Promise<MsgUpdateClientResponse>;
+    upgradeClient?(request: MsgUpgradeClient): Promise<MsgUpgradeClientResponse>;
     recoverClient(request: MsgRecoverClient): Promise<MsgRecoverClientResponse>;
   };
 }

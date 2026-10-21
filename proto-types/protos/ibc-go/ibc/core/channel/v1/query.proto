@@ -7,6 +7,7 @@ option go_package = "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types";
 import "ibc/core/client/v1/client.proto";
 import "cosmos/base/query/v1beta1/pagination.proto";
 import "ibc/core/channel/v1/channel.proto";
+import "ibc/core/channel/v1/upgrade.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/any.proto";
 import "gogoproto/gogo.proto";
@@ -107,6 +108,18 @@ service Query {
   rpc ProofUnreceivedPackets(QueryProofUnreceivedPacketsRequest) returns (QueryProofUnreceivedPacketsResponse) {
     option (google.api.http).get = "/ibc/core/channel/v1/channels/{channel_id}/"
                                    "ports/{port_id}/sequence/{sequence_id}/height/{revision_height}";
+  }
+
+  // UpgradeError returns the error receipt if the upgrade handshake failed.
+  rpc UpgradeError(QueryUpgradeErrorRequest) returns (QueryUpgradeErrorResponse) {
+    option (google.api.http).get = "/ibc/core/channel/v1/channels/{channel_id}/"
+                                   "ports/{port_id}/upgrade_error";
+  }
+
+  // Upgrade returns the upgrade for a given port and channel id.
+  rpc Upgrade(QueryUpgradeRequest) returns (QueryUpgradeResponse) {
+    option (google.api.http).get = "/ibc/core/channel/v1/channels/{channel_id}/"
+                                   "ports/{port_id}/upgrade";
   }
 }
 
@@ -394,4 +407,34 @@ message QueryProofUnreceivedPacketsRequest {
 message QueryProofUnreceivedPacketsResponse {
   bytes proof = 1;
   ibc.core.client.v1.Height proof_height = 2 [(gogoproto.nullable) = false];
+}
+
+// QueryUpgradeErrorRequest is the request type for the Query/ClientState RPC method
+message QueryUpgradeErrorRequest {
+  string port_id    = 1;
+  string channel_id = 2;
+}
+
+// QueryUpgradeErrorResponse is the response type for the Query/Client RPC method
+message QueryUpgradeErrorResponse {
+  ErrorReceipt error_receipt = 1 [(gogoproto.nullable) = false];
+  // merkle proof of existence
+  bytes proof = 2;
+  // height at which the proof was retrieved
+  ibc.core.client.v1.Height proof_height = 3 [(gogoproto.nullable) = false];
+}
+
+// QueryUpgradeRequest is the request type for the QueryUpgradeRequest RPC method
+message QueryUpgradeRequest {
+  string port_id    = 1;
+  string channel_id = 2;
+}
+
+// QueryUpgradeResponse is the response type for the QueryUpgradeResponse RPC method
+message QueryUpgradeResponse {
+  Upgrade upgrade = 1 [(gogoproto.nullable) = false];
+  // merkle proof of existence
+  bytes proof = 2;
+  // height at which the proof was retrieved
+  ibc.core.client.v1.Height proof_height = 3 [(gogoproto.nullable) = false];
 }

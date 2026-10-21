@@ -146,6 +146,7 @@ fn host_state_datum(
     nft_policy,
     deployer: trusted_deployer,
     control: HostStateControl {
+      last_heartbeat_time: 0,
       port_registry: [],
       shutdown: Active,
       live_clients: 0,

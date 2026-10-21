@@ -1,18 +1,12 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-
+import { HOST_STATE_HEARTBEAT_INTERVAL_MS as INTERVAL } from '../../config/constant.config';
 import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
-import { ogmiosRequest } from '../../shared/helpers/ogmios';
 import { HostStateHeartbeatService } from '../host-state-heartbeat.service';
 
-jest.mock('../../shared/helpers/ogmios', () => ({ ogmiosRequest: jest.fn() }));
-
 describe('HostStateHeartbeatService', () => {
-  const hostStateUtxo = {
-    txHash: 'host-state-tx',
-    outputIndex: 0,
-    datum: 'host-state-datum',
-  } as any;
+  const now = 100_000_000;
+  const hostStateUtxo = { txHash: 'host-state-tx', outputIndex: 0, datum: 'host-state-datum' } as any;
   const hostStateDatum = {
     state: {
       version: 4n,
@@ -40,155 +34,116 @@ describe('HostStateHeartbeatService', () => {
       live_clients: 0n,
       live_connections: 0n,
       live_channels: 0n,
+      last_heartbeat_time: 0n,
     },
   } as const;
 
   let lucidService: any;
   let historyService: any;
-  let txOperationRunner: any;
+  let runner: any;
   let service: HostStateHeartbeatService;
-  let treeStore: IbcTreeStateStore;
+  let validity: { validFromTime: number; validToTime: number; currentLedgerTime: number };
 
   beforeEach(() => {
-    treeStore = {
-      getAlignedSnapshot: jest.fn().mockResolvedValue({ root: hostStateDatum.state.ibc_state_root, hostState: hostStateUtxo }),
-      computeRootWithHeartbeatUpdate: jest.fn().mockReturnValue({ commit: jest.fn() }),
-    } as unknown as IbcTreeStateStore;
     lucidService = {
       findUtxoAtHostStateNFT: jest.fn().mockResolvedValue(hostStateUtxo),
       decodeDatum: jest.fn().mockResolvedValue(hostStateDatum),
-      getPublicKeyHash: jest.fn().mockReturnValue(hostStateDatum.deployer),
-      encode: jest.fn(async (_value: unknown, type: string) =>
-        type === 'host_state_redeemer' ? 'encoded-heartbeat' : 'encoded-host-state',
-      ),
-      createUnsignedHostStateHeartbeatTransaction: jest.fn().mockReturnValue({ id: 'builder' }),
-      LucidImporter: {
-        SLOT_CONFIG_NETWORK: {
-          Preprod: { zeroTime: 0, zeroSlot: 0, slotLength: 1_000 },
-        },
-      },
+      getPublicKeyHash: jest.fn().mockReturnValue('99'.repeat(28)),
+      encode: jest.fn(async (_value: unknown, type: string) => type),
+      createUnsignedHostStateHeartbeatTransaction: jest.fn(),
     };
     historyService = {
-      findLatestBlock: jest.fn().mockResolvedValue({ epochNo: 8, slotNo: 6_000n }),
+      findLatestBlock: jest.fn().mockResolvedValue({ epochNo: 8, timestampUnixNs: BigInt(now) * 1_000_000n }),
       findTransactionEvidenceByHash: jest.fn().mockResolvedValue({ blockNo: 100 }),
-      findBlockByHeight: jest.fn().mockResolvedValue({ epochNo: 7 }),
+      findBlockByHeight: jest
+        .fn()
+        .mockResolvedValue({ epochNo: 8, timestampUnixNs: BigInt(now - INTERVAL - 1) * 1_000_000n }),
     };
-    jest.mocked(ogmiosRequest).mockResolvedValue([{
-      start: { slot: 3_000, epoch: 8 },
-      parameters: { epochLength: 5_000, slotLength: { milliseconds: 1_000 } },
-    }]);
-    txOperationRunner = {
-      run: jest.fn().mockResolvedValue({ unsignedTxBytes: new Uint8Array([1, 2, 3]) }),
-    };
-    const configService = {
-      get: jest.fn((key: string) => {
-        if (key === 'ogmiosEndpoint') return 'ws://ogmios';
-        if (key === 'cardanoNetwork') return 'Preprod';
-        return undefined;
-      }),
-    };
-    service = new HostStateHeartbeatService(
-      new Logger(),
-      configService as unknown as ConfigService,
-      lucidService,
-      historyService,
-      txOperationRunner,
-      treeStore,
-    );
-    jest.spyOn(service as any, 'computeTxValidityWindow').mockResolvedValue({
-      currentLedgerTime: 2_000,
-      validFromTime: 1_900,
-      validToTime: 3_000,
-    });
+    runner = { run: jest.fn().mockResolvedValue({ unsignedTxBytes: new Uint8Array([1, 2, 3]) }) };
+    service = new HostStateHeartbeatService(new Logger(), {} as ConfigService, lucidService, historyService, runner, {
+      getAlignedSnapshot: jest
+        .fn()
+        .mockResolvedValue({ root: hostStateDatum.state.ibc_state_root, hostState: hostStateUtxo }),
+      computeRootWithHeartbeatUpdate: jest.fn().mockReturnValue({ commit: jest.fn() }),
+    } as unknown as IbcTreeStateStore);
+    validity = { currentLedgerTime: now, validFromTime: now, validToTime: now + 120_000 };
+    jest.spyOn(service as any, 'computeTxValidityWindow').mockImplementation(async () => validity);
   });
 
-  it('does not build a heartbeat when HostState already has an anchor in the current epoch', async () => {
-    historyService.findBlockByHeight.mockResolvedValue({ epochNo: 8 });
-
-    await expect(service.buildHeartbeat({ signer: 'addr_test1signer' })).resolves.toEqual({
-      heartbeat_required: false,
-      current_epoch: 8,
-      host_state_epoch: 8,
-      next_check_delay_ms: 4_500_000,
-    });
-    expect(lucidService.createUnsignedHostStateHeartbeatTransaction).not.toHaveBeenCalled();
-    expect(txOperationRunner.run).not.toHaveBeenCalled();
-  });
-
-  it('waits until the epoch midpoint before building an idle heartbeat', async () => {
-    historyService.findLatestBlock.mockResolvedValue({ epochNo: 8, slotNo: 5_000n });
-
-    await expect(service.buildHeartbeat({ signer: 'addr_test1signer' })).resolves.toEqual({
-      heartbeat_required: false,
-      current_epoch: 8,
-      host_state_epoch: 7,
-      next_check_delay_ms: 500_000,
-    });
-    expect(txOperationRunner.run).not.toHaveBeenCalled();
-  });
-
-  it('builds a root-preserving, version-incrementing heartbeat for a missing epoch anchor', async () => {
-    const response = await service.buildHeartbeat({ signer: 'addr_test1signer' });
-
-    expect(response).toEqual({
-      heartbeat_required: true,
-      current_epoch: 8,
-      host_state_epoch: 7,
-      next_check_delay_ms: 4_500_000,
-      unsigned_tx: { type_url: '', value: new Uint8Array([1, 2, 3]) },
-    });
-    expect(lucidService.encode).toHaveBeenCalledWith('Heartbeat', 'host_state_redeemer');
-
-    const encodedDatumCall = lucidService.encode.mock.calls.find(
-      ([, type]: [unknown, string]) => type === 'host_state',
-    );
-    expect(encodedDatumCall[0]).toEqual({
+  it('lets an independent funded signer heartbeat within the same epoch', async () => {
+    const response = await service.buildHeartbeat({ signer: 'addr_test1relayer' });
+    expect(response.heartbeat_required).toBe(true);
+    expect(response.next_check_delay_ms).toBe(INTERVAL + 120_000);
+    const encoded = lucidService.encode.mock.calls.find(([, type]: any[]) => type === 'host_state')[0];
+    expect(encoded).toEqual({
       ...hostStateDatum,
-      state: {
-        ...hostStateDatum.state,
-        version: 5n,
-        last_update_time: 2_000n,
-      },
+      state: { ...hostStateDatum.state, version: 5n, last_update_time: BigInt(validity.validToTime) },
+      control: { ...hostStateDatum.control, last_heartbeat_time: BigInt(validity.validToTime) },
     });
-
-    const runnerPlan = txOperationRunner.run.mock.calls[0][0];
-    expect(lucidService.createUnsignedHostStateHeartbeatTransaction).not.toHaveBeenCalled();
-    await runnerPlan.unsignedTx();
-    expect(lucidService.createUnsignedHostStateHeartbeatTransaction).toHaveBeenCalledTimes(1);
-    expect(runnerPlan.wallet).toEqual({
-      mode: 'refresh_from_address',
-      address: 'addr_test1signer',
-      context: 'hostStateHeartbeat',
-    });
-    expect(runnerPlan.pendingTreeUpdate.expectedNewRoot).toBe(hostStateDatum.state.ibc_state_root);
+    const plan = runner.run.mock.calls[0][0];
+    await plan.unsignedTx();
+    expect(lucidService.createUnsignedHostStateHeartbeatTransaction).toHaveBeenCalledWith(
+      hostStateUtxo,
+      'host_state_redeemer',
+      'host_state',
+      '99'.repeat(28),
+    );
+    expect(plan.wallet.address).toBe('addr_test1relayer');
   });
 
-  it('fails closed while the current HostState transaction is not indexed', async () => {
-    historyService.findTransactionEvidenceByHash.mockResolvedValue(null);
-
-    await expect(service.buildHeartbeat({ signer: 'addr_test1signer' })).rejects.toThrow();
-    expect(txOperationRunner.run).not.toHaveBeenCalled();
+  it('suppresses heartbeats after recent ordinary HostState activity', async () => {
+    historyService.findBlockByHeight.mockResolvedValue({
+      epochNo: 8,
+      timestampUnixNs: BigInt(now - 1_000) * 1_000_000n,
+    });
+    const result = await service.buildHeartbeat({ signer: 'addr_test1relayer' });
+    expect(result.heartbeat_required).toBe(false);
+    expect(result.next_check_delay_ms).toBe(INTERVAL - 1_000);
+    expect(runner.run).not.toHaveBeenCalled();
   });
 
-  it('does not build heartbeats after shutdown begins', async () => {
+  it('waits for the protected clock even when the monitoring timestamp is old', async () => {
     lucidService.decodeDatum.mockResolvedValue({
       ...hostStateDatum,
-      control: {
-        ...hostStateDatum.control,
-        shutdown: {
-          ShuttingDown: { initiated_at: 1_000n, grace_period_end: 2_000n },
-        },
-      },
+      control: { ...hostStateDatum.control, last_heartbeat_time: BigInt(now - 1_000) },
     });
-
-    await expect(service.buildHeartbeat({ signer: 'addr_test1signer' })).rejects.toThrow();
-    expect(txOperationRunner.run).not.toHaveBeenCalled();
+    expect((await service.buildHeartbeat({ signer: 'addr_test1relayer' })).next_check_delay_ms).toBe(INTERVAL - 1_000);
+    expect(runner.run).not.toHaveBeenCalled();
   });
 
-  it('rejects a heartbeat signer that is not the deployment authority', async () => {
-    lucidService.getPublicKeyHash.mockReturnValue('44'.repeat(28));
+  it('allows a heartbeat at the exact cooldown boundary', async () => {
+    lucidService.decodeDatum.mockResolvedValue({
+      ...hostStateDatum,
+      control: { ...hostStateDatum.control, last_heartbeat_time: BigInt(now - INTERVAL) },
+    });
+    expect((await service.buildHeartbeat({ signer: 'addr_test1relayer' })).heartbeat_required).toBe(true);
+  });
 
-    await expect(service.buildHeartbeat({ signer: 'addr_test1other' })).rejects.toThrow();
-    expect(txOperationRunner.run).not.toHaveBeenCalled();
+  it('ignores a caller-written future monitoring timestamp', async () => {
+    lucidService.decodeDatum.mockResolvedValue({
+      ...hostStateDatum,
+      state: { ...hostStateDatum.state, last_update_time: 999_999_999_999n },
+    });
+    expect((await service.buildHeartbeat({ signer: 'addr_test1relayer' })).heartbeat_required).toBe(true);
+  });
+
+  it('rejects a signer without a payment key', async () => {
+    lucidService.getPublicKeyHash.mockReturnValue(undefined);
+    await expect(service.buildHeartbeat({ signer: 'addr_test1script' })).rejects.toThrow();
+    expect(runner.run).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the current HostState transaction is not indexed', async () => {
+    historyService.findTransactionEvidenceByHash.mockResolvedValue(null);
+    await expect(service.buildHeartbeat({ signer: 'addr_test1relayer' })).rejects.toThrow();
+  });
+
+  it('rejects heartbeats during shutdown', async () => {
+    lucidService.decodeDatum.mockResolvedValue({
+      ...hostStateDatum,
+      control: { ...hostStateDatum.control, shutdown: { ShuttingDown: { initiated_at: 1n, grace_period_end: 2n } } },
+    });
+    await expect(service.buildHeartbeat({ signer: 'addr_test1relayer' })).rejects.toThrow();
+    expect(runner.run).not.toHaveBeenCalled();
   });
 });

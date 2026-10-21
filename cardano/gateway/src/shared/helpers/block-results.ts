@@ -5,6 +5,7 @@ import {
   ATTRIBUTE_KEY_CONNECTION,
   EVENT_TYPE_CHANNEL,
   ATTRIBUTE_KEY_CHANNEL,
+  ATTRIBUTE_KEY_CHANNEL_UPGRADE,
   ATTRIBUTE_KEY_CLIENT,
   CONNECTION_ID_PREFIX,
   CHANNEL_ID_PREFIX,
@@ -20,6 +21,11 @@ import { ChannelState } from '../types/channel/state';
 import { ClientDatum } from '../types/client-datum';
 import { convertHex2String, toHex } from './hex';
 import { SpendChannelRedeemer } from '../types/channel/channel-redeemer';
+import {
+  ChannelUpgradeRedeemer,
+  ChannelUpgradeStepName,
+  channelUpgradeStepName,
+} from '../types/channel/channel-upgrade-redeemer';
 import { Packet } from '../types/channel/packet';
 import { IBCModuleCallback, IBCModuleRedeemer } from '../types/port/ibc_module_redeemer';
 import { AcknowledgementResponse } from '../types/channel/acknowledgement_response';
@@ -145,6 +151,81 @@ export function normalizeTxsResultFromChannelDatum(
   } as unknown as ResponseDeliverTx;
 }
 
+const UPGRADE_EVENT_TYPES: Record<ChannelUpgradeStepName, string> = {
+  InitUpgrade: EVENT_TYPE_CHANNEL.UPGRADE_INIT,
+  TryUpgrade: EVENT_TYPE_CHANNEL.UPGRADE_TRY,
+  AckUpgrade: EVENT_TYPE_CHANNEL.UPGRADE_ACK,
+  ConfirmUpgrade: EVENT_TYPE_CHANNEL.UPGRADE_CONFIRM,
+  OpenUpgrade: EVENT_TYPE_CHANNEL.UPGRADE_OPEN,
+  TimeoutUpgrade: EVENT_TYPE_CHANNEL.UPGRADE_TIMEOUT,
+  CancelUpgrade: EVENT_TYPE_CHANNEL.UPGRADE_CANCEL,
+  FlushUpgrade: EVENT_TYPE_CHANNEL.FLUSH_COMPLETE,
+};
+
+/**
+ * The ibc-go v8 events of a channel-upgrade step, from the channel datum the
+ * step produced. Like ibc-go, a step that writes an error receipt also emits
+ * `channel_upgrade_error`, which relayers answer with CANCEL on the
+ * counterparty. A FLUSH emits only when it completes flushing.
+ */
+export function normalizeTxsResultFromChannelUpgrade(
+  redeemer: ChannelUpgradeRedeemer,
+  chanDatum: ChannelDatum,
+  channelId: string,
+): ResponseDeliverTx {
+  const name = channelUpgradeStepName(redeemer.step);
+  const channel = chanDatum.state.channel;
+  const pending = chanDatum.state.upgrade.pending;
+  const base = [
+    [ATTRIBUTE_KEY_CHANNEL.PORT_ID, convertHex2String(chanDatum.port)],
+    [ATTRIBUTE_KEY_CHANNEL.CHANNEL_ID, `${CHANNEL_ID_PREFIX}-${channelId}`],
+    [ATTRIBUTE_KEY_CHANNEL.COUNTERPARTY_PORT_ID, convertHex2String(channel.counterparty.port_id)],
+    [ATTRIBUTE_KEY_CHANNEL.COUNTERPARTY_CHANNEL_ID, convertHex2String(channel.counterparty.channel_id)],
+    [ATTRIBUTE_KEY_CHANNEL_UPGRADE.UPGRADE_SEQUENCE, channel.upgrade_sequence.toString()],
+  ];
+  const upgradeFields = pending
+    ? [
+        [
+          ATTRIBUTE_KEY_CHANNEL_UPGRADE.UPGRADE_CONNECTION_HOPS,
+          convertHex2String(pending.upgrade.fields.connection_hops[0]),
+        ],
+        [ATTRIBUTE_KEY_CHANNEL_UPGRADE.UPGRADE_VERSION, convertHex2String(pending.upgrade.fields.version)],
+        [ATTRIBUTE_KEY_CHANNEL_UPGRADE.UPGRADE_ORDERING, `ORDER_${pending.upgrade.fields.ordering.toUpperCase()}`],
+      ]
+    : [];
+  const channelState = [[ATTRIBUTE_KEY_CHANNEL_UPGRADE.CHANNEL_STATE, `STATE_${channel.state.toUpperCase()}`]];
+  const event = (type: string, attributes: string[][]) =>
+    ({
+      type,
+      event_attribute: attributes.map(([key, value]) => <EventAttribute>{ key, value, index: true }),
+    }) as Event;
+
+  const events: Event[] = [];
+  if (name === 'FlushUpgrade') {
+    if (channel.state === ChannelState.FlushComplete) events.push(event(UPGRADE_EVENT_TYPES[name], base.slice(0, 4)));
+  } else if (name === 'InitUpgrade' || name === 'TryUpgrade' || name === 'AckUpgrade') {
+    events.push(event(UPGRADE_EVENT_TYPES[name], [...base, ...upgradeFields]));
+  } else if (name === 'ConfirmUpgrade' || name === 'OpenUpgrade') {
+    events.push(event(UPGRADE_EVENT_TYPES[name], [...base, ...channelState]));
+  } else {
+    events.push(event(UPGRADE_EVENT_TYPES[name], base));
+  }
+  // TIMEOUT and CANCEL always write a receipt. INIT writes one when it
+  // replaces a proposal, which changes the committed receipt.
+  const receipt = chanDatum.state.upgrade.error_receipt;
+  const wroteReceipt =
+    name === 'TimeoutUpgrade' || name === 'CancelUpgrade' || redeemer.error_receipt_siblings.length > 0;
+  if (receipt && wroteReceipt) {
+    events.push(
+      event(EVENT_TYPE_CHANNEL.UPGRADE_ERROR, [
+        ...base,
+        [ATTRIBUTE_KEY_CHANNEL_UPGRADE.ERROR_RECEIPT, convertHex2String(receipt.message)],
+      ]),
+    );
+  }
+  return { code: 0, events } as unknown as ResponseDeliverTx;
+}
+
 export function normalizeTxsResultFromClientDatum(
   ClientDatum: ClientDatum,
   clientEvent: string,
@@ -160,10 +241,14 @@ export function normalizeTxsResultFromClientDatum(
   const latestHeight = ClientDatum.state.clientState.latestHeight;
   let header = '';
   let clientMessageAnyHex = '';
-  let eventType = clientEvent;
+  let eventType = spendClientRedeemer === 'UpgradeClient' ? 'upgrade_client' : clientEvent;
   let consensusHeight = latestHeight;
 
-  if (spendClientRedeemer !== null && typeof spendClientRedeemer === 'object' && 'RecoverClient' in spendClientRedeemer) {
+  if (
+    spendClientRedeemer !== null &&
+    typeof spendClientRedeemer === 'object' &&
+    'RecoverClient' in spendClientRedeemer
+  ) {
     if (!substituteClientId) {
       throw new Error('Cannot normalize a recover_client event without the substitute client ID');
     }

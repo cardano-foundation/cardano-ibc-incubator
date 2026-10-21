@@ -25,6 +25,13 @@ pub(crate) async fn run(
     network: Option<&str>,
 ) -> Result<(), String> {
     let options = LightClientTestOptions::resolve(scenario, chain, network)?;
+    if matches!(
+        scenario,
+        LightClientTest::ChallengeRecovery | LightClientTest::DeadlineOrdering
+    ) {
+        return run_native_acceptance(project_root_path, &options);
+    }
+
     let relayer_path = project_root_path.join("relayer");
     let relayer_was_running = matches!(
         start::check_health_target(project_root_path, HealthTarget::Core(CoreServiceId::Hermes)),
@@ -91,6 +98,15 @@ impl LightClientTestOptions {
         }
 
         let network = network.unwrap_or("v8-classic");
+        if matches!(
+            scenario,
+            LightClientTest::ChallengeRecovery | LightClientTest::DeadlineOrdering
+        ) && network != "v8-classic"
+        {
+            return Err(
+                "This acceptance scenario requires the local v8-classic destination profile".into(),
+            );
+        }
         if cosmos_profiles::semantics(network)? != IbcSemantics::Classic {
             return Err(format!(
                 "Profile '{network}' uses IBC v2 semantics; recover-client testing currently requires v8-classic or v10-classic"
@@ -111,6 +127,9 @@ fn run_recover_client(
 ) -> Result<(), String> {
     match options.scenario {
         LightClientTest::RecoverClient => {}
+        LightClientTest::ChallengeRecovery | LightClientTest::DeadlineOrdering => {
+            unreachable!("dispatched before live route setup")
+        }
     }
 
     logger::log(&format!(
@@ -183,6 +202,67 @@ fn run_recover_client(
     logger::log(&format!(
         "PASS: recover-client preserved the {} Classic route",
         options.network
+    ));
+    Ok(())
+}
+
+// These tests use isolated SDK applications and signed staged observations.
+fn run_native_acceptance(
+    project_root: &Path,
+    options: &LightClientTestOptions,
+) -> Result<(), String> {
+    let deadlines = options.scenario == LightClientTest::DeadlineOrdering;
+    let scenario = if deadlines {
+        "deadline-ordering"
+    } else {
+        "challenge-recovery"
+    };
+    let artifacts = project_root.join(".caribic/test-artifacts").join(format!(
+        "{scenario}-{}-{}",
+        Utc::now().format("%Y%m%dT%H%M%S%.3fZ"),
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&artifacts)
+        .map_err(|error| format!("Could not create acceptance artifacts: {error}"))?;
+    logger::log(&format!(
+        "Running {} {scenario} tests with signed transactions and a controlled host clock.",
+        options.network
+    ));
+    logger::log(&format!("Test output directory: {}", artifacts.display()));
+    let status = Command::new("go")
+        .args([
+            "test",
+            ".",
+            "-run",
+            if deadlines {
+                "^TestAppFollowingEpochActivationRequiresCommittedCutoffBlock$"
+            } else {
+                "TestAppAdmitsSnapshotChallenge|TestSignedPartialStakeUpload|TestSignedMaximumObservation|TestAppFailedStagedRecovery|TestStakeOmission"
+            },
+            "-v",
+            "-count=1",
+            "-timeout=20m",
+        ])
+        .current_dir(project_root.join("cosmos/cardano-probabilistic-light-client-v8"))
+        .arg(if deadlines {
+            "-parallel=5"
+        } else {
+            "-parallel=1"
+        })
+        .stdin(Stdio::null())
+        .stdout(std::fs::File::create(artifacts.join("stdout.log")).map_err(|error| format!("Could not create test output: {error}"))?)
+        .stderr(std::fs::File::create(artifacts.join("stderr.log")).map_err(|error| format!("Could not create test errors: {error}"))?)
+        .status()
+        .map_err(|error| format!("Could not run local v8 acceptance: {error}"))?;
+    if !status.success() {
+        return Err(format!(
+            "{scenario} acceptance failed ({status}). Evidence: {}",
+            artifacts.display()
+        ));
+    }
+    logger::log(&format!(
+        "PASS: {scenario} acceptance. Evidence: {}",
+        artifacts.display()
     ));
     Ok(())
 }
@@ -348,6 +428,36 @@ fn recreate_gateway(project_root_path: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::process::Command;
+
+    #[test]
+    fn challenge_recovery_accepts_only_the_measured_v8_profile() {
+        assert!(
+            LightClientTestOptions::resolve(LightClientTest::ChallengeRecovery, None, None).is_ok()
+        );
+        for profile in ["v10-classic", "v10-v2", "unknown"] {
+            assert!(LightClientTestOptions::resolve(
+                LightClientTest::ChallengeRecovery,
+                None,
+                Some(profile)
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn deadline_ordering_accepts_only_the_local_v8_profile() {
+        assert!(
+            LightClientTestOptions::resolve(LightClientTest::DeadlineOrdering, None, None).is_ok()
+        );
+        for profile in ["v10-classic", "v10-v2", "unknown"] {
+            assert!(LightClientTestOptions::resolve(
+                LightClientTest::DeadlineOrdering,
+                None,
+                Some(profile)
+            )
+            .is_err());
+        }
+    }
 
     #[test]
     fn recover_client_defaults_to_v8_classic() {
