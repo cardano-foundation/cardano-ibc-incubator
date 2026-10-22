@@ -1218,7 +1218,7 @@ jobs:
             packages/cardano-ibc-trace-registry/package-lock.json
             packages/cardano-ibc-tx-builder-runtime/package-lock.json
 
-      - name: Setup Go for ICS-20 vectors
+      - name: Setup Go for protocol vectors
         uses: actions/setup-go@v7
         with:
           go-version-file: cosmos/cardano-probabilistic-light-client-v8/go.mod
@@ -1257,6 +1257,14 @@ jobs:
 
       - name: Check pinned ICS-20 JSON vectors
         run: node tests/ics20-json-vectors/generate.mjs --check
+
+      - name: Setup Aiken vector formatter
+        uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+
+      - name: Check SDK Tendermint upgrade vectors
+        run: node tests/tendermint-upgrade/generate.mjs --check
 
       - name: Check generated artifacts
         run: scripts/ci/check-generated-artifacts-clean.sh
