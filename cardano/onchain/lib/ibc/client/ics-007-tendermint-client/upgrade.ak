@@ -45,8 +45,7 @@ pub fn path(
 }
 
 /// ICS-07 upgrade, using the old client's tip and proof rules as the authority.
-/// TODO: differential tests against live SDK upgrade-store proofs and an
-/// independent audit of malicious upgrade plans before production deployment.
+/// TODO: independent audit of malicious upgrade plans before production deployment.
 pub fn verify(
   input: ClientDatum,
   output: ClientDatum,
@@ -74,7 +73,8 @@ pub fn verify(
   let kernel = upgrade.consensus_state
   expect kernel.timestamp > 0
   expect bytearray.length(kernel.next_validators_hash) == 32
-  expect kernel.timestamp >= trusted.timestamp
+  // The SDK commits this kernel at H-1, authenticated by header H's app root.
+  // Its timestamp can therefore precede the trusted proof header's timestamp.
   expect kernel.timestamp <= now + old.max_clock_drift
   expect !client_state.is_expired(next, kernel.timestamp, now)
   expect

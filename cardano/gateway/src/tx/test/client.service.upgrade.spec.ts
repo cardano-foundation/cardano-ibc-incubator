@@ -103,6 +103,25 @@ function context(staged = false) {
 }
 
 describe('proof-backed Tendermint client upgrade', () => {
+  it.each([false, true])('accepts the SDK kernel from before the proof header with staged=%s', async (staged) => {
+    const { service, lucid, request } = context(staged);
+    const kernel = ConsensusState.decode(request.consensus_state!.value);
+    kernel.timestamp.seconds = 99n;
+    request.consensus_state!.value = ConsensusState.encode(kernel).finish();
+    await service.upgradeClient(request);
+    const after = await decodeClientDatum(lucid.createUnsignedUpgradeClientTransaction.mock.calls[0][5], Lucid);
+    expect([...after.state.consensusStates.values()][0].timestamp).toBe(99_000_000_123n);
+  });
+
+  it.each([90n, 103n])('rejects an expired or future SDK kernel at %ss', async (seconds) => {
+    const { service, lucid, request } = context();
+    const kernel = ConsensusState.decode(request.consensus_state!.value);
+    kernel.timestamp.seconds = seconds;
+    request.consensus_state!.value = ConsensusState.encode(kernel).finish();
+    await expect(service.upgradeClient(request)).rejects.toThrow();
+    expect(lucid.createUnsignedUpgradeClientTransaction).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])('binds both proofs and archives the old tip with staged=%s', async (staged) => {
     const { service, lucid, before, request } = context(staged);
     const response = await service.upgradeClient(request);

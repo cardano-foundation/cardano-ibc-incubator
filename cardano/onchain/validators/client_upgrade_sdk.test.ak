@@ -1177,6 +1177,144 @@ fn sdk_fixture_37() -> MerkleProof {
 
 fn sdk_fixture_38() -> ConsensusState {
   ConsensusState {
+    timestamp: 1699999999000000000,
+    root: MerkleRoot { hash: #"73656e74696e656c5f726f6f74" },
+    next_validators_hash: #"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+  }
+}
+
+fn sdk_fixture_39() -> ConsensusState {
+  ConsensusState {
+    timestamp: 1700000000000000000,
+    root: MerkleRoot {
+      hash: #"7009fccea6f0b9cb18280e696ef0d08b868646581f9c050ab25f66f8c7cffe1c",
+    },
+    next_validators_hash: #"0000000000000000000000000000000000000000000000000000000000000000",
+  }
+}
+
+fn sdk_fixture_40() -> ConsensusState {
+  ConsensusState {
+    timestamp: 1699999990000000000,
+    root: MerkleRoot { hash: #"" },
+    next_validators_hash: #"0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+  }
+}
+
+fn sdk_fixture_41() -> MerkleProof {
+  MerkleProof {
+    proofs: [
+      CommitmentProof {
+        proof: CommitmentProof_Exist {
+          exist: ExistenceProof {
+            key: #"757067726164656449424353746174652f3130302f7570677261646564436c69656e74",
+            value: #"0a2b2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436c69656e74537461746512710a0c76382d636c61737369632d3212001a00220208142a0032003a040802100142190a090801180120012a0100120c0a02000110211804200c300142190a090801180120012a0100120c0a02000110201801200130014a07757067726164654a1075706772616465644942435374617465",
+            leaf: LeafOp {
+              hash: 1,
+              prehash_key: 0,
+              prehash_value: 1,
+              length: 1,
+              prefix: #"0002c601",
+            },
+            path: [
+              InnerOp {
+                hash: 1,
+                prefix: #"0204c60120339653c07ee9f79d142625c2e6ad9c9fdb2a8ad6d30da7d9190dc1ffea68228a20",
+                suffix: #"",
+              },
+              InnerOp {
+                hash: 1,
+                prefix: #"0408c60120",
+                suffix: #"208c29f8feeb8f7736746973783f833d650e3cadcb314483bc776db3f5e5fb3587",
+              },
+            ],
+          },
+        },
+      },
+      CommitmentProof {
+        proof: CommitmentProof_Exist {
+          exist: ExistenceProof {
+            key: #"75706772616465",
+            value: #"3910d6a509a8c0c887e7a5ed78cd43d3c92ca32cbe3b1666cf46831560f3fc86",
+            leaf: LeafOp {
+              hash: 1,
+              prehash_key: 0,
+              prehash_value: 1,
+              length: 1,
+              prefix: #"00",
+            },
+            path: [
+              InnerOp {
+                hash: 1,
+                prefix: #"01b97d2828ef9aa344c74f985bebf40f241ee28e208d70a6f5f816d9d72822b090",
+                suffix: #"",
+              },
+            ],
+          },
+        },
+      },
+    ],
+  }
+}
+
+fn sdk_fixture_42() -> MerkleProof {
+  MerkleProof {
+    proofs: [
+      CommitmentProof {
+        proof: CommitmentProof_Exist {
+          exist: ExistenceProof {
+            key: #"757067726164656449424353746174652f3130302f7570677261646564436f6e735374617465",
+            value: #"0a2e2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436f6e73656e7375735374617465122c0a0608f6e1cfaa0612001a200102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+            leaf: LeafOp {
+              hash: 1,
+              prehash_key: 0,
+              prehash_value: 1,
+              length: 1,
+              prefix: #"0002c601",
+            },
+            path: [
+              InnerOp {
+                hash: 1,
+                prefix: #"0204c60120",
+                suffix: #"207b30b9fc59a36b63901d0d2296ac10c6b58c08bd6aaea5644852604fa90ec819",
+              },
+              InnerOp {
+                hash: 1,
+                prefix: #"0408c60120f6d1d4f603b176d04dcfa99948b0992a94caff6f82d8948a6e514681b53b6c9120",
+                suffix: #"",
+              },
+            ],
+          },
+        },
+      },
+      CommitmentProof {
+        proof: CommitmentProof_Exist {
+          exist: ExistenceProof {
+            key: #"75706772616465",
+            value: #"3910d6a509a8c0c887e7a5ed78cd43d3c92ca32cbe3b1666cf46831560f3fc86",
+            leaf: LeafOp {
+              hash: 1,
+              prehash_key: 0,
+              prehash_value: 1,
+              length: 1,
+              prefix: #"00",
+            },
+            path: [
+              InnerOp {
+                hash: 1,
+                prefix: #"01b97d2828ef9aa344c74f985bebf40f241ee28e208d70a6f5f816d9d72822b090",
+                suffix: #"",
+              },
+            ],
+          },
+        },
+      },
+    ],
+  }
+}
+
+fn sdk_fixture_43() -> ConsensusState {
+  ConsensusState {
     timestamp: 1700000000000000000,
     root: MerkleRoot {
       hash: #"117df2509a2a16d32533c977e6e7811f165926d0d145a89f571980259c64d96c",
@@ -1185,7 +1323,7 @@ fn sdk_fixture_38() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_39() -> ConsensusState {
+fn sdk_fixture_44() -> ConsensusState {
   ConsensusState {
     timestamp: 1700000003000000000,
     root: MerkleRoot { hash: #"" },
@@ -1193,7 +1331,7 @@ fn sdk_fixture_39() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_40() -> MerkleProof {
+fn sdk_fixture_45() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -1249,7 +1387,7 @@ fn sdk_fixture_40() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_41() -> MerkleProof {
+fn sdk_fixture_46() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -1712,8 +1850,7 @@ test sdk_upgrade_v8_expired_client() fail {
   expect upgrade.verify(before, after, u, 1700000010000000000)
 }
 
-// Aiken additionally rejects an upgrade kernel older than the old trusted consensus state.
-test sdk_upgrade_v8_committed_old_timestamp() fail {
+test sdk_upgrade_v8_committed_old_timestamp() {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
@@ -1724,6 +1861,40 @@ test sdk_upgrade_v8_committed_old_timestamp() fail {
       sdk_fixture_37(),
       1700000001000000000,
     )
+  expect after.state.client_state == sdk_fixture_1()
+  expect
+    after.state.consensus_states == [
+      Pair(after.state.client_state.latest_height, sdk_fixture_38()),
+    ]
+  expect
+    upgrade_pb.client(u.client_state) == #"0a2b2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436c69656e74537461746512710a0c76382d636c61737369632d3212001a00220208142a0032003a040802100142190a090801180120012a0100120c0a02000110211804200c300142190a090801180120012a0100120c0a02000110201801200130014a07757067726164654a1075706772616465644942435374617465"
+  expect
+    upgrade_pb.consensus(u.consensus_state) == #"0a2e2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436f6e73656e7375735374617465122c0a0608ffe1cfaa0612001a200102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+  expect upgrade.verify(before, after, u, 1700000001000000000)
+  let (tx, envelope) =
+    transaction_fixture(before, after, u, 1700000001000000000)
+  expect verifying_proof.verify_proof.mint(envelope, "proof", tx)
+  recover_client.recover_client.withdraw(
+    "host",
+    "proof",
+    UpgradeClientWithdrawal { subject_token: before.token },
+    address.Script("recovery"),
+    tx,
+  )
+}
+
+// Aiken rejects an already expired upgrade kernel while the reference upgrade entrypoints accept it.
+test sdk_upgrade_v8_committed_expired_timestamp() fail {
+  let (before, after, u) =
+    fixture(
+      sdk_fixture_0(),
+      sdk_fixture_39(),
+      sdk_fixture_1(),
+      sdk_fixture_40(),
+      sdk_fixture_41(),
+      sdk_fixture_42(),
+      1700000001000000000,
+    )
   expect upgrade.verify(before, after, u, 1700000001000000000)
 }
 
@@ -1732,11 +1903,11 @@ test sdk_upgrade_v8_committed_future_timestamp() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_38(),
+      sdk_fixture_43(),
       sdk_fixture_1(),
-      sdk_fixture_39(),
-      sdk_fixture_40(),
-      sdk_fixture_41(),
+      sdk_fixture_44(),
+      sdk_fixture_45(),
+      sdk_fixture_46(),
       1700000001000000000,
     )
   expect upgrade.verify(before, after, u, 1700000001000000000)
@@ -2149,8 +2320,7 @@ test sdk_upgrade_v10_expired_client() fail {
   expect upgrade.verify(before, after, u, 1700000010000000000)
 }
 
-// Aiken additionally rejects an upgrade kernel older than the old trusted consensus state.
-test sdk_upgrade_v10_committed_old_timestamp() fail {
+test sdk_upgrade_v10_committed_old_timestamp() {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
@@ -2161,6 +2331,40 @@ test sdk_upgrade_v10_committed_old_timestamp() fail {
       sdk_fixture_37(),
       1700000001000000000,
     )
+  expect after.state.client_state == sdk_fixture_1()
+  expect
+    after.state.consensus_states == [
+      Pair(after.state.client_state.latest_height, sdk_fixture_38()),
+    ]
+  expect
+    upgrade_pb.client(u.client_state) == #"0a2b2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436c69656e74537461746512710a0c76382d636c61737369632d3212001a00220208142a0032003a040802100142190a090801180120012a0100120c0a02000110211804200c300142190a090801180120012a0100120c0a02000110201801200130014a07757067726164654a1075706772616465644942435374617465"
+  expect
+    upgrade_pb.consensus(u.consensus_state) == #"0a2e2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436f6e73656e7375735374617465122c0a0608ffe1cfaa0612001a200102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+  expect upgrade.verify(before, after, u, 1700000001000000000)
+  let (tx, envelope) =
+    transaction_fixture(before, after, u, 1700000001000000000)
+  expect verifying_proof.verify_proof.mint(envelope, "proof", tx)
+  recover_client.recover_client.withdraw(
+    "host",
+    "proof",
+    UpgradeClientWithdrawal { subject_token: before.token },
+    address.Script("recovery"),
+    tx,
+  )
+}
+
+// Aiken rejects an already expired upgrade kernel while the reference upgrade entrypoints accept it.
+test sdk_upgrade_v10_committed_expired_timestamp() fail {
+  let (before, after, u) =
+    fixture(
+      sdk_fixture_0(),
+      sdk_fixture_39(),
+      sdk_fixture_1(),
+      sdk_fixture_40(),
+      sdk_fixture_41(),
+      sdk_fixture_42(),
+      1700000001000000000,
+    )
   expect upgrade.verify(before, after, u, 1700000001000000000)
 }
 
@@ -2169,11 +2373,11 @@ test sdk_upgrade_v10_committed_future_timestamp() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_38(),
+      sdk_fixture_43(),
       sdk_fixture_1(),
-      sdk_fixture_39(),
-      sdk_fixture_40(),
-      sdk_fixture_41(),
+      sdk_fixture_44(),
+      sdk_fixture_45(),
+      sdk_fixture_46(),
       1700000001000000000,
     )
   expect upgrade.verify(before, after, u, 1700000001000000000)
