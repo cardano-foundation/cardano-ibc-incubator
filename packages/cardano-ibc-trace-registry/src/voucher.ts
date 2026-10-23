@@ -282,10 +282,11 @@ export function encodeVoucherCip68MetadataDatum(
     [toDataKey('traceVersion'), BigInt(metadata.extra.traceVersion)],
   ]);
 
+  // The contract compares ordered Plutus maps. Lucid's default byte-key order
+  // matches voucher_metadata.build_datum. Canonical CBOR instead sorts these
+  // keys by encoded length, which produces a different Plutus datum.
   return Lucid.Data.to(
     new Lucid.Constr(0, [metadataMap, BigInt(metadata.version), extraMap]),
-    undefined,
-    { canonical: true },
   );
 }
 
