@@ -1,0 +1,32 @@
+// Generate the governance payload with the same SDK codec as the local chain.
+package main
+
+import (
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
+	tm "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
+)
+
+func main() {
+	registry := codectypes.NewInterfaceRegistry()
+	clienttypes.RegisterInterfaces(registry)
+	tm.RegisterInterfaces(registry)
+	cdc := codec.NewProtoCodec(registry)
+	client := tm.NewClientState(os.Args[1], tm.DefaultTrustLevel, 10*24*time.Hour, 21*24*time.Hour,
+		10*time.Second, clienttypes.NewHeight(clienttypes.ParseChainID(os.Args[1]), 1),
+		commitmenttypes.GetSDKSpecs(), []string{"upgrade", "upgradedIBCState"})
+	if err := client.Validate(); err != nil {
+		panic(err)
+	}
+	value, err := cdc.MarshalInterfaceJSON(client)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(string(value))
+}
