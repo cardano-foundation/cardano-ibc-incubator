@@ -27,7 +27,8 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
 }
 use ibc/client/ics_007_tendermint_client/upgrade.{Upgrade}
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
-  CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, LeafOp,
+  CommitmentProof, CommitmentProof_Exist, CommitmentProof_Nonexist,
+  ExistenceProof, InnerOp, LeafOp, NonExistenceProof,
 }
 use ibc/core/ics_023_vector_commitments/merkle.{
   MerklePath, MerkleProof, MerkleRoot,
@@ -315,7 +316,89 @@ fn sdk_fixture_6() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_7() -> ClientState {
+fn sdk_fixture_7() -> MerkleProof {
+  MerkleProof {
+    proofs: [
+      CommitmentProof {
+        proof: CommitmentProof_Nonexist {
+          non_exist: NonExistenceProof {
+            key: #"757067726164656449424353746174652f3130302f6e6f74436f6d6d6974746564",
+            left: ExistenceProof {
+              key: #"666978747572652f6c656674",
+              value: #"6c656674",
+              leaf: LeafOp {
+                hash: 1,
+                prehash_key: 0,
+                prehash_value: 1,
+                length: 1,
+                prefix: #"0002c601",
+              },
+              path: [
+                InnerOp {
+                  hash: 1,
+                  prefix: #"0204c60120",
+                  suffix: #"20f8606ab5d6270d04ffc53134d912c4505fd853751e75fb6c5b3f4044ed245401",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"0408c60120",
+                  suffix: #"20afbfa0eee0905b0a4e1072aab58681a4c4021c9eef76b836e17cb0f64cca4489",
+                },
+              ],
+            },
+            right: ExistenceProof {
+              key: #"757067726164656449424353746174652f3130302f7570677261646564436c69656e74",
+              value: #"0a2b2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436c69656e74537461746512710a0c76382d636c61737369632d3212001a00220208142a0032003a040802100142190a090801180120012a0100120c0a02000110211804200c300142190a090801180120012a0100120c0a02000110201801200130014a07757067726164654a1075706772616465644942435374617465",
+              leaf: LeafOp {
+                hash: 1,
+                prehash_key: 0,
+                prehash_value: 1,
+                length: 1,
+                prefix: #"0002c601",
+              },
+              path: [
+                InnerOp {
+                  hash: 1,
+                  prefix: #"0204c60120339653c07ee9f79d142625c2e6ad9c9fdb2a8ad6d30da7d9190dc1ffea68228a20",
+                  suffix: #"",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"0408c60120",
+                  suffix: #"20afbfa0eee0905b0a4e1072aab58681a4c4021c9eef76b836e17cb0f64cca4489",
+                },
+              ],
+            },
+          },
+        },
+      },
+      CommitmentProof {
+        proof: CommitmentProof_Exist {
+          exist: ExistenceProof {
+            key: #"75706772616465",
+            value: #"8f6fc859a32a124eaa31da12b24507ddfd470074569ec99a849bea7e85971708",
+            leaf: LeafOp {
+              hash: 1,
+              prehash_key: 0,
+              prehash_value: 1,
+              length: 1,
+              prefix: #"00",
+            },
+            path: [
+              InnerOp {
+                hash: 1,
+                prefix: #"01b97d2828ef9aa344c74f985bebf40f241ee28e208d70a6f5f816d9d72822b090",
+                suffix: #"",
+              },
+            ],
+          },
+        },
+      },
+    ],
+  }
+}
+
+fn sdk_fixture_8() -> ClientState {
   ClientState {
     chain_id: #"76382d636c61737369632d31",
     trust_level: UncheckedRational { numerator: 1, denominator: 3 },
@@ -329,7 +412,7 @@ fn sdk_fixture_7() -> ClientState {
   }
 }
 
-fn sdk_fixture_8() -> ConsensusState {
+fn sdk_fixture_9() -> ConsensusState {
   ConsensusState {
     timestamp: 1700000000000000000,
     root: MerkleRoot {
@@ -339,7 +422,7 @@ fn sdk_fixture_8() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_9() -> MerkleProof {
+fn sdk_fixture_10() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -395,7 +478,7 @@ fn sdk_fixture_9() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_10() -> MerkleProof {
+fn sdk_fixture_11() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -451,7 +534,7 @@ fn sdk_fixture_10() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_11() -> ClientState {
+fn sdk_fixture_12() -> ClientState {
   ClientState {
     chain_id: #"76382d636c61737369632d31",
     trust_level: UncheckedRational { numerator: 1, denominator: 3 },
@@ -465,7 +548,7 @@ fn sdk_fixture_11() -> ClientState {
   }
 }
 
-fn sdk_fixture_12() -> ConsensusState {
+fn sdk_fixture_13() -> ConsensusState {
   ConsensusState {
     timestamp: 1700000000000000000,
     root: MerkleRoot {
@@ -475,7 +558,7 @@ fn sdk_fixture_12() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_13() -> MerkleProof {
+fn sdk_fixture_14() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -531,7 +614,7 @@ fn sdk_fixture_13() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_14() -> MerkleProof {
+fn sdk_fixture_15() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -587,7 +670,7 @@ fn sdk_fixture_14() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_15() -> ClientState {
+fn sdk_fixture_16() -> ClientState {
   ClientState {
     chain_id: #"76382d636c61737369632d32",
     trust_level: UncheckedRational { numerator: 1, denominator: 3 },
@@ -601,7 +684,7 @@ fn sdk_fixture_15() -> ClientState {
   }
 }
 
-fn sdk_fixture_16() -> ConsensusState {
+fn sdk_fixture_17() -> ConsensusState {
   ConsensusState {
     timestamp: 1700000000000000000,
     root: MerkleRoot {
@@ -611,7 +694,7 @@ fn sdk_fixture_16() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_17() -> MerkleProof {
+fn sdk_fixture_18() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -667,7 +750,7 @@ fn sdk_fixture_17() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_18() -> MerkleProof {
+fn sdk_fixture_19() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -723,7 +806,7 @@ fn sdk_fixture_18() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_19() -> ClientState {
+fn sdk_fixture_20() -> ClientState {
   ClientState {
     chain_id: #"76382d636c61737369632d32",
     trust_level: UncheckedRational { numerator: 1, denominator: 3 },
@@ -737,7 +820,7 @@ fn sdk_fixture_19() -> ClientState {
   }
 }
 
-fn sdk_fixture_20() -> ConsensusState {
+fn sdk_fixture_21() -> ConsensusState {
   ConsensusState {
     timestamp: 1700000000000000000,
     root: MerkleRoot {
@@ -747,7 +830,7 @@ fn sdk_fixture_20() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_21() -> MerkleProof {
+fn sdk_fixture_22() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -803,7 +886,7 @@ fn sdk_fixture_21() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_22() -> MerkleProof {
+fn sdk_fixture_23() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -859,7 +942,7 @@ fn sdk_fixture_22() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_23() -> ClientState {
+fn sdk_fixture_24() -> ClientState {
   ClientState {
     chain_id: #"76382d636c61737369632d32",
     trust_level: UncheckedRational { numerator: 0, denominator: 0 },
@@ -873,7 +956,7 @@ fn sdk_fixture_23() -> ClientState {
   }
 }
 
-fn sdk_fixture_24() -> ClientState {
+fn sdk_fixture_25() -> ClientState {
   ClientState {
     chain_id: #"666f726765642d32",
     trust_level: UncheckedRational { numerator: 1, denominator: 3 },
@@ -887,7 +970,7 @@ fn sdk_fixture_24() -> ClientState {
   }
 }
 
-fn sdk_fixture_25() -> ClientState {
+fn sdk_fixture_26() -> ClientState {
   ClientState {
     chain_id: #"76382d636c61737369632d32",
     trust_level: UncheckedRational { numerator: 1, denominator: 3 },
@@ -901,7 +984,7 @@ fn sdk_fixture_25() -> ClientState {
   }
 }
 
-fn sdk_fixture_26() -> ClientState {
+fn sdk_fixture_27() -> ClientState {
   ClientState {
     chain_id: #"76382d636c61737369632d32",
     trust_level: UncheckedRational { numerator: 1, denominator: 3 },
@@ -915,7 +998,7 @@ fn sdk_fixture_26() -> ClientState {
   }
 }
 
-fn sdk_fixture_27() -> ClientState {
+fn sdk_fixture_28() -> ClientState {
   ClientState {
     chain_id: #"76382d636c61737369632d32",
     trust_level: UncheckedRational { numerator: 1, denominator: 3 },
@@ -929,7 +1012,7 @@ fn sdk_fixture_27() -> ClientState {
   }
 }
 
-fn sdk_fixture_28() -> ConsensusState {
+fn sdk_fixture_29() -> ConsensusState {
   ConsensusState {
     timestamp: 1700000000000000000,
     root: MerkleRoot { hash: #"" },
@@ -937,7 +1020,7 @@ fn sdk_fixture_28() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_29() -> MerkleProof {
+fn sdk_fixture_30() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -993,27 +1076,13 @@ fn sdk_fixture_29() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_30() -> ConsensusState {
+fn sdk_fixture_31() -> ConsensusState {
   ConsensusState {
     timestamp: 1700000000000000000,
     root: MerkleRoot {
       hash: #"e90afb59b7e054fbafc0f4e439c40e306ad1f0c35e0f2c8ad0f2431184472446",
     },
     next_validators_hash: #"0000000000000000000000000000000000000000000000000000000000000000",
-  }
-}
-
-fn sdk_fixture_31() -> ClientState {
-  ClientState {
-    chain_id: #"76382d636c61737369632d31",
-    trust_level: UncheckedRational { numerator: 1, denominator: 3 },
-    trusting_period: 10000000000,
-    unbonding_period: 20000000000,
-    max_clock_drift: 1000000000,
-    frozen_height: Height { revision_number: 0, revision_height: 0 },
-    latest_height: Height { revision_number: 1, revision_height: 100 },
-    proof_specs: [proofs.iavl_spec(), proofs.tendermint_spec()],
-    upgrade_path: [#"6f74686572", #"75706772616465644942435374617465"],
   }
 }
 
@@ -1027,11 +1096,25 @@ fn sdk_fixture_32() -> ClientState {
     frozen_height: Height { revision_number: 0, revision_height: 0 },
     latest_height: Height { revision_number: 1, revision_height: 100 },
     proof_specs: [proofs.iavl_spec(), proofs.tendermint_spec()],
-    upgrade_path: [],
+    upgrade_path: [#"6f74686572", #"75706772616465644942435374617465"],
   }
 }
 
 fn sdk_fixture_33() -> ClientState {
+  ClientState {
+    chain_id: #"76382d636c61737369632d31",
+    trust_level: UncheckedRational { numerator: 1, denominator: 3 },
+    trusting_period: 10000000000,
+    unbonding_period: 20000000000,
+    max_clock_drift: 1000000000,
+    frozen_height: Height { revision_number: 0, revision_height: 0 },
+    latest_height: Height { revision_number: 1, revision_height: 100 },
+    proof_specs: [proofs.iavl_spec(), proofs.tendermint_spec()],
+    upgrade_path: [],
+  }
+}
+
+fn sdk_fixture_34() -> ClientState {
   ClientState {
     chain_id: #"76382d636c61737369632d31",
     trust_level: UncheckedRational { numerator: 1, denominator: 3 },
@@ -1045,7 +1128,7 @@ fn sdk_fixture_33() -> ClientState {
   }
 }
 
-fn sdk_fixture_34() -> ConsensusState {
+fn sdk_fixture_35() -> ConsensusState {
   ConsensusState {
     timestamp: 1700000000000000000,
     root: MerkleRoot {
@@ -1055,7 +1138,7 @@ fn sdk_fixture_34() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_35() -> ConsensusState {
+fn sdk_fixture_36() -> ConsensusState {
   ConsensusState {
     timestamp: 1699999999000000000,
     root: MerkleRoot { hash: #"" },
@@ -1063,7 +1146,7 @@ fn sdk_fixture_35() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_36() -> MerkleProof {
+fn sdk_fixture_37() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -1119,7 +1202,7 @@ fn sdk_fixture_36() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_37() -> MerkleProof {
+fn sdk_fixture_38() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -1175,7 +1258,7 @@ fn sdk_fixture_37() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_38() -> ConsensusState {
+fn sdk_fixture_39() -> ConsensusState {
   ConsensusState {
     timestamp: 1699999999000000000,
     root: MerkleRoot { hash: #"73656e74696e656c5f726f6f74" },
@@ -1183,7 +1266,7 @@ fn sdk_fixture_38() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_39() -> ConsensusState {
+fn sdk_fixture_40() -> ConsensusState {
   ConsensusState {
     timestamp: 1700000000000000000,
     root: MerkleRoot {
@@ -1193,7 +1276,7 @@ fn sdk_fixture_39() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_40() -> ConsensusState {
+fn sdk_fixture_41() -> ConsensusState {
   ConsensusState {
     timestamp: 1699999990000000000,
     root: MerkleRoot { hash: #"" },
@@ -1201,7 +1284,7 @@ fn sdk_fixture_40() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_41() -> MerkleProof {
+fn sdk_fixture_42() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -1257,7 +1340,7 @@ fn sdk_fixture_41() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_42() -> MerkleProof {
+fn sdk_fixture_43() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -1313,7 +1396,7 @@ fn sdk_fixture_42() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_43() -> ConsensusState {
+fn sdk_fixture_44() -> ConsensusState {
   ConsensusState {
     timestamp: 1700000000000000000,
     root: MerkleRoot {
@@ -1323,7 +1406,7 @@ fn sdk_fixture_43() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_44() -> ConsensusState {
+fn sdk_fixture_45() -> ConsensusState {
   ConsensusState {
     timestamp: 1700000003000000000,
     root: MerkleRoot { hash: #"" },
@@ -1331,7 +1414,7 @@ fn sdk_fixture_44() -> ConsensusState {
   }
 }
 
-fn sdk_fixture_45() -> MerkleProof {
+fn sdk_fixture_46() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -1387,7 +1470,7 @@ fn sdk_fixture_45() -> MerkleProof {
   }
 }
 
-fn sdk_fixture_46() -> MerkleProof {
+fn sdk_fixture_47() -> MerkleProof {
   MerkleProof {
     proofs: [
       CommitmentProof {
@@ -1476,6 +1559,41 @@ test sdk_upgrade_v8_revision_reset() {
   )
 }
 
+test sdk_upgrade_v8_authenticated_root_accepts_membership() {
+  let (before, after, u) =
+    fixture(
+      sdk_fixture_0(),
+      sdk_fixture_2(),
+      sdk_fixture_1(),
+      sdk_fixture_3(),
+      sdk_fixture_4(),
+      sdk_fixture_5(),
+      1700000001000000000,
+    )
+  expect upgrade.verify(before, after, u, 1700000001000000000)
+  expect [Pair(h, bootstrap)] = after.state.consensus_states
+  let cons = ConsensusState { ..bootstrap, root: sdk_fixture_2().root }
+  client_state.verify_membership(
+    after.state.client_state,
+    cons,
+    h,
+    1700000001000000000,
+    1,
+    1700000001000000000,
+    1,
+    0,
+    0,
+    u.proof_client,
+    MerklePath {
+      key_path: [
+        "upgrade",
+        #"757067726164656449424353746174652f3130302f7570677261646564436c69656e74",
+      ],
+    },
+    #"0a2b2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436c69656e74537461746512710a0c76382d636c61737369632d3212001a00220208142a0032003a040802100142190a090801180120012a0100120c0a02000110211804200c300142190a090801180120012a0100120c0a02000110201801200130014a07757067726164654a1075706772616465644942435374617465",
+  )
+}
+
 test sdk_upgrade_v8_sentinel_rejects_membership() fail {
   let (before, after, u) =
     fixture(
@@ -1502,10 +1620,47 @@ test sdk_upgrade_v8_sentinel_rejects_membership() fail {
       0,
       u.proof_client,
       MerklePath {
-        key_path: ["upgrade", "upgradedIBCState/100/upgradedClient"],
+        key_path: [
+          "upgrade",
+          #"757067726164656449424353746174652f3130302f7570677261646564436c69656e74",
+        ],
       },
       #"0a2b2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436c69656e74537461746512710a0c76382d636c61737369632d3212001a00220208142a0032003a040802100142190a090801180120012a0100120c0a02000110211804200c300142190a090801180120012a0100120c0a02000110201801200130014a07757067726164654a1075706772616465644942435374617465",
     )
+}
+
+test sdk_upgrade_v8_authenticated_root_accepts_nonmembership() {
+  let (before, after, u) =
+    fixture(
+      sdk_fixture_0(),
+      sdk_fixture_2(),
+      sdk_fixture_1(),
+      sdk_fixture_3(),
+      sdk_fixture_4(),
+      sdk_fixture_5(),
+      1700000001000000000,
+    )
+  expect upgrade.verify(before, after, u, 1700000001000000000)
+  expect [Pair(h, bootstrap)] = after.state.consensus_states
+  let cons = ConsensusState { ..bootstrap, root: sdk_fixture_2().root }
+  client_state.verify_non_membership(
+    after.state.client_state,
+    cons,
+    h,
+    1700000001000000000,
+    1,
+    1700000001000000000,
+    1,
+    0,
+    0,
+    sdk_fixture_7(),
+    MerklePath {
+      key_path: [
+        "upgrade",
+        #"757067726164656449424353746174652f3130302f6e6f74436f6d6d6974746564",
+      ],
+    },
+  )
 }
 
 test sdk_upgrade_v8_sentinel_rejects_nonmembership() fail {
@@ -1532,9 +1687,12 @@ test sdk_upgrade_v8_sentinel_rejects_nonmembership() fail {
       1,
       0,
       0,
-      u.proof_client,
+      sdk_fixture_7(),
       MerklePath {
-        key_path: ["upgrade", "upgradedIBCState/100/upgradedClient"],
+        key_path: [
+          "upgrade",
+          #"757067726164656449424353746174652f3130302f6e6f74436f6d6d6974746564",
+        ],
       },
     )
 }
@@ -1543,14 +1701,14 @@ test sdk_upgrade_v8_same_revision() {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_8(),
-      sdk_fixture_7(),
-      sdk_fixture_3(),
       sdk_fixture_9(),
+      sdk_fixture_8(),
+      sdk_fixture_3(),
       sdk_fixture_10(),
+      sdk_fixture_11(),
       1700000001000000000,
     )
-  expect after.state.client_state == sdk_fixture_7()
+  expect after.state.client_state == sdk_fixture_8()
   expect
     after.state.consensus_states == [
       Pair(after.state.client_state.latest_height, sdk_fixture_6()),
@@ -1576,11 +1734,11 @@ test sdk_upgrade_v8_committed_rollback() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_12(),
-      sdk_fixture_11(),
-      sdk_fixture_3(),
       sdk_fixture_13(),
+      sdk_fixture_12(),
+      sdk_fixture_3(),
       sdk_fixture_14(),
+      sdk_fixture_15(),
       1700000001000000000,
     )
   expect upgrade.verify(before, after, u, 1700000001000000000)
@@ -1591,11 +1749,11 @@ test sdk_upgrade_v8_committed_short_unbonding() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_16(),
-      sdk_fixture_15(),
-      sdk_fixture_3(),
       sdk_fixture_17(),
+      sdk_fixture_16(),
+      sdk_fixture_3(),
       sdk_fixture_18(),
+      sdk_fixture_19(),
       1700000001000000000,
     )
   expect upgrade.verify(before, after, u, 1700000001000000000)
@@ -1606,14 +1764,14 @@ test sdk_upgrade_v8_committed_reduced_unbonding() {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_20(),
-      sdk_fixture_19(),
-      sdk_fixture_3(),
       sdk_fixture_21(),
+      sdk_fixture_20(),
+      sdk_fixture_3(),
       sdk_fixture_22(),
+      sdk_fixture_23(),
       1700000001000000000,
     )
-  expect after.state.client_state == sdk_fixture_19()
+  expect after.state.client_state == sdk_fixture_20()
   expect
     after.state.consensus_states == [
       Pair(after.state.client_state.latest_height, sdk_fixture_6()),
@@ -1640,7 +1798,7 @@ test sdk_upgrade_v8_submitted_trust_parameters() {
     fixture(
       sdk_fixture_0(),
       sdk_fixture_2(),
-      sdk_fixture_23(),
+      sdk_fixture_24(),
       sdk_fixture_3(),
       sdk_fixture_4(),
       sdk_fixture_5(),
@@ -1673,7 +1831,7 @@ test sdk_upgrade_v8_submitted_chain_id() fail {
     fixture(
       sdk_fixture_0(),
       sdk_fixture_2(),
-      sdk_fixture_24(),
+      sdk_fixture_25(),
       sdk_fixture_3(),
       sdk_fixture_4(),
       sdk_fixture_5(),
@@ -1687,7 +1845,7 @@ test sdk_upgrade_v8_submitted_height() fail {
     fixture(
       sdk_fixture_0(),
       sdk_fixture_2(),
-      sdk_fixture_25(),
+      sdk_fixture_26(),
       sdk_fixture_3(),
       sdk_fixture_4(),
       sdk_fixture_5(),
@@ -1701,7 +1859,7 @@ test sdk_upgrade_v8_submitted_unbonding() fail {
     fixture(
       sdk_fixture_0(),
       sdk_fixture_2(),
-      sdk_fixture_26(),
+      sdk_fixture_27(),
       sdk_fixture_3(),
       sdk_fixture_4(),
       sdk_fixture_5(),
@@ -1715,7 +1873,7 @@ test sdk_upgrade_v8_submitted_upgrade_path() fail {
     fixture(
       sdk_fixture_0(),
       sdk_fixture_2(),
-      sdk_fixture_27(),
+      sdk_fixture_28(),
       sdk_fixture_3(),
       sdk_fixture_4(),
       sdk_fixture_5(),
@@ -1730,7 +1888,7 @@ test sdk_upgrade_v8_submitted_consensus() fail {
       sdk_fixture_0(),
       sdk_fixture_2(),
       sdk_fixture_1(),
-      sdk_fixture_28(),
+      sdk_fixture_29(),
       sdk_fixture_4(),
       sdk_fixture_5(),
       1700000001000000000,
@@ -1759,7 +1917,7 @@ test sdk_upgrade_v8_corrupted_proof() fail {
       sdk_fixture_2(),
       sdk_fixture_1(),
       sdk_fixture_3(),
-      sdk_fixture_29(),
+      sdk_fixture_30(),
       sdk_fixture_5(),
       1700000001000000000,
     )
@@ -1770,7 +1928,7 @@ test sdk_upgrade_v8_wrong_trusted_root() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_30(),
+      sdk_fixture_31(),
       sdk_fixture_1(),
       sdk_fixture_3(),
       sdk_fixture_4(),
@@ -1781,34 +1939,6 @@ test sdk_upgrade_v8_wrong_trusted_root() fail {
 }
 
 test sdk_upgrade_v8_wrong_store_path() fail {
-  let (before, after, u) =
-    fixture(
-      sdk_fixture_31(),
-      sdk_fixture_2(),
-      sdk_fixture_1(),
-      sdk_fixture_3(),
-      sdk_fixture_4(),
-      sdk_fixture_5(),
-      1700000001000000000,
-    )
-  expect upgrade.verify(before, after, u, 1700000001000000000)
-}
-
-test sdk_upgrade_v8_wrong_upgrade_height() fail {
-  let (before, after, u) =
-    fixture(
-      sdk_fixture_7(),
-      sdk_fixture_2(),
-      sdk_fixture_1(),
-      sdk_fixture_3(),
-      sdk_fixture_4(),
-      sdk_fixture_5(),
-      1700000001000000000,
-    )
-  expect upgrade.verify(before, after, u, 1700000001000000000)
-}
-
-test sdk_upgrade_v8_disabled_upgrade_path() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_32(),
@@ -1822,10 +1952,38 @@ test sdk_upgrade_v8_disabled_upgrade_path() fail {
   expect upgrade.verify(before, after, u, 1700000001000000000)
 }
 
-test sdk_upgrade_v8_frozen_client() fail {
+test sdk_upgrade_v8_wrong_upgrade_height() fail {
+  let (before, after, u) =
+    fixture(
+      sdk_fixture_8(),
+      sdk_fixture_2(),
+      sdk_fixture_1(),
+      sdk_fixture_3(),
+      sdk_fixture_4(),
+      sdk_fixture_5(),
+      1700000001000000000,
+    )
+  expect upgrade.verify(before, after, u, 1700000001000000000)
+}
+
+test sdk_upgrade_v8_disabled_upgrade_path() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_33(),
+      sdk_fixture_2(),
+      sdk_fixture_1(),
+      sdk_fixture_3(),
+      sdk_fixture_4(),
+      sdk_fixture_5(),
+      1700000001000000000,
+    )
+  expect upgrade.verify(before, after, u, 1700000001000000000)
+}
+
+test sdk_upgrade_v8_frozen_client() fail {
+  let (before, after, u) =
+    fixture(
+      sdk_fixture_34(),
       sdk_fixture_2(),
       sdk_fixture_1(),
       sdk_fixture_3(),
@@ -1854,17 +2012,17 @@ test sdk_upgrade_v8_committed_old_timestamp() {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_34(),
-      sdk_fixture_1(),
       sdk_fixture_35(),
+      sdk_fixture_1(),
       sdk_fixture_36(),
       sdk_fixture_37(),
+      sdk_fixture_38(),
       1700000001000000000,
     )
   expect after.state.client_state == sdk_fixture_1()
   expect
     after.state.consensus_states == [
-      Pair(after.state.client_state.latest_height, sdk_fixture_38()),
+      Pair(after.state.client_state.latest_height, sdk_fixture_39()),
     ]
   expect
     upgrade_pb.client(u.client_state) == #"0a2b2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436c69656e74537461746512710a0c76382d636c61737369632d3212001a00220208142a0032003a040802100142190a090801180120012a0100120c0a02000110211804200c300142190a090801180120012a0100120c0a02000110201801200130014a07757067726164654a1075706772616465644942435374617465"
@@ -1888,11 +2046,11 @@ test sdk_upgrade_v8_committed_expired_timestamp() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_39(),
-      sdk_fixture_1(),
       sdk_fixture_40(),
+      sdk_fixture_1(),
       sdk_fixture_41(),
       sdk_fixture_42(),
+      sdk_fixture_43(),
       1700000001000000000,
     )
   expect upgrade.verify(before, after, u, 1700000001000000000)
@@ -1903,11 +2061,11 @@ test sdk_upgrade_v8_committed_future_timestamp() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_43(),
-      sdk_fixture_1(),
       sdk_fixture_44(),
+      sdk_fixture_1(),
       sdk_fixture_45(),
       sdk_fixture_46(),
+      sdk_fixture_47(),
       1700000001000000000,
     )
   expect upgrade.verify(before, after, u, 1700000001000000000)
@@ -1946,6 +2104,41 @@ test sdk_upgrade_v10_revision_reset() {
   )
 }
 
+test sdk_upgrade_v10_authenticated_root_accepts_membership() {
+  let (before, after, u) =
+    fixture(
+      sdk_fixture_0(),
+      sdk_fixture_2(),
+      sdk_fixture_1(),
+      sdk_fixture_3(),
+      sdk_fixture_4(),
+      sdk_fixture_5(),
+      1700000001000000000,
+    )
+  expect upgrade.verify(before, after, u, 1700000001000000000)
+  expect [Pair(h, bootstrap)] = after.state.consensus_states
+  let cons = ConsensusState { ..bootstrap, root: sdk_fixture_2().root }
+  client_state.verify_membership(
+    after.state.client_state,
+    cons,
+    h,
+    1700000001000000000,
+    1,
+    1700000001000000000,
+    1,
+    0,
+    0,
+    u.proof_client,
+    MerklePath {
+      key_path: [
+        "upgrade",
+        #"757067726164656449424353746174652f3130302f7570677261646564436c69656e74",
+      ],
+    },
+    #"0a2b2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436c69656e74537461746512710a0c76382d636c61737369632d3212001a00220208142a0032003a040802100142190a090801180120012a0100120c0a02000110211804200c300142190a090801180120012a0100120c0a02000110201801200130014a07757067726164654a1075706772616465644942435374617465",
+  )
+}
+
 test sdk_upgrade_v10_sentinel_rejects_membership() fail {
   let (before, after, u) =
     fixture(
@@ -1972,10 +2165,47 @@ test sdk_upgrade_v10_sentinel_rejects_membership() fail {
       0,
       u.proof_client,
       MerklePath {
-        key_path: ["upgrade", "upgradedIBCState/100/upgradedClient"],
+        key_path: [
+          "upgrade",
+          #"757067726164656449424353746174652f3130302f7570677261646564436c69656e74",
+        ],
       },
       #"0a2b2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436c69656e74537461746512710a0c76382d636c61737369632d3212001a00220208142a0032003a040802100142190a090801180120012a0100120c0a02000110211804200c300142190a090801180120012a0100120c0a02000110201801200130014a07757067726164654a1075706772616465644942435374617465",
     )
+}
+
+test sdk_upgrade_v10_authenticated_root_accepts_nonmembership() {
+  let (before, after, u) =
+    fixture(
+      sdk_fixture_0(),
+      sdk_fixture_2(),
+      sdk_fixture_1(),
+      sdk_fixture_3(),
+      sdk_fixture_4(),
+      sdk_fixture_5(),
+      1700000001000000000,
+    )
+  expect upgrade.verify(before, after, u, 1700000001000000000)
+  expect [Pair(h, bootstrap)] = after.state.consensus_states
+  let cons = ConsensusState { ..bootstrap, root: sdk_fixture_2().root }
+  client_state.verify_non_membership(
+    after.state.client_state,
+    cons,
+    h,
+    1700000001000000000,
+    1,
+    1700000001000000000,
+    1,
+    0,
+    0,
+    sdk_fixture_7(),
+    MerklePath {
+      key_path: [
+        "upgrade",
+        #"757067726164656449424353746174652f3130302f6e6f74436f6d6d6974746564",
+      ],
+    },
+  )
 }
 
 test sdk_upgrade_v10_sentinel_rejects_nonmembership() fail {
@@ -2002,9 +2232,12 @@ test sdk_upgrade_v10_sentinel_rejects_nonmembership() fail {
       1,
       0,
       0,
-      u.proof_client,
+      sdk_fixture_7(),
       MerklePath {
-        key_path: ["upgrade", "upgradedIBCState/100/upgradedClient"],
+        key_path: [
+          "upgrade",
+          #"757067726164656449424353746174652f3130302f6e6f74436f6d6d6974746564",
+        ],
       },
     )
 }
@@ -2013,14 +2246,14 @@ test sdk_upgrade_v10_same_revision() {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_8(),
-      sdk_fixture_7(),
-      sdk_fixture_3(),
       sdk_fixture_9(),
+      sdk_fixture_8(),
+      sdk_fixture_3(),
       sdk_fixture_10(),
+      sdk_fixture_11(),
       1700000001000000000,
     )
-  expect after.state.client_state == sdk_fixture_7()
+  expect after.state.client_state == sdk_fixture_8()
   expect
     after.state.consensus_states == [
       Pair(after.state.client_state.latest_height, sdk_fixture_6()),
@@ -2046,11 +2279,11 @@ test sdk_upgrade_v10_committed_rollback() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_12(),
-      sdk_fixture_11(),
-      sdk_fixture_3(),
       sdk_fixture_13(),
+      sdk_fixture_12(),
+      sdk_fixture_3(),
       sdk_fixture_14(),
+      sdk_fixture_15(),
       1700000001000000000,
     )
   expect upgrade.verify(before, after, u, 1700000001000000000)
@@ -2061,11 +2294,11 @@ test sdk_upgrade_v10_committed_short_unbonding() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_16(),
-      sdk_fixture_15(),
-      sdk_fixture_3(),
       sdk_fixture_17(),
+      sdk_fixture_16(),
+      sdk_fixture_3(),
       sdk_fixture_18(),
+      sdk_fixture_19(),
       1700000001000000000,
     )
   expect upgrade.verify(before, after, u, 1700000001000000000)
@@ -2076,14 +2309,14 @@ test sdk_upgrade_v10_committed_reduced_unbonding() {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_20(),
-      sdk_fixture_19(),
-      sdk_fixture_3(),
       sdk_fixture_21(),
+      sdk_fixture_20(),
+      sdk_fixture_3(),
       sdk_fixture_22(),
+      sdk_fixture_23(),
       1700000001000000000,
     )
-  expect after.state.client_state == sdk_fixture_19()
+  expect after.state.client_state == sdk_fixture_20()
   expect
     after.state.consensus_states == [
       Pair(after.state.client_state.latest_height, sdk_fixture_6()),
@@ -2110,7 +2343,7 @@ test sdk_upgrade_v10_submitted_trust_parameters() {
     fixture(
       sdk_fixture_0(),
       sdk_fixture_2(),
-      sdk_fixture_23(),
+      sdk_fixture_24(),
       sdk_fixture_3(),
       sdk_fixture_4(),
       sdk_fixture_5(),
@@ -2143,7 +2376,7 @@ test sdk_upgrade_v10_submitted_chain_id() fail {
     fixture(
       sdk_fixture_0(),
       sdk_fixture_2(),
-      sdk_fixture_24(),
+      sdk_fixture_25(),
       sdk_fixture_3(),
       sdk_fixture_4(),
       sdk_fixture_5(),
@@ -2157,7 +2390,7 @@ test sdk_upgrade_v10_submitted_height() fail {
     fixture(
       sdk_fixture_0(),
       sdk_fixture_2(),
-      sdk_fixture_25(),
+      sdk_fixture_26(),
       sdk_fixture_3(),
       sdk_fixture_4(),
       sdk_fixture_5(),
@@ -2171,7 +2404,7 @@ test sdk_upgrade_v10_submitted_unbonding() fail {
     fixture(
       sdk_fixture_0(),
       sdk_fixture_2(),
-      sdk_fixture_26(),
+      sdk_fixture_27(),
       sdk_fixture_3(),
       sdk_fixture_4(),
       sdk_fixture_5(),
@@ -2185,7 +2418,7 @@ test sdk_upgrade_v10_submitted_upgrade_path() fail {
     fixture(
       sdk_fixture_0(),
       sdk_fixture_2(),
-      sdk_fixture_27(),
+      sdk_fixture_28(),
       sdk_fixture_3(),
       sdk_fixture_4(),
       sdk_fixture_5(),
@@ -2200,7 +2433,7 @@ test sdk_upgrade_v10_submitted_consensus() fail {
       sdk_fixture_0(),
       sdk_fixture_2(),
       sdk_fixture_1(),
-      sdk_fixture_28(),
+      sdk_fixture_29(),
       sdk_fixture_4(),
       sdk_fixture_5(),
       1700000001000000000,
@@ -2229,7 +2462,7 @@ test sdk_upgrade_v10_corrupted_proof() fail {
       sdk_fixture_2(),
       sdk_fixture_1(),
       sdk_fixture_3(),
-      sdk_fixture_29(),
+      sdk_fixture_30(),
       sdk_fixture_5(),
       1700000001000000000,
     )
@@ -2240,7 +2473,7 @@ test sdk_upgrade_v10_wrong_trusted_root() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_30(),
+      sdk_fixture_31(),
       sdk_fixture_1(),
       sdk_fixture_3(),
       sdk_fixture_4(),
@@ -2251,34 +2484,6 @@ test sdk_upgrade_v10_wrong_trusted_root() fail {
 }
 
 test sdk_upgrade_v10_wrong_store_path() fail {
-  let (before, after, u) =
-    fixture(
-      sdk_fixture_31(),
-      sdk_fixture_2(),
-      sdk_fixture_1(),
-      sdk_fixture_3(),
-      sdk_fixture_4(),
-      sdk_fixture_5(),
-      1700000001000000000,
-    )
-  expect upgrade.verify(before, after, u, 1700000001000000000)
-}
-
-test sdk_upgrade_v10_wrong_upgrade_height() fail {
-  let (before, after, u) =
-    fixture(
-      sdk_fixture_7(),
-      sdk_fixture_2(),
-      sdk_fixture_1(),
-      sdk_fixture_3(),
-      sdk_fixture_4(),
-      sdk_fixture_5(),
-      1700000001000000000,
-    )
-  expect upgrade.verify(before, after, u, 1700000001000000000)
-}
-
-test sdk_upgrade_v10_disabled_upgrade_path() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_32(),
@@ -2292,10 +2497,38 @@ test sdk_upgrade_v10_disabled_upgrade_path() fail {
   expect upgrade.verify(before, after, u, 1700000001000000000)
 }
 
-test sdk_upgrade_v10_frozen_client() fail {
+test sdk_upgrade_v10_wrong_upgrade_height() fail {
+  let (before, after, u) =
+    fixture(
+      sdk_fixture_8(),
+      sdk_fixture_2(),
+      sdk_fixture_1(),
+      sdk_fixture_3(),
+      sdk_fixture_4(),
+      sdk_fixture_5(),
+      1700000001000000000,
+    )
+  expect upgrade.verify(before, after, u, 1700000001000000000)
+}
+
+test sdk_upgrade_v10_disabled_upgrade_path() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_33(),
+      sdk_fixture_2(),
+      sdk_fixture_1(),
+      sdk_fixture_3(),
+      sdk_fixture_4(),
+      sdk_fixture_5(),
+      1700000001000000000,
+    )
+  expect upgrade.verify(before, after, u, 1700000001000000000)
+}
+
+test sdk_upgrade_v10_frozen_client() fail {
+  let (before, after, u) =
+    fixture(
+      sdk_fixture_34(),
       sdk_fixture_2(),
       sdk_fixture_1(),
       sdk_fixture_3(),
@@ -2324,17 +2557,17 @@ test sdk_upgrade_v10_committed_old_timestamp() {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_34(),
-      sdk_fixture_1(),
       sdk_fixture_35(),
+      sdk_fixture_1(),
       sdk_fixture_36(),
       sdk_fixture_37(),
+      sdk_fixture_38(),
       1700000001000000000,
     )
   expect after.state.client_state == sdk_fixture_1()
   expect
     after.state.consensus_states == [
-      Pair(after.state.client_state.latest_height, sdk_fixture_38()),
+      Pair(after.state.client_state.latest_height, sdk_fixture_39()),
     ]
   expect
     upgrade_pb.client(u.client_state) == #"0a2b2f6962632e6c69676874636c69656e74732e74656e6465726d696e742e76312e436c69656e74537461746512710a0c76382d636c61737369632d3212001a00220208142a0032003a040802100142190a090801180120012a0100120c0a02000110211804200c300142190a090801180120012a0100120c0a02000110201801200130014a07757067726164654a1075706772616465644942435374617465"
@@ -2358,11 +2591,11 @@ test sdk_upgrade_v10_committed_expired_timestamp() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_39(),
-      sdk_fixture_1(),
       sdk_fixture_40(),
+      sdk_fixture_1(),
       sdk_fixture_41(),
       sdk_fixture_42(),
+      sdk_fixture_43(),
       1700000001000000000,
     )
   expect upgrade.verify(before, after, u, 1700000001000000000)
@@ -2373,11 +2606,11 @@ test sdk_upgrade_v10_committed_future_timestamp() fail {
   let (before, after, u) =
     fixture(
       sdk_fixture_0(),
-      sdk_fixture_43(),
-      sdk_fixture_1(),
       sdk_fixture_44(),
+      sdk_fixture_1(),
       sdk_fixture_45(),
       sdk_fixture_46(),
+      sdk_fixture_47(),
       1700000001000000000,
     )
   expect upgrade.verify(before, after, u, 1700000001000000000)

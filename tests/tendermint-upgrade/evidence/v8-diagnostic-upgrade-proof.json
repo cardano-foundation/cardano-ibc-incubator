@@ -1,0 +1,227 @@
+{
+  "format": "sdk-live-upgrade-proof-v1",
+  "upgrade_height": "258",
+  "store_height": "257",
+  "header": {
+    "signed_header": {
+      "header": {
+        "version": {
+          "block": "11"
+        },
+        "chain_id": "v8-classic-1",
+        "height": "258",
+        "time": "2026-08-17T12:20:37.409264877Z",
+        "last_block_id": {
+          "hash": "503ED9D1325DE862712AA3D2A786FF988A20DAE35F8AC1E3AFE05623497C57DD",
+          "parts": {
+            "total": 1,
+            "hash": "385DBE2BA7DEE2C8A8824D9C5DDDC9E8A37E0002D5D1C140DEF66B205BBFE697"
+          }
+        },
+        "last_commit_hash": "B1B87CA5B4B6707C739FBE0D5D1D988AF24A3DD8DC7621DC1554EA2D8A651913",
+        "data_hash": "78DDE2302AE8870B88DEA1B6A91B131AA62622BF94A80431C926A170F66B4D43",
+        "validators_hash": "EC9FB37FE91A8FCF0E0085DAAF290DCB09547D2843AF2439EB4EBED6F8AAE080",
+        "next_validators_hash": "EC9FB37FE91A8FCF0E0085DAAF290DCB09547D2843AF2439EB4EBED6F8AAE080",
+        "consensus_hash": "9F2EE92F886B73316AA5F183A6796C276400CE69998F1D9CA0CE71F62BB08B8B",
+        "app_hash": "3DAAAA5075D715ADBB60F03D0077430A41D653634474C7586A00F8F52A99B751",
+        "last_results_hash": "23716D3CA883DEC6E456950225DEC4A90A37C99529A15A8E27AB6E661A1B90CF",
+        "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+        "proposer_address": "731A6657CE0157A44B255882D3A08EFE7ECE4DAD"
+      },
+      "commit": {
+        "height": "258",
+        "round": 0,
+        "block_id": {
+          "hash": "ACC2E7C41D64641D3E120463CBBAEE79DDEC3858370DE38408B2E7D3C78D61CC",
+          "parts": {
+            "total": 1,
+            "hash": "75A14555CDD93516407AAC4A389C66C27E5C00F2289F9C2258B954F16523D494"
+          }
+        },
+        "signatures": [
+          {
+            "block_id_flag": 2,
+            "validator_address": "731A6657CE0157A44B255882D3A08EFE7ECE4DAD",
+            "timestamp": "2026-08-17T12:20:42.426740646Z",
+            "signature": "UIdj5Y3C+nu4GlrUVswrvuzhhN/P5t7u7E+dx3WSQe/xy7WdEpEZmWfhnYkwC91/Dl89MGrx2VpOmwBJVKy4CA=="
+          }
+        ]
+      }
+    },
+    "canonical": false
+  },
+  "application": {
+    "response": {
+      "data": "SimApp",
+      "version": "53eaba1-918-old",
+      "last_block_height": "257",
+      "last_block_app_hash": "PaqqUHXXFa27YPA9AHdDCkHWU2NEdMdYagD49SqZt1E="
+    }
+  },
+  "validators": {
+    "block_height": "258",
+    "validators": [
+      {
+        "address": "731A6657CE0157A44B255882D3A08EFE7ECE4DAD",
+        "pub_key": {
+          "type": "tendermint/PubKeyEd25519",
+          "value": "CgDFKIGxt+65WKHHgFFf5UyylmXGrIT1pcn7kVlp8Bg="
+        },
+        "voting_power": "500",
+        "proposer_priority": "0"
+      }
+    ],
+    "count": "1",
+    "total": "1"
+  },
+  "proofs": {
+    "upgradedClient": {
+      "response": {
+        "code": 0,
+        "log": "",
+        "info": "",
+        "index": "0",
+        "key": "dXBncmFkZWRJQkNTdGF0ZS8yNTgvdXBncmFkZWRDbGllbnQ=",
+        "value": "CisvaWJjLmxpZ2h0Y2xpZW50cy50ZW5kZXJtaW50LnYxLkNsaWVudFN0YXRlEnMKDHY4LWNsYXNzaWMtMhIAGgAiBAiA324qADIAOgQIAhABQhkKCQgBGAEgASoBABIMCgIAARAhGAQgDDABQhkKCQgBGAEgASoBABIMCgIAARAgGAEgATABSgd1cGdyYWRlShB1cGdyYWRlZElCQ1N0YXRl",
+        "proofOps": {
+          "ops": [
+            {
+              "type": "ics23:iavl",
+              "key": "dXBncmFkZWRJQkNTdGF0ZS8yNTgvdXBncmFkZWRDbGllbnQ=",
+              "data": "CrYDCiN1cGdyYWRlZElCQ1N0YXRlLzI1OC91cGdyYWRlZENsaWVudBKiAQorL2liYy5saWdodGNsaWVudHMudGVuZGVybWludC52MS5DbGllbnRTdGF0ZRJzCgx2OC1jbGFzc2ljLTISABoAIgQIgN9uKgAyADoECAIQAUIZCgkIARgBIAEqAQASDAoCAAEQIRgEIAwwAUIZCgkIARgBIAEqAQASDAoCAAEQIBgBIAEwAUoHdXBncmFkZUoQdXBncmFkZWRJQkNTdGF0ZRoMCAEYASABKgQAAsYDIiwIARIFAgSCBCAaISAceVMEdGniFXEkVZjV1vdz5d8Ehu243lel39v7X+faxiIqCAESJgQGggQg7ytRzqQ7hL31YaT0iqQcXetnQOWaJ1wzyVgpvlmB+lcgIioIARImBgqCBCDobi6O850sRfn/y0rmIsrJ3R9bGt0fgh752eQr2i5fJyAiKggBEiYIGoIEIOF0FpBPLOoBgjxFFUZuQEdVNB4/rXAIEVAu+k2cY2ZDICIqCAESJgw8ggQgUklb/lKVeiJQ3PZx9typxfiQrwrzMN/JVyDoC1VJi94g"
+            },
+            {
+              "type": "ics23:simple",
+              "key": "dXBncmFkZQ==",
+              "data": "CqsBCgd1cGdyYWRlEiCfVfSEDlt8z2iLmQfKOnBuSDvNYZjgFE+BzxPQFvTpERoJCAEYASABKgEAIiUIARIhAb6MhPu3PnzV+QImBH54wxwkMvfW0g5iT1ytRzvk0dY8IiUIARIhAfwUECQe2ceGi3lgCXXg8LaOYb8BdQapd1UYr+FAhIFeIiUIARIhAYCw5UAeR+Ymo7KAE9i/Ql99tzoB2jEy2rp+D81feBR8"
+            }
+          ]
+        },
+        "height": "257",
+        "codespace": ""
+      }
+    },
+    "upgradedConsState": {
+      "response": {
+        "code": 0,
+        "log": "",
+        "info": "",
+        "index": "0",
+        "key": "dXBncmFkZWRJQkNTdGF0ZS8yNTgvdXBncmFkZWRDb25zU3RhdGU=",
+        "value": "Ci4vaWJjLmxpZ2h0Y2xpZW50cy50ZW5kZXJtaW50LnYxLkNvbnNlbnN1c1N0YXRlEjIKDAiQ+YvUBhCVk+e4ARIAGiDsn7N/6RqPzw4AhdqvKQ3LCVR9KEOvJDnrTr7W+KrggA==",
+        "proofOps": {
+          "ops": [
+            {
+              "type": "ics23:iavl",
+              "key": "dXBncmFkZWRJQkNTdGF0ZS8yNTgvdXBncmFkZWRDb25zU3RhdGU=",
+              "data": "CvgCCiZ1cGdyYWRlZElCQ1N0YXRlLzI1OC91cGdyYWRlZENvbnNTdGF0ZRJkCi4vaWJjLmxpZ2h0Y2xpZW50cy50ZW5kZXJtaW50LnYxLkNvbnNlbnN1c1N0YXRlEjIKDAiQ+YvUBhCVk+e4ARIAGiDsn7N/6RqPzw4AhdqvKQ3LCVR9KEOvJDnrTr7W+KrggBoMCAEYASABKgQAAoIEIioIARImAgSCBCAnIGrhOincpMwzgfycrBCLmdTCXkrAXdMUDSFx4kplRiAiKggBEiYEBoIEIO8rUc6kO4S99WGk9IqkHF3rZ0DlmidcM8lYKb5ZgfpXICIqCAESJgYKggQg6G4ujvOdLEX5/8tK5iLKyd0fWxrdH4Ie+dnkK9ouXycgIioIARImCBqCBCDhdBaQTyzqAYI8RRVGbkBHVTQeP61wCBFQLvpNnGNmQyAiKggBEiYMPIIEIFJJW/5SlXoiUNz2cfbcqcX4kK8K8zDfyVcg6AtVSYveIA=="
+            },
+            {
+              "type": "ics23:simple",
+              "key": "dXBncmFkZQ==",
+              "data": "CqsBCgd1cGdyYWRlEiCfVfSEDlt8z2iLmQfKOnBuSDvNYZjgFE+BzxPQFvTpERoJCAEYASABKgEAIiUIARIhAb6MhPu3PnzV+QImBH54wxwkMvfW0g5iT1ytRzvk0dY8IiUIARIhAfwUECQe2ceGi3lgCXXg8LaOYb8BdQapd1UYr+FAhIFeIiUIARIhAYCw5UAeR+Ymo7KAE9i/Ql99tzoB2jEy2rp+D81feBR8"
+            }
+          ]
+        },
+        "height": "257",
+        "codespace": ""
+      }
+    }
+  },
+  "client": {
+    "chain_id": "v8-classic-2",
+    "trust_level": {
+      "numerator": "0",
+      "denominator": "0"
+    },
+    "trusting_period": {
+      "seconds": "0",
+      "nanos": 0
+    },
+    "unbonding_period": {
+      "seconds": "1814400",
+      "nanos": 0
+    },
+    "max_clock_drift": {
+      "seconds": "0",
+      "nanos": 0
+    },
+    "frozen_height": {
+      "revision_number": "0",
+      "revision_height": "0"
+    },
+    "latest_height": {
+      "revision_number": "2",
+      "revision_height": "1"
+    },
+    "proof_specs": [
+      {
+        "leaf_spec": {
+          "hash": "SHA256",
+          "prehash_key": "NO_HASH",
+          "prehash_value": "SHA256",
+          "length": "VAR_PROTO",
+          "prefix": "AA=="
+        },
+        "inner_spec": {
+          "child_order": [
+            0,
+            1
+          ],
+          "child_size": 33,
+          "min_prefix_length": 4,
+          "max_prefix_length": 12,
+          "empty_child": "",
+          "hash": "SHA256"
+        },
+        "max_depth": 0,
+        "min_depth": 0
+      },
+      {
+        "leaf_spec": {
+          "hash": "SHA256",
+          "prehash_key": "NO_HASH",
+          "prehash_value": "SHA256",
+          "length": "VAR_PROTO",
+          "prefix": "AA=="
+        },
+        "inner_spec": {
+          "child_order": [
+            0,
+            1
+          ],
+          "child_size": 32,
+          "min_prefix_length": 1,
+          "max_prefix_length": 1,
+          "empty_child": "",
+          "hash": "SHA256"
+        },
+        "max_depth": 0,
+        "min_depth": 0
+      }
+    ],
+    "upgrade_path": [
+      "upgrade",
+      "upgradedIBCState"
+    ],
+    "allow_update_after_expiry": false,
+    "allow_update_after_misbehaviour": false
+  },
+  "kernel": {
+    "timestamp": "2026-08-17T12:20:32.387Z",
+    "root": {
+      "hash": ""
+    },
+    "next_validators_hash": "7J+zf+kaj88OAIXarykNywlUfShDryQ5606+1viq4IA="
+  },
+  "kernel_timestamp_ns": "1786969232387565973",
+  "trusted_header_timestamp_ns": "1786969237409264877",
+  "trusted_header_minus_kernel_ns": "5021698904",
+  "reference_verification": {
+    "commit_signatures_verified": true,
+    "keeper_upgrade_accepted": true,
+    "kernel_timestamp_ns": "1786969232387565973",
+    "sdk_membership_proofs_verified": true,
+    "trusted_header_timestamp_ns": "1786969237409264877"
+  }
+}
