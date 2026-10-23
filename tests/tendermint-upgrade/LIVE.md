@@ -87,3 +87,9 @@ python3 tests/tendermint-upgrade/verify_capture.py \
 ```
 
 That diagnostic proof has a kernel timestamp `5,021,698,904` nanoseconds earlier than its authenticating header. It is the regression that required the timestamp fix. It establishes reference proof acceptance. It does not by itself establish a completed Cardano transaction, resumed packet traffic or an independent security review.
+
+The [completed rehearsal result](evidence/live-v8-revision-reset/result.json) records the later `v8.1` halt at `2280`. Its upgrade kernel precedes the signed header by `5,024,569,886` nanoseconds. The actual Cardano upgrade transaction is `c3c91762f4df1a00f9b30c5490689850147366f13aeb93628a21a307fa5714f1` at block `1007`. The first verified successor state is `(2, 6)`. Packet `2` survived the export and packet `3` was sent in revision two. Both reached the existing Cardano channel and their acknowledgements cleared the source commitments. The result and adjacent files retain the bootstrap controls, the same-proof positive controls, the localhost normalization and the actual transaction execution budgets.
+
+The first successor finalization candidate tried to return `2,698,060` lovelace to a client output that already held `2,732,540`. The contract rejected the decrease. A read-only replay that changed only that reserve allocation passed all five scripts. The Gateway fix preserves both state inputs' asset values. The accepted successor-header receipt shows the final transaction after that correction.
+
+Run `node tests/tendermint-upgrade/verify-live-evidence.cjs` after building the Gateway dependencies. It checks the public manifest, re-authenticates all seven retained Cardano receipts and checks their script bounds. It verifies the unchanged client NFT and route. It also rechecks the SDK proofs with Go and compares the rejected proof bytes with the successful transactions. The full owned runtime and its keys remain outside version control.

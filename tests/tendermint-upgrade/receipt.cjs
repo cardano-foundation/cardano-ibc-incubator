@@ -74,7 +74,8 @@ async function main() {
       verifier_redeemer: verifier?.data, verifier_decoded: verifier ? lucid.Data.from(verifier.data) : null,
       signed_cbor: signed.to_cbor_hex(), authenticated_block_cbor: Buffer.from(bytes).toString('hex'),
       evidence: 'Canonical transaction authenticated against the block body hash. All declared script bounds were enforced by the ledger.' }
-    fs.writeFileSync(output, JSON.stringify(result, (_, item) => typeof item === 'bigint' ? item.toString() : item, 2) + '\n', { flag: 'wx' })
+    fs.writeFileSync(output, JSON.stringify(result, (_, item) => typeof item === 'bigint' ? item.toString()
+      : item instanceof Map ? [...item.entries()] : item, 2) + '\n', { flag: 'wx' })
     console.log(JSON.stringify({ output, transaction, block: inclusion.block, signed_bytes: budget.canonicalSignedBytes,
       memory: budget.memory.toString(), cpu: budget.cpu.toString(), proof_policy_executed: Boolean(verifier) }))
   } finally { await db.end() }
