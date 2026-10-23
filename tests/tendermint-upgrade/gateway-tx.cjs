@@ -24,22 +24,28 @@ async function main() {
   assert(output.startsWith(runtime + path.sep) && !fs.existsSync(output))
   assert(action === undefined || action === '--submit')
   const request = JSON.parse(fs.readFileSync(inputArg))
-  assert(['Transfer', 'RecvPacket', 'Timeout', 'PrunePacketHistory'].includes(request.method))
+  assert(['Transfer', 'RecvPacket', 'Timeout', 'PrunePacketHistory', 'UpgradeClient', 'ChannelOpenAck'].includes(request.method))
   assert(!(request.expect_error && action === '--submit'))
   const protoRoot = path.join(root, 'proto-types/protos/ibc-go')
   const cardano = request.method === 'PrunePacketHistory'
-  const definition = loader.loadSync(path.join(protoRoot, cardano ? 'ibc/cardano/v1/tx.proto' : 'ibc/core/channel/v1/tx.proto'),
+  const clientMessage = request.method === 'UpgradeClient'
+  const definition = loader.loadSync(path.join(protoRoot, cardano ? 'ibc/cardano/v1/tx.proto'
+    : clientMessage ? 'ibc/core/client/v1/tx.proto' : 'ibc/core/channel/v1/tx.proto'),
     { keepCase: true, longs: String, enums: String, bytes: Buffer, includeDirs: [protoRoot] })
   const ibc = grpc.loadPackageDefinition(definition).ibc
-  const Msg = cardano ? ibc.cardano.v1.CardanoMsg : ibc.core.channel.v1.Msg
+  const Msg = cardano ? ibc.cardano.v1.CardanoMsg : clientMessage ? ibc.core.client.v1.Msg : ibc.core.channel.v1.Msg
   const client = new Msg(`127.0.0.1:${profile.ports.gateway_grpc}`, grpc.credentials.createInsecure(),
     { 'grpc.max_receive_message_length': 64 * 1024 * 1024 })
   const report = { format: 'local-upgrade-gateway-transaction-v1', request }
   try {
     const message = { ...request.message }
-    for (const key of ['proof_commitment', 'proof_unreceived', 'proof_commitment_absence']) {
+    for (const key of ['proof_commitment', 'proof_unreceived', 'proof_commitment_absence', 'proof_upgrade_client', 'proof_upgrade_consensus_state', 'proof_try']) {
       if (message[key]) message[key] = Buffer.from(message[key], 'base64')
     }
+    for (const key of ['client_state', 'consensus_state']) {
+      if (message[key]) message[key] = { ...message[key], value: Buffer.from(message[key].value, 'base64') }
+    }
+    if (message.packet) message.packet = { ...message.packet, data: Buffer.from(message.packet.data, 'base64') }
     let response
     try {
       response = await new Promise((resolve, reject) => client[request.method](message,
@@ -53,6 +59,8 @@ async function main() {
       return
     }
     assert(!request.expect_error, 'The negative control unexpectedly built a valid transaction')
+    report.response_type_url = response.unsigned_tx.type_url ?? ''
+    report.result = response.result
     const unsigned = Buffer.from(response.unsigned_tx.value).toString('utf8')
     assert(/^(?:[0-9a-f]{2})+$/i.test(unsigned), 'Expected Gateway unsigned CBOR as UTF-8 hex')
     report.unsigned_cbor = unsigned
@@ -84,7 +92,8 @@ async function main() {
     } else {
       fs.writeFileSync(output, JSON.stringify(report, null, 2) + '\n', { flag: 'wx' })
     }
-    console.log(JSON.stringify({ output, transaction_hash: report.transaction_hash, submitted: action === '--submit' }))
+    console.log(JSON.stringify({ output, transaction_hash: report.transaction_hash,
+      response_type_url: report.response_type_url, submitted: action === '--submit' }))
   } finally { client.close() }
 }
 

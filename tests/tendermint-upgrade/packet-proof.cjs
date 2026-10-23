@@ -38,9 +38,12 @@ async function main() {
   const status = await rpc('status')
   const chain = status.node_info.network
   assert.equal(chain, profile.active_chain_id ?? profile.old_chain_id)
-  const height = BigInt(status.sync_info.latest_block_height)
+  const height = BigInt(specification.height ?? status.sync_info.latest_block_height)
+  assert(height <= BigInt(status.sync_info.latest_block_height))
   assert(height >= 2n)
   const header = await rpc('commit', { height: height.toString() })
+  assert.equal(header.signed_header.header.chain_id, chain)
+  assert.equal(header.signed_header.header.height, height.toString())
   const key = `commitments/ports/${packet.source_port}/channels/${packet.source_channel}/sequences/${packet.sequence}`
   const query = await rpc('abci_query', { path: '"/store/ibc/key"', data: '0x' + Buffer.from(key).toString('hex'),
     height: (height - 1n).toString(), prove: 'true' })
@@ -69,7 +72,8 @@ async function main() {
     message: specification.kind === 'receive' ? { ...common, packet, proof_commitment: proof }
       : { ...common, port_id: packet.destination_port, channel_id: packet.destination_channel,
         sequence: packet.sequence, proof_commitment_absence: proof },
-    capture: { kind: specification.kind, key, actual_height: actualHeight, header, query },
+    capture: { kind: specification.kind, proof_kind: specification.kind === 'receive' ? 'membership' : 'nonmembership',
+      key, genesis_sha256: profile.genesis_sha256, actual_height: actualHeight, header, query },
     ...(specification.expect_error ? { expect_error: specification.expect_error } : {}) }
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-packet-proof-'))
   try {

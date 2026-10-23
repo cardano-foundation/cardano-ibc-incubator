@@ -19,6 +19,7 @@ func main() {
 	var input struct {
 		Capture struct {
 			Kind, Key string
+			ProofKind string `json:"proof_kind"`
 			Header    struct {
 				SignedHeader struct {
 					Header struct {
@@ -43,9 +44,9 @@ func main() {
 	root, err := hex.DecodeString(input.Capture.Header.SignedHeader.Header.AppHash)
 	must(err)
 	path := commitmenttypes.NewMerklePath("ibc", input.Capture.Key)
-	if input.Capture.Kind == "receive" {
+	if input.Capture.ProofKind == "membership" {
 		must(proof.VerifyMembership(commitmenttypes.GetSDKSpecs(), commitmenttypes.NewMerkleRoot(root), path, query.Value))
-	} else if input.Capture.Kind == "prune" && len(query.Value) == 0 {
+	} else if input.Capture.ProofKind == "nonmembership" && len(query.Value) == 0 {
 		must(proof.VerifyNonMembership(commitmenttypes.GetSDKSpecs(), commitmenttypes.NewMerkleRoot(root), path))
 	} else {
 		panic("unexpected packet proof kind or value")
