@@ -1,0 +1,53 @@
+{
+  "block_id": {
+    "hash": "2FD9C8B9D447061DC5B0B991CDC03E38F5D132B82FBC8AD04C01BA6C585F31CF",
+    "parts": {
+      "total": 1,
+      "hash": "3016262FB99C9329E764E35F06BADEE7A968DF3357C61ADC9F967CE8261ADB04"
+    }
+  },
+  "block": {
+    "header": {
+      "version": {
+        "block": "11"
+      },
+      "chain_id": "v8-classic-2",
+      "height": "1",
+      "time": "2026-08-17T15:30:27.620842Z",
+      "last_block_id": {
+        "hash": "",
+        "parts": {
+          "total": 0,
+          "hash": ""
+        }
+      },
+      "last_commit_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "data_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "validators_hash": "EC9FB37FE91A8FCF0E0085DAAF290DCB09547D2843AF2439EB4EBED6F8AAE080",
+      "next_validators_hash": "EC9FB37FE91A8FCF0E0085DAAF290DCB09547D2843AF2439EB4EBED6F8AAE080",
+      "consensus_hash": "048091BC7DDC283F77BFBF91D73C44DA58C3DF8A9CBC867405D8B7F3DAADA22F",
+      "app_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "last_results_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "evidence_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "proposer_address": "731A6657CE0157A44B255882D3A08EFE7ECE4DAD"
+    },
+    "data": {
+      "txs": []
+    },
+    "evidence": {
+      "evidence": []
+    },
+    "last_commit": {
+      "height": "0",
+      "round": 0,
+      "block_id": {
+        "hash": "",
+        "parts": {
+          "total": 0,
+          "hash": ""
+        }
+      },
+      "signatures": []
+    }
+  }
+}

@@ -1,0 +1,289 @@
+// Rendered by generate.mjs and run in the repository's pinned adapter module.
+package main
+
+import (
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"reflect"
+	"runtime/debug"
+	"time"
+
+	clientkeeper "__IBC_GO_MODULE__/modules/core/02-client/keeper"
+	clienttypes "__IBC_GO_MODULE__/modules/core/02-client/types"
+	commitmenttypes "__IBC_GO_MODULE__/modules/core/23-commitment/types"
+	"__IBC_GO_MODULE__/modules/core/exported"
+	tm "__IBC_GO_MODULE__/modules/light-clients/07-tendermint"
+	"cosmossdk.io/log"
+	"cosmossdk.io/store/metrics"
+	"cosmossdk.io/store/rootmulti"
+	storetypes "cosmossdk.io/store/types"
+	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	ics23 "github.com/cosmos/ics23/go"
+	dbm "github.com/cosmos/cosmos-db"
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/runtime"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+)
+
+const clientID = "07-tendermint-0"
+
+type testCase struct {
+	Name       string `json:"name"`
+	Mutation   string `json:"mutation"`
+	V8         bool   `json:"v8"`
+	V10        bool   `json:"v10"`
+	Aiken      bool   `json:"aiken"`
+	Difference string `json:"difference,omitempty"`
+}
+
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func wireClient(c *tm.ClientState) map[string]any {
+	// The Aiken renderer uses these exact specs. Do not silently omit a
+	// reference state with different chain-chosen proof rules.
+	if !reflect.DeepEqual(c.ProofSpecs, commitmenttypes.GetSDKSpecs()) {
+		panic("fixture renderer requires the SDK proof specs")
+	}
+	return map[string]any{
+		"chain_id": c.ChainId, "trust_numerator": fmt.Sprint(c.TrustLevel.Numerator),
+		"trust_denominator": fmt.Sprint(c.TrustLevel.Denominator),
+		"trusting_period":   fmt.Sprint(int64(c.TrustingPeriod)),
+		"unbonding_period":  fmt.Sprint(int64(c.UnbondingPeriod)),
+		"max_clock_drift":   fmt.Sprint(int64(c.MaxClockDrift)),
+		"frozen_revision":   fmt.Sprint(c.FrozenHeight.RevisionNumber),
+		"frozen_height":     fmt.Sprint(c.FrozenHeight.RevisionHeight),
+		"revision":          fmt.Sprint(c.LatestHeight.RevisionNumber),
+		"height":            fmt.Sprint(c.LatestHeight.RevisionHeight), "upgrade_path": c.UpgradePath,
+	}
+}
+
+func wireConsensus(c *tm.ConsensusState) map[string]string {
+	return map[string]string{"timestamp": fmt.Sprint(c.Timestamp.UnixNano()),
+		"root": hex.EncodeToString(c.Root.Hash), "next_validators_hash": hex.EncodeToString(c.NextValidatorsHash)}
+}
+
+// Export each decoded ICS23 operation alongside the exact SDK protobuf bytes.
+// Both the Go reference and Aiken consume this same proof, without rebuilding it.
+func wireProof(cdc *codec.ProtoCodec, p commitmenttypes.MerkleProof) map[string]any {
+	existence := func(e *ics23.ExistenceProof) any {
+		if e == nil {
+			return nil
+		}
+		ops := make([]any, 0, len(e.Path))
+		for _, op := range e.Path {
+			ops = append(ops, map[string]any{"hash": int(op.Hash), "prefix": hex.EncodeToString(op.Prefix), "suffix": hex.EncodeToString(op.Suffix)})
+		}
+		return map[string]any{"key": hex.EncodeToString(e.Key), "value": hex.EncodeToString(e.Value),
+			"leaf": map[string]any{"hash": int(e.Leaf.Hash), "prehash_key": int(e.Leaf.PrehashKey),
+				"prehash_value": int(e.Leaf.PrehashValue), "length": int(e.Leaf.Length), "prefix": hex.EncodeToString(e.Leaf.Prefix)}, "path": ops}
+	}
+	proofs := make([]any, 0, len(p.Proofs))
+	for _, cp := range p.Proofs {
+		if n := cp.GetNonexist(); n != nil {
+			proofs = append(proofs, map[string]any{"nonexist": map[string]any{"key": hex.EncodeToString(n.Key), "left": existence(n.Left), "right": existence(n.Right)}})
+		} else {
+			proofs = append(proofs, existence(cp.GetExist()))
+		}
+	}
+	return map[string]any{"protobuf": hex.EncodeToString(cdc.MustMarshal(&p)), "proofs": proofs}
+}
+
+func run(cdc *codec.ProtoCodec, tc testCase) map[string]any {
+	now := time.Unix(1_700_000_001, 0).UTC()
+	trustedTime := now.Add(-time.Second)
+	old := tm.NewClientState("v8-classic-1", tm.DefaultTrustLevel, 10*time.Second, 20*time.Second,
+		time.Second, clienttypes.NewHeight(1, 100), commitmenttypes.GetSDKSpecs(), []string{"upgrade", "upgradedIBCState"})
+	proposed := tm.NewClientState("v8-classic-2", tm.DefaultTrustLevel, 10*time.Second, 20*time.Second,
+		time.Second, clienttypes.NewHeight(2, 1), commitmenttypes.GetSDKSpecs(), []string{"upgrade", "upgradedIBCState"})
+	kernel := tm.NewConsensusState(trustedTime, commitmenttypes.NewMerkleRoot(nil), make([]byte, 32))
+	for i := range kernel.NextValidatorsHash {
+		kernel.NextValidatorsHash[i] = byte(i + 1)
+	}
+	switch tc.Mutation {
+	case "same_revision":
+		proposed.ChainId = old.ChainId
+		proposed.LatestHeight = clienttypes.NewHeight(1, 101)
+	case "committed_rollback":
+		proposed.ChainId = old.ChainId
+		proposed.LatestHeight = clienttypes.NewHeight(1, 99)
+	case "committed_short_unbonding":
+		proposed.UnbondingPeriod = 9 * time.Second
+	case "committed_reduced_unbonding":
+		proposed.UnbondingPeriod = 15 * time.Second
+	case "committed_old_timestamp":
+		kernel.Timestamp = trustedTime.Add(-time.Second)
+	case "committed_expired_timestamp":
+		kernel.Timestamp = trustedTime.Add(-old.TrustingPeriod)
+	case "committed_future_timestamp":
+		kernel.Timestamp = now.Add(2 * time.Second)
+	}
+
+	key := storetypes.NewKVStoreKey("upgrade")
+	ibcKey := storetypes.NewKVStoreKey("ibc")
+	db := dbm.NewMemDB()
+	defer db.Close()
+	ms := rootmulti.NewStore(db, log.NewNopLogger(), metrics.NewNoOpMetrics())
+	ms.MountStoreWithDB(key, storetypes.StoreTypeIAVL, nil)
+	ms.MountStoreWithDB(ibcKey, storetypes.StoreTypeIAVL, nil)
+	must(ms.LoadLatestVersion())
+	// The app root committed at store version 99 is authenticated by header 100.
+	must(ms.SetInitialVersion(99))
+	sourceCtx := sdk.NewContext(ms, cmtproto.Header{ChainID: old.ChainId, Height: 99, Time: trustedTime}, false, log.NewNopLogger())
+	uk := upgradekeeper.NewKeeper(nil, runtime.NewKVStoreService(key), cdc, "", nil, "unused")
+	committedClient, err := cdc.MarshalInterface(proposed.ZeroCustomFields())
+	must(err)
+	committedConsensus, err := cdc.MarshalInterface(kernel)
+	must(err)
+	must(uk.SetUpgradedClient(sourceCtx, 100, committedClient))
+	must(uk.SetUpgradedConsensusState(sourceCtx, 100, committedConsensus))
+	// Include real neighbouring keys and another store in both proof layers.
+	sourceCtx.KVStore(key).Set([]byte("fixture/left"), []byte("left"))
+	sourceCtx.KVStore(key).Set([]byte("zz/fixture/right"), []byte("right"))
+	sourceCtx.KVStore(ibcKey).Set([]byte("fixture"), []byte("ibc"))
+	commit := ms.Commit()
+	if commit.Version != 99 {
+		panic("unexpected SDK store version")
+	}
+	query := func(key []byte) commitmenttypes.MerkleProof {
+		res, err := ms.Query(&storetypes.RequestQuery{Path: "/upgrade/key", Height: 99, Data: key, Prove: true})
+		must(err)
+		if res.Code != 0 || res.Height != 99 {
+			panic(fmt.Sprintf("SDK proof query failed: %+v", res))
+		}
+		p, err := commitmenttypes.ConvertProofs(res.ProofOps)
+		must(err)
+		return p
+	}
+	clientProof := query(upgradetypes.UpgradedClientKey(100))
+	consensusProof := query(upgradetypes.UpgradedConsStateKey(100))
+	root := append([]byte(nil), commit.Hash...)
+	// Verify the unmodified SDK proofs before making any adversarial changes.
+	clientPath := __MERKLE_PATH_CLIENT__
+	consensusPath := __MERKLE_PATH_CONSENSUS__
+	must(clientProof.VerifyMembership(old.ProofSpecs, commitmenttypes.NewMerkleRoot(root), clientPath, committedClient))
+	must(consensusProof.VerifyMembership(old.ProofSpecs, commitmenttypes.NewMerkleRoot(root), consensusPath, committedConsensus))
+
+	switch tc.Mutation {
+	case "none", "same_revision", "committed_rollback", "committed_short_unbonding", "committed_reduced_unbonding", "committed_old_timestamp", "committed_expired_timestamp", "committed_future_timestamp":
+	case "submitted_trust_parameters":
+		proposed.TrustLevel = tm.Fraction{Numerator: 0, Denominator: 0}
+		proposed.TrustingPeriod = time.Hour
+		proposed.MaxClockDrift = 0
+		proposed.FrozenHeight = clienttypes.NewHeight(2, 1)
+	case "submitted_chain_id":
+		proposed.ChainId = "forged-2"
+	case "submitted_height":
+		proposed.LatestHeight = clienttypes.NewHeight(2, 2)
+	case "submitted_unbonding":
+		proposed.UnbondingPeriod = 30 * time.Second
+	case "submitted_upgrade_path":
+		proposed.UpgradePath = []string{"upgrade", "forged"}
+	case "submitted_consensus":
+		kernel.NextValidatorsHash[0] ^= 1
+	case "swapped_proofs":
+		clientProof, consensusProof = consensusProof, clientProof
+	case "corrupted_proof":
+		clientProof.Proofs[0].GetExist().Path[0].Prefix[0] ^= 1
+	case "wrong_trusted_root":
+		root[0] ^= 1
+	case "wrong_store_path":
+		old.UpgradePath = []string{"other", "upgradedIBCState"}
+	case "wrong_upgrade_height":
+		old.LatestHeight = clienttypes.NewHeight(1, 101)
+	case "disabled_upgrade_path":
+		old.UpgradePath = nil
+	case "frozen_client":
+		old.FrozenHeight = clienttypes.NewHeight(1, 50)
+	case "expired_client":
+		now = trustedTime.Add(old.TrustingPeriod)
+	default:
+		panic("unknown mutation: " + tc.Mutation)
+	}
+	trusted := tm.NewConsensusState(trustedTime, commitmenttypes.NewMerkleRoot(root), make([]byte, 32))
+	ctx := sourceCtx.WithBlockHeader(cmtproto.Header{ChainID: "cardano-test-0", Height: 500, Time: now})
+	__KEEPER_SETUP__
+	k.SetParams(ctx, clienttypes.NewParams(exported.Tendermint))
+	k.SetClientState(ctx, clientID, old)
+	k.SetClientConsensusState(ctx, clientID, old.LatestHeight, trusted)
+	// Match transactional execution: rejected upgrades never commit their writes.
+	cacheCtx, write := ctx.CacheContext()
+	err = __KEEPER_UPGRADE__
+	accepted := err == nil
+	if accepted {
+		write()
+	}
+	expected := __EXPECTED__
+	if accepted != expected {
+		panic(fmt.Sprintf("%s: reference accepted=%v, expected=%v, error=%v", tc.Name, accepted, expected, err))
+	}
+	result := map[string]any{"name": tc.Name, "mutation": tc.Mutation, "now": fmt.Sprint(now.UnixNano()),
+		"old_client": wireClient(old), "trusted_consensus": wireConsensus(trusted),
+		"proposed_client": wireClient(proposed), "kernel": wireConsensus(kernel),
+		"committed_client": hex.EncodeToString(committedClient), "committed_consensus": hex.EncodeToString(committedConsensus),
+		"store_height": "99", "proof_height": "100", "store_root": hex.EncodeToString(commit.Hash),
+		"client_proof": wireProof(cdc, clientProof), "consensus_proof": wireProof(cdc, consensusProof),
+		"reference_accepted": accepted, "aiken_accepted": tc.Aiken, "difference": tc.Difference}
+	if accepted {
+		out, found := k.GetClientState(ctx, clientID)
+		if !found {
+			panic("upgraded client not found")
+		}
+		tmOut := out.(*tm.ClientState)
+		cons, found := k.GetClientConsensusState(ctx, clientID, tmOut.LatestHeight)
+		if !found {
+			panic("upgraded consensus state not found")
+		}
+		result["reference_client"] = wireClient(tmOut)
+		result["reference_consensus"] = wireConsensus(cons.(*tm.ConsensusState))
+	} else {
+		result["reference_error"] = err.Error()
+	}
+	if tc.Name == "revision_reset" {
+		absent := "upgradedIBCState/100/notCommitted"
+		proof := query([]byte(absent))
+		must(proof.VerifyNonMembership(old.ProofSpecs, commitmenttypes.NewMerkleRoot(commit.Hash), __MERKLE_PATH_ABSENCE__))
+		result["absence_proof"] = wireProof(cdc, proof)
+		result["absence_path"] = absent
+	}
+	return result
+}
+
+func main() {
+	var cases []testCase
+	input, err := os.ReadFile(os.Args[1])
+	must(err)
+	must(json.Unmarshal(input, &cases))
+	registry := codectypes.NewInterfaceRegistry()
+	clienttypes.RegisterInterfaces(registry)
+	tm.RegisterInterfaces(registry)
+	cdc := codec.NewProtoCodec(registry)
+	vectors := make([]any, 0, len(cases))
+	for _, tc := range cases {
+		vectors = append(vectors, run(cdc, tc))
+	}
+	versions := map[string]string{}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		panic("missing Go build information")
+	}
+	for _, dep := range info.Deps {
+		if dep.Path == "__IBC_GO_MODULE__" || dep.Path == "github.com/cosmos/cosmos-sdk" || dep.Path == "cosmossdk.io/x/upgrade" {
+			if dep.Replace != nil {
+				panic("unexpected dependency replacement: " + dep.Path)
+			}
+			versions[dep.Path] = dep.Version
+		}
+	}
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	must(encoder.Encode(map[string]any{"versions": versions, "cases": vectors}))
+}

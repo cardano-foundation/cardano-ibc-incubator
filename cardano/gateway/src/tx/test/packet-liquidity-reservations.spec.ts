@@ -37,6 +37,8 @@ it('selects refund liquidity from unreserved inputs after entering the completio
         source_port: 'transfer',
         source_channel: 'channel-0',
         sequence: 1n,
+        timeout_height: { revision_number: 0n, revision_height: 0n },
+        timeout_timestamp: 0n,
         data: Buffer.from(JSON.stringify({ denom: '6c6f76656c616365', amount: '20' })),
       },
       proof_height: { revision_number: 0n, revision_height: 1n },

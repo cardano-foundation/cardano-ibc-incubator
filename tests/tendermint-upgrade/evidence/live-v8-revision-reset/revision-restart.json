@@ -1,0 +1,36 @@
+{
+  "format": "tendermint-revision-restart-v1",
+  "old_chain_id": "v8-classic-1",
+  "new_chain_id": "v8-classic-2",
+  "old_height": "2280",
+  "new_initial_height": "1",
+  "old_export_height": "2281",
+  "old_home_preserved": true,
+  "old_home_mount": "upgrade-cosmos-data:/var/lib/simd",
+  "new_home_mount": "upgrade-cosmos-revision-2:/var/lib/simd",
+  "export_sha256": "b2c6ebb56ec243ea0385c6d951ffc94a5d26648dc1363f4bf3126765579db277",
+  "new_genesis_sha256": "bd82a9162598e90fe467c13f0f928dafca080f03359b6c32633276a41b4f9e1f",
+  "ibc_genesis_preserved": false,
+  "ibc_route_state_preserved": true,
+  "allowed_client_additions": [
+    "09-localhost"
+  ],
+  "localhost_height_reset": {
+    "before": {
+      "revision_number": "1",
+      "revision_height": "0"
+    },
+    "after": {
+      "revision_number": "2",
+      "revision_height": "1"
+    }
+  },
+  "validator_set_preserved": true,
+  "ibc_genesis_sha256": "252eaf1b5e72af3d2eec81808dd43c6dbc4981d9c4746605ff7d6ecbac92be7e",
+  "imported_ibc_genesis_sha256": "6719c2821fbf5593a4f788080e050f79cc4804250f76f3b1411e16122d871745",
+  "sdk_handler_applied": true,
+  "sdk_handler": "v8.1",
+  "sdk_applied_height": "2280",
+  "cardano_upgrade_observation": "pre-restart-1792779143136808000.json",
+  "recovery": "After a fail-closed genesis validation, the missing SDK localhost allowlist entry was added and its automatic self-client was reset to the new initial height. The new home had never signed a block."
+}

@@ -1739,7 +1739,6 @@ export class TendermintClientService {
       trusted.timestamp + old.trustingPeriod <= now ||
       h.revisionNumber < old.latestHeight.revisionNumber ||
       (h.revisionNumber === old.latestHeight.revisionNumber && h.revisionHeight <= old.latestHeight.revisionHeight) ||
-      kernel.timestamp < trusted.timestamp ||
       kernel.timestamp > now + old.maxClockDrift ||
       kernel.timestamp + next.trustingPeriod <= now ||
       kernel.next_validators_hash.length !== 64

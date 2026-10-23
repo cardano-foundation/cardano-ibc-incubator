@@ -1,1 +1,4 @@
 cosmos/cabalStore.tar.gz filter=lfs diff=lfs merge=lfs -text
+cardano/onchain/validators/client_upgrade_sdk.test.ak linguist-generated=true
+tests/tendermint-upgrade/vectors.json linguist-generated=true
+tests/tendermint-upgrade/evidence/** linguist-generated=true

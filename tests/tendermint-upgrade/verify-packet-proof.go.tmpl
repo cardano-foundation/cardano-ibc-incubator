@@ -1,0 +1,55 @@
+package main
+
+import (
+	"encoding/hex"
+	"encoding/json"
+	"os"
+
+	cmtcrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
+	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
+)
+
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func main() {
+	var input struct {
+		Capture struct {
+			Kind, Key string
+			ProofKind string `json:"proof_kind"`
+			Header    struct {
+				SignedHeader struct {
+					Header struct {
+						AppHash string `json:"app_hash"`
+					} `json:"header"`
+				} `json:"signed_header"`
+			} `json:"header"`
+			Query struct {
+				Response struct {
+					Value    []byte              `json:"value"`
+					ProofOps *cmtcrypto.ProofOps `json:"proofOps"`
+				} `json:"response"`
+			} `json:"query"`
+		} `json:"capture"`
+	}
+	raw, err := os.ReadFile(os.Args[1])
+	must(err)
+	must(json.Unmarshal(raw, &input))
+	query := input.Capture.Query.Response
+	proof, err := commitmenttypes.ConvertProofs(query.ProofOps)
+	must(err)
+	root, err := hex.DecodeString(input.Capture.Header.SignedHeader.Header.AppHash)
+	must(err)
+	path := commitmenttypes.NewMerklePath("ibc", input.Capture.Key)
+	if input.Capture.ProofKind == "membership" {
+		must(proof.VerifyMembership(commitmenttypes.GetSDKSpecs(), commitmenttypes.NewMerkleRoot(root), path, query.Value))
+	} else if input.Capture.ProofKind == "nonmembership" && len(query.Value) == 0 {
+		must(proof.VerifyNonMembership(commitmenttypes.GetSDKSpecs(), commitmenttypes.NewMerkleRoot(root), path))
+	} else {
+		panic("unexpected packet proof kind or value")
+	}
+	must(json.NewEncoder(os.Stdout).Encode(map[string]any{"sdk_proof_verified": true, "kind": input.Capture.Kind}))
+}
