@@ -63,6 +63,14 @@ export type BuildPacketBatchResponse = {
   included_tx_hash?: string;
 };
 
+// Nest's protobuf loader supplies Long objects at runtime. Generated protobuf
+// types describe bigint values, so normalize before passing them to the runtime.
+const rpcInteger = (value: bigint): bigint => BigInt(value.toString());
+const rpcHeight = (height: Height): Height => ({
+  revision_number: rpcInteger(height?.revision_number ?? 0n),
+  revision_height: rpcInteger(height?.revision_height ?? 0n),
+});
+
 @Injectable()
 export class PacketLaneService {
   private readonly logger = new Logger(PacketLaneService.name);
@@ -503,10 +511,11 @@ export class PacketLaneService {
   }
 
   async prune(request: import('@cardano-ibc/proto-types/build/ibc/cardano/v1/tx').MsgPrunePacketHistory) {
-    if (request.port_id !== 'transfer' || request.sequence < 1n || !request.proof_height)
+    const sequence = rpcInteger(request.sequence ?? 0n);
+    if (request.port_id !== 'transfer' || sequence < 1n || !request.proof_height)
       throw new Error('Invalid packet pruning request');
     const deployment = await this.deployment(request.channel_id);
-    const height = request.proof_height;
+    const height = rpcHeight(request.proof_height);
     const resolved = await this.lucid.resolveClientAtHeights(deployment.client, [
       { revisionNumber: height.revision_number, revisionHeight: height.revision_height },
     ]);
@@ -528,7 +537,7 @@ export class PacketLaneService {
           await buildPacketPrune(
             this.lucid.lucid,
             deployment,
-            request.sequence,
+            sequence,
             record(height.revision_number, height.revision_height),
             this.proof(request.proof_commitment_absence),
             from,
@@ -542,7 +551,12 @@ export class PacketLaneService {
     request: MsgRecvPacket | MsgAcknowledgement | MsgTimeout | MsgTimeoutOnClose,
     kind: 'receive' | 'acknowledge' | 'timeout',
   ) {
-    const p = request.packet;
+    const p: Packet = {
+      ...request.packet,
+      sequence: rpcInteger(request.packet.sequence),
+      timeout_height: rpcHeight(request.packet.timeout_height),
+      timeout_timestamp: rpcInteger(request.packet.timeout_timestamp),
+    };
     const incoming = kind === 'receive';
     const channel = incoming ? p.destination_channel : p.source_channel;
     const port = incoming ? p.destination_port : p.source_port;
@@ -553,7 +567,7 @@ export class PacketLaneService {
     }
     const deployment = await this.deployment(channel);
     const packet = this.packet(p);
-    const proofHeight = request.proof_height as Height;
+    const proofHeight = rpcHeight(request.proof_height);
     const resolved = await this.lucid.resolveClientAtHeights(deployment.client, [
       { revisionNumber: proofHeight.revision_number, revisionHeight: proofHeight.revision_height },
     ]);
