@@ -81,6 +81,13 @@ def main():
             reservation.close()
     (runtime / 'runtime/migration-clock.rc').write_text(f'{offset:+d}s\n')
     (runtime / '.caribic/devkit/clock-offset').write_text(f'{offset:+d}s')
+    history_properties = runtime / 'yaci.properties'
+    history_configuration = history_properties.read_text()
+    if 'store.assets.enabled=false' in history_configuration:
+        history_configuration = history_configuration.replace('store.assets.enabled=false', 'store.assets.enabled=true')
+    elif 'store.assets.enabled=true' not in history_configuration:
+        parser.error('The historical asset index must be explicitly enabled')
+    history_properties.write_text(history_configuration)
     base = json.loads(subprocess.check_output([
         'docker', 'compose', '-f', str(ROOT / 'chains/cosmos/docker-compose.yml'),
         '--profile', 'v8-classic', 'config', '--format', 'json'], text=True))['services']['v8-classic']
