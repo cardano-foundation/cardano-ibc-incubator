@@ -69,6 +69,10 @@ The restart refuses to proceed before it observes that on-ledger bootstrap state
 
 Before a verified Tendermint update, try valid membership and absence proofs through the actual Gateway using proof height `(2, 1)`. `gateway-tx.cjs` builds explicit receive and pruning requests and retains errors. It broadcasts only with `--submit`. Confirm that the proof policy rejects the bootstrap root. Then relay a verified successor header above height `1`. Confirm that the authenticated application root is installed and normal packet proofs succeed. Receive the carried packet, submit another transfer and relay both acknowledgements. Prune the pre-upgrade receipt using a real absence proof to exercise non-membership after the update.
 
+`packet-proof.cjs RUNTIME SPECIFICATION OUTPUT` captures the actual SDK commitment proof. The specification contains `kind` as `receive` or `prune` and `packet` as the exact protobuf JSON packet from its send event. An optional `declared_height` selects the bootstrap height for a negative control. An optional `expect_error` is the required Gateway error pattern. The helper checks the original proof against the SDK application root before saving the Gateway request. A receive proof also checks the packet's independently calculated commitment.
+
+`receipt.cjs RUNTIME TRANSACTION OUTPUT` retains the actual signed Cardano transaction and block. It authenticates the block body and witnesses against the block header hash. It rejects invalid transactions and checks all declared script execution bounds against the ledger limits. The result includes the actual proof-policy redeemer when that policy was executed.
+
 Compare the retained observations and actual transaction receipts. The client NFT, both connection ends and both channel ends must keep their identities. Check successful acknowledgements and token balances rather than treating a submitted transaction as delivery. A failed or interrupted run must retain its runtime and submitted transaction hashes for reconciliation before retrying.
 
 The public diagnostic capture can be rechecked without either chain running:
