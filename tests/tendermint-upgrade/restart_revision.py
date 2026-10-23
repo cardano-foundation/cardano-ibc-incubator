@@ -101,15 +101,37 @@ def main():
     genesis = json.loads(exported_bytes)
     if genesis['chain_id'] != profile['old_chain_id']:
         raise RuntimeError('The exported state belongs to another chain')
-    # Export preprocessing resets staking heights through the SDK. The IBC
-    # genesis is carried over byte for byte as a JSON value.
+    # Export preprocessing resets staking heights through the SDK. Existing
+    # profiles omitted the automatically created localhost client from their
+    # allowlist, which makes their own exports fail genesis validation.
     ibc = json.loads(json.dumps(genesis['app_state']['ibc']))
+    allowed = genesis['app_state']['ibc']['client_genesis']['params']['allowed_clients']
+    allowed_additions = []
+    if any(client['client_id'] == '09-localhost' for client in ibc['client_genesis']['clients']) and '09-localhost' not in allowed:
+        allowed.append('09-localhost')
+        allowed_additions.append('09-localhost')
+    localhost_reset = None
+    for client in genesis['app_state']['ibc']['client_genesis']['clients']:
+        if client['client_id'] == '09-localhost':
+            if client['client_state']['@type'] != '/ibc.lightclients.localhost.v2.ClientState':
+                raise RuntimeError('Unexpected SDK localhost client type')
+            # SDK zero-height export leaves its automatic self-client at height
+            # zero, which fails its own ValidateBasic. InitGenesis overwrites
+            # this self-client. Give genesis validation the new initial height.
+            localhost_reset = {'before': client['client_state']['latest_height'],
+                               'after': {'revision_number': profile['new_chain_id'].rsplit('-', 1)[1], 'revision_height': '1'}}
+            client['client_state']['latest_height'] = localhost_reset['after']
     genesis['chain_id'] = profile['new_chain_id']
     genesis['initial_height'] = '1'
     now = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=profile['clock_offset_seconds'])
     genesis['genesis_time'] = now.isoformat().replace('+00:00', 'Z')
     write(revision / 'genesis.json', genesis)
-    assert genesis['app_state']['ibc'] == ibc
+    expected_ibc = json.loads(json.dumps(ibc))
+    expected_ibc['client_genesis']['params']['allowed_clients'].extend(allowed_additions)
+    for client in expected_ibc['client_genesis']['clients']:
+        if client['client_id'] == '09-localhost':
+            client['client_state']['latest_height'] = localhost_reset['after']
+    assert genesis['app_state']['ibc'] == expected_ibc
     run(*compose, 'run', '--rm', '--no-deps', '--entrypoint', 'sh', 'cosmos', '-c', '''set -eu
 umask 077
 mkdir -p /rehearsal/revision-2/config
@@ -164,8 +186,10 @@ simd genesis validate --home /var/lib/simd
         'old_home_preserved': True, 'old_home_mount': old_volume, 'new_home_mount': service['volumes'][0],
         'export_sha256': hashlib.sha256(exported_bytes).hexdigest(),
         'new_genesis_sha256': hashlib.sha256((revision/'genesis.json').read_bytes()).hexdigest(),
-        'ibc_genesis_preserved': True, 'validator_set_preserved': True,
+        'ibc_genesis_preserved': not allowed_additions and localhost_reset is None, 'ibc_route_state_preserved': True,
+        'allowed_client_additions': allowed_additions, 'localhost_height_reset': localhost_reset, 'validator_set_preserved': True,
         'ibc_genesis_sha256': hashlib.sha256(json.dumps(ibc, sort_keys=True, separators=(',', ':')).encode()).hexdigest(),
+        'imported_ibc_genesis_sha256': hashlib.sha256(json.dumps(expected_ibc, sort_keys=True, separators=(',', ':')).encode()).hexdigest(),
         'sdk_handler_applied': True, 'sdk_handler': profile['upgrade_handler'], 'sdk_applied_height': str(halt_height),
         'cardano_upgrade_observation': str(observation.relative_to(runtime)),
     }

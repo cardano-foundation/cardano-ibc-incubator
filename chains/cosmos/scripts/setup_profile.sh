@@ -117,7 +117,7 @@ if [ ! -f "${GENESIS_FILE}" ]; then
       | .app_state.staking.params.max_validators = $staking_max_validators
       | .app_state.staking.params.max_entries = $staking_max_entries
       | .app_state.staking.params.historical_entries = $staking_historical_entries
-      | .app_state.ibc.client_genesis.params.allowed_clients = ["07-tendermint", "08-cardano-probabilistic"]
+      | .app_state.ibc.client_genesis.params.allowed_clients = ["07-tendermint", "08-cardano-probabilistic", "09-localhost"]
       | .app_state.gov.params.voting_period = $gov_voting_period
       | .app_state.gov.params.expedited_voting_period = $gov_expedited_voting_period
       | .app_state.gov.params.max_deposit_period = $gov_max_deposit_period
