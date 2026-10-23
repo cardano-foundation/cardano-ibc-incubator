@@ -65,6 +65,35 @@ def main():
     old_block = rpc('block')
     write(revision / 'old-status.json', old_status)
     write(revision / 'old-block.json', old_block)
+    halt_height = profile['upgrade_height']
+    old_application = rpc('abci_info')['response']
+    if int(old_application['last_block_height']) != halt_height - 1:
+        raise RuntimeError('Expected the old application at its actual SDK upgrade halt')
+    run(*compose, 'stop', 'cosmos')
+    # First restart the same chain with the binary containing its scheduled
+    # handler. Let the real SDK apply the upgrade before exporting for the
+    # revision reset. This keeps the old signing journal throughout chain one.
+    config['services']['cosmos']['image'] = profile['successor_cosmos_image']
+    write(compose_file, config)
+    run(*compose, 'up', '-d', 'cosmos')
+    deadline = time.monotonic() + 180
+    while True:
+        try:
+            migration_status = rpc('status')
+            application = rpc('abci_info')['response']
+            if (migration_status['node_info']['network'] == profile['old_chain_id'] and
+                    int(application['last_block_height']) >= halt_height + 1):
+                break
+        except (OSError, KeyError, ValueError):
+            pass
+        if time.monotonic() > deadline:
+            raise RuntimeError('The successor did not apply the scheduled SDK upgrade')
+        time.sleep(1)
+    with urllib.request.urlopen(f'http://127.0.0.1:{profile["ports"]["cosmos_rest"]}/cosmos/upgrade/v1beta1/applied_plan/{profile["upgrade_handler"]}', timeout=15) as response:
+        applied = json.load(response)
+    if int(applied['height']) != halt_height:
+        raise RuntimeError('The SDK did not record the expected applied upgrade height')
+    write(revision / 'source-migration.json', {'status': migration_status, 'application': application, 'applied_plan': applied})
     run(*compose, 'stop', 'cosmos')
     run(*compose, 'run', '--rm', '--no-deps', '--entrypoint', 'simd', 'cosmos', 'export',
         '--home', '/var/lib/simd', '--for-zero-height', '--output-document', '/rehearsal/revision-2/export.json')
@@ -131,10 +160,13 @@ simd genesis validate --home /var/lib/simd
     report = {
         'format': 'tendermint-revision-restart-v1', 'old_chain_id': profile['old_chain_id'], 'new_chain_id': profile['new_chain_id'],
         'old_height': old_status['sync_info']['latest_block_height'], 'new_initial_height': '1',
+        'old_export_height': application['last_block_height'],
         'old_home_preserved': True, 'old_home_mount': old_volume, 'new_home_mount': service['volumes'][0],
         'export_sha256': hashlib.sha256(exported_bytes).hexdigest(),
         'new_genesis_sha256': hashlib.sha256((revision/'genesis.json').read_bytes()).hexdigest(),
         'ibc_genesis_preserved': True, 'validator_set_preserved': True,
+        'ibc_genesis_sha256': hashlib.sha256(json.dumps(ibc, sort_keys=True, separators=(',', ':')).encode()).hexdigest(),
+        'sdk_handler_applied': True, 'sdk_handler': profile['upgrade_handler'], 'sdk_applied_height': str(halt_height),
         'cardano_upgrade_observation': str(observation.relative_to(runtime)),
     }
     write(revision / 'result.json', report)

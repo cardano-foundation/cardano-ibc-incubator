@@ -42,11 +42,13 @@ async function main() {
   const packet_lanes = []
   if (handler.packetState) {
     const state = handler.packetState.state
-    for (const row of await read(`${base}/matches/${state.address}?unspent`)) {
-      assert.equal(row.spent_at, null)
-      const { datum } = await read(`${base}/datums/${row.datum_hash}`)
-      assert(Object.entries(row.value.assets).some(([unit, amount]) => unit.startsWith(state.scriptHash + '.') && amount === 1))
-      packet_lanes.push({ ...row, datum, decoded: lucid.Data.from(datum) })
+    for (const address of new Set([state.address, handler.packetState.guard.address])) {
+      for (const row of await read(`${base}/matches/${address}?unspent`)) {
+        assert.equal(row.spent_at, null)
+        const { datum } = await read(`${base}/datums/${row.datum_hash}`)
+        assert(Object.entries(row.value.assets).some(([unit, amount]) => unit.startsWith(state.scriptHash + '.') && amount === 1))
+        packet_lanes.push({ ...row, datum, decoded: lucid.Data.from(datum) })
+      }
     }
   }
   const funding = JSON.parse(fs.readFileSync(path.join(bridge, 'funding-confirmed.json')))
