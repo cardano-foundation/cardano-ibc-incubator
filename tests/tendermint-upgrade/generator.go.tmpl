@@ -114,6 +114,8 @@ func run(cdc *codec.ProtoCodec, tc testCase) map[string]any {
 		proposed.UnbondingPeriod = 15 * time.Second
 	case "committed_old_timestamp":
 		kernel.Timestamp = trustedTime.Add(-time.Second)
+	case "committed_expired_timestamp":
+		kernel.Timestamp = trustedTime.Add(-old.TrustingPeriod)
 	case "committed_future_timestamp":
 		kernel.Timestamp = now.Add(2 * time.Second)
 	}
@@ -164,7 +166,7 @@ func run(cdc *codec.ProtoCodec, tc testCase) map[string]any {
 	must(consensusProof.VerifyMembership(old.ProofSpecs, commitmenttypes.NewMerkleRoot(root), consensusPath, committedConsensus))
 
 	switch tc.Mutation {
-	case "none", "same_revision", "committed_rollback", "committed_short_unbonding", "committed_reduced_unbonding", "committed_old_timestamp", "committed_future_timestamp":
+	case "none", "same_revision", "committed_rollback", "committed_short_unbonding", "committed_reduced_unbonding", "committed_old_timestamp", "committed_expired_timestamp", "committed_future_timestamp":
 	case "submitted_trust_parameters":
 		proposed.TrustLevel = tm.Fraction{Numerator: 0, Denominator: 0}
 		proposed.TrustingPeriod = time.Hour

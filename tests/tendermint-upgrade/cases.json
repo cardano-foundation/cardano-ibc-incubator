@@ -18,6 +18,7 @@
   { "name": "disabled_upgrade_path", "mutation": "disabled_upgrade_path", "v8": false, "v10": false, "aiken": false },
   { "name": "frozen_client", "mutation": "frozen_client", "v8": false, "v10": false, "aiken": false },
   { "name": "expired_client", "mutation": "expired_client", "v8": false, "v10": false, "aiken": false },
-  { "name": "committed_old_timestamp", "mutation": "committed_old_timestamp", "v8": true, "v10": true, "aiken": false, "difference": "Aiken additionally rejects an upgrade kernel older than the old trusted consensus state." },
+  { "name": "committed_old_timestamp", "mutation": "committed_old_timestamp", "v8": true, "v10": true, "aiken": true },
+  { "name": "committed_expired_timestamp", "mutation": "committed_expired_timestamp", "v8": true, "v10": true, "aiken": false, "difference": "Aiken rejects an already expired upgrade kernel while the reference upgrade entrypoints accept it." },
   { "name": "committed_future_timestamp", "mutation": "committed_future_timestamp", "v8": true, "v10": true, "aiken": false, "difference": "Aiken additionally bounds the upgrade kernel timestamp by the old maximum clock drift." }
 ]
