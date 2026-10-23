@@ -26,6 +26,9 @@ function generate(profile) {
     __MERKLE_PATH_CONSENSUS__: profile.name === 'v8'
       ? 'commitmenttypes.NewMerklePath("upgrade", "upgradedIBCState/100/upgradedConsState")'
       : 'commitmenttypes.NewMerklePath([]byte("upgrade"), []byte("upgradedIBCState/100/upgradedConsState"))',
+    __MERKLE_PATH_ABSENCE__: profile.name === 'v8'
+      ? 'commitmenttypes.NewMerklePath("upgrade", absent)'
+      : 'commitmenttypes.NewMerklePath([]byte("upgrade"), []byte(absent))',
     __KEEPER_SETUP__: profile.name === 'v8'
       ? 'k := clientkeeper.NewKeeper(cdc, ibcKey, nil, nil, uk)'
       : `k := clientkeeper.NewKeeper(cdc, runtime.NewKVStoreService(ibcKey), nil, uk)
@@ -84,13 +87,23 @@ function consensus(c) {
   return `ConsensusState { timestamp: ${c.timestamp}, root: MerkleRoot { hash: ${hex(c.root)} }, next_validators_hash: ${hex(c.next_validators_hash)} }`
 }
 
-function proof(p) {
-  return `MerkleProof { proofs: ${array(p.proofs.map(e => `CommitmentProof {
-    proof: CommitmentProof_Exist { exist: ExistenceProof {
+function existence(e) {
+  return `ExistenceProof {
       key: ${hex(e.key)}, value: ${hex(e.value)},
       leaf: LeafOp { hash: ${e.leaf.hash}, prehash_key: ${e.leaf.prehash_key}, prehash_value: ${e.leaf.prehash_value}, length: ${e.leaf.length}, prefix: ${hex(e.leaf.prefix)} },
       path: ${array(e.path.map(op => `InnerOp { hash: ${op.hash}, prefix: ${hex(op.prefix)}, suffix: ${hex(op.suffix)} }`))},
-    } },
+    }`
+}
+
+function proof(p) {
+  const neighbor = e => {
+    if (!e) throw new Error('The absence fixture requires two authenticated neighbors')
+    return existence(e)
+  }
+  return `MerkleProof { proofs: ${array(p.proofs.map(e => `CommitmentProof {
+    proof: ${e.nonexist
+      ? `CommitmentProof_Nonexist { non_exist: NonExistenceProof { key: ${hex(e.nonexist.key)}, left: ${neighbor(e.nonexist.left)}, right: ${neighbor(e.nonexist.right)} } }`
+      : `CommitmentProof_Exist { exist: ${existence(e)} }`},
   }`))} }`
 }
 
@@ -140,13 +153,23 @@ function render(results) {
       }`)
       if (c.name === 'revision_reset') {
         for (const membership of [true, false]) {
+          const packetProof = membership ? 'u.proof_client' : intern('MerkleProof', proof(c.absence_proof))
+          const packetPath = membership ? 'upgradedIBCState/100/upgradedClient' : c.absence_path
+          const arguments_ = `after.state.client_state, cons, h, ${c.now}, 1, ${c.now}, 1, 0, 0,
+              ${packetProof}, MerklePath { key_path: ["upgrade", ${utf8(packetPath)}] }${membership ? `, ${hex(c.committed_client)}` : ''}`
+          tests.push(`test sdk_upgrade_${profile.name}_authenticated_root_accepts_${membership ? 'membership' : 'nonmembership'}() {
+            ${setup}
+            expect upgrade.verify(before, after, u, ${c.now})
+            expect [Pair(h, bootstrap)] = after.state.consensus_states
+            let cons = ConsensusState { ..bootstrap, root: ${trusted}.root }
+            client_state.${membership ? 'verify_membership' : 'verify_non_membership'}(${arguments_})
+          }`)
           tests.push(`test sdk_upgrade_${profile.name}_sentinel_rejects_${membership ? 'membership' : 'nonmembership'}() fail {
             ${setup}
             expect upgrade.verify(before, after, u, ${c.now})
             expect [Pair(h, cons)] = after.state.consensus_states
             expect client_state.${membership ? 'verify_membership' : 'verify_non_membership'}(
-              after.state.client_state, cons, h, ${c.now}, 1, ${c.now}, 1, 0, 0,
-              u.proof_client, MerklePath { key_path: ["upgrade", "upgradedIBCState/100/upgradedClient"] }${membership ? `, ${hex(c.committed_client)}` : ''},
+              ${arguments_},
             )
           }`)
         }
@@ -171,7 +194,7 @@ use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{UncheckedRational}
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{VerifyClientUpgrade, VerifyProofEnvelope}
 use ibc/client/ics_007_tendermint_client/upgrade.{Upgrade}
-use ibc/core/ics_023_vector_commitments/ics23/proofs.{CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, LeafOp}
+use ibc/core/ics_023_vector_commitments/ics23/proofs.{CommitmentProof, CommitmentProof_Exist, CommitmentProof_Nonexist, ExistenceProof, NonExistenceProof, InnerOp, LeafOp}
 use ibc/core/ics_023_vector_commitments/merkle.{MerklePath, MerkleProof, MerkleRoot}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
 use recover_client

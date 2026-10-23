@@ -1,0 +1,106 @@
+// Verify a live capture's signatures, SDK proofs and reference keeper upgrade.
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strconv"
+	"time"
+
+	"cosmossdk.io/log"
+	"cosmossdk.io/store/metrics"
+	"cosmossdk.io/store/rootmulti"
+	storetypes "cosmossdk.io/store/types"
+	cmtjson "github.com/cometbft/cometbft/libs/json"
+	cmtcrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmttypes "github.com/cometbft/cometbft/types"
+	dbm "github.com/cosmos/cosmos-db"
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	clientkeeper "github.com/cosmos/ibc-go/v8/modules/core/02-client/keeper"
+	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
+	"github.com/cosmos/ibc-go/v8/modules/core/exported"
+	tm "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
+)
+
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func main() {
+	var input struct {
+		Header     json.RawMessage `json:"header"`
+		Validators json.RawMessage `json:"validators"`
+		Height     string          `json:"upgrade_height"`
+		Proofs     map[string]struct {
+			Response struct {
+				Value    []byte              `json:"value"`
+				ProofOps *cmtcrypto.ProofOps `json:"proofOps"`
+			} `json:"response"`
+		} `json:"proofs"`
+	}
+	raw, err := os.ReadFile(os.Args[1])
+	must(err)
+	must(json.Unmarshal(raw, &input))
+	var signed struct {
+		Header    cmttypes.SignedHeader `json:"signed_header"`
+		Canonical bool                  `json:"canonical"`
+	}
+	var validators struct {
+		Validators []*cmttypes.Validator `json:"validators"`
+	}
+	must(cmtjson.Unmarshal(input.Header, &signed))
+	must(cmtjson.Unmarshal(input.Validators, &validators))
+	h, err := strconv.ParseInt(input.Height, 10, 64)
+	must(err)
+	if signed.Header.Height != h {
+		panic("the capture does not contain the requested signed header")
+	}
+	set := cmttypes.NewValidatorSet(validators.Validators)
+	if string(set.Hash()) != string(signed.Header.ValidatorsHash) {
+		panic("validator set does not match the signed header")
+	}
+	must(signed.Header.ValidateBasic(signed.Header.ChainID))
+	must(set.VerifyCommitLight(signed.Header.ChainID, signed.Header.Commit.BlockID, h, signed.Header.Commit))
+	registry := codectypes.NewInterfaceRegistry()
+	clienttypes.RegisterInterfaces(registry)
+	tm.RegisterInterfaces(registry)
+	cdc := codec.NewProtoCodec(registry)
+	client, err := clienttypes.UnmarshalClientState(cdc, input.Proofs["upgradedClient"].Response.Value)
+	must(err)
+	kernel, err := clienttypes.UnmarshalConsensusState(cdc, input.Proofs["upgradedConsState"].Response.Value)
+	must(err)
+	proofBytes := map[string][]byte{}
+	for name, query := range input.Proofs {
+		proof, err := commitmenttypes.ConvertProofs(query.Response.ProofOps)
+		must(err)
+		path := commitmenttypes.NewMerklePath("upgrade", fmt.Sprintf("upgradedIBCState/%d/%s", h, name))
+		must(proof.VerifyMembership(commitmenttypes.GetSDKSpecs(), commitmenttypes.NewMerkleRoot(signed.Header.AppHash), path, query.Response.Value))
+		proofBytes[name] = cdc.MustMarshal(&proof)
+	}
+	key := storetypes.NewKVStoreKey("ibc")
+	ms := rootmulti.NewStore(dbm.NewMemDB(), log.NewNopLogger(), metrics.NewNoOpMetrics())
+	ms.MountStoreWithDB(key, storetypes.StoreTypeIAVL, nil)
+	must(ms.LoadLatestVersion())
+	ctx := sdk.NewContext(ms, cmtproto.Header{ChainID: "cardano-test-0", Height: 1, Time: signed.Header.Time.Add(time.Minute)}, false, log.NewNopLogger())
+	k := clientkeeper.NewKeeper(cdc, key, nil, nil, nil)
+	k.SetParams(ctx, clienttypes.NewParams(exported.Tendermint))
+	old := tm.NewClientState(signed.Header.ChainID, tm.DefaultTrustLevel, 10*24*time.Hour, 21*24*time.Hour,
+		10*time.Second, clienttypes.NewHeight(clienttypes.ParseChainID(signed.Header.ChainID), uint64(h)),
+		commitmenttypes.GetSDKSpecs(), []string{"upgrade", "upgradedIBCState"})
+	trusted := tm.NewConsensusState(signed.Header.Time, commitmenttypes.NewMerkleRoot(signed.Header.AppHash), signed.Header.NextValidatorsHash)
+	k.SetClientState(ctx, "07-tendermint-0", old)
+	k.SetClientConsensusState(ctx, "07-tendermint-0", old.LatestHeight, trusted)
+	must(k.UpgradeClient(ctx, "07-tendermint-0", client, kernel, proofBytes["upgradedClient"], proofBytes["upgradedConsState"]))
+	json.NewEncoder(os.Stdout).Encode(map[string]any{
+		"commit_signatures_verified": true, "sdk_membership_proofs_verified": true, "keeper_upgrade_accepted": true,
+		"trusted_header_timestamp_ns": fmt.Sprint(signed.Header.Time.UnixNano()),
+		"kernel_timestamp_ns":         fmt.Sprint(kernel.(*tm.ConsensusState).Timestamp.UnixNano()),
+	})
+}

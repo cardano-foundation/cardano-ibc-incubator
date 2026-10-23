@@ -22,6 +22,7 @@ import (
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	ics23 "github.com/cosmos/ics23/go"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -73,19 +74,25 @@ func wireConsensus(c *tm.ConsensusState) map[string]string {
 // Export each decoded ICS23 operation alongside the exact SDK protobuf bytes.
 // Both the Go reference and Aiken consume this same proof, without rebuilding it.
 func wireProof(cdc *codec.ProtoCodec, p commitmenttypes.MerkleProof) map[string]any {
-	proofs := make([]any, 0, len(p.Proofs))
-	for _, cp := range p.Proofs {
-		e := cp.GetExist()
+	existence := func(e *ics23.ExistenceProof) any {
 		if e == nil {
-			panic("expected an SDK existence proof")
+			return nil
 		}
 		ops := make([]any, 0, len(e.Path))
 		for _, op := range e.Path {
 			ops = append(ops, map[string]any{"hash": int(op.Hash), "prefix": hex.EncodeToString(op.Prefix), "suffix": hex.EncodeToString(op.Suffix)})
 		}
-		proofs = append(proofs, map[string]any{"key": hex.EncodeToString(e.Key), "value": hex.EncodeToString(e.Value),
+		return map[string]any{"key": hex.EncodeToString(e.Key), "value": hex.EncodeToString(e.Value),
 			"leaf": map[string]any{"hash": int(e.Leaf.Hash), "prehash_key": int(e.Leaf.PrehashKey),
-				"prehash_value": int(e.Leaf.PrehashValue), "length": int(e.Leaf.Length), "prefix": hex.EncodeToString(e.Leaf.Prefix)}, "path": ops})
+				"prehash_value": int(e.Leaf.PrehashValue), "length": int(e.Leaf.Length), "prefix": hex.EncodeToString(e.Leaf.Prefix)}, "path": ops}
+	}
+	proofs := make([]any, 0, len(p.Proofs))
+	for _, cp := range p.Proofs {
+		if n := cp.GetNonexist(); n != nil {
+			proofs = append(proofs, map[string]any{"nonexist": map[string]any{"key": hex.EncodeToString(n.Key), "left": existence(n.Left), "right": existence(n.Right)}})
+		} else {
+			proofs = append(proofs, existence(cp.GetExist()))
+		}
 	}
 	return map[string]any{"protobuf": hex.EncodeToString(cdc.MustMarshal(&p)), "proofs": proofs}
 }
@@ -239,6 +246,13 @@ func run(cdc *codec.ProtoCodec, tc testCase) map[string]any {
 		result["reference_consensus"] = wireConsensus(cons.(*tm.ConsensusState))
 	} else {
 		result["reference_error"] = err.Error()
+	}
+	if tc.Name == "revision_reset" {
+		absent := "upgradedIBCState/100/notCommitted"
+		proof := query([]byte(absent))
+		must(proof.VerifyNonMembership(old.ProofSpecs, commitmenttypes.NewMerkleRoot(commit.Hash), __MERKLE_PATH_ABSENCE__))
+		result["absence_proof"] = wireProof(cdc, proof)
+		result["absence_path"] = absent
 	}
 	return result
 }
