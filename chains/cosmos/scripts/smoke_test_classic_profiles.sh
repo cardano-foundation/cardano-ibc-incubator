@@ -117,6 +117,7 @@ test_profile() {
   jq -e '
     (.allowed_clients | index("07-tendermint")) != null
       and (.allowed_clients | index("08-cardano-probabilistic")) != null
+      and (.allowed_clients | index("09-localhost")) != null
   ' >/dev/null <<<"$client_params"
 
   local consensus_params
