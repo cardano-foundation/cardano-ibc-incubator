@@ -120,8 +120,16 @@ describe('LucidService staged Tendermint transaction wiring', () => {
   it.each([false, true])('atomically finalizes authenticated sessions, explicit evidence: %s', async (evidence) => {
     const builder = createBuilder();
     const service = createService(builder);
-    const host = { txHash: 'host-input', outputIndex: 0, datum: 'raw-host', datumHash: 'old-hash' };
-    const client = { txHash: 'client-input', outputIndex: 0 };
+    const host = {
+      txHash: 'host-input', outputIndex: 0, datum: 'raw-host', datumHash: 'old-hash',
+      assets: { lovelace: 8_000_000n, 'host-policyhost-name': 1n, reserve: 7n },
+    };
+    // A revision reset can shrink the datum and its minimum ADA. The existing
+    // state reserve still belongs to the continuing client output.
+    const client = {
+      txHash: 'client-input', outputIndex: 0,
+      assets: { lovelace: 2_732_540n, 'client-unit': 1n },
+    };
     const session = { txHash: 'session-input', outputIndex: 0 };
     const secondSession = { txHash: 'second-session-input', outputIndex: 0 };
 
@@ -165,12 +173,12 @@ describe('LucidService staged Tendermint transaction wiring', () => {
     expect(builder.pay.ToContract).toHaveBeenCalledWith(
       'addr_test1host',
       { kind: 'inline', value: 'updated-host' },
-      { 'host-policyhost-name': 1n },
+      host.assets,
     );
     expect(builder.pay.ToContract).toHaveBeenCalledWith(
       'addr_test1client',
       { kind: 'inline', value: 'updated-client' },
-      { 'client-unit': 1n },
+      client.assets,
     );
     expect(builder.withdraw).toHaveBeenCalledWith('stake_test1history', 0n, 'history-redeemer');
     expect(builder.addSignerKey).toHaveBeenCalledWith('signer-key-hash');

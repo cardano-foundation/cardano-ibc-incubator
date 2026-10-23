@@ -1058,7 +1058,7 @@ export class LucidService implements OnModuleInit {
     encodedBurnSessionRedeemer: string,
     encodedUpdatedHostStateDatum: string,
     encodedNewClientDatum: string,
-    clientTokenUnit: string,
+    _clientTokenUnit: string,
     sessionTokenUnit: string,
     signerKeyHash: string,
     encodedHistoryWithdrawalRedeemer: string,
@@ -1075,7 +1075,6 @@ export class LucidService implements OnModuleInit {
     if (!recoveryConfig?.address || !recoveryReference) {
       throw new GrpcInternalException('Staged Tendermint history support is not configured');
     }
-    const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...hostStateUtxo,
       datum: hostStateUtxo.datum,
@@ -1105,12 +1104,12 @@ export class LucidService implements OnModuleInit {
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         { kind: 'inline', value: encodedUpdatedHostStateDatum },
-        { [hostStateNFT]: 1n },
+        hostStateUtxoWithRawDatum.assets,
       )
       .pay.ToContract(
         deploymentConfig.validators.spendClient.address,
         { kind: 'inline', value: encodedNewClientDatum },
-        { [clientTokenUnit]: 1n },
+        currentClientUtxo.assets,
       )
       .withdraw(recoveryConfig.address, 0n, encodedHistoryWithdrawalRedeemer)
       .addSignerKey(signerKeyHash);
