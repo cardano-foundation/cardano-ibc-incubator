@@ -12,6 +12,8 @@ The cases distinguish changes to a submitted state from malicious states that we
 
 The live v8 chain exposed a timestamp compatibility problem. The SDK writes its upgrade consensus state at application height `H-1`. The signed header at height `H` authenticates that commitment and has a later timestamp. Aiken and the Gateway previously rejected this valid state because its timestamp preceded the trusted header. Both now allow that ordering. Positive timestamps, expiry checks and the allowed future clock drift still apply.
 
+The first header after the local revision reset also exposed a reserve problem. A lower height can shrink the client datum and lower its minimum ADA. Staged finalization rebuilt the output with only its NFT. Lucid then sent the excess ADA to wallet change and the contract rejected the reserve reduction. Finalization now carries both state inputs' full asset values into their continuing outputs.
+
 There are documented differences requiring review. Aiken preserves the old trusting period like v8. V10 scales it when unbonding shrinks. A sufficiently short unbonding period is therefore accepted only by v10. A reduction that remains above the old trusting period is accepted by all three but v10 installs a shorter trusting period. Aiken also rejects a committed kernel timestamp that has expired or exceeds the allowed future clock drift. Both reference upgrade entrypoints accept those timestamp cases. The suite records these differences without treating them as a completed security review.
 
 Regenerate with Aiken `v1.1.21` on `PATH` for formatting:
