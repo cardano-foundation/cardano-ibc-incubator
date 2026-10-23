@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import * as RealLucid from '@lucid-evolution/lucid';
 import {
   assertUniqueTraceRegistryEntries,
   buildIbcDenomHashFromFullDenom,
@@ -110,6 +111,27 @@ describe('voucher asset naming', () => {
 });
 
 describe('voucher CIP-68 metadata', () => {
+  it('uses the ordered Plutus maps required by the on-chain metadata datum', () => {
+    const fullDenom = 'transfer/channel-0/utest';
+    const params = {
+      ...splitFullDenomTrace(fullDenom), fullDenom,
+      voucherTokenName: buildVoucherUserTokenNameFromDenomHash(buildVoucherDenomHashFromFullDenom(fullDenom)),
+      voucherPolicyId: 'ab'.repeat(28),
+      ibcDenomHash: buildIbcDenomHashFromFullDenom(fullDenom),
+    };
+    const encoded = encodeVoucherCip68MetadataDatum(
+      buildVoucherCip68Metadata(params), RealLucid as unknown as LucidDataModule,
+    );
+    const datum = RealLucid.Data.from(encoded) as RealLucid.Constr<RealLucid.Data>;
+    const keys = (value: unknown) => [...(value as Map<string, unknown>).keys()]
+      .map(key => Buffer.from(key, 'hex').toString('utf8'));
+    // voucher_metadata.build_datum defines these Plutus map entry orders.
+    assert.deepEqual(keys(datum.fields[0]), ['description', 'name', 'ticker']);
+    assert.deepEqual(keys(datum.fields[2]), [
+      'baseDenom', 'fullDenom', 'ibcDenomHash', 'path', 'traceVersion', 'voucherPolicyId', 'voucherTokenName',
+    ]);
+  });
+
   it('encodes, decodes, and verifies canonical voucher metadata', () => {
     const fullDenom = 'transfer/channel-0/uosmo';
     const trace = splitFullDenomTrace(fullDenom);
