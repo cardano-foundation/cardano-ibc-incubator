@@ -30,4 +30,12 @@ cd cardano/onchain
 aiken check --deny -m sdk_upgrade_
 ```
 
-The generated suite is a committed-store differential test. It supplies the trusted root directly. The separate [live rehearsal](LIVE.md) runs CometBFT and the production Gateway against an isolated Cardano ledger. Its retained results must be inspected before claiming a completed restart or packet transfer. A normal SDK software upgrade that preserves the chain ID and height sequence follows ordinary client updates. The revision reset here deliberately exercises the explicit IBC client upgrade operation. Issue [#918](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/918) also requires an independent review of malicious upgrade plans before production use.
+The generated suite is a committed-store differential test. It supplies the trusted root directly. The separate [live rehearsal](LIVE.md) runs CometBFT and the production Gateway against an isolated Cardano ledger. The [retained result](evidence/live-v8-revision-reset/result.json) records the completed v8 reset from revision `1` to revision `2` at height `1`. It includes the actual Cardano upgrade transaction and verified successor header. A packet left pending before the reset and another sent afterward were delivered through the existing channel. All three packets including the baseline were acknowledged. The Cardano voucher balance and Cosmos escrow balance both reached `3000`. Valid SDK membership and absence proofs failed against the bootstrap root and the same proof bytes succeeded after the verified update.
+
+The public evidence includes authenticated Cardano blocks and signed transactions. After building the Gateway and its workspace dependencies, recheck the artifacts without running either chain:
+
+```sh
+node tests/tendermint-upgrade/verify-live-evidence.cjs
+```
+
+The run uses local Mithril test signers. It does not exercise production Mithril or Injective. A normal SDK software upgrade that preserves the chain ID and height sequence follows ordinary client updates. The revision reset here deliberately exercises the explicit IBC client upgrade operation. Issue [#918](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/918) also requires an independent review of malicious upgrade plans before production use.

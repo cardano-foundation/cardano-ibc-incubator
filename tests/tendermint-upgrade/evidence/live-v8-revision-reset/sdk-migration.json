@@ -1,0 +1,50 @@
+{
+  "status": {
+    "node_info": {
+      "protocol_version": {
+        "p2p": "8",
+        "block": "11",
+        "app": "0"
+      },
+      "id": "d2579f2590308e55ffcbf68b563438ce8100f37b",
+      "listen_addr": "tcp://0.0.0.0:26656",
+      "network": "v8-classic-1",
+      "version": "0.38.19",
+      "channels": "40202122233038606100",
+      "moniker": "cardano-ibc-v8-classic",
+      "other": {
+        "tx_index": "on",
+        "rpc_address": "tcp://0.0.0.0:26657"
+      }
+    },
+    "sync_info": {
+      "latest_block_hash": "35DCECB4B84C0D04CDF32341C4D19C3DD6AE081A525D7AC6B390142B3A50485A",
+      "latest_app_hash": "443E1329D4F488128275BE83029BC07479814A360512FC8EAFF5B7D7FB61ABFA",
+      "latest_block_height": "2281",
+      "latest_block_time": "2026-08-17T15:24:30.107165339Z",
+      "earliest_block_hash": "C0840BBF1F5A65DEE13AEF1A05557FC0567339A32E05FFBF2F3A7B80D0F28D8E",
+      "earliest_app_hash": "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+      "earliest_block_height": "1",
+      "earliest_block_time": "2026-08-17T11:33:35Z",
+      "catching_up": false
+    },
+    "validator_info": {
+      "address": "731A6657CE0157A44B255882D3A08EFE7ECE4DAD",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "CgDFKIGxt+65WKHHgFFf5UyylmXGrIT1pcn7kVlp8Bg="
+      },
+      "voting_power": "500"
+    }
+  },
+  "application": {
+    "data": "SimApp",
+    "version": "53eaba1",
+    "app_version": "2",
+    "last_block_height": "2281",
+    "last_block_app_hash": "SWBLF9//U3jmKPO0i8FT7TkuRpT8rjb8U+NJLHHKQio="
+  },
+  "applied_plan": {
+    "height": "2280"
+  }
+}
