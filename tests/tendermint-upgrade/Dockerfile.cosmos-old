@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1.7
+# Use the fully built, pinned local profile as both the build environment and
+# runtime. Only future application handler registrations differ between images.
+FROM local:cardano-ibc-918-cosmos-builder AS builder
+ARG REMOVE_HANDLERS=V8,V8_1
+ARG DISABLE_LEGACY_V8_STORE_LOADER=0
+
+RUN python3 - <<'PY'
+from pathlib import Path
+import os
+p = Path('/src/ibc-go/testing/simapp/upgrades.go')
+source = p.read_text()
+for name in os.environ['REMOVE_HANDLERS'].split(','):
+    if name not in ['V8', 'V8_1']:
+        raise RuntimeError('Unsupported rehearsal handler')
+    marker = f'upgrades.{name},'
+    if source.count(marker) != 1:
+        raise RuntimeError('Review changed simapp upgrade registrations')
+    source = source.replace(marker, f'"before-{name.lower()}",')
+# This optional recovery image handles an earlier diagnostic plan named v8.
+# A chain born on v8 already has the circuit store. Repeating the historical
+# v7-to-v8 store addition is invalid. Normal rehearsals use v8.1 instead.
+if os.environ['DISABLE_LEGACY_V8_STORE_LOADER'] == '1':
+    start = source.index('\n\tif upgradeInfo.Name == upgrades.V8 &&')
+    source = source[:start] + '\n}\n'
+    source = source.replace('\tcircuittypes "cosmossdk.io/x/circuit/types"\n', '')
+p.write_text(source)
+PY
+
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    cd /src/ibc-go \
+    && go build -mod=readonly -tags 'netgo ledger muslc' \
+       -ldflags '-X github.com/cosmos/cosmos-sdk/version.Name=sim -X github.com/cosmos/cosmos-sdk/version.AppName=simd -X github.com/cosmos/cosmos-sdk/version.Version=53eaba1-918-old -w -s' \
+       -trimpath -o /out/simd ./testing/simapp/simd
+
+FROM local:cardano-ibc-918-cosmos
+COPY --from=builder /out/simd /usr/local/bin/simd
+LABEL org.cardano-ibc.upgrade-rehearsal-role="old-application-without-future-handlers"
