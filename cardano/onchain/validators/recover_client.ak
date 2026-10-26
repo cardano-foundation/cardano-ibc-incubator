@@ -147,6 +147,9 @@ validator recover_client(
         when redeemer is {
           ReclaimStateWithdrawal | ReclaimTransferWithdrawal { .. } -> fail
           UpgradeClientWithdrawal { .. } -> {
+            // TODO: Define whether client upgrades also need approval from Cardano
+            // governance or an agreed signer network. Enforce any agreed approval
+            // policy here alongside the source-chain upgrade proof checks.
             if builtin.fst_pair(builtin.un_constr_data(raw_spend_redeemer)) == 3 {
               expect UpgradeClient: SpendClientRedeemer = raw_spend_redeemer
             } else {
