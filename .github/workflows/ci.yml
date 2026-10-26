@@ -1266,8 +1266,8 @@ jobs:
       - name: Check SDK Tendermint upgrade vectors
         run: node tests/tendermint-upgrade/generate.mjs --check
 
-      - name: Verify captured SDK upgrade proofs
-        run: python3 tests/tendermint-upgrade/verify_capture.py tests/tendermint-upgrade/evidence/v8-diagnostic-upgrade-proof.json
+      - name: Verify real SDK upgrade proofs
+        run: python3 tests/tendermint-upgrade/verify_capture.py tests/tendermint-upgrade/fixtures/v8-upgrade-proof.json
 
       - name: Check generated artifacts
         run: scripts/ci/check-generated-artifacts-clean.sh
