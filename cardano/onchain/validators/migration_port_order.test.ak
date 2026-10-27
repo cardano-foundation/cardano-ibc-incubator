@@ -28,7 +28,9 @@ fn baseline_registry(raw: Data) -> Data {
       mask: 0,
       restoration: None,
     }
-  builtin.constr_data(tag, list.concat(fields, [emergency]))
+  let authority =
+    builtin.b_data(#"88888888888888888888888888888888888888888888888888888888")
+  builtin.constr_data(tag, list.concat(fields, [emergency, authority]))
 }
 
 // This fixture has no retired objects. Carry its sequence counts into the
