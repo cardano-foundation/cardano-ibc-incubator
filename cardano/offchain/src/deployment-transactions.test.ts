@@ -173,7 +173,7 @@ Deno.test("every applied reference validator fits its signed production transact
             referenceOutputs[0].address,
             plan.referenceHolder.address,
           );
-          assertEquals(referenceOutputs[0].datum, Data.void());
+          assertEquals(referenceOutputs[0].datum, undefined);
           assertEquals(
             validatorToScriptHash(referenceOutputs[0].scriptRef!),
             validator.hash,

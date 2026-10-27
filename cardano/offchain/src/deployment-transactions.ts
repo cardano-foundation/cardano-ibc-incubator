@@ -66,7 +66,7 @@ export function buildRegistryBootstrapTx(lucid: LucidEvolution, input: {
   return tx;
 }
 
-/** Construct the reference outputs used by deployment, including their inline datum. */
+/** Reference outputs need only the script and its deposit. */
 export function buildReferenceBatchTx(
   lucid: LucidEvolution,
   referenceAddress: string,
@@ -74,9 +74,9 @@ export function buildReferenceBatchTx(
 ) {
   let tx = lucid.newTx();
   for (const validator of validators) {
-    tx = tx.pay.ToContract(
+    tx = tx.pay.ToAddressWithData(
       referenceAddress,
-      { kind: "inline", value: Data.void() },
+      undefined,
       { lovelace: 1_000_000n },
       validator,
     );

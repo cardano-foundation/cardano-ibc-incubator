@@ -458,3 +458,58 @@ Deno.test("deployer CLI requires an explicit export or submission and retains th
     key,
   );
 });
+
+Deno.test("client recovery nomination binds two distinct units from the same policy", () => {
+  const common = [
+    "nominate-client-recovery",
+    "--handler",
+    "handler.json",
+    "--out",
+    "approval.json",
+  ];
+  const subject = "aa".repeat(28) + "01";
+  const substitute = "aa".repeat(28) + "02";
+  assertEquals(
+    parseMigrationArgs([
+      ...common,
+      "--subject-client-unit",
+      subject,
+      "--substitute-client-unit",
+      substitute,
+    ]).command,
+    "nominate-client-recovery",
+  );
+  for (
+    const values of [[], ["--subject-client-unit", subject], [
+      "--subject-client-unit",
+      subject,
+      "--substitute-client-unit",
+      subject,
+    ], [
+      "--subject-client-unit",
+      subject,
+      "--substitute-client-unit",
+      "bb".repeat(28) + "02",
+    ]]
+  ) {
+    assertThrows(
+      () => parseMigrationArgs([...common, ...values]),
+      Error,
+      "requires distinct",
+    );
+  }
+  assertThrows(
+    () =>
+      parseMigrationArgs([
+        "nominate-client-recovery",
+        "--handler",
+        "handler.json",
+        "--subject-client-unit",
+        subject,
+        "--substitute-client-unit",
+        substitute,
+      ]),
+    Error,
+    "Use --out",
+  );
+});

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Constr, credentialToAddress, Data, type LucidEvolution, type UTxO } from '@lucid-evolution/lucid';
-import { BridgeMigrationInProgressError, migrationReference, type MigrationRuntimeDeployment, requireMigrationConfig } from './migrationRuntime';
+import { Constr, credentialToAddress, Data, type LucidEvolution, type UTxO, validatorToScriptHash, type TxBuilder } from '@lucid-evolution/lucid';
+import { BridgeMigrationInProgressError, migrationReference, type MigrationRuntimeDeployment, requireMigrationConfig, withClientRecoveryApproval } from './migrationRuntime';
 
 const hash = (n: number) => n.toString(16).padStart(2, '0').repeat(28);
 const rec = (...fields: Data[]) => new Constr(0, fields);
@@ -106,4 +106,71 @@ test('emergency traffic restriction preserves client and heartbeat builder avail
     const moving = fixture(2, 1n, 0n);
     await assert.rejects(migrationReference(moving.lucid, moving.deployment, false, bit), BridgeMigrationInProgressError);
   }
+});
+
+function recoveryFixture() {
+  const f = fixture();
+  f.deployment.migration!.profile = 'cardano-ibc-compatible-v5';
+  const script = {type: 'PlutusV3' as const, script: '49480100002221200101'};
+  const address = credentialToAddress('Custom', {type: 'Script', hash: validatorToScriptHash(script)});
+  f.deployment.migration!.registryAddress = address;
+  f.utxo.address = address;
+  const datum = Data.from(f.utxo.datum!) as Constr<Data>;
+  datum.fields.push(hash(19));
+  datum.fields[4] = 1n;
+  datum.fields[6] = new Constr(1, [new Constr(3, [1n, 1n, rec(hash(11), 'aa'), rec(hash(11), 'bb')]), 2000n, 10000n]);
+  f.utxo.datum = Data.to(datum);
+  const reference: UTxO = {txHash: 'bb'.repeat(32), outputIndex: 0, address: scriptAddress(15), assets: {lovelace: 10_000_000n}, scriptRef: script};
+  Object.assign(f.lucid, {
+    unixTimeToSlot: (time: number) => Math.floor(time / 1000),
+    slotToUnixTime: (slot: number) => slot * 1000,
+    utxosAt: async (holder: string) => { assert.equal(holder, reference.address); return [reference]; },
+  });
+  const calls: unknown[][] = [];
+  const tx = {readFrom: (...args: unknown[]) => { calls.push(['read', ...args]); return tx; },
+    collectFrom: (...args: unknown[]) => { calls.push(['spend', ...args]); return tx; },
+    pay: {ToContract: (...args: unknown[]) => { calls.push(['pay', ...args]); return tx; }},
+  } as unknown as TxBuilder;
+  const build = (subject = hash(11) + 'aa', substitute = hash(11) + 'bb', from = 2000, to = 9000) =>
+    withClientRecoveryApproval(f.lucid, tx, f.deployment, subject, substitute, from, to);
+  return {...f, datum, reference, tx, calls, build, save: () => { f.utxo.datum = Data.to(datum); }};
+}
+
+test('recovery spends and clears the exact delayed registry approval', async () => {
+  const f = recoveryFixture();
+  const before = structuredClone(f.utxo.assets);
+  assert.equal(await f.build(), f.tx);
+  assert.deepEqual(f.calls[0], ['read', [f.reference]]);
+  assert.deepEqual(f.calls[1], ['spend', [f.utxo], Data.to(new Constr(14, []))]);
+  const output = f.calls[2];
+  assert.equal(output[1], f.utxo.address);
+  const next = Data.from((output[2] as {value:string}).value) as Constr<Data>;
+  assert.deepEqual(next.fields[6], new Constr(0, []));
+  const original = Data.from(f.utxo.datum!) as Constr<Data>;
+  original.fields[6] = new Constr(0, []);
+  assert.deepEqual(next, original);
+  assert.deepEqual(output[3], before);
+});
+
+test('recovery rejects unapproved, stale, early, expired and retargeted decisions', async () => {
+  const cases: Array<[(f: ReturnType<typeof recoveryFixture>) => void, RegExp]> = [
+    [f => { f.datum.fields[6] = new Constr(0, []); }, /No approved/],
+    [f => { (f.datum.fields[6] as Constr<Data>).fields[0] = new Constr(2, [1n,1n,hash(1)]); }, /not a client recovery/],
+    [f => { ((f.datum.fields[6] as Constr<Data>).fields[0] as Constr<Data>).fields[0] = 2n; }, /different subject/],
+    [f => { ((f.datum.fields[6] as Constr<Data>).fields[0] as Constr<Data>).fields[1] = 2n; }, /different subject/],
+    [f => { (f.datum.fields[6] as Constr<Data>).fields[1] = 3000n; }, /delayed or expired/],
+    [f => { (f.datum.fields[6] as Constr<Data>).fields[2] = 8000n; }, /delayed or expired/],
+    [f => { (f.datum.fields[7] as Constr<Data>).fields[2] = 2n; }, /emergency-restricted/],
+    [f => { delete f.reference.scriptRef; }, /registry reference/],
+  ];
+  for (const [mutate, expected] of cases) {
+    const f = recoveryFixture(); mutate(f); f.save();
+    await assert.rejects(f.build(), expected);
+    assert.equal(f.calls.length, 0);
+  }
+  const f = recoveryFixture();
+  await assert.rejects(f.build(hash(11)+'cc'), /different subject/);
+  await assert.rejects(f.build(undefined, hash(11)+'cc'), /different subject/);
+  f.deployment.migration!.profile = 'cardano-ibc-compatible-v4';
+  await assert.rejects(f.build(), /does not support quorum/);
 });

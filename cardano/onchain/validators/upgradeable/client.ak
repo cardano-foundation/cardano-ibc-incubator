@@ -2,7 +2,7 @@ use cardano/address.{Credential}
 use cardano/transaction.{OutputReference, Transaction}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/multitx/client_redeemer.{
-  SpendMultitxClientRedeemer,
+  RecoverClient, SpendMultitxClientRedeemer,
 }
 use ibc/implementation/spending_multitx_client
 use ibc/migration/auth as migration
@@ -25,9 +25,20 @@ validator client(
     } else {
       // Ordinary operations consume HostState, whose current registry gate
       // authenticates phase and role compatibility. Migration has a separate path.
-      expect
-        migration.operation_allowed(transaction, registry_policy, generation, 2)
       expect redeemer: SpendMultitxClientRedeemer = raw
+      let references =
+        when redeemer is {
+          RecoverClient { .. } ->
+            migration.recovery_registry_inputs(transaction, registry_policy)
+          _ -> transaction.reference_inputs
+        }
+      expect
+        migration.operation_allowed_from_inputs(
+          references,
+          registry_policy,
+          generation,
+          2,
+        )
       // validate(False, ...) rejects retirement in this wrapper.
       spending_multitx_client.validate(
         False,

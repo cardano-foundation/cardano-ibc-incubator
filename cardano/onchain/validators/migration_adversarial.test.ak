@@ -35,7 +35,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
   ShuttingDown, host_state_token_name, min_shutdown_grace_period_ms,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, ClaimBackup, EnterShutdown, Heartbeat,
+  BindPort, ClaimBackup, EnterShutdown, Heartbeat, UpdateClient,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
 use ibc/implementation/spending_multitx_client as client_dispatch
@@ -43,11 +43,12 @@ use ibc/implementation/spending_transfer_module as transfer_dispatch
 use ibc/migration/auth as migration
 use ibc/migration/types.{
   Activate, Authority, Begin, Cancel, CancelRestoration, Counts, Emergency,
-  FixedIdentity, Governance, GraduateDeployer, Implementation, MoveCore,
-  MoveEscrow, MoveTransferRoot, Moving, NominateDeployer, Proposal, Propose,
-  ProposeEmergencyRotation, ProposeRestoration, Proposed, Ready, Registry,
-  RegistryRedeemer, Replace, Restoration, Restore, Restrict, Rotate,
-  RotateAuthority, minimum_delay_ms, registry_token_name,
+  ExecuteClientRecovery, FixedIdentity, Governance, GraduateDeployer,
+  Implementation, MoveCore, MoveEscrow, MoveTransferRoot, Moving,
+  NominateDeployer, Proposal, Propose, ProposeEmergencyRotation,
+  ProposeRestoration, Proposed, Ready, RecoverClient, Registry, RegistryRedeemer,
+  Replace, Restoration, Restore, Restrict, Rotate, RotateAuthority,
+  minimum_delay_ms, registry_token_name,
 }
 use ibc/utils/text_bytes
 use implementation_registry
@@ -299,17 +300,18 @@ fn run(case: Case) -> Bool {
     )
   if !registry_valid {
     False
+  } else if list.has(
+    case.transaction.withdrawals,
+    Pair(Script(case.old.approval_authority), 0),
+  ) {
+    governance_authority.governance_authority.withdraw(
+      case.old.token.policy_id,
+      Void,
+      Script(case.old.approval_authority),
+      case.transaction,
+    )
   } else {
-    when case.transaction.withdrawals is {
-      [] -> True
-      _ ->
-        governance_authority.governance_authority.withdraw(
-          case.old.token.policy_id,
-          Void,
-          Script(case.old.approval_authority),
-          case.transaction,
-        )
-    }
+    True
   }
 }
 
@@ -2843,5 +2845,279 @@ test emergency_client_retirement_stays_disabled_after_size_optimization() {
     raw,
     ref(2),
     tx,
+  )
+}
+
+fn recovery_proposal() -> Proposal {
+  RecoverClient {
+    nonce: 1,
+    source_generation: 1,
+    subject_token: AuthToken { policy_id: hash(3), name: "subject" },
+    substitute_token: AuthToken { policy_id: hash(3), name: "substitute" },
+  }
+}
+
+// This fixture executes the registry. The signed recovery fixture also runs
+// the HostState, client and recovery withdrawal validators together.
+fn registry_recovery() -> Case {
+  let old = approved(recovery_proposal())
+  let subject =
+    Output {
+      address: migration.role_address(old.current, 1),
+      value: assets.from_asset(hash(3), "subject", 1),
+      datum: InlineDatum(Void),
+      reference_script: None,
+    }
+  let case =
+    transition(
+      old,
+      Registry { ..old, phase: Ready },
+      ExecuteClientRecovery,
+      [input(2, host_output(host(), 1)), input(3, subject)],
+      [host_output(host(), 1), subject],
+      ready_at,
+      expires_at,
+      [hash(99)],
+    )
+  let registry_raw: Data = ExecuteClientRecovery
+  let host_raw: Data =
+    UpdateClient { client_state_siblings: [], consensus_state_siblings: [] }
+  let client_raw: Data =
+    staged_client_redeemer.RecoverClient {
+      substitute_token: AuthToken { policy_id: hash(3), name: "substitute" },
+      history_siblings: [],
+    }
+  Case {
+    ..case,
+    transaction: Transaction {
+      ..case.transaction,
+      withdrawals: [Pair(Script(hash(951)), 0)],
+      redeemers: [
+        Pair(Spend(ref(1)), registry_raw),
+        Pair(Spend(ref(2)), host_raw),
+        Pair(Spend(ref(3)), client_raw),
+      ],
+    },
+  }
+}
+
+fn recovery_approval() -> Case {
+  let case = propose(recovery_proposal())
+  let client =
+    Output {
+      address: migration.role_address(case.old.current, 1),
+      value: assets.from_asset(hash(3), "subject", 1),
+      datum: InlineDatum(Void),
+      reference_script: None,
+    }
+  Case {
+    ..case,
+    transaction: Transaction {
+      ..case.transaction,
+      reference_inputs: [
+        input(4, client),
+        input(
+          5,
+          Output {
+            ..client,
+            value: assets.from_asset(hash(3), "substitute", 1),
+          },
+        ),
+      ],
+    },
+  }
+}
+
+test registry_client_recovery_accepts_quorum_approval() {
+  run(recovery_approval())
+}
+
+test registry_client_recovery_rejects_deployer_only_approval() fail {
+  let case = recovery_approval()
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        extra_signatories: [hash(11)],
+      },
+    },
+  )
+}
+
+test registry_client_recovery_executes_without_governor_signatures() {
+  run(registry_recovery())
+}
+
+test registry_client_recovery_rejects_early_execution() fail {
+  let case = registry_recovery()
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        validity_range: interval.between(ready_at - 1, expires_at),
+      },
+    },
+  )
+}
+
+test registry_client_recovery_rejects_expired_execution() fail {
+  let case = registry_recovery()
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        validity_range: interval.between(ready_at, expires_at + 1),
+      },
+    },
+  )
+}
+
+test registry_client_recovery_rejects_consumed_or_cancelled_approval() fail {
+  run(
+    with_registry_input(registry_recovery(), Registry { ..initial(), nonce: 1 }),
+  )
+}
+
+test registry_client_recovery_rejects_other_substitute() fail {
+  let case = registry_recovery()
+  let old =
+    approved(
+      RecoverClient {
+        nonce: 1,
+        source_generation: 1,
+        subject_token: AuthToken { policy_id: hash(3), name: "subject" },
+        substitute_token: AuthToken { policy_id: hash(3), name: "another" },
+      },
+    )
+  let changed = with_registry_input(case, old)
+  run(with_registry_output(changed, Registry { ..old, phase: Ready }))
+}
+
+test registry_client_recovery_rejects_missing_callback() fail {
+  let case = registry_recovery()
+  run(
+    Case {
+      ..case,
+      transaction: Transaction { ..case.transaction, withdrawals: [] },
+    },
+  )
+}
+
+test registry_client_recovery_rejects_other_host_action() fail {
+  let case = registry_recovery()
+  let heartbeat: Data = Heartbeat
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        redeemers: list.map(
+          case.transaction.redeemers,
+          fn(entry) {
+            if entry.1st == Spend(ref(2)) {
+              Pair(entry.1st, heartbeat)
+            } else {
+              entry
+            }
+          },
+        ),
+      },
+    },
+  )
+}
+
+test registry_client_recovery_rejects_extra_script_spend() fail {
+  let case = registry_recovery()
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        inputs: [input(7, host_output(host(), 1)), ..case.transaction.inputs],
+      },
+    },
+  )
+}
+
+test registry_client_recovery_preserves_governance() fail {
+  let case = registry_recovery()
+  run(
+    with_registry_output(
+      case,
+      Registry {
+        ..new_registry(case),
+        governance: Governance { ..case.old.governance, quorum: 1 },
+      },
+    ),
+  )
+}
+
+test registry_client_recovery_honors_client_maintenance_hold() fail {
+  let case = registry_recovery()
+  let old =
+    Registry {
+      ..case.old,
+      emergency: Emergency { ..case.old.emergency, mask: 2 },
+    }
+  run(
+    with_registry_output(
+      with_registry_input(case, old),
+      Registry { ..old, phase: Ready },
+    ),
+  )
+}
+
+test registry_client_recovery_authorizes_only_the_approved_pair() {
+  let case = registry_recovery()
+  migration.client_recovery_approved(
+    case.transaction,
+    case.old.token.policy_id,
+    case.old.host_policy,
+    AuthToken { policy_id: hash(3), name: "subject" },
+    AuthToken { policy_id: hash(3), name: "substitute" },
+  )
+}
+
+test registry_client_recovery_authority_rejects_other_subject() fail {
+  let case = registry_recovery()
+  migration.client_recovery_approved(
+    case.transaction,
+    case.old.token.policy_id,
+    case.old.host_policy,
+    AuthToken { policy_id: hash(3), name: "another" },
+    AuthToken { policy_id: hash(3), name: "substitute" },
+  )
+}
+
+test registry_client_recovery_cannot_approve_unissued_client_identities() fail {
+  run(propose(recovery_proposal()))
+}
+
+test registry_client_recovery_rejects_stale_generation() fail {
+  let case = registry_recovery()
+  let old =
+    Registry {
+      ..case.old,
+      current: Implementation { ..case.old.current, generation: 2 },
+    }
+  run(
+    with_registry_output(
+      with_registry_input(case, old),
+      Registry { ..old, phase: Ready },
+    ),
+  )
+}
+
+test registry_client_recovery_rejects_stale_nonce() fail {
+  let case = registry_recovery()
+  let old = Registry { ..case.old, nonce: 2 }
+  run(
+    with_registry_output(
+      with_registry_input(case, old),
+      Registry { ..old, phase: Ready },
+    ),
   )
 }

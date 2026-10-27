@@ -8,8 +8,9 @@ use cardano/assets
 use cardano/transaction.{Input, Output, OutputReference, Spend, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/migration/types.{
-  ActiveRegistry, Authority, Governance, Implementation, OperationalIdentity,
-  OperationalImplementation, Registry, migration_spend_tag, minimum_delay_ms,
+  ActiveRegistry, Authority, ExecuteClientRecovery, Governance, Implementation,
+  OperationalIdentity, OperationalImplementation, Registry,
+  client_recovery_proposal_tag, migration_spend_tag, minimum_delay_ms,
   registry_token_name, role_count,
 }
 use ibc/utils/validator_utils
@@ -82,15 +83,110 @@ pub fn unique_output(outputs: List<Output>, token: AuthToken) -> Output {
   output
 }
 
+// Only the atomic recovery action may share a spent registry with HostState
+// and its subject client. The registry enforces the exact participating inputs.
+pub fn recovery_registry_inputs(
+  transaction: Transaction,
+  policy: ByteArray,
+) -> List<Input> {
+  recovery_inputs(
+    transaction,
+    AuthToken { policy_id: policy, name: registry_token_name },
+  )
+}
+
+fn recovery_inputs(transaction: Transaction, token: AuthToken) -> List<Input> {
+  when
+    list.find(transaction.inputs, fn(input) { contains(input.output, token) })
+  is {
+    Some(input) -> {
+      expect Some(raw) =
+        pairs.get_first(transaction.redeemers, Spend(input.output_reference))
+      let execution: Data = ExecuteClientRecovery
+      expect raw == execution
+      transaction.inputs
+    }
+    None -> transaction.reference_inputs
+  }
+}
+
+pub fn recovery_registry(
+  transaction: Transaction,
+  policy: ByteArray,
+) -> ActiveRegistry {
+  let token = AuthToken { policy_id: policy, name: registry_token_name }
+  registry_from_inputs(recovery_inputs(transaction, token), token)
+}
+
+pub fn client_recovery_approved(
+  transaction: Transaction,
+  policy: ByteArray,
+  host_policy: ByteArray,
+  subject: AuthToken,
+  substitute: AuthToken,
+) -> Bool {
+  let input =
+    unique_input(
+      transaction.inputs,
+      AuthToken { policy_id: policy, name: registry_token_name },
+    )
+  expect Some(raw) =
+    pairs.get_first(transaction.redeemers, Spend(input.output_reference))
+  let execution: Data = ExecuteClientRecovery
+  expect raw == execution
+  // Immutable NFT custody and the registry spend validate the complete ABI.
+  // Read only approval fields here to keep the shared recovery script publishable.
+  expect [
+    token, recorded_host, identity, _, nonce, current, phase, emergency, _,
+  ] = builtin.un_constr_data(validator_utils.get_inline_datum(input.output)).2nd
+  expect Pair(1, [proposal,
+    ready_at, expires_at]) = builtin.un_constr_data(phase)
+  expect Pair(proposal_tag,
+  [approved_nonce,
+    generation,
+    subject_data, substitute_data]) = builtin.un_constr_data(proposal)
+  expect proposal_tag == client_recovery_proposal_tag
+  expect [client_policy, ..] = builtin.un_constr_data(identity).2nd
+  expect [current_generation, ..] = builtin.un_constr_data(current).2nd
+  expect [_, _, mask, _] = builtin.un_constr_data(emergency).2nd
+  let expected_token: Data =
+    AuthToken { policy_id: policy, name: registry_token_name }
+  let expected_subject: Data = subject
+  let expected_substitute: Data = substitute
+  and {
+    token == expected_token,
+    builtin.un_b_data(recorded_host) == host_policy,
+    nonce == approved_nonce,
+    current_generation == generation,
+    subject_data == expected_subject,
+    substitute_data == expected_substitute,
+    subject != substitute,
+    subject.policy_id == builtin.un_b_data(client_policy),
+    substitute.policy_id == subject.policy_id,
+    permitted(builtin.un_i_data(mask), 2),
+    validator_utils.get_tx_valid_from(transaction.validity_range) >= builtin.un_i_data(
+      ready_at,
+    ),
+    validator_utils.get_tx_valid_to(transaction.validity_range) <= builtin.un_i_data(
+      expires_at,
+    ),
+  }
+}
+
 // Ordinary work MUST reference (not spend) the registry. This excludes a
 // Begin/Rotate transaction piggybacking on an operation seeing the old phase.
 pub fn active_registry(
   transaction: Transaction,
   registry_policy: ByteArray,
 ) -> ActiveRegistry {
-  let token =
-    AuthToken { policy_id: registry_policy, name: registry_token_name }
-  let input = unique_input(transaction.reference_inputs, token)
+  registry_from_inputs(
+    transaction.reference_inputs,
+    AuthToken { policy_id: registry_policy, name: registry_token_name },
+  )
+}
+
+fn registry_from_inputs(inputs: List<Input>, token: AuthToken) -> ActiveRegistry {
+  let input = unique_input(inputs, token)
   // NFT custody and the registry mint/spend validators establish the complete
   // shape. Decode only fields used by normal operations to keep large existing
   // validators publishable. No operator-supplied datum is accepted here.
@@ -101,8 +197,8 @@ pub fn active_registry(
   // fields, without decoding the unused governance/nonce/authority cells.
   expect [current_data,
     phase_data, emergency_data, _] = builtin.tail_list(builtin.tail_list(tail))
-  expect recorded_token: AuthToken = token_data
-  expect recorded_token == token
+  let expected_token: Data = token
+  expect token_data == expected_token
   let host_policy = builtin.un_b_data(host_data)
   expect [generation_data,
     addresses_data, _] = builtin.un_constr_data(current_data).2nd
@@ -326,9 +422,23 @@ pub fn operation_allowed(
   generation: Int,
   bit: Int,
 ) -> Bool {
+  operation_allowed_from_inputs(
+    transaction.reference_inputs,
+    policy,
+    generation,
+    bit,
+  )
+}
+
+pub fn operation_allowed_from_inputs(
+  inputs: List<Input>,
+  policy: ByteArray,
+  generation: Int,
+  bit: Int,
+) -> Bool {
   let input =
     unique_input(
-      transaction.reference_inputs,
+      inputs,
       AuthToken { policy_id: policy, name: registry_token_name },
     )
   let fields =
