@@ -112,9 +112,11 @@ export function checkedDeploymentMode(mode: unknown, migration: unknown): 'upgra
   return mode;
 }
 
-/** Consume the delayed approval in the same transaction as client recovery. */
+/** Consume the delayed approval in the same transaction as client recovery.
+ * The caller must provide its instance clock for Custom network slot conversion.
+ */
 export async function withClientRecoveryApproval(
-  lucid: LucidEvolution,
+  lucid: LucidEvolution & { slotToUnixTime(slot: number): number },
   tx: TxBuilder,
   deployment: MigrationRuntimeDeployment,
   subjectUnit: string,
