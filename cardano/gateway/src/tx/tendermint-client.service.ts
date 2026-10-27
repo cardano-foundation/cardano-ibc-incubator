@@ -1863,7 +1863,7 @@ export class TendermintClientService {
       } catch {
         throw new GrpcInvalidArgumentException('Recover client signer is not a valid Cardano address');
       }
-      if (signerKeyHash.toLowerCase() !== hostStateDatum.deployer.toLowerCase()) {
+      if (!this.lucidService.hasGovernedClientRecovery() && signerKeyHash.toLowerCase() !== hostStateDatum.deployer.toLowerCase()) {
         throw new GrpcFailedPreconditionException(
           'Recover client signer does not match the deployment recovery authority',
         );
@@ -1895,6 +1895,7 @@ export class TendermintClientService {
         hostStateDatum,
         signerKeyHash,
         txValidTo: BigInt(validToTime) * 1_000_000n,
+        txValidFrom: BigInt(validFromTime) * 1_000_000n,
       });
       const { unsignedTxBytes } = await this.txOperationRunnerService.run({
         operationName: 'recoverClient',
@@ -2380,6 +2381,10 @@ export class TendermintClientService {
       this.lucidService.encode(updatedHostStateDatum, 'host_state'),
       this.lucidService.encode(recoveredClientDatum, 'client'),
     ]);
+    const governed = this.lucidService.hasGovernedClientRecovery();
+    if (governed && operator.txValidFrom === undefined) {
+      throw new GrpcFailedPreconditionException('Governed recovery requires an explicit validity interval');
+    }
     const unsignedTx = await this.lucidService.createUnsignedRecoverClientTransaction(
       operator.hostStateUtxo,
       encodedHostStateRedeemer,
@@ -2391,6 +2396,11 @@ export class TendermintClientService {
       encodedRecoveredClientDatum,
       operator.subjectClientTokenUnit,
       operator.signerKeyHash,
+      ...(governed ? [{
+        substituteUnit: operator.substituteClientDatum.token.policyId + operator.substituteClientDatum.token.name,
+        validFrom: Number(operator.txValidFrom! / 1_000_000n),
+        validTo: Number(operator.txValidTo / 1_000_000n),
+      }] as const : [] as const),
     );
 
     return {

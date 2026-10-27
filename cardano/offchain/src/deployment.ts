@@ -953,7 +953,7 @@ export const createDeployment = async (
     ics20PacketCodec: "ics20-classic-json-v1",
     validators: {
       recoverClient: {
-        title: "recover_client.recover_client.withdraw",
+        title: plan.recoverClient.title,
         script: recoverClientValidator.script,
         scriptHash: recoverClientScriptHash,
         address: recoverClientAddress,

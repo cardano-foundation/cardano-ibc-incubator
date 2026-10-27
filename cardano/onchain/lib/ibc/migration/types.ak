@@ -19,6 +19,9 @@ pub const registry_token_name = "ibc_implementation_registry"
 
 pub const migration_spend_tag = 100
 
+// Proposal.RecoverClient ABI tag used by the compact recovery decoder.
+pub const client_recovery_proposal_tag = 3
+
 pub const minimum_delay_ms = 86_400_000
 
 pub type Governance {
@@ -106,6 +109,12 @@ pub type Proposal {
   }
   Rotate { nonce: Int, governance: Governance }
   NominateDeployer { nonce: Int, source_generation: Int, successor: ByteArray }
+  RecoverClient {
+    nonce: Int,
+    source_generation: Int,
+    subject_token: AuthToken,
+    substitute_token: AuthToken,
+  }
 }
 
 pub type Phase {
@@ -149,4 +158,5 @@ pub type RegistryRedeemer {
   Restore
   ProposeEmergencyRotation { authority: Authority, expires_at: Int }
   GraduateDeployer
+  ExecuteClientRecovery
 }

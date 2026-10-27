@@ -1,5 +1,5 @@
 import { gatewayDiagnostics } from '../../helpers/gateway-diagnostics';
-import { migrationReference, withMigrationReference } from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
+import { migrationReference, withMigrationReference, withClientRecoveryApproval } from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
 import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -875,6 +875,10 @@ export class LucidService implements OnModuleInit {
     return mintClientPolicyId + clientTokenName;
   }
 
+  public hasGovernedClientRecovery(): boolean {
+    return this.configService.get('deployment')?.migration?.profile === 'cardano-ibc-compatible-v5';
+  }
+
   public hasStagedTendermintClient(): boolean {
     const validators = this.configService.get('deployment').validators;
     return Boolean(validators.spendTendermintUpdateSession && validators.mintTendermintUpdateSession);
@@ -1124,8 +1128,9 @@ export class LucidService implements OnModuleInit {
     encodedRecoverClientWithdrawalRedeemer: string,
     encodedUpdatedHostStateDatum: string,
     encodedRecoveredClientDatum: string,
-    _subjectClientTokenUnit: string,
+    subjectClientTokenUnit: string,
     signerKeyHash: string,
+    approval?: { substituteUnit: string; validFrom: number; validTo: number },
   ): Promise<TxBuilder> {
     const deploymentConfig = this.configService.get('deployment');
     const recoveryConfig = deploymentConfig.validators.recoverClient;
@@ -1140,7 +1145,7 @@ export class LucidService implements OnModuleInit {
       datumHash: undefined,
     };
 
-    const tx = (await this.newTxBuilder(false, 2n))
+    let tx = (this.hasGovernedClientRecovery() ? this.lucid.newTx() : await this.newTxBuilder(false, 2n))
       .readFrom([
         this.referenceScripts.hostStateStt,
         this.referenceScripts.spendClient,
@@ -1161,6 +1166,17 @@ export class LucidService implements OnModuleInit {
       )
       .withdraw(recoveryConfig.address, 0n, encodedRecoverClientWithdrawalRedeemer)
       .addSignerKey(signerKeyHash);
+    if (this.hasGovernedClientRecovery()) {
+      if (!approval) throw new GrpcInternalException('Recovery execution requires the approved client pair and validity bounds');
+      try {
+        tx = await withClientRecoveryApproval(
+          this.lucid, tx, deploymentConfig, subjectClientTokenUnit,
+          approval.substituteUnit, approval.validFrom, approval.validTo,
+        );
+      } catch (error) {
+        throw new GrpcFailedPreconditionException(error.message);
+      }
+    }
     return tx;
   }
 

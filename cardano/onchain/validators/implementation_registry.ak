@@ -1,10 +1,13 @@
+use aiken/builtin
 use aiken/cbor
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/primitive/bytearray
 use cardano/address.{Script}
 use cardano/assets
-use cardano/transaction.{InlineDatum, Input, OutputReference, Transaction}
+use cardano/transaction.{
+  InlineDatum, Input, OutputReference, Spend, Transaction,
+}
 use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/types/transfer_module_datum.{TransferModuleDatum}
@@ -16,10 +19,11 @@ use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/migration/auth as migration
 use ibc/migration/types.{
   Activate, Begin, Cancel, CancelRestoration, Counts, Emergency,
-  GraduateDeployer, MoveCore, MoveEscrow, MoveTransferRoot, Moving,
-  NominateDeployer, Propose, ProposeEmergencyRotation, ProposeRestoration,
-  Proposed, Ready, Registry, RegistryRedeemer, Replace, Restoration, Restore,
-  Restrict, Rotate, RotateAuthority, host_role, transfer_role,
+  ExecuteClientRecovery, GraduateDeployer, MoveCore, MoveEscrow,
+  MoveTransferRoot, Moving, NominateDeployer, Propose, ProposeEmergencyRotation,
+  ProposeRestoration, Proposed, Ready, RecoverClient, Registry, RegistryRedeemer,
+  Replace, Restoration, Restore, Restrict, Rotate, RotateAuthority, host_role,
+  transfer_role,
 }
 use ibc/utils/text_bytes
 use ibc/utils/validator_utils
@@ -136,16 +140,21 @@ validator implementation_registry {
     expect
       when transaction.withdrawals is {
         [] -> True
-        [Pair(Script(authority), 0)] -> and {
-            authority == old.approval_authority,
-            when redeemer is {
-              Propose { .. } |
-              Cancel |
-              ProposeRestoration { .. } |
-              ProposeEmergencyRotation { .. } |
-              CancelRestoration -> True
-              _ -> False
-            },
+        [Pair(Script(authority), 0)] ->
+          if redeemer == ExecuteClientRecovery {
+            True
+          } else {
+            and {
+              authority == old.approval_authority,
+              when redeemer is {
+                Propose { .. } |
+                Cancel |
+                ProposeRestoration { .. } |
+                ProposeEmergencyRotation { .. } |
+                CancelRestoration -> True
+                _ -> False
+              },
+            }
           }
         _ -> False
       }
@@ -310,6 +319,34 @@ validator implementation_registry {
                 source_generation == old.current.generation,
                 bytearray.length(successor) == 28,
               }
+            RecoverClient {
+              nonce,
+              source_generation,
+              subject_token,
+              substitute_token,
+            } -> {
+              let subject =
+                migration.unique_input(
+                  transaction.reference_inputs,
+                  subject_token,
+                )
+              let substitute =
+                migration.unique_input(
+                  transaction.reference_inputs,
+                  substitute_token,
+                )
+              let address = migration.role_address(old.current, 1)
+              and {
+                subject.output.address == address,
+                substitute.output.address == address,
+                nonce == old.nonce + 1,
+                source_generation == old.current.generation,
+                subject_token != substitute_token,
+                subject_token.policy_id == old.identity.client_policy,
+                substitute_token.policy_id == subject_token.policy_id,
+              }
+            }
+
             Rotate { nonce, governance } -> and {
                 nonce == old.nonce + 1,
                 migration.valid_governance(governance),
@@ -383,6 +420,52 @@ validator implementation_registry {
             },
             input.output.address,
           )
+        new == Registry { ..old, phase: Ready }
+      }
+      ExecuteClientRecovery -> {
+        expect [Pair(Script(_), 0)] = transaction.withdrawals
+        expect proposal_ready(transaction, old)
+        expect migration.permitted(old.emergency.mask, 2)
+        expect Proposed {
+          proposal: RecoverClient {
+            nonce,
+            source_generation,
+            subject_token,
+            substitute_token,
+          },
+          ..
+        } = old.phase
+        expect nonce == old.nonce && source_generation == old.current.generation
+        expect subject_token != substitute_token
+        expect subject_token.policy_id == old.identity.client_policy
+        expect substitute_token.policy_id == subject_token.policy_id
+        let host = host_input(transaction, old)
+        let subject = migration.unique_input(transaction.inputs, subject_token)
+        expect
+          host.output.address == migration.role_address(old.current, host_role)
+        expect subject.output.address == migration.role_address(old.current, 1)
+        // Exactly the registry, HostState and approved subject may be spent.
+        expect list.length(script_inputs(transaction)) == 3
+        expect
+          list.all(
+            script_inputs(transaction),
+            fn(input) {
+              input.output_reference == own_ref || input == host || input == subject
+            },
+          )
+        expect Some(host_raw) =
+          pairs.get_first(transaction.redeemers, Spend(host.output_reference))
+        // The participating validators decode and verify these redeemers fully.
+        // Authenticate their ABI tags without importing every unrelated operation.
+        expect Pair(4, [_, _]) = builtin.un_constr_data(host_raw)
+        expect Some(subject_raw) =
+          pairs.get_first(
+            transaction.redeemers,
+            Spend(subject.output_reference),
+          )
+        expect Pair(2, [selected, _]) = builtin.un_constr_data(subject_raw)
+        let approved_substitute: Data = substitute_token
+        expect selected == approved_substitute
         new == Registry { ..old, phase: Ready }
       }
       Begin -> {

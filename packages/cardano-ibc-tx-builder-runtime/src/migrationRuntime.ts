@@ -1,4 +1,4 @@
-import { Constr, credentialToAddress, Data, type LucidEvolution, type Network, type TxBuilder, type UTxO } from '@lucid-evolution/lucid';
+import { Constr, credentialToAddress, Data, getAddressDetails, validatorToScriptHash, type LucidEvolution, type Network, type TxBuilder, type UTxO } from '@lucid-evolution/lucid';
 
 export class BridgeMigrationInProgressError extends Error {
   constructor() {
@@ -8,7 +8,7 @@ export class BridgeMigrationInProgressError extends Error {
 }
 
 export type MigrationRuntimeConfig = {
-  profile: 'cardano-ibc-compatible-v3' | 'cardano-ibc-compatible-v4';
+  profile: 'cardano-ibc-compatible-v3' | 'cardano-ibc-compatible-v4' | 'cardano-ibc-compatible-v5';
   registryUnit: string;
   registryAddress: string;
   generation: string;
@@ -27,7 +27,7 @@ export type MigrationRuntimeDeployment = {
 
 export function requireMigrationConfig(value: unknown): MigrationRuntimeConfig {
   const input = value as MigrationRuntimeConfig;
-  if (!input || !['cardano-ibc-compatible-v3', 'cardano-ibc-compatible-v4'].includes(input.profile) ||
+  if (!input || !['cardano-ibc-compatible-v3', 'cardano-ibc-compatible-v4', 'cardano-ibc-compatible-v5'].includes(input.profile) ||
     !/^[0-9a-f]{58,120}$/.test(input.registryUnit) || !input.registryAddress ||
     !/^[1-9][0-9]*$/.test(input.generation) || !/^[0-9a-f]{64}$/.test(input.compatibility) ||
     !Array.isArray(input.originalAddresses) || input.originalAddresses.length !== 5 || input.originalAddresses.some((a) => typeof a !== 'string' || !a)) {
@@ -65,8 +65,8 @@ export async function migrationReference(lucid: LucidEvolution, deployment: Migr
   const manifest = requireMigrationConfig(deployment.migration);
   const utxo = await lucid.utxoByUnit(manifest.registryUnit);
   if (utxo.address !== manifest.registryAddress || utxo.assets[manifest.registryUnit] !== 1n || !utxo.datum) throw new Error('Missing authenticated implementation registry');
-  const [token, hostPolicy, identity, , , implementation, phase, emergency, approvalAuthority] = record(Data.from(utxo.datum), manifest.profile === 'cardano-ibc-compatible-v4' ? 9 : 8);
-  if (manifest.profile === 'cardano-ibc-compatible-v4' && (typeof approvalAuthority !== 'string' || !/^[0-9a-f]{56}$/.test(approvalAuthority))) throw new Error('Invalid fixed governance authority');
+  const [token, hostPolicy, identity, , , implementation, phase, emergency, approvalAuthority] = record(Data.from(utxo.datum), manifest.profile === 'cardano-ibc-compatible-v3' ? 8 : 9);
+  if (manifest.profile !== 'cardano-ibc-compatible-v3' && (typeof approvalAuthority !== 'string' || !/^[0-9a-f]{56}$/.test(approvalAuthority))) throw new Error('Invalid fixed governance authority');
   const [policy, name] = record(token, 2);
   const [generation, addresses, compatibility] = record(implementation, 3);
   if (typeof policy !== 'string' || typeof name !== 'string' || policy + name !== manifest.registryUnit || hostPolicy !== deployment.hostStateNFT.policyId || deployment.hostStateNFT.name !== '6962635f686f73745f7374617465' || compatibility !== manifest.compatibility) throw new Error('Registry identifies a different bridge or compatibility profile');
@@ -110,4 +110,43 @@ export function checkedDeploymentMode(mode: unknown, migration: unknown): 'upgra
   if (mode !== 'upgradeable' && mode !== 'legacy') throw new Error('Invalid deploymentMode; expected upgradeable or legacy');
   if ((mode === 'upgradeable') !== (migration !== undefined)) throw new Error('Deployment mode and recovery configuration disagree');
   return mode;
+}
+
+/** Consume the delayed approval in the same transaction as client recovery. */
+export async function withClientRecoveryApproval(
+  lucid: LucidEvolution,
+  tx: TxBuilder,
+  deployment: MigrationRuntimeDeployment,
+  subjectUnit: string,
+  substituteUnit: string,
+  validFrom: number,
+  validTo: number,
+): Promise<TxBuilder> {
+  const manifest = requireMigrationConfig(deployment.migration);
+  if (manifest.profile !== 'cardano-ibc-compatible-v5') throw new Error('This deployment does not support quorum client recovery');
+  const registry = await migrationReference(lucid, deployment, false, 2n);
+  if (!registry?.datum) throw new Error('Missing authenticated recovery approval');
+  const datum = Data.from(registry.datum);
+  const fields = record(datum, 9);
+  const phase = fields[6];
+  if (!(phase instanceof Constr) || phase.index !== 1) throw new Error('No approved client recovery');
+  const [proposal, readyAt, expiresAt] = record(phase, 3, 1);
+  if (!(proposal instanceof Constr) || proposal.index !== 3) throw new Error('Approval is not a client recovery');
+  const [nonce, generation, subject, substitute] = record(proposal, 4, 3);
+  const tokenUnit = (token: Data) => {
+    const [policy, name] = record(token, 2);
+    if (typeof policy !== 'string' || typeof name !== 'string') throw new Error('Invalid recovery client identity');
+    return policy + name;
+  };
+  if (nonce !== fields[4] || generation !== BigInt(manifest.generation) || subjectUnit === substituteUnit ||
+      tokenUnit(subject) !== subjectUnit || tokenUnit(substitute) !== substituteUnit) throw new Error('Recovery approval names a different subject, substitute or generation');
+  const from = BigInt(lucid.slotToUnixTime(lucid.unixTimeToSlot(validFrom)));
+  const to = BigInt(lucid.slotToUnixTime(lucid.unixTimeToSlot(validTo)));
+  if (typeof readyAt !== 'bigint' || typeof expiresAt !== 'bigint' || from < readyAt || to > expiresAt || from > to) throw new Error('Recovery approval is delayed or expired');
+  const holder = addressFromData(lucid.config().network!, record(fields[2], 5)[4]);
+  const reference = (await lucid.utxosAt(holder)).find((entry) => entry.scriptRef && validatorToScriptHash(entry.scriptRef) === getAddressDetails(registry.address).paymentCredential?.hash);
+  if (!reference) throw new Error('Publish the registry reference script before client recovery');
+  fields[6] = new Constr(0, []);
+  return tx.readFrom([reference]).collectFrom([registry], Data.to(new Constr(14, [])))
+    .pay.ToContract(registry.address, {kind: 'inline', value: Data.to(datum)}, registry.assets, registry.scriptRef ?? undefined);
 }

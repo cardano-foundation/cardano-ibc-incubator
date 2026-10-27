@@ -38,6 +38,7 @@ const commands = [
   "rotate",
   "activate-authority",
   "nominate-deployer",
+  "nominate-client-recovery",
   "graduate-deployer",
   "execute",
   "resume",
@@ -61,6 +62,8 @@ export function parseMigrationArgs(args: string[]) {
     "governance",
     "signers",
     "successor",
+    "subject-client-unit",
+    "substitute-client-unit",
     "wallet-address",
     "expires-at",
     "max-steps",
@@ -84,6 +87,20 @@ export function parseMigrationArgs(args: string[]) {
     throw new Error(
       "--handler must identify the original deployment manifest (including its migration baseline)",
     );
+  }
+  if (command === "nominate-client-recovery") {
+    const subject = flags["subject-client-unit"];
+    const substitute = flags["substitute-client-unit"];
+    const valid = (unit: string) =>
+      /^[0-9a-f]{58,120}$/.test(unit) && unit.length % 2 === 0;
+    if (
+      !valid(subject) || !valid(substitute) || subject === substitute ||
+      subject.slice(0, 56) !== substitute.slice(0, 56)
+    ) {
+      throw new Error(
+        "nominate-client-recovery requires distinct --subject-client-unit and --substitute-client-unit from the same client policy",
+      );
+    }
   }
   if (["prepare", "verify"].includes(command) && !flags.out) {
     throw new Error(
@@ -115,6 +132,7 @@ export function parseMigrationArgs(args: string[]) {
       "rotate",
       "activate-authority",
       "nominate-deployer",
+      "nominate-client-recovery",
       "graduate-deployer",
       "execute",
       "resume",
@@ -304,6 +322,36 @@ export async function main(args = Deno.args) {
       )).tx,
       command,
     );
+    return;
+  }
+  if (command === "nominate-client-recovery") {
+    const token = (name: string) => {
+      const unit = flags[name];
+      if (!unit || !/^[0-9a-f]{58,120}$/.test(unit) || unit.length % 2 !== 0) {
+        throw new Error(`--${name} requires a full client token unit`);
+      }
+      return { policy_id: unit.slice(0, 56), name: unit.slice(56) };
+    };
+    const built = await migrationControl(
+      lucid,
+      deployment,
+      {
+        Propose: {
+          proposal: {
+            RecoverClient: {
+              nonce: observed.registry.nonce + 1n,
+              source_generation: observed.registry.current.generation,
+              subject_token: token("subject-client-unit"),
+              substitute_token: token("substitute-client-unit"),
+            },
+          },
+          expires_at: expiration(),
+        },
+      },
+      await timing(),
+      signers,
+    );
+    await emit(built.tx, command);
     return;
   }
   if (command === "nominate-deployer") {

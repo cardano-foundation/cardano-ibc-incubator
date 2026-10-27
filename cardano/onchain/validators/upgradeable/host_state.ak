@@ -22,7 +22,7 @@ validator host_state(registry_policy: ByteArray, generation: Int) {
     if migration.is_migration(raw) {
       migration.migration_witness(transaction, registry_policy)
     } else {
-      let registry = migration.active_registry(transaction, registry_policy)
+      let registry = migration.recovery_registry(transaction, registry_policy)
       expect registry.current.generation == generation
       expect
         !registry.preparing || assets.tokens(

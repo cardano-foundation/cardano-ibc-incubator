@@ -259,11 +259,6 @@ export const loadDeploymentPlan = async (
     "bootstrap",
     bytes(hostPolicy),
   );
-  const recoverClient = load(
-    "recover_client.recover_client.withdraw",
-    "runtime",
-    bytes(hostPolicy, verifyProof.hash),
-  );
   const implementationRegistry = inputs.migration
     ? load("implementation_registry.implementation_registry.spend", "runtime")
     : null;
@@ -302,6 +297,17 @@ export const loadDeploymentPlan = async (
       bytes(registryPolicy),
     )
     : null;
+  const recoverClient = registryPolicy
+    ? load(
+      "governance_recover_client.governance_recover_client.withdraw",
+      "runtime",
+      bytes(hostPolicy, verifyProof.hash, registryPolicy),
+    )
+    : load(
+      "recover_client.recover_client.withdraw",
+      "runtime",
+      bytes(hostPolicy, verifyProof.hash),
+    );
   const staged = loadStagedTendermintValidators(
     lucid,
     hostPolicy,

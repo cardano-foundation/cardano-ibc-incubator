@@ -305,13 +305,45 @@ export async function buildMigrationTransaction(
       ? proposal.Replace
       : "Rotate" in proposal
       ? proposal.Rotate
-      : proposal.NominateDeployer;
+      : "NominateDeployer" in proposal
+      ? proposal.NominateDeployer
+      : proposal.RecoverClient;
     if (
       "NominateDeployer" in proposal && (
         !/^[0-9a-f]{56}$/.test(proposal.NominateDeployer.successor) ||
         proposal.NominateDeployer.source_generation !== old.current.generation
       )
     ) throw new Error("Invalid successor payment key hash or stale generation");
+    if ("RecoverClient" in proposal) {
+      const recovery = proposal.RecoverClient;
+      if (
+        recovery.source_generation !== old.current.generation ||
+        recovery.subject_token.policy_id !== old.identity.client_policy ||
+        recovery.substitute_token.policy_id !== old.identity.client_policy ||
+        recovery.subject_token.name === recovery.substitute_token.name ||
+        [recovery.subject_token.name, recovery.substitute_token.name].some((
+          name,
+        ) => !/^[0-9a-f]{2,64}$/.test(name) || name.length % 2 !== 0)
+      ) throw new Error("Invalid recovery subject, substitute or generation");
+      const clients = await Promise.all([
+        lucid.utxoByUnit(tokenUnit(recovery.subject_token)),
+        lucid.utxoByUnit(tokenUnit(recovery.substitute_token)),
+      ]);
+      clients.forEach((client, index) => {
+        requireToken(
+          client,
+          tokenUnit(
+            index === 0 ? recovery.subject_token : recovery.substitute_token,
+          ),
+        );
+        if (client.address !== roleAddress(old.current, 1)) {
+          throw new Error(
+            "Recovery client is not at the active implementation",
+          );
+        }
+      });
+      references.push(...clients);
+    }
     if (details.nonce !== old.nonce + 1n) {
       throw new Error("Stale approval nonce");
     }

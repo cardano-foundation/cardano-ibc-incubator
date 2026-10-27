@@ -134,6 +134,7 @@ describe('ClientService recovery transaction', () => {
     const lucid: any = {
       LucidImporter: Lucid,
       hasStagedTendermintClient: jest.fn().mockReturnValue(false),
+      hasGovernedClientRecovery: jest.fn().mockReturnValue(false),
       prepareConsensusHistoryUpdate: jest.fn().mockResolvedValue({ newRoot: '44'.repeat(32), siblings: [] }),
       findUtxoAtHostStateNFT: jest.fn(),
       getPaymentCredential: jest.fn(),
@@ -224,6 +225,23 @@ describe('ClientService recovery transaction', () => {
     expect(runner.run).toHaveBeenCalledWith(
       expect.objectContaining({ operationName: 'recoverClient', pendingTreeUpdate: buildResult.pendingTreeUpdate }),
     );
+  });
+
+  it('allows a funded executor after governance approval instead of requiring the deployer', async () => {
+    const { service, lucid, runner } = serviceContext();
+    lucid.hasGovernedClientRecovery.mockReturnValue(true);
+    lucid.findUtxoAtHostStateNFT.mockResolvedValue({ datum: 'host' });
+    lucid.getPaymentCredential.mockReturnValue({ type: 'Key', hash: 'executor' });
+    lucid.findUtxoByUnit.mockResolvedValue({ datum: 'client' });
+    lucid.decodeDatum.mockImplementation((datum: string) => Promise.resolve(datum === 'host'
+      ? { deployer: 'deployer', state: { ibc_state_root: '00' } }
+      : clientDatum(1n, 0n)));
+    const build = jest.spyOn(service, 'buildUnsignedRecoverClientTx').mockResolvedValue({
+      unsignedTx: {}, pendingTreeUpdate: { expectedNewRoot: 'root', commit: jest.fn() },
+    } as any);
+    await service.recoverClient({ subject_client_id: '07-tendermint-1', substitute_client_id: '07-tendermint-2', signer: 'addr_test1executor' });
+    expect(build).toHaveBeenCalledWith(expect.objectContaining({ signerKeyHash: 'executor', txValidFrom: 100_000_000n, txValidTo: 200_000_000n }));
+    expect(runner.run).toHaveBeenCalled();
   });
 
   it('fails clearly when recovery is not deployed', async () => {

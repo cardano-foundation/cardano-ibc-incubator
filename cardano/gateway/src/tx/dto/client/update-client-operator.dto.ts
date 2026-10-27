@@ -40,4 +40,5 @@ export type RecoverClientOperatorDto = {
   hostStateDatum: HostStateDatum;
   signerKeyHash: string;
   txValidTo: bigint;
+  txValidFrom?: bigint;
 };

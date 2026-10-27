@@ -138,6 +138,14 @@ export const ProposalSchema = Data.Enum([
       successor: Data.Bytes(),
     }),
   }),
+  Data.Object({
+    RecoverClient: Data.Object({
+      nonce: Data.Integer(),
+      source_generation: Data.Integer(),
+      subject_token: AuthTokenSchema,
+      substitute_token: AuthTokenSchema,
+    }),
+  }),
 ]);
 export type Proposal = Data.Static<typeof ProposalSchema>;
 export const Proposal = ProposalSchema as unknown as Proposal;
@@ -215,6 +223,7 @@ export const RegistryRedeemerSchema = Data.Enum([
     }),
   }),
   Data.Literal("GraduateDeployer"),
+  Data.Literal("ExecuteClientRecovery"),
 ]);
 export type RegistryRedeemer = Data.Static<typeof RegistryRedeemerSchema>;
 export const RegistryRedeemer =

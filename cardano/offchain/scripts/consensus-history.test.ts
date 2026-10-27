@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import {
+  applyDoubleCborEncoding,
   CML,
   Constr,
   Data,
@@ -10,16 +11,31 @@ import {
   type TxSignBuilder,
   type UTxO,
   validatorToRewardAddress,
+  walletFromSeed,
 } from "@lucid-evolution/lucid";
 import {
   Emulator,
   generateEmulatorAccount,
   generateEmulatorAccountFromPrivateKey,
 } from "@lucid-evolution/provider";
+import { withClientRecoveryApproval } from "../../../packages/cardano-ibc-tx-builder-runtime/src/migrationRuntime.ts";
 import { DeploymentIbcTree } from "../src/deployment.ts";
 import { generateTokenName, readValidator } from "../src/utils.ts";
-import { loadStagedTendermintValidators } from "../src/deployment-plan.ts";
+import {
+  DEPLOYMENT_PLAN_FIXTURE,
+  loadDeploymentPlan,
+  loadStagedTendermintValidators,
+} from "../src/deployment-plan.ts";
 import { submitHistorySession } from "./consensus-history-staged-fixture.ts";
+import {
+  bech32Address,
+  Registry,
+  RegistryRedeemer,
+} from "../types/plutus/Migration.ts";
+import {
+  buildMigrationTransaction,
+  readRegistry,
+} from "../src/migration-transactions.ts";
 import { HostStateDatum, HostStateRedeemer } from "../types/index.ts";
 import {
   ConsensusHistoryRecovery,
@@ -79,8 +95,13 @@ async function fixture(
   captureSignerFixture?: (value: Record<string, unknown>) => void,
   initialConsensusBytes?: { root: string; nextValidatorsHash: string },
   stagedMode?: "adjacent" | "non-adjacent",
+  governedRecovery = false,
 ) {
-  const trustingPeriod = stagedMode ? 600_000_000_000n : TRUSTING_PERIOD;
+  const trustingPeriod = governedRecovery
+    ? 7n * 86_400_000_000_000n
+    : stagedMode
+    ? 600_000_000_000n
+    : TRUSTING_PERIOD;
   const encodeStored = (value: Data) =>
     Data.to<Data>(value, undefined, { canonical: canonicalEncoding });
   const encodePublic = (value: Data) =>
@@ -90,7 +111,20 @@ async function fixture(
   const account = captureSignerFixture
     ? generateEmulatorAccountFromPrivateKey({ lovelace: 1_000_000_000n })
     : generateEmulatorAccount({ lovelace: 1_000_000_000n });
-  const emulator = new Emulator([account]);
+  const governors = governedRecovery
+    ? [
+      generateEmulatorAccount({ lovelace: 1_000_000_000n }),
+      generateEmulatorAccount({ lovelace: 1_000_000_000n }),
+    ]
+    : [];
+  const executor = governedRecovery
+    ? generateEmulatorAccount({ lovelace: 1_000_000_000n })
+    : account;
+  const emulator = new Emulator([
+    account,
+    ...governors,
+    ...(governedRecovery ? [executor] : []),
+  ]);
   if (normalUpdate) {
     emulator.time = adjacentFixture.recommended_emulator_time_ms;
   }
@@ -116,6 +150,28 @@ async function fixture(
   if (captureSignerFixture) {
     lucid.selectWallet.fromPrivateKey(account.privateKey);
   } else lucid.selectWallet.fromSeed(account.seedPhrase);
+  const governorKeys = governors.map((entry) =>
+    getAddressDetails(entry.address).paymentCredential!.hash
+  );
+  const governedPlan = governedRecovery
+    ? await loadDeploymentPlan(lucid, {
+      ...DEPLOYMENT_PLAN_FIXTURE,
+      deployerPaymentKeyHash:
+        getAddressDetails(account.address).paymentCredential!.hash,
+      benchmarkVoucherEnabled: false,
+      migration: {
+        registryNonce: { transaction_id: "99".repeat(32), output_index: 0n },
+        governance: {
+          signers: governorKeys,
+          quorum: 2n,
+          delay_ms: 86_400_000n,
+        },
+        emergency: { signers: ["ee".repeat(28)], quorum: 1n },
+      },
+    })
+    : undefined;
+  const hostPolicy = governedPlan?.hostNft.hash ?? HOST_POLICY;
+
   const dummy = "44".repeat(28);
   const applyBytes = (title: string, params: string[]) =>
     readValidator(
@@ -124,14 +180,22 @@ async function fixture(
       params,
       Data.Tuple(params.map(() => Data.Bytes())) as unknown as string[],
     );
-  const [recoveryScript, recoveryHash] = applyBytes(
-    "recover_client.recover_client.withdraw",
-    [HOST_POLICY, "00".repeat(28)],
-  );
-  const staged = stagedMode
-    ? loadStagedTendermintValidators(lucid, HOST_POLICY, recoveryHash)
+  const [recoveryScript, recoveryHash] = governedPlan
+    ? [governedPlan.recoverClient.script, governedPlan.recoverClient.hash]
+    : applyBytes(
+      "recover_client.recover_client.withdraw",
+      [hostPolicy, "00".repeat(28)],
+    );
+  const staged = stagedMode || governedRecovery
+    ? loadStagedTendermintValidators(lucid, hostPolicy, recoveryHash)
     : undefined;
-  const [clientScript, clientHash, clientAddress] = staged
+  const [clientScript, clientHash, clientAddress] = governedPlan
+    ? [
+      governedPlan.spendClient.script,
+      governedPlan.spendClient.hash,
+      governedPlan.spendClient.address,
+    ]
+    : staged
     ? [
       staged.clientSpend.validator,
       staged.clientSpend.scriptHash,
@@ -140,28 +204,36 @@ async function fixture(
     : readValidator(
       "spending_client.spend_client.spend",
       lucid,
-      [HOST_POLICY, new Constr(1, [recoveryHash])],
+      [hostPolicy, new Constr(1, [recoveryHash])],
     );
-  const [clientPolicy, clientPolicyId] = applyBytes(
-    "minting_client_stt.mint_client_stt.mint",
-    [clientHash, HOST_POLICY],
-  );
+  const [clientPolicy, clientPolicyId] = governedPlan
+    ? [governedPlan.mintClient.script, governedPlan.mintClient.hash]
+    : applyBytes(
+      "minting_client_stt.mint_client_stt.mint",
+      [clientHash, hostPolicy],
+    );
   const packet = packetRecovery
-    ? await historyPacketFixture(lucid, HOST_POLICY, HOST_NAME, clientPolicyId)
+    ? await historyPacketFixture(lucid, hostPolicy, HOST_NAME, clientPolicyId)
     : undefined;
-  const [hostScript, hostHash, hostAddress] = applyBytes(
-    "host_state_stt.host_state_stt.spend",
-    [
-      HOST_POLICY,
-      clientHash,
-      dummy,
-      packet?.channelHash ?? dummy,
-      clientPolicyId,
-      packet?.connectionPolicy ?? dummy,
-      packet?.channelPolicy ?? dummy,
-      "",
-    ],
-  );
+  const [hostScript, hostHash, hostAddress] = governedPlan
+    ? [
+      governedPlan.hostState.script,
+      governedPlan.hostState.hash,
+      governedPlan.hostState.address,
+    ]
+    : applyBytes(
+      "host_state_stt.host_state_stt.spend",
+      [
+        hostPolicy,
+        clientHash,
+        dummy,
+        packet?.channelHash ?? dummy,
+        clientPolicyId,
+        packet?.connectionPolicy ?? dummy,
+        packet?.channelPolicy ?? dummy,
+        "",
+      ],
+    );
   const rewardAddress = validatorToRewardAddress("Preprod", recoveryScript);
   if (recovery || normalUpdate) {
     const registration = await lucid.newTx().register.Stake(rewardAddress)
@@ -170,7 +242,7 @@ async function fixture(
     emulator.awaitBlock();
   }
   const clientName = await generateTokenName(
-    { policy_id: HOST_POLICY, name: HOST_NAME },
+    { policy_id: hostPolicy, name: HOST_NAME },
     fromText("ibc_client"),
     0n,
   );
@@ -206,7 +278,7 @@ async function fixture(
     trustingPeriod,
     2n * trustingPeriod,
     1_000_000_000n,
-    new Constr(0, [0n, 0n]),
+    governedRecovery ? height(1n) : new Constr(0, [0n, 0n]),
     height(latestHeight),
     proofSpecs,
     [],
@@ -236,7 +308,9 @@ async function fixture(
         ...assets,
       },
       datum,
-      scriptRef,
+      scriptRef: scriptRef
+        ? { ...scriptRef, script: applyDoubleCborEncoding(scriptRef.script) }
+        : undefined,
     };
     emulator.ledger[utxo.txHash + utxo.outputIndex] = { utxo, spent: false };
     return utxo;
@@ -246,6 +320,46 @@ async function fixture(
     { [clientPolicyId + clientName]: 1n },
     encodeStored(clientDatum),
   );
+  const governedRegistry = governedPlan
+    ? seed(governedPlan.implementationRegistry!.address, {
+      [
+        governedPlan.registry!.token.policy_id +
+        governedPlan.registry!.token.name
+      ]: 1n,
+    }, Data.to(governedPlan.registry!, Registry))
+    : undefined;
+  const registryReference = governedPlan
+    ? seed(
+      bech32Address(
+        "Preprod",
+        governedPlan.registry!.identity.reference_holder,
+      ),
+      {},
+      Data.void(),
+      governedPlan.implementationRegistry!.script,
+    )
+    : undefined;
+  if (governedPlan) {
+    // Existing bridge state is seeded. Approval and recovery execute real scripts.
+    seed(
+      bech32Address(
+        "Preprod",
+        governedPlan.registry!.identity.reference_holder,
+      ),
+      {},
+      Data.void(),
+      governedPlan.governanceAuthority!.script,
+    );
+    const registered = await lucid.newTx().register.Stake(
+      validatorToRewardAddress(
+        "Preprod",
+        governedPlan.governanceAuthority!.script,
+      ),
+    ).complete();
+    await (await registered.sign.withWallet().complete()).submit();
+    emulator.awaitBlock();
+    lucid.clearUTxOOverride();
+  }
   const references = [hostScript, clientPolicy, recoveryScript].map((script) =>
     seed(account.address, {}, Data.void(), script)
   );
@@ -335,7 +449,7 @@ async function fixture(
             ref_utxo: outRef(references[1]),
           },
         },
-        host_state_nft: { policy_id: HOST_POLICY, token_name: HOST_NAME },
+        host_state_nft: { policy_id: hostPolicy, token_name: HOST_NAME },
       },
       resolved_inputs: {
         regular,
@@ -394,7 +508,7 @@ async function fixture(
       bound_port: [],
       last_update_time: BigInt(now),
     },
-    nft_policy: HOST_POLICY,
+    nft_policy: hostPolicy,
     deployer: signer,
     control: {
       port_registry: new Map(),
@@ -407,7 +521,7 @@ async function fixture(
   };
   let host = seed(
     hostAddress,
-    { [HOST_POLICY + HOST_NAME]: 1n },
+    { [hostPolicy + HOST_NAME]: 1n },
     Data.to(hostDatum, HostStateDatum, { canonical: true }),
   );
 
@@ -478,7 +592,7 @@ async function fixture(
     assertEquals(await signed.submit(), signed.toHash());
     emulator.awaitBlock();
     client = await lucid.utxoByUnit(clientPolicyId + clientName);
-    host = await lucid.utxoByUnit(HOST_POLICY + HOST_NAME);
+    host = await lucid.utxoByUnit(hostPolicy + HOST_NAME);
     bootstrap = { txHash: client.txHash, outputIndex: client.outputIndex };
     retain(signed.toHash(), signed.toCBOR());
   }
@@ -493,13 +607,14 @@ async function fixture(
     }
     const substituteHeight = latestHeight + 1n;
     const substituteName = await generateTokenName(
-      { policy_id: HOST_POLICY, name: HOST_NAME },
+      { policy_id: hostPolicy, name: HOST_NAME },
       fromText("ibc_client"),
       1n,
     );
     const substituteToken = new Constr(0, [clientPolicyId, substituteName]);
     const substituteState = new Constr(0, [
-      ...clientState.fields.slice(0, 6),
+      ...clientState.fields.slice(0, 5),
+      new Constr(0, [0n, 0n]),
       height(substituteHeight),
       proofSpecs,
       [],
@@ -576,54 +691,173 @@ async function fixture(
     const recoveryReferences = [clientScript].map((script) =>
       seed(account.address, {}, Data.void(), script)
     );
-    const builder = lucid.newTx().readFrom([
-      substitute,
-      references[0],
-      references[2],
-      ...recoveryReferences,
-    ])
-      .collectFrom(
-        [host],
-        Data.to(
-          {
-            UpdateClient: {
-              client_state_siblings: clientSiblings,
-              consensus_state_siblings: consensusSiblings,
+    const recoveryBuilder = (
+      requiredSigner = governedRecovery
+        ? getAddressDetails(executor.address).paymentCredential!.hash
+        : signer,
+    ) =>
+      lucid.newTx().readFrom([
+        substitute,
+        references[0],
+        references[2],
+        ...recoveryReferences,
+      ])
+        .collectFrom(
+          [host],
+          Data.to(
+            {
+              UpdateClient: {
+                client_state_siblings: clientSiblings,
+                consensus_state_siblings: consensusSiblings,
+              },
+            },
+            HostStateRedeemer,
+            { canonical: true },
+          ),
+        )
+        .collectFrom(
+          [client],
+          encodeStored(
+            new Constr(staged ? 2 : 1, [substituteToken, historySiblings]),
+          ),
+        )
+        .withdraw(
+          rewardAddress,
+          0n,
+          encodeStored(new Constr(0, [clientToken, substituteToken])),
+        )
+        .pay.ToContract(clientAddress, {
+          kind: "inline",
+          value: encodeOutput(
+            new Constr(0, [
+              nextClientState,
+              clientToken,
+              mutation === "missing-history"
+                ? clientDatum.fields[2]
+                : nextHistoryRoot,
+            ]),
+          ),
+        }, client.assets)
+        .pay.ToContract(hostAddress, {
+          kind: "inline",
+          value: Data.to(nextHost, HostStateDatum, { canonical: true }),
+        }, host.assets)
+        .validFrom(governedRecovery ? emulator.now() : now).validTo(
+          (governedRecovery ? emulator.now() : now) + 30_000,
+        )
+        .addSignerKey(requiredSigner);
+
+    const attachApproval = (registry: UTxO, requiredSigner?: string) =>
+      recoveryBuilder(requiredSigner).readFrom([registryReference!])
+        .collectFrom(
+          [registry],
+          Data.to("ExecuteClientRecovery", RegistryRedeemer),
+        )
+        .pay.ToContract(registry.address, {
+          kind: "inline",
+          value: Data.to({
+            ...readRegistry(
+              registry,
+              governedPlan!.registry!.token.policy_id +
+                governedPlan!.registry!.token.name,
+            ),
+            phase: "Ready",
+          }, Registry),
+        }, registry.assets);
+    let builder = recoveryBuilder();
+    if (governedPlan) {
+      const registryUnit = governedPlan.registry!.token.policy_id +
+        governedPlan.registry!.token.name;
+      const proposal: RegistryRedeemer = {
+        Propose: {
+          proposal: {
+            RecoverClient: {
+              nonce: 1n,
+              source_generation: 1n,
+              subject_token: { policy_id: clientPolicyId, name: clientName },
+              substitute_token: {
+                policy_id: clientPolicyId,
+                name: substituteName,
+              },
             },
           },
-          HostStateRedeemer,
-          { canonical: true },
-        ),
-      )
-      .collectFrom(
-        [client],
-        encodeStored(
-          new Constr(staged ? 2 : 1, [substituteToken, historySiblings]),
-        ),
-      )
-      .withdraw(
-        rewardAddress,
-        0n,
-        encodeStored(new Constr(0, [clientToken, substituteToken])),
-      )
-      .pay.ToContract(clientAddress, {
-        kind: "inline",
-        value: encodeOutput(
-          new Constr(0, [
-            nextClientState,
-            clientToken,
-            mutation === "missing-history"
-              ? clientDatum.fields[2]
-              : nextHistoryRoot,
-          ]),
-        ),
-      }, client.assets)
-      .pay.ToContract(hostAddress, {
-        kind: "inline",
-        value: Data.to(nextHost, HostStateDatum, { canonical: true }),
-      }, host.assets)
-      .validFrom(now).validTo(now + 30_000).addSignerKey(signer);
-
+          expires_at: BigInt(emulator.now() + 3 * 86_400_000),
+        },
+      };
+      // The outgoing deployer cannot execute recovery without quorum approval.
+      await assertRejects(() =>
+        attachApproval(governedRegistry!, signer).complete({
+          localUPLCEval: true,
+        })
+      );
+      lucid.selectWallet.fromSeed(governors[0].seedPhrase);
+      lucid.clearUTxOOverride();
+      const approval = await buildMigrationTransaction(lucid, registryUnit, {
+        registry: governedRegistry!,
+        registryReference: registryReference!,
+        signers: governorKeys,
+        validFrom: emulator.now(),
+        validTo: emulator.now() + 30_000,
+      }, proposal);
+      const approved =
+        await (await approval.tx.complete({ localUPLCEval: true })).sign
+          .withWallet()
+          .sign.withPrivateKey(
+            walletFromSeed(governors[1].seedPhrase, { network: "Preprod" })
+              .paymentKey,
+          ).complete();
+      await approved.submit();
+      emulator.awaitBlock();
+      lucid.selectWallet.fromSeed(executor.seedPhrase);
+      lucid.clearUTxOOverride();
+      const registry = await lucid.utxoByUnit(registryUnit);
+      await assertRejects(() =>
+        attachApproval(registry).complete({ localUPLCEval: true })
+      );
+      emulator.awaitSlot(86_432);
+      builder = await withClientRecoveryApproval(
+        lucid,
+        recoveryBuilder(),
+        {
+          deploymentMode: "upgradeable",
+          hostStateNFT: { policyId: hostPolicy, name: HOST_NAME },
+          migration: {
+            profile: "cardano-ibc-compatible-v5",
+            registryUnit,
+            registryAddress: governedPlan.implementationRegistry!.address,
+            generation: "1",
+            compatibility: governedPlan.registry!.current.compatibility,
+            originalAddresses: governedPlan.registry!.current.addresses.map((
+              address,
+            ) => bech32Address("Preprod", address)),
+          },
+          validators: {
+            hostStateStt: { address: hostAddress },
+            spendClient: { address: clientAddress },
+            spendConnection: { address: governedPlan.spendConnection.address },
+            spendChannel: {
+              address: governedPlan.spendingChannel.base.address,
+            },
+            spendTransferModule: {
+              address: governedPlan.spendTransferModule.address,
+            },
+            mintClientStt: { scriptHash: clientPolicyId },
+            mintConnectionStt: { scriptHash: governedPlan.mintConnection.hash },
+            mintChannelStt: { scriptHash: governedPlan.mintChannel.hash },
+            mintTransferEscrowShard: {
+              scriptHash: governedPlan.mintTransferEscrowShard.hash,
+            },
+          },
+          modules: {
+            transfer: { address: governedPlan.spendTransferModule.address },
+          },
+        },
+        clientPolicyId + clientName,
+        clientPolicyId + substituteName,
+        emulator.now(),
+        emulator.now() + 30_000,
+      );
+    }
     const completed = await builder.complete({ localUPLCEval: true });
     const signerFixture = signerEvidence(
       "recovery",
@@ -646,6 +880,15 @@ async function fixture(
     );
     assertEquals(await signed.submit(), signed.toHash());
     emulator.awaitBlock();
+    if (governedPlan) {
+      const registryUnit = governedPlan.registry!.token.policy_id +
+        governedPlan.registry!.token.name;
+      assertEquals(
+        readRegistry(await lucid.utxoByUnit(registryUnit), registryUnit).phase,
+        "Ready",
+      );
+      await assertRejects(() => signed.submit());
+    }
     assertEquals(signed.toTransaction().body().mint(), undefined);
     if (signerFixture) captureSignerFixture!(signerFixture);
     assertEquals(
@@ -865,7 +1108,7 @@ async function fixture(
       clientReference,
     ])
       .collectFrom(
-        [await lucid.utxoByUnit(HOST_POLICY + HOST_NAME)],
+        [await lucid.utxoByUnit(hostPolicy + HOST_NAME)],
         Data.to(
           {
             UpdateClient: {
@@ -1059,7 +1302,7 @@ async function fixture(
             entry.consensusValue,
           );
         }
-        const liveHost = await lucid.utxoByUnit(HOST_POLICY + HOST_NAME);
+        const liveHost = await lucid.utxoByUnit(hostPolicy + HOST_NAME);
         assertEquals(
           await rebuilt.getRoot(),
           Data.from(liveHost.datum!, HostStateDatum).state.ibc_state_root,
@@ -1143,7 +1386,7 @@ async function fixture(
           );
         }
         packet.publicLeaves(tree);
-        const liveHost = await lucid.utxoByUnit(HOST_POLICY + HOST_NAME);
+        const liveHost = await lucid.utxoByUnit(hostPolicy + HOST_NAME);
         assertEquals(
           await tree.getRoot(),
           Data.from(liveHost.datum!, HostStateDatum).state.ibc_state_root,
@@ -1449,4 +1692,22 @@ Deno.test({
       ) + "\n",
     );
   },
+});
+
+Deno.test("signed registry quorum unfreezes a client after its delay and consumes the approval", async () => {
+  const context = await fixture(
+    1,
+    true,
+    true,
+    false,
+    false,
+    true,
+    false,
+    true,
+    undefined,
+    undefined,
+    undefined,
+    true,
+  );
+  console.log(JSON.stringify(await context.recover()));
 });
