@@ -176,6 +176,7 @@ export const RegistrySchema = Data.Object({
   current: ImplementationSchema,
   phase: PhaseSchema,
   emergency: EmergencySchema,
+  approval_authority: Data.Bytes(),
 });
 export type Registry = Data.Static<typeof RegistrySchema>;
 export const Registry = RegistrySchema as unknown as Registry;

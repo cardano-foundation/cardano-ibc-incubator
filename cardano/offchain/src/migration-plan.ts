@@ -23,7 +23,7 @@ import {
   readValidator,
 } from "./utils.ts";
 
-export const MIGRATION_PROFILE = "cardano-ibc-compatible-v3";
+export const MIGRATION_PROFILE = "cardano-ibc-compatible-v4";
 export type SuccessorBlueprint = {
   validators: Array<{ title: string; compiledCode: string }>;
 };
@@ -83,6 +83,7 @@ type BasePlan = {
   referenceHolder: PlannedValidator;
   implementationRegistry: PlannedValidator | null;
   mintImplementationRegistry: PlannedValidator | null;
+  governanceAuthority: PlannedValidator | null;
   sessionMint: PlannedValidator;
   recoverClient: PlannedValidator;
   verifyProof: PlannedValidator;
@@ -123,6 +124,7 @@ export async function compatibilityDigest(plan: BasePlan): Promise<string> {
               plan.referenceHolder,
               plan.implementationRegistry,
               plan.mintImplementationRegistry,
+              plan.governanceAuthority,
               plan.sessionMint,
               plan.recoverClient,
               plan.verifyProof,
@@ -142,7 +144,7 @@ export async function compatibilityDigest(plan: BasePlan): Promise<string> {
 export async function initialRegistry(plan: BasePlan): Promise<Registry> {
   if (
     !plan.inputs.migration || !plan.mintImplementationRegistry ||
-    !plan.implementationRegistry
+    !plan.implementationRegistry || !plan.governanceAuthority
   ) {
     throw new Error(
       "Immutable deployment has no registry; redeployment requires a fresh upgrade-capable baseline",
@@ -177,6 +179,7 @@ export async function initialRegistry(plan: BasePlan): Promise<Registry> {
       mask: 0n,
       restoration: null,
     },
+    approval_authority: plan.governanceAuthority.hash,
   };
 }
 

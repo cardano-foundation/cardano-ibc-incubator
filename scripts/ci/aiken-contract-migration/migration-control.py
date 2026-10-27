@@ -41,7 +41,7 @@ def main():
     if '--handler' in command:
         parser.error('Select the handler through the wrapper option before --')
     identity = json.loads(handler.read_text())
-    if identity.get('migration', {}).get('profile') != 'cardano-ibc-compatible-v3':
+    if identity.get('migration', {}).get('profile') not in ('cardano-ibc-compatible-v3', 'cardano-ibc-compatible-v4'):
         parser.error('The selected deployment has no supported migration baseline')
     public_key = re.search(r'ed25519_sk[0-9a-z]+', (ROOT / 'cardano/offchain/.env.default').read_text())
     if not public_key:

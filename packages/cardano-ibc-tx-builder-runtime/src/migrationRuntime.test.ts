@@ -73,6 +73,20 @@ test('migration manifests fail closed instead of silently losing the feature mar
   }
 });
 
+test('authority-enabled registries preserve runtime checks without changing legacy decoding', async () => {
+  const f = fixture();
+  assert.equal(await migrationReference(f.lucid, f.deployment), f.utxo);
+  f.deployment.migration!.profile = 'cardano-ibc-compatible-v4';
+  await assert.rejects(migrationReference(f.lucid, f.deployment), /Unsupported migration registry datum/);
+  const datum = Data.from(f.utxo.datum!) as Constr<Data>;
+  datum.fields.push(hash(19));
+  f.utxo.datum = Data.to(datum);
+  assert.equal(await migrationReference(f.lucid, f.deployment), f.utxo);
+  datum.fields[8] = '';
+  f.utxo.datum = Data.to(datum);
+  await assert.rejects(migrationReference(f.lucid, f.deployment), /Invalid fixed governance authority/);
+});
+
 
 test('recovery capability cannot be stripped from an explicitly upgradeable deployment', async () => {
   await assert.rejects(() => migrationReference({} as never, {deploymentMode:'upgradeable'} as never), /missing its recovery/);

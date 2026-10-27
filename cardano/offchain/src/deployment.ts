@@ -711,6 +711,19 @@ export const createDeployment = async (
     false,
   );
   reservedDeploymentRefs = await setSpendableWalletUtxos();
+  if (plan.governanceAuthority) {
+    const approvalAddress = validatorToRewardAddress(
+      lucid.config().network || "Custom",
+      plan.governanceAuthority.script,
+    );
+    await submitTx(
+      () => lucid.newTx().register.Stake(approvalAddress),
+      lucid,
+      "RegisterGovernanceAuthority",
+      false,
+    );
+  }
+  reservedDeploymentRefs = await setSpendableWalletUtxos();
 
   // Deploy HostState (STT Architecture)
   const {

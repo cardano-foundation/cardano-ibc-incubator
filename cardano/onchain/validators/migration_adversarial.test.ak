@@ -11,6 +11,7 @@ use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Spend, Transaction, Withdraw,
   placeholder,
 }
+use governance_authority
 use host_state_stt as legacy_host
 use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
@@ -34,7 +35,7 @@ use ibc/core/ics_025_handler_interface/host_state.{
   ShuttingDown, host_state_token_name, min_shutdown_grace_period_ms,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  ClaimBackup, EnterShutdown, Heartbeat,
+  BindPort, ClaimBackup, EnterShutdown, Heartbeat,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
 use ibc/implementation/spending_multitx_client as client_dispatch
@@ -119,6 +120,7 @@ fn initial() -> Registry {
       escrow_policy: hash(6),
       reference_holder: from_script(hash(901)),
     },
+    approval_authority: hash(950),
     governance: governance(),
     nonce: 0,
     current: implementation(1),
@@ -270,17 +272,45 @@ fn transition(
       ],
       validity_range: interval.between(lower, upper),
       extra_signatories: signers,
+      withdrawals: when action is {
+        Propose { .. } |
+        ProposeRestoration { .. } |
+        ProposeEmergencyRotation { .. } |
+        CancelRestoration -> [Pair(Script(old.approval_authority), 0)]
+        Cancel ->
+          if list.is_empty(signers) {
+            []
+          } else {
+            [Pair(Script(old.approval_authority), 0)]
+          }
+        _ -> []
+      },
     },
   }
 }
 
 fn run(case: Case) -> Bool {
-  implementation_registry.implementation_registry.spend(
-    Some(case.old),
-    case.action,
-    ref(1),
-    case.transaction,
-  )
+  let registry_valid =
+    implementation_registry.implementation_registry.spend(
+      Some(case.old),
+      case.action,
+      ref(1),
+      case.transaction,
+    )
+  if !registry_valid {
+    False
+  } else {
+    when case.transaction.withdrawals is {
+      [] -> True
+      _ ->
+        governance_authority.governance_authority.withdraw(
+          case.old.token.policy_id,
+          Void,
+          Script(case.old.approval_authority),
+          case.transaction,
+        )
+    }
+  }
 }
 
 fn with_registry_output(case: Case, registry: Registry) -> Case {
@@ -2084,7 +2114,7 @@ fn old_operation_gate(tx: Transaction, generation: Int, bit: Int) -> Bool {
     )
   expect InlineDatum(raw) = found.output.datum
   expect [_,
-    _, _, _, _, current, phase, emergency] = builtin.un_constr_data(raw).2nd
+    _, _, _, _, current, phase, emergency, _] = builtin.un_constr_data(raw).2nd
   expect [current_generation, _, _] = builtin.un_constr_data(current).2nd
   expect [_, _, mask, _] = builtin.un_constr_data(emergency).2nd
   and {
@@ -2217,6 +2247,160 @@ test migration_budget_gate_extra_registry_field_rejected() fail {
 
 fn graduation_proposal() -> Proposal {
   NominateDeployer { nonce: 1, source_generation: 1, successor: hash(44) }
+}
+
+fn authority_reference_transaction(
+  registry: Registry,
+  signers: List<ByteArray>,
+) -> Transaction {
+  Transaction {
+    ..placeholder,
+    reference_inputs: [input(1, registry_output(registry))],
+    extra_signatories: signers,
+    withdrawals: [Pair(Script(initial().approval_authority), 0)],
+  }
+}
+
+fn authority_check(tx: Transaction) -> Bool {
+  governance_authority.governance_authority.withdraw(
+    initial().token.policy_id,
+    Void,
+    Script(initial().approval_authority),
+    tx,
+  )
+}
+
+test governance_authority_accepts_authenticated_reference_and_quorum() {
+  authority_check(
+    authority_reference_transaction(initial(), [hash(11), hash(12)]),
+  )
+}
+
+test governance_authority_rejects_insufficient_approval() fail {
+  authority_check(authority_reference_transaction(initial(), [hash(11)]))
+}
+
+test governance_authority_rejects_duplicate_policy_members() fail {
+  let registry = initial()
+  authority_check(
+    authority_reference_transaction(
+      Registry {
+        ..registry,
+        governance: Governance {
+          ..registry.governance,
+          signers: [hash(11), hash(11)],
+        },
+      },
+      [hash(11)],
+    ),
+  )
+}
+
+test governance_authority_rejects_permissionless_threshold() fail {
+  let registry = initial()
+  authority_check(
+    authority_reference_transaction(
+      Registry {
+        ..registry,
+        governance: Governance { ..registry.governance, quorum: 0 },
+      },
+      [],
+    ),
+  )
+}
+
+test governance_authority_rejects_missing_registry_identity() fail {
+  let tx = authority_reference_transaction(initial(), [hash(11), hash(12)])
+  authority_check(Transaction { ..tx, reference_inputs: [] })
+}
+
+test governance_authority_rejects_different_registry_identity() fail {
+  let registry = initial()
+  let fake =
+    Registry {
+      ..registry,
+      token: AuthToken { ..registry.token, policy_id: hash(997) },
+    }
+  authority_check(authority_reference_transaction(fake, [hash(11), hash(12)]))
+}
+
+test governance_authority_rejects_substituted_credential() fail {
+  authority_check(
+    authority_reference_transaction(
+      Registry { ..initial(), approval_authority: hash(951) },
+      [hash(11), hash(12)],
+    ),
+  )
+}
+
+test governance_authority_rejects_nonzero_withdrawal() fail {
+  let tx = authority_reference_transaction(initial(), [hash(11), hash(12)])
+  authority_check(
+    Transaction {
+      ..tx,
+      withdrawals: [Pair(Script(initial().approval_authority), 1)],
+    },
+  )
+}
+
+test governance_authority_signatures_alone_cannot_approve_registry() fail {
+  let case = propose(graduation_proposal())
+  run(
+    Case {
+      ..case,
+      transaction: Transaction { ..case.transaction, withdrawals: [] },
+    },
+  )
+}
+
+test governance_authority_signatures_alone_cannot_rotate_emergency() fail {
+  let case = emergency_rotation_proposal(initial())
+  run(
+    Case {
+      ..case,
+      transaction: Transaction { ..case.transaction, withdrawals: [] },
+    },
+  )
+}
+
+test governance_authority_cannot_be_replaced_by_an_approval() fail {
+  let case = propose(graduation_proposal())
+  run(
+    with_registry_output(
+      case,
+      Registry { ..new_registry(case), approval_authority: hash(951) },
+    ),
+  )
+}
+
+test governance_authority_rejects_additional_withdrawals() fail {
+  let case = propose(graduation_proposal())
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        withdrawals: [
+          Pair(Script(initial().approval_authority), 0),
+          Pair(Script(hash(951)), 0),
+        ],
+      },
+    },
+  )
+}
+
+test governance_authority_cannot_be_invoked_during_execution() fail {
+  let case = graduation()
+  run(
+    Case {
+      ..case,
+      transaction: Transaction {
+        ..case.transaction,
+        extra_signatories: [hash(11), hash(12)],
+        withdrawals: [Pair(Script(initial().approval_authority), 0)],
+      },
+    },
+  )
 }
 
 fn graduation() -> Case {
@@ -2469,6 +2653,10 @@ fn graduated_heartbeat(signer: ByteArray, redeemer: Data) -> Bool {
         version: previous.state.version + 1,
         last_update_time: execution_upper,
       },
+      control: HostStateControl {
+        ..previous.control,
+        last_heartbeat_time: execution_upper,
+      },
     }
   host_wrapper.host_state.spend(
     hash(1),
@@ -2491,8 +2679,69 @@ test graduation_successor_can_authorize_heartbeat() {
   graduated_heartbeat(hash(44), Heartbeat)
 }
 
-test graduation_old_deployer_loses_heartbeat_authority() fail {
+test graduation_old_deployer_retains_permissionless_heartbeat() {
   graduated_heartbeat(hash(11), Heartbeat)
+}
+
+fn graduated_bind_port(signer: ByteArray) -> Bool {
+  expect InlineDatum(raw) = output_object(graduation()).datum
+  expect graduated: HostStateDatum = raw
+  // A minimal empty port registry isolates the admin check from tree history.
+  let previous =
+    HostStateDatum {
+      ..graduated,
+      state: HostState { ..graduated.state, ibc_state_root: tree.empty_hash },
+      control: HostStateControl { ..graduated.control, port_registry: [] },
+    }
+  let next =
+    HostStateDatum {
+      ..previous,
+      state: HostState {
+        ..previous.state,
+        version: previous.state.version + 1,
+        last_update_time: execution_upper,
+        ibc_state_root: tree.apply_update(
+          tree.empty_hash,
+          "ports/transfer",
+          "",
+          cbor.serialise(registration()),
+          siblings(),
+        ),
+      },
+      control: HostStateControl {
+        ..previous.control,
+        port_registry: [Pair("transfer", registration())],
+      },
+    }
+  let redeemer: Data =
+    BindPort {
+      port_id: "transfer",
+      registration: registration(),
+      port_siblings: siblings(),
+    }
+  host_wrapper.host_state.spend(
+    hash(1),
+    1,
+    None,
+    redeemer,
+    ref(2),
+    Transaction {
+      ..placeholder,
+      inputs: [input(2, host_output(previous, 1))],
+      outputs: [host_output(next, 1), module_output(tree.empty_hash, 1)],
+      reference_inputs: [input(1, registry_output(new_registry(graduation())))],
+      extra_signatories: [signer],
+      validity_range: interval.between(ready_at, execution_upper),
+    },
+  )
+}
+
+test graduation_successor_can_bind_a_port() {
+  graduated_bind_port(hash(44))
+}
+
+test graduation_old_deployer_cannot_bind_a_port() fail {
+  graduated_bind_port(hash(11))
 }
 
 test graduation_backup_key_cannot_bypass_governance() fail {

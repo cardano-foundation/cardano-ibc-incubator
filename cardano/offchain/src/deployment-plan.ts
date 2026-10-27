@@ -295,6 +295,13 @@ export const loadDeploymentPlan = async (
     )
     : null;
   const registryPolicy = mintImplementationRegistry?.hash;
+  const governanceAuthority = registryPolicy
+    ? load(
+      "governance_authority.governance_authority.withdraw",
+      "runtime",
+      bytes(registryPolicy),
+    )
+    : null;
   const staged = loadStagedTendermintValidators(
     lucid,
     hostPolicy,
@@ -674,6 +681,7 @@ export const loadDeploymentPlan = async (
     inputs,
     implementationRegistry,
     mintImplementationRegistry,
+    governanceAuthority,
     clientRegistrations,
     validators,
     referenceValidators: validators.filter(({ publication }) =>

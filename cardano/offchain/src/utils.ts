@@ -1015,7 +1015,7 @@ export type DeploymentTemplate = {
   };
   deploymentMode?: "upgradeable" | "legacy";
   migration?: {
-    profile: "cardano-ibc-compatible-v3";
+    profile: "cardano-ibc-compatible-v3" | "cardano-ibc-compatible-v4";
     registryUnit: string;
     generation: string;
     compatibility: string;

@@ -57,7 +57,7 @@ export async function loadMigrationBaseline(
   const baseline = structuredClone(manifest.baseline) as DeploymentPlan;
   if (
     !baseline?.inputs?.migration || !baseline.implementationRegistry ||
-    !baseline.mintImplementationRegistry
+    !baseline.mintImplementationRegistry || !baseline.governanceAuthority
   ) throw new Error("Missing original applied deployment artifacts");
   for (
     const nonce of [
@@ -78,7 +78,8 @@ export async function loadMigrationBaseline(
     unitOf(baseline.registry.token) !== manifest.registryUnit ||
     baseline.mintImplementationRegistry.hash !==
       baseline.registry.token.policy_id ||
-    baseline.implementationRegistry.address !== manifest.registryAddress
+    baseline.implementationRegistry.address !== manifest.registryAddress ||
+    baseline.governanceAuthority.hash !== baseline.registry.approval_authority
   ) throw new Error("Baseline registry identity mismatch");
   const digest = await compatibilityDigest(baseline);
   if (digest !== baseline.registry.current.compatibility) {

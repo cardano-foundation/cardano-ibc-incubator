@@ -39,6 +39,8 @@ validator mint_implementation_registry(
     let output = migration.unique_output(transaction.outputs, token)
     expect output.address == registry_address
     expect registry: Registry = validator_utils.get_inline_datum(output)
+    // Bootstrap governors approve the exact authority credential in this output.
+    expect bytearray.length(registry.approval_authority) == 28
     let policies =
       [
         registry.identity.client_policy,

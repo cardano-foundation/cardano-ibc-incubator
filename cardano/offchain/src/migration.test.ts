@@ -11,6 +11,8 @@ import {
   Lucid,
   PROTOCOL_PARAMETERS_DEFAULT,
   type UTxO,
+  validatorToRewardAddress,
+  validatorToScriptHash,
   walletFromSeed,
 } from "@lucid-evolution/lucid";
 import { Emulator } from "@lucid-evolution/provider";
@@ -146,19 +148,36 @@ async function deployedRegistry() {
   await signed.submit();
   emulator.awaitBlock();
   lucid.clearUTxOOverride();
-  // Publish separately, as the production deployment does; the enlarged kernel
-  // and its minting policy cannot share one 16 KiB bootstrap transaction.
-  const reference = await buildReferenceBatchTx(
-    lucid,
-    plan.referenceHolder.address,
-    [plan.implementationRegistry!.script],
+  const registration = await lucid.newTx().register.Stake(
+    validatorToRewardAddress("Custom", plan.governanceAuthority!.script),
   ).complete({ localUPLCEval: true });
-  await (await reference.sign.withWallet().complete()).submit();
+  await (await registration.sign.withWallet().complete()).submit();
   emulator.awaitBlock();
   lucid.clearUTxOOverride();
+  // Publish separately, as the production deployment does; the enlarged kernel
+  // and its minting policy cannot share one 16 KiB bootstrap transaction.
+  for (
+    const script of [
+      plan.implementationRegistry!.script,
+      plan.governanceAuthority!.script,
+    ]
+  ) {
+    const reference = await buildReferenceBatchTx(
+      lucid,
+      plan.referenceHolder.address,
+      [script],
+    ).complete({ localUPLCEval: true });
+    await (await reference.sign.withWallet().complete()).submit();
+    emulator.awaitBlock();
+    lucid.clearUTxOOverride();
+  }
   const registry = await lucid.utxoByUnit(unit);
   const registryReference = (await lucid.utxosAt(plan.referenceHolder.address))
-    .find((utxo) => utxo.scriptRef)!;
+    .find((utxo) =>
+      utxo.scriptRef &&
+      validatorToScriptHash(utxo.scriptRef) ===
+        plan.implementationRegistry!.hash
+    )!;
   assert(registryReference);
   return { ...context, registry, registryReference };
 }

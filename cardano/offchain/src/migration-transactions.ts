@@ -7,6 +7,7 @@ import {
   type LucidEvolution,
   toHex,
   type UTxO,
+  validatorToRewardAddress,
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import { blake2b } from "@noble/hashes/blake2b";
@@ -169,7 +170,9 @@ export async function buildMigrationTransaction(
     }
     return old.phase.Moving;
   };
+  let needsApproval = false;
   const authority = () => {
+    needsApproval = true;
     const signers = new Set(inputs.signers ?? []);
     if (
       BigInt(old.governance.signers.filter((key) => signers.has(key)).length) <
@@ -524,6 +527,21 @@ export async function buildMigrationTransaction(
   if (!destination && inputs.object) {
     throw new Error("Control actions cannot consume bridge objects");
   }
+  let approvalReference: UTxO | undefined;
+  if (needsApproval) {
+    approvalReference = (await lucid.utxosAt(
+      bech32Address(network, old.identity.reference_holder),
+    )).find((entry) =>
+      entry.scriptRef &&
+      validatorToScriptHash(entry.scriptRef) === old.approval_authority
+    );
+    if (!approvalReference?.scriptRef) {
+      throw new Error(
+        "Publish the fixed governance authority reference script before approval",
+      );
+    }
+    references.push(approvalReference);
+  }
   references = [
     ...new Map(
       references.map((utxo) => [`${utxo.txHash}#${utxo.outputIndex}`, utxo]),
@@ -540,6 +558,13 @@ export async function buildMigrationTransaction(
       inputs.registry.scriptRef ?? undefined,
     )
     .validFrom(inputs.validFrom).validTo(inputs.validTo);
+  if (approvalReference?.scriptRef) {
+    tx = tx.withdraw(
+      validatorToRewardAddress(network, approvalReference.scriptRef),
+      0n,
+      Data.void(),
+    );
+  }
   if (destination) {
     tx = tx.collectFrom([inputs.object!], MIGRATION_SPEND)
       .pay.ToContract(destination, { kind: "inline", value: objectDatum! }, {
