@@ -9,7 +9,7 @@ use cardano/transaction.{Input, Output, OutputReference, Spend, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/migration/types.{
   ActiveRegistry, Authority, Governance, Implementation, OperationalIdentity,
-  OperationalImplementation, migration_spend_tag, minimum_delay_ms,
+  OperationalImplementation, Registry, migration_spend_tag, minimum_delay_ms,
   registry_token_name, role_count,
 }
 use ibc/utils/validator_utils
@@ -61,6 +61,12 @@ pub fn authorized(governance: Governance, transaction: Transaction) -> Bool {
   ) >= governance.quorum
 }
 
+pub fn approval_authorized(registry: Registry, transaction: Transaction) -> Bool {
+  pairs.get_first(transaction.withdrawals, Script(registry.approval_authority)) == Some(
+    0,
+  )
+}
+
 pub fn contains(output: Output, token: AuthToken) -> Bool {
   assets.quantity_of(output.value, token.policy_id, token.name) == 1
 }
@@ -91,10 +97,10 @@ pub fn active_registry(
   let fields =
     builtin.un_constr_data(validator_utils.get_inline_datum(input.output)).2nd
   expect [token_data, host_data, identity_data, ..tail] = fields
-  // tail_list fails on a short prefix; the exact suffix still enforces eight
-  // fields, without decoding the unused governance/nonce cells.
+  // tail_list fails on a short prefix; the exact suffix still enforces nine
+  // fields, without decoding the unused governance/nonce/authority cells.
   expect [current_data,
-    phase_data, emergency_data] = builtin.tail_list(builtin.tail_list(tail))
+    phase_data, emergency_data, _] = builtin.tail_list(builtin.tail_list(tail))
   expect recorded_token: AuthToken = token_data
   expect recorded_token == token
   let host_policy = builtin.un_b_data(host_data)
@@ -225,6 +231,7 @@ pub fn channel_creation_context(
     _,
     current,
     phase,
+    _,
     _] =
     builtin.un_constr_data(validator_utils.get_inline_datum(input.output)).2nd
   expect builtin.un_constr_data(phase).1st == 0
@@ -328,7 +335,8 @@ pub fn operation_allowed(
     builtin.un_constr_data(validator_utils.get_inline_datum(input.output)).2nd
   expect [current,
     phase,
-    emergency] =
+    emergency,
+    _] =
     builtin.tail_list(
       builtin.tail_list(
         builtin.tail_list(builtin.tail_list(builtin.tail_list(fields))),

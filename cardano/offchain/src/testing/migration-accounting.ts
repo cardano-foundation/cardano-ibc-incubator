@@ -12,6 +12,7 @@ import {
   type ProtocolParameters,
   type Script,
   type UTxO,
+  validatorToRewardAddress,
   walletFromSeed,
 } from "@lucid-evolution/lucid";
 import { Emulator } from "@lucid-evolution/provider";
@@ -338,6 +339,19 @@ export async function accountingFixture(seedNumber = 462, options: {
       { ...script, script: applyDoubleCborEncoding(script.script) },
     );
   const registryReference = reference(plan.implementationRegistry.script);
+  if (!plan.governanceAuthority) {
+    throw new Error("missing governance authority");
+  }
+  reference(plan.governanceAuthority.script);
+  // This fixture seeds existing bridge state. Registration itself is exercised
+  // by createDeployment in the signed graduation and migration tests.
+  emulator
+    .chain[
+      validatorToRewardAddress("Custom", plan.governanceAuthority.script)
+    ] = {
+      registeredStake: true,
+      delegation: { poolId: null, rewards: 0n },
+    };
   const transferReference = reference(plan.spendTransferModule.script);
   const channelReference = reference(plan.spendingChannel.base.script);
   const successorHostReference = reference(successor.validators[0].script);

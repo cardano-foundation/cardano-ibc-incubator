@@ -8,7 +8,7 @@ export class BridgeMigrationInProgressError extends Error {
 }
 
 export type MigrationRuntimeConfig = {
-  profile: 'cardano-ibc-compatible-v3';
+  profile: 'cardano-ibc-compatible-v3' | 'cardano-ibc-compatible-v4';
   registryUnit: string;
   registryAddress: string;
   generation: string;
@@ -27,7 +27,7 @@ export type MigrationRuntimeDeployment = {
 
 export function requireMigrationConfig(value: unknown): MigrationRuntimeConfig {
   const input = value as MigrationRuntimeConfig;
-  if (!input || input.profile !== 'cardano-ibc-compatible-v3' ||
+  if (!input || !['cardano-ibc-compatible-v3', 'cardano-ibc-compatible-v4'].includes(input.profile) ||
     !/^[0-9a-f]{58,120}$/.test(input.registryUnit) || !input.registryAddress ||
     !/^[1-9][0-9]*$/.test(input.generation) || !/^[0-9a-f]{64}$/.test(input.compatibility) ||
     !Array.isArray(input.originalAddresses) || input.originalAddresses.length !== 5 || input.originalAddresses.some((a) => typeof a !== 'string' || !a)) {
@@ -65,7 +65,8 @@ export async function migrationReference(lucid: LucidEvolution, deployment: Migr
   const manifest = requireMigrationConfig(deployment.migration);
   const utxo = await lucid.utxoByUnit(manifest.registryUnit);
   if (utxo.address !== manifest.registryAddress || utxo.assets[manifest.registryUnit] !== 1n || !utxo.datum) throw new Error('Missing authenticated implementation registry');
-  const [token, hostPolicy, identity, , , implementation, phase, emergency] = record(Data.from(utxo.datum), 8);
+  const [token, hostPolicy, identity, , , implementation, phase, emergency, approvalAuthority] = record(Data.from(utxo.datum), manifest.profile === 'cardano-ibc-compatible-v4' ? 9 : 8);
+  if (manifest.profile === 'cardano-ibc-compatible-v4' && (typeof approvalAuthority !== 'string' || !/^[0-9a-f]{56}$/.test(approvalAuthority))) throw new Error('Invalid fixed governance authority');
   const [policy, name] = record(token, 2);
   const [generation, addresses, compatibility] = record(implementation, 3);
   if (typeof policy !== 'string' || typeof name !== 'string' || policy + name !== manifest.registryUnit || hostPolicy !== deployment.hostStateNFT.policyId || deployment.hostStateNFT.name !== '6962635f686f73745f7374617465' || compatibility !== manifest.compatibility) throw new Error('Registry identifies a different bridge or compatibility profile');

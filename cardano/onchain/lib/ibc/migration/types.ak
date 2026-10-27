@@ -130,6 +130,8 @@ pub type Registry {
   current: Implementation,
   phase: Phase,
   emergency: Emergency,
+  // Fixed withdrawal credential. Signers and delayed rotation stay above.
+  approval_authority: ByteArray,
 }
 
 pub type RegistryRedeemer {

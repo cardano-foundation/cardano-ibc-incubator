@@ -5467,6 +5467,7 @@ fn containment_registry(phase: Int) -> Registry {
         None,
       ),
     },
+    approval_authority: bytearray.from_int_big_endian(950, 28),
     governance,
     nonce: if phase == 0 {
       0

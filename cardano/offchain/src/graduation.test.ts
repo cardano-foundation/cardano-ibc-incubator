@@ -1,13 +1,28 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import {
   Data,
+  fromText,
   getAddressDetails,
   Lucid,
   PROTOCOL_PARAMETERS_DEFAULT,
+  toText,
+  validatorToRewardAddress,
+  validatorToScriptHash,
   walletFromSeed,
 } from "@lucid-evolution/lucid";
 import { Emulator } from "@lucid-evolution/provider";
-import { createDeployment } from "./deployment.ts";
+import {
+  createDeployment,
+  DeploymentIbcTree,
+  sortPortRegistrations,
+} from "./deployment.ts";
+import { loadMigrationBaseline } from "./migration.ts";
+import { generateIdentifierTokenName, generatePortTokenName } from "./utils.ts";
+import {
+  MintPortRedeemer,
+  ModuleRegistration,
+  OutputReference,
+} from "../types/plutus/index.ts";
 import {
   createCardanoScalusEvaluator,
   customEmulatorSlotConfig,
@@ -85,6 +100,15 @@ Deno.test("compiled governance graduates the deployer without its signature and 
       },
     });
     assert(deployment.migration && deployment.hostStateNFT);
+    const baseline = await loadMigrationBaseline(deployment);
+    const authority = baseline.governanceAuthority!;
+    const authorityReference =
+      (await lucid.utxosAt(baseline.referenceHolder.address))
+        .find((entry) =>
+          entry.scriptRef &&
+          validatorToScriptHash(entry.scriptRef) === authority.hash
+        )!;
+    assert(authorityReference);
     const unit = deployment.migration.registryUnit;
     const hostUnit = deployment.hostStateNFT.policyId +
       deployment.hostStateNFT.name;
@@ -132,12 +156,20 @@ Deno.test("compiled governance graduates the deployer without its signature and 
     await assertRejects(
       () =>
         lucid.newTx()
-          .readFrom([deployment.migration!.registryReference])
+          .readFrom([
+            deployment.migration!.registryReference,
+            authorityReference,
+          ])
           .collectFrom([registryUtxo], Data.to(proposal, RegistryRedeemer))
           .pay.ToContract(registryUtxo.address, {
             kind: "inline",
             value: Data.to(next, Registry),
           }, registryUtxo.assets)
+          .withdraw(
+            validatorToRewardAddress("Custom", authority.script),
+            0n,
+            Data.void(),
+          )
           .addSignerKey(keys[1]).validFrom(emulator.now()).validTo(
             emulator.now() + 1000,
           ).complete(),
@@ -217,7 +249,11 @@ Deno.test("compiled governance graduates the deployer without its signature and 
               state: {
                 ...datum.state,
                 version: datum.state.version + 1n,
-                last_update_time: BigInt(emulator.now()),
+                last_update_time: BigInt(emulator.now() + 1000),
+              },
+              control: {
+                ...datum.control,
+                last_heartbeat_time: BigInt(emulator.now() + 1000),
               },
             },
             HostStateDatum,
@@ -228,10 +264,104 @@ Deno.test("compiled governance graduates the deployer without its signature and 
           emulator.now() + 1000,
         ).complete();
     };
+    const bindPort = async (signer: string) => {
+      const host = await lucid.utxoByUnit(hostUnit);
+      const datum = Data.from(host.datum!, HostStateDatum);
+      const tree = new DeploymentIbcTree();
+      for (const [port, registration] of datum.control.port_registry) {
+        tree.set(
+          `ports/${toText(port)}`,
+          Data.to(registration, ModuleRegistration),
+        );
+      }
+      assertEquals(await tree.getRoot(), datum.state.ibc_state_root);
+      const nonce = (await lucid.wallet().getUtxos()).find((entry) =>
+        entry.assets.lovelace > 10_000_000n
+      )!;
+      const reference = {
+        transaction_id: nonce.txHash,
+        output_index: BigInt(nonce.outputIndex),
+      };
+      const portId = fromText("graduated-admin");
+      const registration = {
+        module_script_hash: baseline.genericModule.hash,
+        port_token: {
+          policy_id: baseline.mintPort.hash,
+          name: generatePortTokenName(portId),
+        },
+        module_token: {
+          policy_id: baseline.mintIdentifier.hash,
+          name: await generateIdentifierTokenName(reference),
+        },
+      };
+      const siblings = await tree.getSiblings("ports/graduated-admin");
+      tree.set(
+        "ports/graduated-admin",
+        Data.to(registration, ModuleRegistration),
+      );
+      const updated = {
+        ...datum,
+        state: {
+          ...datum.state,
+          version: datum.state.version + 1n,
+          ibc_state_root: await tree.getRoot(),
+          last_update_time: BigInt(emulator.now() + 1000),
+        },
+        control: {
+          ...datum.control,
+          port_registry: sortPortRegistrations(
+            new Map(datum.control.port_registry).set(portId, registration),
+          ),
+        },
+      };
+      return lucid.newTx().readFrom([
+        await lucid.utxoByUnit(unit),
+        deployment.validators.hostStateStt.refUtxo,
+        deployment.validators.mintPort.refUtxo,
+        deployment.validators.mintIdentifier.refUtxo,
+      ]).collectFrom([nonce]).collectFrom(
+        [host],
+        Data.to({
+          BindPort: {
+            port_id: portId,
+            registration,
+            port_siblings: siblings,
+          },
+        }, HostStateRedeemer),
+      )
+        .mintAssets(
+          {
+            [registration.port_token.policy_id + registration.port_token.name]:
+              1n,
+          },
+          Data.to({
+            spend_module_script_hash: registration.module_script_hash,
+            port_id: portId,
+          }, MintPortRedeemer),
+        )
+        .mintAssets({
+          [
+            registration.module_token.policy_id + registration.module_token.name
+          ]: 1n,
+        }, Data.to(reference, OutputReference))
+        .pay.ToContract(host.address, {
+          kind: "inline",
+          value: Data.to(updated, HostStateDatum, { canonical: true }),
+        }, host.assets)
+        .pay.ToAddress(baseline.genericModule.address, {
+          [registration.port_token.policy_id + registration.port_token.name]:
+            1n,
+          [
+            registration.module_token.policy_id + registration.module_token.name
+          ]: 1n,
+        }).addSignerKey(signer).validFrom(emulator.now()).validTo(
+          emulator.now() + 1000,
+        ).complete();
+    };
     lucid.selectWallet.fromSeed(seeds[0]);
     lucid.clearUTxOOverride();
     await assertRejects(
-      () => heartbeat(keys[0]),
+      () => bindPort(keys[0]),
       Error,
       "failed script execution",
     );
@@ -244,12 +374,95 @@ Deno.test("compiled governance graduates the deployer without its signature and 
     );
     await (await (await heartbeat(keys[3])).sign.withWallet().complete())
       .submit();
+    lucid.clearUTxOOverride();
+    await (await (await bindPort(keys[3])).sign.withWallet().complete())
+      .submit();
     // Becoming admin does not make the successor a migration governor.
     await assertRejects(
       () => migrationControl(lucid, deployment, proposal, timing(), [keys[3]]),
       Error,
       "governance quorum",
     );
+    const current = readRegistry(await lucid.utxoByUnit(unit), unit);
+    const rotated = {
+      signers: [keys[1], keys[3]],
+      quorum: 2n,
+      delay_ms: 86_400_000n,
+    };
+    lucid.selectWallet.fromSeed(seeds[1]);
+    lucid.clearUTxOOverride();
+    const rotate = await migrationControl(
+      lucid,
+      deployment,
+      {
+        Propose: {
+          proposal: {
+            Rotate: { nonce: current.nonce + 1n, governance: rotated },
+          },
+          expires_at: BigInt(emulator.now() + 3 * 86_400_000),
+        },
+      },
+      timing(),
+      [keys[1], keys[2]],
+    );
+    await (await (await rotate.tx.complete()).sign.withWallet().sign
+      .withPrivateKey(wallets[2].paymentKey).complete()).submit();
+    lucid.clearUTxOOverride();
+    await assertRejects(
+      () => migrationControl(lucid, deployment, "RotateAuthority", timing()),
+      Error,
+      "delayed or expired",
+    );
+    emulator.awaitSlot(86_402);
+    lucid.selectWallet.fromSeed(seeds[0]);
+    lucid.clearUTxOOverride();
+    const rotation = await migrationControl(
+      lucid,
+      deployment,
+      "RotateAuthority",
+      timing(),
+    );
+    await (await (await rotation.tx.complete()).sign.withWallet().complete())
+      .submit();
+    lucid.clearUTxOOverride();
+    const afterRotation = readRegistry(await lucid.utxoByUnit(unit), unit);
+    assertEquals(afterRotation.governance, rotated);
+    assertEquals(afterRotation.approval_authority, current.approval_authority);
+    const nextProposal: RegistryRedeemer = {
+      Propose: {
+        proposal: {
+          NominateDeployer: {
+            nonce: afterRotation.nonce + 1n,
+            source_generation: afterRotation.current.generation,
+            successor: keys[0],
+          },
+        },
+        expires_at: BigInt(emulator.now() + 3 * 86_400_000),
+      },
+    };
+    await assertRejects(
+      () =>
+        migrationControl(
+          lucid,
+          deployment,
+          nextProposal,
+          timing(),
+          [keys[1], keys[2]],
+        ),
+      Error,
+      "governance quorum",
+    );
+    lucid.selectWallet.fromSeed(seeds[1]);
+    lucid.clearUTxOOverride();
+    const nextApproval = await migrationControl(
+      lucid,
+      deployment,
+      nextProposal,
+      timing(),
+      [keys[1], keys[3]],
+    );
+    await (await (await nextApproval.tx.complete()).sign.withWallet().sign
+      .withPrivateKey(wallets[3].paymentKey).complete()).submit();
   } finally {
     Date.now = realNow;
   }

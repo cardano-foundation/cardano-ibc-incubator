@@ -131,7 +131,24 @@ validator implementation_registry {
     // Costs come from independently signed wallet inputs. No protocol issue,
     // burn, callback side effect, or additional script spend can hide in a move.
     expect assets.flatten(transaction.mint) == []
-    expect transaction.withdrawals == []
+    // Only approval operations may invoke the fixed authority, always for zero.
+    // Execution, emergency restriction and migration steps retain the empty gate.
+    expect
+      when transaction.withdrawals is {
+        [] -> True
+        [Pair(Script(authority), 0)] -> and {
+            authority == old.approval_authority,
+            when redeemer is {
+              Propose { .. } |
+              Cancel |
+              ProposeRestoration { .. } |
+              ProposeEmergencyRotation { .. } |
+              CancelRestoration -> True
+              _ -> False
+            },
+          }
+        _ -> False
+      }
     expect transaction.certificates == []
     let valid_to = validator_utils.get_tx_valid_to(transaction.validity_range)
     expect
@@ -172,7 +189,7 @@ validator implementation_registry {
       }
       ProposeRestoration { mask, authority, expires_at } -> {
         expect control_only(transaction)
-        expect migration.authorized(old.governance, transaction)
+        expect migration.approval_authorized(old, transaction)
         expect migration.valid_mask(mask)
         expect migration.valid_authority(authority)
         expect migration.separate_authorities(old.governance, authority)
@@ -200,7 +217,7 @@ validator implementation_registry {
       // This approval never changes permissions, even after new restrictions.
       ProposeEmergencyRotation { authority, expires_at } -> {
         expect control_only(transaction)
-        expect migration.authorized(old.governance, transaction)
+        expect migration.approval_authorized(old, transaction)
         expect migration.valid_authority(authority)
         expect migration.separate_authorities(old.governance, authority)
         let ready_at = valid_to + old.governance.delay_ms
@@ -225,7 +242,7 @@ validator implementation_registry {
       }
       CancelRestoration -> {
         expect control_only(transaction)
-        expect migration.authorized(old.governance, transaction)
+        expect migration.approval_authorized(old, transaction)
         new == Registry {
           ..old,
           emergency: Emergency { ..old.emergency, restoration: None },
@@ -261,7 +278,7 @@ validator implementation_registry {
       Propose { proposal, expires_at } -> {
         expect control_only(transaction)
         expect old.phase == Ready
-        expect migration.authorized(old.governance, transaction)
+        expect migration.approval_authorized(old, transaction)
         expect
           when proposal is {
             Replace {
@@ -314,7 +331,7 @@ validator implementation_registry {
         expect control_only(transaction)
         expect Proposed { expires_at, .. } = old.phase
         expect
-          migration.authorized(old.governance, transaction) || validator_utils.get_tx_valid_from(
+          migration.approval_authorized(old, transaction) || validator_utils.get_tx_valid_from(
             transaction.validity_range,
           ) > expires_at
         new == Registry { ..old, phase: Ready }

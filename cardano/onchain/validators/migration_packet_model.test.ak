@@ -399,6 +399,7 @@ fn registry(model: Model, moved: Int) -> Registry {
       quorum: 1,
       delay_ms: minimum_delay_ms,
     },
+    approval_authority: hash(950),
     nonce: model.generation,
     current: implementation(model.generation),
     phase: Moving {
