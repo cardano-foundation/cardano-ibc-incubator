@@ -11,6 +11,7 @@ import {
   toHex,
   toText,
   type UTxO,
+  validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import {
   liquidityTokenName,
@@ -61,6 +62,72 @@ export interface PacketLaneDeployment {
   connection: UTxO;
   client: UTxO;
   scripts: UTxO[];
+  resolveScriptReferences?: (hashes: readonly string[]) => Promise<UTxO[]>;
+}
+
+function guardScriptHash(deployment: PacketLaneDeployment): string {
+  const credential =
+    getAddressDetails(deployment.guardAddress).paymentCredential;
+  if (credential?.type !== "Script") {
+    throw new Error("Packet guard must be a script address");
+  }
+  return credential.hash;
+}
+
+/** Script references are a pool, not a list to carry in every transaction.
+ * Token-bearing authenticated data remains a dependency even if it carries a script.
+ */
+async function packetReferences(
+  deployment: PacketLaneDeployment,
+  hashes: string[],
+  options: { voucher?: boolean; data?: boolean } = {},
+): Promise<UTxO[]> {
+  const required = new Set(hashes);
+  if (options.voucher) {
+    if (!deployment.voucherPolicy) {
+      throw new Error("Missing packet voucher policy");
+    }
+    required.add(deployment.voucherPolicy);
+  }
+  const available = new Map<string, UTxO>();
+  const references: UTxO[] = [];
+  for (const input of deployment.scripts) {
+    if (input.scriptRef) {
+      available.set(validatorToScriptHash(input.scriptRef), input);
+    }
+    if (
+      options.data !== false &&
+      (!input.scriptRef ||
+        Object.entries(input.assets).some(([unit, amount]) =>
+          unit !== "lovelace" && amount !== 0n
+        ))
+    ) {
+      references.push(input);
+    }
+  }
+  const missing = [...required].filter((hash) => !available.has(hash));
+  if (missing.length && deployment.resolveScriptReferences) {
+    const resolved = await deployment.resolveScriptReferences(missing);
+    for (const input of resolved) {
+      if (!input.scriptRef) {
+        throw new Error("Packet reference input has no script");
+      }
+      const hash = validatorToScriptHash(input.scriptRef);
+      if (!missing.includes(hash) || available.has(hash)) {
+        throw new Error(`Unexpected packet reference script: ${hash}`);
+      }
+      available.set(hash, input);
+    }
+  }
+  for (const hash of required) {
+    const input = available.get(hash);
+    if (!input) throw new Error(`Missing packet reference script: ${hash}`);
+    references.push(input);
+  }
+  return [
+    ...new Map(references.map((u) => [`${u.txHash}#${u.outputIndex}`, u]))
+      .values(),
+  ];
 }
 
 const operationNames = [
@@ -131,7 +198,11 @@ export async function buildPacketBalanceCompaction(
     datum.fields[4] = (datum.fields[4] as bigint) + 1n;
   }
   let tx = lucid.newTx().readFrom(
-    deployment.scripts.filter((u) => u.scriptRef),
+    await packetReferences(
+      deployment,
+      [guardScriptHash(deployment)],
+      { data: false },
+    ),
   );
   for (const [i, input] of inputs.entries()) {
     tx = tx.collectFrom([input], encode(variant(5, outRef(inputs[1 - i]))))
@@ -606,11 +677,20 @@ export async function buildPacketSendBatch(
   const nextSequence = copy(oldSequence);
   nextSequence.fields[2] = (oldSequence.fields[2] as bigint) + 1n;
   nextSequence.fields[3] = firstSequence + BigInt(intents.length);
+  const burnsVouchers = Boolean(
+    deployment.voucherPolicy &&
+      Object.keys(mint).some((unit) =>
+        unit.startsWith(deployment.voucherPolicy!)
+      ),
+  );
   let tx = lucid.newTx().readFrom([
     deployment.channel,
     deployment.connection,
     deployment.client,
-    ...deployment.scripts,
+    ...await packetReferences(deployment, [
+      deployment.batchPolicy,
+      guardScriptHash(deployment),
+    ], { voucher: burnsVouchers }),
   ])
     .collectFrom(intents, encode(variant(0)))
     .collectFrom([sequencer], encode(variant(2)))
@@ -640,10 +720,7 @@ export async function buildPacketSendBatch(
       value: encode(escrow.datum),
     }, escrow.assets);
   }
-  if (
-    deployment.voucherPolicy &&
-    Object.keys(mint).some((unit) => unit.startsWith(deployment.voucherPolicy!))
-  ) {
+  if (burnsVouchers) {
     const burns = Object.fromEntries(
       Object.entries(mint).filter(([unit]) =>
         unit.startsWith(deployment.voucherPolicy!)
@@ -750,7 +827,15 @@ async function buildPacketCompletion(
     deployment.channel,
     deployment.connection,
     deployment.client,
-    ...deployment.scripts,
+    ...await packetReferences(deployment, [
+      deployment.batchPolicy,
+      guardScriptHash(deployment),
+    ], {
+      voucher: Boolean(liquidity) &&
+        JSON.parse(toText(String(packet.fields[5]))).denom.startsWith(
+          `${port}/${channelId}/`,
+        ),
+    }),
   ])
     .collectFrom([input], encode(variant(3)))
     .pay.ToContract(deployment.guardAddress, {
@@ -938,7 +1023,9 @@ export async function buildLiquidityRetirement(
       inputs.length
   ) throw new Error("Duplicate liquidity input");
   await requireUnspent(lucid, inputs);
-  let tx = lucid.newTx().readFrom(deployment.scripts).collectFrom(
+  let tx = lucid.newTx().readFrom(
+    await packetReferences(deployment, [deployment.batchPolicy]),
+  ).collectFrom(
     inputs,
     Data.void(),
   );
@@ -990,7 +1077,9 @@ export async function buildTransferIntentCancellation(
     throw new Error("Only the intent owner can cancel");
   }
   // The owner's signature authorizes the normal wallet change and fees.
-  return lucid.newTx().readFrom(deployment.scripts)
+  return lucid.newTx().readFrom(
+    await packetReferences(deployment, [guardScriptHash(deployment)]),
+  )
     .collectFrom([intent], encode(variant(1))).addSignerKey(owner.hash);
 }
 
@@ -1014,7 +1103,7 @@ export async function buildPacketLaneInitialization(
   let tx = lucid.newTx().readFrom([
     config,
     deployment.channel,
-    ...deployment.scripts,
+    ...await packetReferences(deployment, [deployment.statePolicy]),
   ])
     .collectFrom([registry], Data.void())
     .pay.ToContract(registryAddress, {
@@ -1210,7 +1299,10 @@ export async function buildPacketReceive(
     deployment.channel,
     deployment.connection,
     deployment.client,
-    ...deployment.scripts,
+    ...await packetReferences(deployment, [
+      deployment.batchPolicy,
+      guardScriptHash(deployment),
+    ], { voucher: !data.denom.startsWith(prefix) }),
   ])
     .collectFrom([input], encode(variant(3)))
     .pay.ToContract(deployment.guardAddress, {
@@ -1381,7 +1473,10 @@ export async function buildPacketPrune(
     deployment.channel,
     deployment.connection,
     deployment.client,
-    ...deployment.scripts,
+    ...await packetReferences(deployment, [
+      deployment.batchPolicy,
+      guardScriptHash(deployment),
+    ]),
   ])
     .collectFrom([input], encode(variant(3)))
     .pay.ToContract(deployment.guardAddress, {

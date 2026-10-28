@@ -106,15 +106,16 @@ export class PacketLaneService {
         parseClientSequence(this.lucid.LucidImporter.toText(connectionDatum.state.client_id)),
       ),
     );
-    const scripts = await this.lucid.lucid.utxosByOutRef([
-      config.state.refUtxo,
-      config.batch.refUtxo,
-      config.guard.refUtxo,
-      manifest.validators.mintVoucher.refUtxo,
+    const scriptReferences = new Map([
+      [config.state.scriptHash, config.state.refUtxo],
+      [config.batch.scriptHash, config.batch.refUtxo],
+      [config.guard.scriptHash, config.guard.refUtxo],
+      [manifest.validators.mintVoucher.scriptHash, manifest.validators.mintVoucher.refUtxo],
     ]);
-    if (scripts.length !== 4) throw new Error('Packet script references unavailable');
-    scripts.push(await this.lucid.findUtxoByUnit(config.configToken.policyId + config.configToken.name));
-    scripts.push(await this.lucid.findUtxoByUnit(manifest.hostStateNFT.policyId + manifest.hostStateNFT.name));
+    const scripts = [
+      await this.lucid.findUtxoByUnit(config.configToken.policyId + config.configToken.name),
+      await this.lucid.findUtxoByUnit(manifest.hostStateNFT.policyId + manifest.hostStateNFT.name),
+    ];
     const operations: PacketLaneDeployment['operations'] = {};
     const operationRefs = await this.lucid.lucid.utxosByOutRef(Object.values(config.operations).map((v) => v.refUtxo));
     for (const [name, validator] of Object.entries(config.operations)) {
@@ -140,6 +141,14 @@ export class PacketLaneService {
       connection,
       client,
       scripts,
+      resolveScriptReferences: async (hashes) => {
+        const refs = hashes.map((hash) => {
+          const ref = scriptReferences.get(hash);
+          if (!ref) throw new Error(`Unknown packet reference script: ${hash}`);
+          return ref;
+        });
+        return this.lucid.lucid.utxosByOutRef(refs);
+      },
     };
   }
 
