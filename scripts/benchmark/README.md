@@ -89,6 +89,29 @@ The model reports wallet depletion separately from fees, recipient top-ups and p
 
 `relayer-cost-baseline.json` retains the first measured summary and hashes of its full report and transaction journal. Recurring components round up independently to whole lovelace. Their rounded sums can differ slightly from the rounded wallet debit. Reconciliation is checked per transaction before averaging. The 30-day projection is a linear funding scenario. Running that workload for 30 days still requires capacity and pruning qualification.
 
+### Recorded results
+
+The October 28, 2026 compiled-validator emulator run reconciled 143 transactions. The send/acknowledgement and existing-voucher figures below are warmed means. The first-seen voucher figure is a single observation. The Cardano fees use the September 9, 2026 parameter snapshot.
+
+The [Coinbase spot API](https://api.coinbase.com/v2/prices/ADA-USD/spot) returned **0.2022 USD per ADA** when checked at **2026-10-28 16:11:44 UTC**. The USD figures below use that fixed quote. The quote timestamp and conversions are also recorded in `relayer-cost-baseline.json`.
+
+| Operation | Relayer fees in ADA | Relayer wallet debit in ADA | Wallet debit in USD |
+| --- | ---: | ---: | ---: |
+| ADA send plus acknowledgement | 4.76 | 4.76 | $0.96 |
+| Existing voucher receipt | 2.92 | 4.38 | $0.88 |
+| First-seen voucher receipt | 3.29 | 7.87 | $1.59 |
+
+At 100 outbound ADA transfers and 100 inbound voucher transfers per day, including one new trace, the model projects **916.90 ADA ($185.40) of wallet depletion per day** before reimbursement. The 30-day projection is **27,506.92 ADA ($5,561.90)**. Wallet depletion includes recipient top-ups and contributions held in protocol outputs. It excludes hosting, client updates, counterparty fees and pruning. An already funded deployment is assumed.
+
+The conservative collateral reserve is **1,200 ADA ($242.64)**. Collateral is available capital rather than a consumed expense. Including the 10 ADA spendable reserve brings projected peak funding to **28,716.92 ADA ($5,806.56)**. These funding projections still require live-chain, capacity and pruning qualification.
+
+The full report, transaction journal and short resource-collector check are committed as gzip files in `evidence/`, about 296 KiB combined. `artifactFiles` in the summary identifies each file. `artifactSha256` records hashes of their uncompressed contents. For example, extract the full transaction report with:
+
+```sh
+gzip -dc scripts/benchmark/evidence/relayer-costs-2026-10-28.json.gz \
+  > /tmp/relayer-costs-recorded.json
+```
+
 ## Resource collection and qualification
 
 The resource sampler only observes the selected Compose projects and optional host PIDs. It records image IDs, configured CPU/RAM limits, Docker VM capacity, timestamped memory and CPU, network and block-I/O counters, and host-process RSS when requested. It writes JSONL incrementally and ends with a completion record. Keep incomplete files after a service disappearance or host suspension. They are evidence of an interrupted window.
