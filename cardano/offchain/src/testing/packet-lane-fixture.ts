@@ -10,6 +10,7 @@ import {
   type LucidEvolution,
   SLOT_CONFIG_NETWORK,
   type TxBuilder,
+  type TxSigned,
   type UTxO,
 } from "@lucid-evolution/lucid";
 import { generateEmulatorAccount } from "@lucid-evolution/provider";
@@ -52,6 +53,7 @@ function unsignedVarintHex(value: number): string {
 export async function packetLaneFixture(
   laneCount = 16,
   acknowledgementLeaves = 8,
+  onInitialization?: (lucid: LucidEvolution, signed: TxSigned) => Promise<void>,
 ) {
   if (
     !Number.isInteger(acknowledgementLeaves) || acknowledgementLeaves < 1 ||
@@ -411,11 +413,13 @@ export async function packetLaneFixture(
     configuration,
     registryAddress,
   );
-  await (await signMeasured(
+  const initialized = await signMeasured(
     initializer,
     initialization,
     `${laneCount}-lane issuance`,
-  )).submit();
+  );
+  await onInitialization?.(initializer, initialized);
+  await initialized.submit();
   emulator.awaitBlock();
   deployment.scripts.push(configuration);
   deployment.scripts.push(
