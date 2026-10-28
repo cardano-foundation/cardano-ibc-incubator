@@ -1,0 +1,175 @@
+{
+  "generatedAt": "2026-10-28T14:35:40.598Z",
+  "sourceCommit": "dc0f7de1a3140aafa4a652bc6218715fa2bb7063",
+  "denoVersion": "2.9.6",
+  "aikenVersion": "v1.1.24",
+  "blueprintSha256": "6fc6d47a5f48a4de4e68cb9ccf25c4558e2ef99e9424df48c01ae364d20ed2d2",
+  "mode": "Signed transactions submitted to a compiled-validator emulator. Counterparty checkpoints and initial deployment are authenticated fixture pre-state",
+  "scope": "Single-packet Cardano funding baseline under retained parameters. Counterparty gas, client updates, hosting, pruning and production capacity are outside this measurement.",
+  "parameters": {
+    "network": "mainnet",
+    "epoch": 654,
+    "observedDate": "2026-09-09",
+    "maxTxSize": 16384,
+    "maxTxExMem": 16500000,
+    "maxTxExSteps": 10000000000,
+    "coinsPerUtxoByte": 4310,
+    "minFeeA": 44,
+    "minFeeB": 155381,
+    "priceMem": 0.0577,
+    "priceStep": 7.21e-05,
+    "minFeeRefScriptCostPerByte": 15
+  },
+  "reconciledTransactions": 143,
+  "rounding": "Recurring components are rounded up independently to whole lovelace. Transaction balances reconcile exactly before averaging.",
+  "walletSelection": "Generated fixture keys and change selection can cause small variations between runs. Collateral is reported as reserved capital, not an expense.",
+  "channelLaneSetup": {
+    "feeLovelace": 1994221,
+    "signedSizeBytes": 4645
+  },
+  "profiles": [
+    {
+      "name": "outbound-ada-ack",
+      "operations": 32,
+      "profileSamples": 16,
+      "basis": "Mean of operations 17..32 after all 16 lanes have been used. No pruning",
+      "profile": {
+        "name": "outbound-ada-ack",
+        "relayerNetDebitLovelace": 4758526,
+        "relayerFeesLovelace": 4755563,
+        "recipientTopUpLovelace": 0,
+        "protocolReserveIncreaseLovelace": 3002964,
+        "collateralLovelace": 218758100
+      },
+      "coldStartProfile": {
+        "name": "outbound-ada-ack",
+        "relayerNetDebitLovelace": 5052226,
+        "relayerFeesLovelace": 4724666,
+        "recipientTopUpLovelace": 0,
+        "protocolReserveIncreaseLovelace": 3327560,
+        "collateralLovelace": 300000000
+      }
+    },
+    {
+      "name": "outbound-native-ack",
+      "operations": 1,
+      "profileSamples": 1,
+      "basis": "Single cold operation. Not a steady-state traffic estimate",
+      "profile": {
+        "name": "outbound-native-ack",
+        "relayerNetDebitLovelace": 5035567,
+        "relayerFeesLovelace": 4716627,
+        "recipientTopUpLovelace": 0,
+        "protocolReserveIncreaseLovelace": 3318940,
+        "collateralLovelace": 300000000
+      }
+    },
+    {
+      "name": "outbound-ada-timeout",
+      "operations": 1,
+      "profileSamples": 1,
+      "basis": "Single cold operation. Not a steady-state traffic estimate",
+      "profile": {
+        "name": "outbound-ada-timeout",
+        "relayerNetDebitLovelace": 5242737,
+        "relayerFeesLovelace": 4915177,
+        "recipientTopUpLovelace": 0,
+        "protocolReserveIncreaseLovelace": 327560,
+        "collateralLovelace": 300000000
+      }
+    },
+    {
+      "name": "outbound-ada-error",
+      "operations": 1,
+      "profileSamples": 1,
+      "basis": "Single cold operation. Not a steady-state traffic estimate",
+      "profile": {
+        "name": "outbound-ada-error",
+        "relayerNetDebitLovelace": 5213186,
+        "relayerFeesLovelace": 4885626,
+        "recipientTopUpLovelace": 0,
+        "protocolReserveIncreaseLovelace": 327560,
+        "collateralLovelace": 300000000
+      }
+    },
+    {
+      "name": "outbound-ada-return",
+      "operations": 1,
+      "profileSamples": 1,
+      "basis": "Single cold operation. Not a steady-state traffic estimate",
+      "profile": {
+        "name": "outbound-ada-return",
+        "relayerNetDebitLovelace": 7925816,
+        "relayerFeesLovelace": 7598256,
+        "recipientTopUpLovelace": 0,
+        "protocolReserveIncreaseLovelace": 327560,
+        "collateralLovelace": 300000000
+      }
+    },
+    {
+      "name": "receive-existing-voucher",
+      "operations": 32,
+      "profileSamples": 16,
+      "basis": "Mean of operations 17..32 after all 16 lanes have been used. No pruning",
+      "profile": {
+        "name": "receive-existing-voucher",
+        "relayerNetDebitLovelace": 4375483,
+        "relayerFeesLovelace": 2918972,
+        "recipientTopUpLovelace": 1295425,
+        "protocolReserveIncreaseLovelace": 161087,
+        "collateralLovelace": 227830367
+      },
+      "coldStartProfile": {
+        "name": "receive-existing-voucher",
+        "relayerNetDebitLovelace": 4499246,
+        "relayerFeesLovelace": 2878686,
+        "recipientTopUpLovelace": 1293000,
+        "protocolReserveIncreaseLovelace": 327560,
+        "collateralLovelace": 300000000
+      }
+    },
+    {
+      "name": "receive-new-voucher",
+      "operations": 1,
+      "profileSamples": 1,
+      "basis": "Single cold operation. Not a steady-state traffic estimate",
+      "profile": {
+        "name": "receive-new-voucher",
+        "relayerNetDebitLovelace": 7871912,
+        "relayerFeesLovelace": 3286072,
+        "recipientTopUpLovelace": 1293000,
+        "protocolReserveIncreaseLovelace": 3292840,
+        "collateralLovelace": 300000000
+      }
+    }
+  ],
+  "fundingProjection": {
+    "assumptions": {
+      "executionsPerDay": {
+        "outbound-ada-ack": 100,
+        "receive-existing-voucher": 99,
+        "receive-new-voucher": 1
+      },
+      "days": 30,
+      "concurrency": 4,
+      "spendableReserveLovelace": 10000000,
+      "upfrontLovelace": 0,
+      "reimbursementPerDayLovelace": 0,
+      "reimbursementDelayDays": 0
+    },
+    "collateralPolicy": "Conservative dedicated collateral inputs for each concurrent transaction, using the observed wallet UTxO shape",
+    "dailyRelayerNetDebitLovelace": 916897329,
+    "dailyRelayerFeesLovelace": 767820600,
+    "dailyRecipientTopUpLovelace": 129540075,
+    "dailyProtocolReserveIncreaseLovelace": 319536853,
+    "collateralReserveLovelace": 1200000000,
+    "peakFundingLovelace": 28716919870,
+    "reimbursementReceivableLovelace": 0,
+    "netFundingConsumedLovelace": 27506919870
+  },
+  "projectionScope": "Linear funding scenario with no pruning or capacity qualification. Protocol reserve changes include sender-owned reserves. They are not all relayer-funded or reimbursable to the relayer.",
+  "artifactSha256": {
+    "fullReport": "0507d6e23e129fb80267b86a82960edd231cc41de0c05cf0dab911bea437bfe6",
+    "transactionJournal": "908779fad40599805a730aefa249b8ac0b2554ca6ee0c0d1c49fb5a587a84e3a"
+  }
+}
