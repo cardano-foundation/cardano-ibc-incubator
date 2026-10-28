@@ -14,7 +14,10 @@ import {
   Data,
   fromText,
   getAddressDetails,
+  type LucidEvolution,
+  type TxSigned,
   type UTxO,
+  validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import {
   buildLiquidityRetirement,
@@ -38,13 +41,302 @@ import {
 } from "./packet-lane-transactions.ts";
 import {
   packetLaneFixture,
-  signMeasured,
+  signMeasured as signFixtureMeasured,
   snapshot,
 } from "./testing/packet-lane-fixture.ts";
 
 const scriptFailureMessage = Deno.env.get("PACKET_LANE_NODE_URL")
   ? "validator"
   : "failed script execution";
+
+async function resolveInputs(
+  lucid: LucidEvolution,
+  inputs: CML.TransactionInputList | undefined,
+) {
+  const refs = [];
+  for (let i = 0; inputs && i < inputs.len(); i++) {
+    refs.push({
+      txHash: inputs.get(i).transaction_id().to_hex(),
+      outputIndex: Number(inputs.get(i).index()),
+    });
+  }
+  const resolved = await lucid.utxosByOutRef(refs);
+  assertEquals(resolved.length, refs.length);
+  return resolved;
+}
+
+// Derive the needed identities from the final transaction, independently of
+// the builder's operation-to-reference selection.
+async function signMeasured(...args: Parameters<typeof signFixtureMeasured>) {
+  const signed = await signFixtureMeasured(...args);
+  const lucid = args[0], body = signed.toTransaction().body();
+  const required = new Set<string>();
+  for (const input of await resolveInputs(lucid, body.inputs())) {
+    const credential = getAddressDetails(input.address).paymentCredential;
+    if (credential?.type === "Script") required.add(credential.hash);
+  }
+  const mint = body.mint()?.keys();
+  for (let i = 0; mint && i < mint.len(); i++) {
+    required.add(mint.get(i).to_hex());
+  }
+  for (const reference of await resolveInputs(lucid, body.reference_inputs())) {
+    if (
+      !reference.scriptRef ||
+      Object.entries(reference.assets).some(([unit, amount]) =>
+        unit !== "lovelace" && amount !== 0n
+      )
+    ) continue;
+    const hash = validatorToScriptHash(reference.scriptRef);
+    assert(
+      required.has(hash),
+      `${args[2]} carries unused reference script ${hash}`,
+    );
+  }
+  return signed;
+}
+
+async function submitReconciled(
+  fixture: Awaited<ReturnType<typeof packetLaneFixture>>,
+  lucid: LucidEvolution,
+  signed: TxSigned,
+) {
+  const credential = getAddressDetails(await lucid.wallet().address())
+    .paymentCredential!;
+  const owns = (address: string) => {
+    const owner = getAddressDetails(address).paymentCredential;
+    return owner?.type === credential.type && owner.hash === credential.hash;
+  };
+  const balances = async () => {
+    const totals: Record<string, bigint> = {};
+    for (const utxo of await lucid.config().provider!.getUtxos(credential)) {
+      for (const [unit, amount] of Object.entries(utxo.assets)) {
+        totals[unit] = (totals[unit] ?? 0n) + amount;
+      }
+    }
+    return totals;
+  };
+  const beforeAssets = await balances();
+  const before = beforeAssets.lovelace;
+  const body = signed.toTransaction().body();
+  const inputs = await resolveInputs(lucid, body.inputs());
+  let totalOutput = 0n, walletOutput = 0n;
+  const protectedOutputs = [];
+  for (let i = 0; i < body.outputs().len(); i++) {
+    const output = body.outputs().get(i);
+    assert(
+      output.amount().coin() >=
+        CML.min_ada_required(
+          output,
+          lucid.config().protocolParameters!.coinsPerUtxoByte,
+        ),
+    );
+    totalOutput += output.amount().coin();
+    const wallet = owns(output.address().to_bech32());
+    if (wallet) walletOutput += output.amount().coin();
+    if (
+      !wallet || output.datum()
+    ) protectedOutputs.push(output.to_cbor_hex());
+  }
+  assertEquals(
+    inputs.reduce((n, u) => n + u.assets.lovelace, 0n),
+    totalOutput + body.fee(),
+  );
+  const expectedDebit = inputs.filter((u) => owns(u.address)).reduce(
+    (n, u) => n + u.assets.lovelace,
+    0n,
+  ) - walletOutput;
+  await signed.submit();
+  fixture.emulator.awaitBlock();
+  const afterAssets = await balances();
+  const walletDebit = before - afterAssets.lovelace;
+  assertEquals(walletDebit, expectedDebit);
+  // Change can carry operation tokens. Compare its net token effect without
+  // requiring the ADA change amount or coin selection to stay the same.
+  const walletAssetChanges = Object.fromEntries(
+    [...new Set([...Object.keys(beforeAssets), ...Object.keys(afterAssets)])]
+      .filter((unit) => unit !== "lovelace").sort()
+      .map((
+        unit,
+      ) => [unit, (afterAssets[unit] ?? 0n) - (beforeAssets[unit] ?? 0n)]),
+  );
+  return {
+    transaction: signed.toHash(),
+    fee: body.fee(),
+    walletDebit,
+    walletAssetChanges,
+    protectedOutputs: protectedOutputs.sort(),
+  };
+}
+
+function reportReferenceFees(
+  profile: string,
+  control: bigint,
+  reduced: bigint,
+) {
+  assert(control > reduced, `${profile} must reduce fees`);
+  console.log(
+    "packet-reference-fees " +
+      JSON.stringify({
+        profile,
+        controlFeeLovelace: control.toString(),
+        reducedFeeLovelace: reduced.toString(),
+        savingLovelace: (control - reduced).toString(),
+      }),
+  );
+}
+
+Deno.test("native ADA send and acknowledgement omit unused references with reconciled cold fee savings", async () => {
+  const f = await packetLaneFixture();
+  const { intents } = await f.admit(1);
+  const wallet = await f.wallet(true);
+  // Array order must not determine script selection.
+  f.deployment.scripts.reverse();
+  const extra = f.deployment.scripts.filter((u) =>
+    u.scriptRef &&
+    [f.deployment.statePolicy, f.deployment.voucherPolicy].includes(
+      validatorToScriptHash(u.scriptRef),
+    )
+  );
+  assertEquals(extra.length, 2);
+  const restore = snapshot(f);
+  const run = async (control: boolean) => {
+    const sign = control ? signFixtureMeasured : signMeasured;
+    const batch = await buildPacketSendBatch(
+      wallet,
+      f.deployment,
+      intents,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    if (control) batch.tx.readFrom(extra);
+    const sent = await submitReconciled(
+      f,
+      wallet,
+      await sign(
+        wallet,
+        batch.tx,
+        control ? "full-reference send" : "minimal-reference send",
+      ),
+    );
+    const proof = f.proofs.get(1n)!;
+    const ack = await buildPacketAcknowledgement(
+      wallet,
+      f.deployment,
+      batch.packets[0],
+      proof.height,
+      proof.proof,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    if (control) ack.tx.readFrom(extra);
+    const acknowledged = await submitReconciled(
+      f,
+      wallet,
+      await sign(
+        wallet,
+        ack.tx,
+        control
+          ? "full-reference acknowledgement"
+          : "minimal-reference acknowledgement",
+      ),
+    );
+    return {
+      sent,
+      acknowledged,
+      fee: sent.fee + acknowledged.fee,
+      debit: sent.walletDebit + acknowledged.walletDebit,
+    };
+  };
+  const control = await run(true);
+  restore();
+  const reduced = await run(false);
+  assertEquals(reduced.sent.protectedOutputs, control.sent.protectedOutputs);
+  assertEquals(
+    reduced.acknowledged.protectedOutputs,
+    control.acknowledged.protectedOutputs,
+  );
+  assertEquals(
+    reduced.sent.walletAssetChanges,
+    control.sent.walletAssetChanges,
+  );
+  assertEquals(
+    reduced.acknowledged.walletAssetChanges,
+    control.acknowledged.walletAssetChanges,
+  );
+  assertEquals(control.debit - reduced.debit, control.fee - reduced.fee);
+  reportReferenceFees(
+    "ADA send plus acknowledgement",
+    control.fee,
+    reduced.fee,
+  );
+});
+
+Deno.test("lazy packet references use script identity and reject missing or mismatched scripts", async () => {
+  const f = await packetLaneFixture();
+  const { intents } = await f.admit(1);
+  const wallet = await f.wallet();
+  const scripts = f.deployment.scripts.filter((u) => u.scriptRef);
+  const requested: string[][] = [];
+  const deployment = {
+    ...f.deployment,
+    scripts: f.deployment.scripts.filter((u) => !u.scriptRef),
+    resolveScriptReferences: (hashes: readonly string[]) => {
+      requested.push([...hashes]);
+      return Promise.resolve(
+        scripts.filter((u) =>
+          hashes.includes(validatorToScriptHash(u.scriptRef!))
+        ).reverse(),
+      );
+    },
+  };
+  const build = (value = deployment) =>
+    buildPacketSendBatch(
+      wallet,
+      value,
+      intents,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+  const batch = await build();
+  const guard =
+    getAddressDetails(deployment.guardAddress).paymentCredential!.hash;
+  assertEquals(requested, [[deployment.batchPolicy, guard]]);
+  await assertRejects(
+    () =>
+      build({
+        ...deployment,
+        resolveScriptReferences: () => Promise.resolve([]),
+      }),
+    Error,
+    "Missing packet reference script",
+  );
+  const state = scripts.find((u) =>
+    validatorToScriptHash(u.scriptRef!) === deployment.statePolicy
+  )!;
+  await assertRejects(
+    () =>
+      build({
+        ...deployment,
+        resolveScriptReferences: () => Promise.resolve([state]),
+      }),
+    Error,
+    "Unexpected packet reference script",
+  );
+  await assertRejects(
+    () =>
+      build({
+        ...deployment,
+        resolveScriptReferences: () => Promise.resolve([deployment.scripts[0]]),
+      }),
+    Error,
+    "has no script",
+  );
+  await submitReconciled(
+    f,
+    wallet,
+    await signMeasured(wallet, batch.tx, "lazy-reference send"),
+  );
+});
 
 Deno.test("five funded requests batch without acknowledgements and complete through independent lane transactions", async () => {
   const f = await packetLaneFixture();
@@ -660,6 +952,14 @@ function checkpoint(
 for (const firstSeen of [false, true]) {
   Deno.test(`${firstSeen ? "first-seen" : "existing"} vouchers reserve full-channel accounting capacity through burn and refund`, async () => {
     const f = await packetLaneFixture();
+    const scriptPool = f.deployment.scripts.filter((u) => u.scriptRef);
+    f.deployment.scripts = f.deployment.scripts.filter((u) => !u.scriptRef);
+    f.deployment.resolveScriptReferences = (hashes) =>
+      Promise.resolve(
+        scriptPool.filter((u) =>
+          hashes.includes(validatorToScriptHash(u.scriptRef!))
+        ).reverse(),
+      );
     const wallet = await f.wallet(true);
     const receiver =
       getAddressDetails(await wallet.wallet().address()).paymentCredential!
@@ -790,37 +1090,76 @@ for (const firstSeen of [false, true]) {
     );
     const height = record(1n, 19n);
     checkpoint(f, height, proof.root);
-    const receive = await buildPacketReceive(
+    const buildReceive = async () => {
+      const receive = await buildPacketReceive(
+        wallet,
+        f.deployment,
+        packet,
+        height,
+        proof.proof,
+        [],
+        f.emulator.now(),
+        f.emulator.now() + 60_000,
+      );
+      if (registration) {
+        receive.tx.readFrom([registration.directory, registration.reference])
+          .collectFrom([registration.shard], registration.redeemer)
+          .pay.ToContract(registration.address, {
+            kind: "inline",
+            value: registration.updated,
+          }, registration.shard.assets)
+          .mintAssets({
+            [f.deployment.voucherPolicy! + "000643b0" + token.slice(8)]: 1n,
+          }, encode(variant(4)))
+          .pay.ToContract(
+            credentialToAddress("Custom", {
+              type: "Script",
+              hash: f.metadataHash,
+            }),
+            { kind: "inline", value: encode(metadata) },
+            { [f.deployment.voucherPolicy! + "000643b0" + token.slice(8)]: 1n },
+          );
+      }
+      return receive;
+    };
+    const receive = await buildReceive();
+    const reduced = await signMeasured(
       wallet,
-      f.deployment,
-      packet,
-      height,
-      proof.proof,
-      [],
-      f.emulator.now(),
-      f.emulator.now() + 60_000,
+      receive.tx,
+      "minimal-reference voucher receive",
     );
-    if (registration) {
-      receive.tx.readFrom([registration.directory, registration.reference])
-        .collectFrom([registration.shard], registration.redeemer)
-        .pay.ToContract(registration.address, {
-          kind: "inline",
-          value: registration.updated,
-        }, registration.shard.assets)
-        .mintAssets({
-          [f.deployment.voucherPolicy! + "000643b0" + token.slice(8)]: 1n,
-        }, encode(variant(4)))
-        .pay.ToContract(
-          credentialToAddress("Custom", {
-            type: "Script",
-            hash: f.metadataHash,
-          }),
-          { kind: "inline", value: encode(metadata) },
-          { [f.deployment.voucherPolicy! + "000643b0" + token.slice(8)]: 1n },
-        );
-    }
-    await (await signMeasured(wallet, receive.tx, "voucher receive")).submit();
-    f.emulator.awaitBlock();
+    const control = await buildReceive();
+    const stateReference = scriptPool.find((u) =>
+      u.scriptRef &&
+      validatorToScriptHash(u.scriptRef) === f.deployment.statePolicy
+    )!;
+    assert(stateReference);
+    control.tx.readFrom([stateReference]);
+    const controlSigned = await signFixtureMeasured(
+      wallet,
+      control.tx,
+      "full-reference voucher receive",
+    );
+    const restoreReceive = snapshot(f);
+    const controlCosts = await submitReconciled(f, wallet, controlSigned);
+    restoreReceive();
+    f.deployment.client =
+      (await wallet.utxosByOutRef([f.deployment.client]))[0];
+    const reducedCosts = await submitReconciled(f, wallet, reduced);
+    assertEquals(reducedCosts.protectedOutputs, controlCosts.protectedOutputs);
+    assertEquals(
+      reducedCosts.walletAssetChanges,
+      controlCosts.walletAssetChanges,
+    );
+    assertEquals(
+      controlCosts.walletDebit - reducedCosts.walletDebit,
+      controlCosts.fee - reducedCosts.fee,
+    );
+    reportReferenceFees(
+      firstSeen ? "First-seen voucher receive" : "Existing voucher receive",
+      controlCosts.fee,
+      reducedCosts.fee,
+    );
     assertEquals(
       (await wallet.wallet().getUtxos()).reduce(
         (sum, u) => sum + (u.assets[unit] ?? 0n),
@@ -883,6 +1222,34 @@ for (const firstSeen of [false, true]) {
       0n,
     );
     assertEquals((await wallet.utxosAt(f.deployment.batchAddress)).length, 0);
+    const restoreAcknowledgement = snapshot(f);
+    const success = await membershipProof(
+      fromText("acks/ports/transfer/channels/channel-7/sequences/1"),
+      await sha256(fromText('{"result":"AQ=="}')),
+    );
+    const successHeight = record(1n, 20n);
+    checkpoint(f, successHeight, success.root);
+    const acknowledged = await buildPacketAcknowledgement(
+      wallet,
+      f.deployment,
+      batch.packets[0],
+      successHeight,
+      success.proof,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    await submitReconciled(
+      f,
+      wallet,
+      await signMeasured(
+        wallet,
+        acknowledged.tx,
+        "voucher success acknowledgement without voucher policy",
+      ),
+    );
+    restoreAcknowledgement();
+    f.deployment.client =
+      (await wallet.utxosByOutRef([f.deployment.client]))[0];
     const laneBefore = (await wallet.utxosAt(f.deployment.guardAddress)).find(
       (u) => {
         const datum = Data.from(u.datum!) as Constr<Data>;

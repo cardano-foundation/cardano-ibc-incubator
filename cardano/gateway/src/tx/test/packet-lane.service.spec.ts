@@ -26,6 +26,54 @@ class Datum {
   }
 }
 
+describe('packet reference collection', () => {
+  function fixture() {
+    const ref = (name: string) => ({ txHash: name, outputIndex: 0 });
+    const validator = (name: string) => ({ scriptHash: name, address: name, refUtxo: ref(name) });
+    const state = validator('state'), batch = validator('batch'), guard = validator('guard');
+    const voucher = validator('voucher'), proof = validator('proof'), operation = validator('send');
+    const manifest = {
+      packetState: { state, batch, guard, laneCount: 16, configToken: { policyId: 'config', name: 'token' }, operations: { send: operation } },
+      validators: { mintVoucher: voucher, verifyProof: proof },
+      hostStateNFT: { policyId: 'host', name: 'token' },
+    };
+    const data = (unit: string) => ({ ...ref(unit), address: 'data', assets: { lovelace: 5_000_000n, [unit]: 1n }, datum: unit });
+    const lucid = {
+      LucidImporter: { toText: (value: string) => value },
+      getChannelTokenUnit: () => ['channel', '0'],
+      getConnectionTokenUnit: () => ['connection', '0'],
+      getClientTokenUnit: () => ['client', '0'],
+      findUtxoByUnit: jest.fn(async (unit: string) => data(unit)),
+      decodeDatum: jest.fn(async (_datum: string, kind: string) => kind === 'channel'
+        ? { state: { channel: { connection_hops: ['connection-0'] } } }
+        : { state: { client_id: '07-tendermint-0' } }),
+      lucid: { utxosByOutRef: jest.fn(async (refs: Array<{ txHash: string; outputIndex: number }>) => refs.map((entry) => ({ ...entry, address: 'reference', assets: { lovelace: 5_000_000n } }))) },
+    };
+    const service = new PacketLaneService({ getOrThrow: () => manifest } as any, lucid as any, {} as any, {} as any, {} as any, {} as any);
+    return { service, lucid, state, batch, guard, voucher, proof, operation };
+  }
+
+  it('fetches common scripts only when the builder requests their identities', async () => {
+    const f = fixture();
+    const deployment = await f.service.deployment('channel-0');
+    expect(f.lucid.lucid.utxosByOutRef.mock.calls).toEqual([[[f.operation.refUtxo]], [[f.proof.refUtxo]]]);
+    expect(deployment.scripts.map((u) => u.datum)).toEqual(['configtoken', 'hosttoken']);
+    await deployment.resolveScriptReferences!([f.batch.scriptHash, f.guard.scriptHash]);
+    expect(f.lucid.lucid.utxosByOutRef).toHaveBeenLastCalledWith([f.batch.refUtxo, f.guard.refUtxo]);
+    await deployment.resolveScriptReferences!([f.voucher.scriptHash]);
+    expect(f.lucid.lucid.utxosByOutRef).toHaveBeenLastCalledWith([f.voucher.refUtxo]);
+    await deployment.resolveScriptReferences!([f.state.scriptHash]);
+    expect(f.lucid.lucid.utxosByOutRef).toHaveBeenLastCalledWith([f.state.refUtxo]);
+  });
+
+  it('rejects a request for a script outside the pinned deployment', async () => {
+    const f = fixture();
+    const deployment = await f.service.deployment('channel-0');
+    await expect(deployment.resolveScriptReferences!(['unrecognized'])).rejects.toThrow('Unknown packet reference script');
+    expect(f.lucid.lucid.utxosByOutRef).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('default funded packet batches', () => {
   let service: PacketLaneService;
   let pending: any[];
