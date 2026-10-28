@@ -170,6 +170,33 @@
   "projectionScope": "Linear funding scenario with no pruning or capacity qualification. Protocol reserve changes include sender-owned reserves. They are not all relayer-funded or reimbursable to the relayer.",
   "artifactSha256": {
     "fullReport": "0507d6e23e129fb80267b86a82960edd231cc41de0c05cf0dab911bea437bfe6",
-    "transactionJournal": "908779fad40599805a730aefa249b8ac0b2554ca6ee0c0d1c49fb5a587a84e3a"
+    "transactionJournal": "908779fad40599805a730aefa249b8ac0b2554ca6ee0c0d1c49fb5a587a84e3a",
+    "resourceSample": "cd2e3462ec580551c1cda386da8354a5e7e9eb329be62077a3d860649208a136"
+  },
+  "artifactFiles": {
+    "fullReport": "evidence/relayer-costs-2026-10-28.json.gz",
+    "transactionJournal": "evidence/relayer-costs-2026-10-28.transactions.jsonl.gz",
+    "resourceSample": "evidence/relayer-resources-idle-2026-10-28.jsonl.gz"
+  },
+  "usdConversion": {
+    "source": "https://api.coinbase.com/v2/prices/ADA-USD/spot",
+    "observedAt": "2026-10-28T16:11:44Z",
+    "usdPerAda": "0.2022",
+    "scope": "Fixed exchange-rate conversion of the provisional funding scenario. Wallet depletion includes protocol-held contributions. Hosting, client updates, counterparty fees and pruning are excluded.",
+    "dailyRelayerNetDebitUSD": "185.40",
+    "dailyRelayerFeesUSD": "155.25",
+    "thirtyDayNetFundingConsumedUSD": "5561.90",
+    "collateralReserveUSD": "242.64",
+    "peakFundingUSD": "5806.56",
+    "averagePerTransferUSD": "0.93",
+    "walletDebitPerOperationUSD": {
+      "outbound-ada-ack": "0.96",
+      "outbound-native-ack": "1.02",
+      "outbound-ada-timeout": "1.06",
+      "outbound-ada-error": "1.05",
+      "outbound-ada-return": "1.60",
+      "receive-existing-voucher": "0.88",
+      "receive-new-voucher": "1.59"
+    }
   }
 }
