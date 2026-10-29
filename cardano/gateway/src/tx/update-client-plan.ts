@@ -4,7 +4,7 @@ const TENDERMINT_MULTITX_PROTOCOL = 'tendermint-multitx-v1' as const;
 export const TENDERMINT_MULTITX_MAX_BATCH_SIZE = 6;
 export const TENDERMINT_MULTITX_MAX_VALIDATOR_COUNT = 256;
 
-export type TendermintUpdateMode = 'adjacent' | 'non_adjacent';
+export type TendermintUpdateMode = 'adjacent' | 'unchanged' | 'non_adjacent';
 
 export type TendermintUpdateStepKind = 'initialize' | 'verify_trusted' | 'verify_target' | 'finalize';
 
@@ -73,15 +73,15 @@ export function buildTendermintUpdatePlan(input: BuildTendermintUpdatePlanInput)
   const trustedValidatorCount = validateCount(
     'trustedValidatorCount',
     input.trustedValidatorCount,
-    input.mode === 'adjacent',
+    input.mode !== 'non_adjacent',
   );
   const batchSize = validateBatchSize(input.batchSize ?? TENDERMINT_MULTITX_MAX_BATCH_SIZE);
 
-  if (input.mode !== 'adjacent' && input.mode !== 'non_adjacent') {
+  if (input.mode !== 'adjacent' && input.mode !== 'unchanged' && input.mode !== 'non_adjacent') {
     throw new Error(`unsupported Tendermint update mode: ${String(input.mode)}`);
   }
-  if (input.mode === 'adjacent' && trustedValidatorCount !== 0) {
-    throw new Error('trustedValidatorCount must be zero for an adjacent Tendermint update plan');
+  if (input.mode !== 'non_adjacent' && trustedValidatorCount !== 0) {
+    throw new Error('trustedValidatorCount must be zero for an adjacent or unchanged-set Tendermint update plan');
   }
 
   const planId = derivePlanId({

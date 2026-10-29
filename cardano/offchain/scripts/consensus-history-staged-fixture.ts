@@ -108,6 +108,8 @@ export async function submitHistorySession(args: {
   const signatures = commit.fields[3] as Constr<Data>[];
   const adjacent =
     tmHeader.fields[2] === (trustedHeight.fields[1] as bigint) + 1n;
+  const singleSet = adjacent ||
+    tmHeader.fields[7] === trustedConsensus.fields[1];
   assert(
     validators.length <= 6 && trusted.length <= 6,
     "Fixture uses one bounded batch per phase",
@@ -122,7 +124,7 @@ export async function submitHistorySession(args: {
     tmHeader,
     constr(commit.fields.slice(0, 3)),
     BigInt(validators.length),
-    adjacent ? 0n : BigInt(trusted.length),
+    singleSet ? 0n : BigInt(trusted.length),
   ]);
   const seed = (await lucid.wallet().getUtxos()).find((utxo) =>
     !utxo.scriptRef && !utxo.datum && Object.keys(utxo.assets).length === 1
@@ -135,7 +137,7 @@ export async function submitHistorySession(args: {
   );
   const token = constr([scripts.sessionMint.policyId, name]);
   const unit = scripts.sessionMint.policyId + name;
-  let phase = adjacent
+  let phase = singleSet
     ? constr([emptyAccumulator(), 0n, 0n, none()])
     : constr([emptyAccumulator(), 0n, none()], 1);
   const datum = () => encode(constr([token, owner, plan, phase]));
@@ -190,7 +192,7 @@ export async function submitHistorySession(args: {
     (sum, validator) => sum + (validator.fields[2] as bigint),
     0n,
   );
-  if (!adjacent) {
+  if (!singleSet) {
     phase = constr([
       trustedRoot,
       trustedTotal,
@@ -218,7 +220,7 @@ export async function submitHistorySession(args: {
     let membership: Constr<Data> = none();
     if (sig.fields[0] === 2n) {
       signedPower += validator.fields[2] as bigint;
-      if (!adjacent) {
+      if (!singleSet) {
         const trustedIndex = trusted.findIndex((candidate) =>
           candidate.fields[1] === validator.fields[1]
         );
@@ -244,7 +246,7 @@ export async function submitHistorySession(args: {
     signedPower,
     adjacent ? none() : some(trustedRoot),
     adjacent ? 0n : trustedTotal,
-    trustedSigned,
+    singleSet && !adjacent ? signedPower : trustedSigned,
   ], 3);
   utxo = await submit(
     lucid.newTx().readFrom(references)

@@ -136,7 +136,10 @@ function fixtureClientDatum(header: Header, consensusState: ConsensusState): Cli
   };
 }
 
-function sessionFor(scenario: any): { datum: SessionDatum; header: Header; consensusState: ConsensusState } {
+function sessionFor(
+  scenario: any,
+  singleSet = false,
+): { datum: SessionDatum; header: Header; consensusState: ConsensusState } {
   const header = fixtureHeader(scenario);
   const consensusState = fixtureConsensusState(scenario);
   const plan = deriveTendermintSessionUpdatePlan({
@@ -144,6 +147,10 @@ function sessionFor(scenario: any): { datum: SessionDatum; header: Header; conse
     clientDatum: fixtureClientDatum(header, consensusState),
     trustedConsensusState: consensusState,
   });
+  // Retain coverage of the general trusted-set path even for equal roots.
+  if (!singleSet && header.signedHeader.header.height !== header.trustedHeight.revisionHeight + 1n) {
+    plan.trustedValidatorCount = BigInt(header.trustedValidators.validators.length);
+  }
   return {
     header,
     consensusState,
@@ -167,6 +174,72 @@ function deterministicValidators(count: number): StagedTendermintValidator[] {
     };
   });
 }
+
+describe('unchanged Tendermint validator sets', () => {
+  function fastUpdate() {
+    const scenario = capacityFixture.scenarios.non_adjacent_mixed;
+    const state = sessionFor(scenario, true);
+    const payloads = buildTendermintStagedPayloads({
+      header: state.header,
+      mode: 'unchanged',
+      expectedTrustedValidatorsHash: state.consensusState.next_validators_hash,
+    });
+    return { ...state, payloads };
+  }
+
+  it('verifies the frozen 45-validator skipped update in eight target batches', () => {
+    const { datum: initial, payloads, consensusState } = fastUpdate();
+    expect(initial.plan.trustedValidatorCount).toBe(0n);
+    expect(payloads.trustedBatches).toEqual([]);
+    expect(payloads.targetBatches).toHaveLength(8);
+    expect(
+      payloads.targetBatches.flatMap((batch) => batch.entries).every((entry) => entry.trustedMembership === null),
+    ).toBe(true);
+    let datum = initial;
+    for (const batch of payloads.targetBatches) {
+      datum = advanceTendermintSession(datum, { VerifyTarget: { entries: batch.entries } });
+    }
+    expect(datum.phase).toMatchObject({
+      Complete: {
+        targetRoot: consensusState.next_validators_hash,
+        trustedRoot: consensusState.next_validators_hash,
+        trustedTotalPower: BigInt(capacityFixture.scenarios.non_adjacent_mixed.header.validator_set.total_voting_power),
+        trustedSignedPower: BigInt(capacityFixture.scenarios.non_adjacent_mixed.observations.commit_voting_power),
+      },
+    });
+  });
+
+  it('resumes an unchanged-set update at the committed target accumulator count', () => {
+    const { datum: initial, payloads } = fastUpdate();
+    const entries = payloads.targetBatches.flatMap((batch) => batch.entries);
+    const advanced = advanceTendermintSession(initial, { VerifyTarget: { entries: entries.slice(0, 3) } });
+    expect(nextTendermintSessionAdvance(advanced, payloads)).toEqual({
+      VerifyTarget: { entries: entries.slice(3, 9) },
+    });
+  });
+
+  it('retains a custom trust threshold above the target commit threshold', () => {
+    const { datum: initial, payloads } = fastUpdate();
+    initial.plan.trustLevel = { numerator: 99n, denominator: 100n };
+    let datum = initial;
+    expect(() => {
+      for (const batch of payloads.targetBatches) {
+        datum = advanceTendermintSession(datum, { VerifyTarget: { entries: batch.entries } });
+      }
+    }).toThrow('configured trust level');
+  });
+
+  it('rejects a claimed unchanged set with a different trusted root', () => {
+    const { header } = fastUpdate();
+    expect(() =>
+      buildTendermintStagedPayloads({
+        header,
+        mode: 'unchanged',
+        expectedTrustedValidatorsHash: '00'.repeat(32),
+      }),
+    ).toThrow('does not match');
+  });
+});
 
 describe('pure Tendermint update-session state transitions', () => {
   it('caps the shared chain upper bound below the selected trust expiration', () => {
@@ -346,10 +419,15 @@ describe('pure Tendermint update-session state transitions', () => {
     const consensusState = fixtureConsensusState(scenario);
     const clientDatum = fixtureClientDatum(header, consensusState);
     for (const headerTimeNs of [consensusState.timestamp, 10n ** 25n]) {
-      expect(() => validateTendermintStagedFinalization({
-        validFromTimeMs: 1_700_000_000_000,
-        trustedHeight: header.trustedHeight, headerTimeNs, clientDatum, misbehaviour: true,
-      })).not.toThrow();
+      expect(() =>
+        validateTendermintStagedFinalization({
+          validFromTimeMs: 1_700_000_000_000,
+          trustedHeight: header.trustedHeight,
+          headerTimeNs,
+          clientDatum,
+          misbehaviour: true,
+        }),
+      ).not.toThrow();
     }
   });
 
@@ -357,13 +435,17 @@ describe('pure Tendermint update-session state transitions', () => {
     const scenario = capacityFixture.scenarios.adjacent_all_signed;
     const header = fixtureHeader(scenario);
     const clientDatum = fixtureClientDatum(header, fixtureConsensusState(scenario));
-    clientDatum.state.consensusStates.set({
-      ...header.trustedHeight, revisionHeight: header.signedHeader.header.height,
-    }, {
-      timestamp: header.signedHeader.header.time,
-      next_validators_hash: header.signedHeader.header.nextValidatorsHash,
-      root: { hash: header.signedHeader.header.appHash },
-    });
+    clientDatum.state.consensusStates.set(
+      {
+        ...header.trustedHeight,
+        revisionHeight: header.signedHeader.header.height,
+      },
+      {
+        timestamp: header.signedHeader.header.time,
+        next_validators_hash: header.signedHeader.header.nextValidatorsHash,
+        root: { hash: header.signedHeader.header.appHash },
+      },
+    );
     expect(tendermintHeaderConflictsWithStoredState(header, clientDatum)).toBe(false);
     const conflicting = structuredClone(header);
     conflicting.signedHeader.header.appHash = 'ff'.repeat(32);
@@ -376,13 +458,17 @@ describe('pure Tendermint update-session state transitions', () => {
     const clientDatum = fixtureClientDatum(header, fixtureConsensusState(scenario));
     const timestamp = header.signedHeader.header.time;
     clientDatum.state.consensusStates = new Map([
-      [{ ...header.trustedHeight, revisionHeight: header.signedHeader.header.height - 1n },
-        { timestamp, next_validators_hash: '11'.repeat(32), root: { hash: '' } }],
+      [
+        { ...header.trustedHeight, revisionHeight: header.signedHeader.header.height - 1n },
+        { timestamp, next_validators_hash: '11'.repeat(32), root: { hash: '' } },
+      ],
     ]);
     expect(tendermintHeaderConflictsWithStoredState(header, clientDatum)).toBe(true);
     clientDatum.state.consensusStates = new Map([
-      [{ ...header.trustedHeight, revisionHeight: header.signedHeader.header.height + 1n },
-        { timestamp, next_validators_hash: '11'.repeat(32), root: { hash: '' } }],
+      [
+        { ...header.trustedHeight, revisionHeight: header.signedHeader.header.height + 1n },
+        { timestamp, next_validators_hash: '11'.repeat(32), root: { hash: '' } },
+      ],
     ]);
     expect(tendermintHeaderConflictsWithStoredState(header, clientDatum)).toBe(true);
   });
@@ -406,18 +492,26 @@ describe('pure Tendermint update-session state transitions', () => {
     const header = fixtureHeader(capacityFixture.scenarios.adjacent_all_signed);
     header.trustedHeight.revisionNumber = 1n;
     const datum = fixtureClientDatum(header, fixtureConsensusState(capacityFixture.scenarios.adjacent_all_signed));
-    const state = { timestamp: header.signedHeader.header.time, next_validators_hash: '11'.repeat(32), root: { hash: '' } };
-    datum.state.consensusStates = new Map([
-      [{ revisionNumber: 0n, revisionHeight: 999_999n }, state],
-    ]);
+    const state = {
+      timestamp: header.signedHeader.header.time,
+      next_validators_hash: '11'.repeat(32),
+      root: { hash: '' },
+    };
+    datum.state.consensusStates = new Map([[{ revisionNumber: 0n, revisionHeight: 999_999n }, state]]);
     expect(tendermintHeaderConflictsWithStoredState(header, datum)).toBe(true);
     datum.state.consensusStates = new Map([
-      [{ revisionNumber: 2n, revisionHeight: 1n }, { ...state, timestamp: state.timestamp + 1n }],
+      [
+        { revisionNumber: 2n, revisionHeight: 1n },
+        { ...state, timestamp: state.timestamp + 1n },
+      ],
       [{ revisionNumber: 2n, revisionHeight: 1n }, state],
     ]);
     expect(tendermintHeaderConflictsWithStoredState(header, datum)).toBe(true);
     datum.state.consensusStates = new Map([
-      [{ revisionNumber: 0n, revisionHeight: 1n }, { ...state, timestamp: state.timestamp - 1n }],
+      [
+        { revisionNumber: 0n, revisionHeight: 1n },
+        { ...state, timestamp: state.timestamp - 1n },
+      ],
       [{ revisionNumber: 0n, revisionHeight: 1n }, state],
     ]);
     expect(tendermintHeaderConflictsWithStoredState(header, datum)).toBe(false);

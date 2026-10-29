@@ -78,7 +78,7 @@ pub type ValidatorOrderKey {
 }
 
 pub type SessionPhase {
-  /// An adjacent update needs only the target validator set's >2/3 commit.
+  /// Adjacent and unchanged-set updates stream the target set once.
   AdjacentTarget {
     target_accumulator: MerkleAccumulator,
     target_total_power: Int,

@@ -962,11 +962,12 @@ export class TendermintClientService {
       );
     }
 
-    const mode = plan.header.height === plan.trustedHeight.revisionHeight + 1n ? 'adjacent' : 'non_adjacent';
+    const mode = plan.header.height === plan.trustedHeight.revisionHeight + 1n
+      ? 'adjacent' : plan.trustedValidatorCount === 0n ? 'unchanged' : 'non_adjacent';
     const payloads = buildTendermintStagedPayloads({
       header: updateClientOperator.header,
       mode,
-      ...(mode === 'non_adjacent'
+      ...(mode !== 'adjacent'
         ? {
             expectedTrustedValidatorsHash: plan.trustedConsensusState.next_validators_hash,
           }
@@ -1632,7 +1633,8 @@ export class TendermintClientService {
         blockId: header.signedHeader.commit.blockId,
       },
       targetValidatorCount: BigInt(header.validatorSet.validators.length),
-      trustedValidatorCount: adjacent ? 0n : BigInt(header.trustedValidators.validators.length),
+      trustedValidatorCount: adjacent || sessionPlan.trustedValidatorCount === 0n
+        ? 0n : BigInt(header.trustedValidators.validators.length),
     };
     return sameTendermintUpdatePlan(sessionPlan, requestBoundPlan, this.lucidService.LucidImporter);
   }
