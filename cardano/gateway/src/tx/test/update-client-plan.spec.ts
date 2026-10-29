@@ -18,6 +18,17 @@ function buildPlan(validatorCount: number, mode: 'adjacent' | 'non_adjacent' = '
 }
 
 describe('Tendermint multi-transaction update plan', () => {
+  it('plans only target verification for an unchanged skipped-height update', () => {
+    const plan = buildTendermintUpdatePlan({
+      clientId: '07-tendermint-0',
+      clientMessageHash: MESSAGE_HASH,
+      mode: 'unchanged',
+      targetValidatorCount: 45,
+      trustedValidatorCount: 0,
+    });
+    expect(plan.steps).toHaveLength(10);
+    expect(plan.steps.filter((step) => step.kind === 'verify_trusted')).toEqual([]);
+  });
   it.each([
     [45, 8, 10],
     [100, 17, 19],

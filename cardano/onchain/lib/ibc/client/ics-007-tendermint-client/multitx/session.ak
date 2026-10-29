@@ -89,6 +89,8 @@ pub fn validate_plan_basic(plan: UpdatePlan) -> Bool {
     target_validator_count <= max_validator_count,
     if is_adjacent(plan) {
       trusted_validator_count == 0
+    } else if trusted_validator_count == 0 {
+      header.validators_hash == trusted_consensus_state.next_validators_hash
     } else {
       trusted_validator_count > 0 && trusted_validator_count <= max_validator_count
     },
@@ -106,7 +108,7 @@ pub fn initial_datum(
 ) -> SessionDatum {
   expect validate_plan_basic(plan)
   let phase =
-    if is_adjacent(plan) {
+    if plan.trusted_validator_count == 0 {
       AdjacentTarget {
         target_accumulator: merkle_accumulator.empty(),
         target_total_power: 0,
@@ -471,13 +473,16 @@ fn advance_target(
           expect
             target_root == plan.trusted_consensus_state.next_validators_hash
           expect target_quorum(next_signed, next_total)
+          // Equal authenticated roots make the two sets and their voting power identical.
+          let adjacent = is_adjacent(plan)
+          expect adjacent || trusted_quorum(plan, next_signed, next_total)
           Complete {
             target_root,
             target_total_power: next_total,
             target_signed_power: next_signed,
-            trusted_root: None,
-            trusted_total_power: 0,
-            trusted_signed_power: 0,
+            trusted_root: if adjacent { None } else { Some(target_root) },
+            trusted_total_power: if adjacent { 0 } else { next_total },
+            trusted_signed_power: if adjacent { 0 } else { next_signed },
           }
         } else {
           AdjacentTarget {
@@ -587,6 +592,15 @@ pub fn is_complete_valid(datum: SessionDatum) -> Bool {
             trusted_signed_power >= 0,
             trusted_signed_power <= trusted_total_power,
             trusted_quorum(plan, trusted_signed_power, trusted_total_power),
+            if plan.trusted_validator_count == 0 {
+              and {
+                target_root == plan.trusted_consensus_state.next_validators_hash,
+                trusted_total_power == target_total_power,
+                trusted_signed_power == target_signed_power,
+              }
+            } else {
+              True
+            },
           }
         },
       }

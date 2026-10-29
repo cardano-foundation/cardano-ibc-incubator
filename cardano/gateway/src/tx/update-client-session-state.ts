@@ -108,9 +108,11 @@ export function tendermintHeaderConflictsWithStoredState(header: Header, clientD
   for (const [height, state] of clientDatum.state.consensusStates) {
     if (height.revisionNumber !== header.trustedHeight.revisionNumber) continue;
     if (height.revisionHeight === candidate.height) {
-      return state.timestamp !== candidate.time ||
+      return (
+        state.timestamp !== candidate.time ||
         state.next_validators_hash.toLowerCase() !== candidate.nextValidatorsHash.toLowerCase() ||
-        state.root.hash.toLowerCase() !== candidate.appHash.toLowerCase();
+        state.root.hash.toLowerCase() !== candidate.appHash.toLowerCase()
+      );
     }
   }
   type ConsensusHeight = UpdatePlan['trustedHeight'];
@@ -130,8 +132,10 @@ export function tendermintHeaderConflictsWithStoredState(header: Header, clientD
       next = [height, state];
     }
   }
-  return (previous !== undefined && previous[1].timestamp >= candidate.time) ||
-    (next !== undefined && next[1].timestamp <= candidate.time);
+  return (
+    (previous !== undefined && previous[1].timestamp >= candidate.time) ||
+    (next !== undefined && next[1].timestamp <= candidate.time)
+  );
 }
 
 /** Signature checks remain in the bounded session verifier, not in this conflict predicate. */
@@ -242,7 +246,9 @@ export function deriveTendermintSessionUpdatePlan(input: DeriveTendermintSession
 
   validateValidatorCount('target', header.validatorSet.validators.length, false);
   const adjacent = tmHeader.height === trustedHeight.revisionHeight + 1n;
-  if (!adjacent) validateValidatorCount('trusted', header.trustedValidators.validators.length, false);
+  const singleSet =
+    adjacent || tmHeader.validatorsHash.toLowerCase() === trustedConsensusState.next_validators_hash.toLowerCase();
+  if (!singleSet) validateValidatorCount('trusted', header.trustedValidators.validators.length, false);
 
   validateDigest(tmHeader.validatorsHash, 'header.validatorsHash');
   validateDigest(tmHeader.nextValidatorsHash, 'header.nextValidatorsHash');
@@ -265,16 +271,16 @@ export function deriveTendermintSessionUpdatePlan(input: DeriveTendermintSession
       blockId: cloneBlockId(header.signedHeader.commit.blockId),
     },
     targetValidatorCount: BigInt(header.validatorSet.validators.length),
-    // Adjacent plans canonically commit to zero because the relayed trusted
-    // validator set is unused by the session validator in this mode.
-    trustedValidatorCount: adjacent ? 0n : BigInt(header.trustedValidators.validators.length),
+    // Zero selects target-only verification. Skipped heights also authenticate
+    // hash equality and apply the configured trusted quorum.
+    trustedValidatorCount: singleSet ? 0n : BigInt(header.trustedValidators.validators.length),
   };
 }
 
 /** Exact initial phase selected by session.initial_datum after plan validation. */
 export function initialTendermintSessionPhase(plan: UpdatePlan): SessionPhase {
   validatePlanValidatorCounts(plan);
-  if (isAdjacent(plan)) {
+  if (plan.trustedValidatorCount === 0n) {
     return {
       AdjacentTarget: {
         targetAccumulator: emptyTendermintMerkleAccumulator(),
@@ -494,6 +500,10 @@ function advanceAdjacentTarget(datum: SessionDatum, entries: TargetEntry[]): Ses
   if (targetRoot !== validateDigest(datum.plan.trustedConsensusState.next_validators_hash, 'trusted root')) {
     throw new Error('adjacent target root does not match the trusted consensus state');
   }
+  const adjacent = isAdjacent(datum.plan);
+  if (!adjacent && !trustedQuorum(datum.plan, signedPower, totalPower)) {
+    throw new Error('trusted validator overlap does not exceed the configured trust level');
+  }
   return {
     ...datum,
     phase: {
@@ -501,9 +511,9 @@ function advanceAdjacentTarget(datum: SessionDatum, entries: TargetEntry[]): Ses
         targetRoot,
         targetTotalPower: totalPower,
         targetSignedPower: signedPower,
-        trustedRoot: null,
-        trustedTotalPower: 0n,
-        trustedSignedPower: 0n,
+        trustedRoot: adjacent ? null : targetRoot,
+        trustedTotalPower: adjacent ? 0n : totalPower,
+        trustedSignedPower: adjacent ? 0n : signedPower,
       },
     },
   };
@@ -851,7 +861,10 @@ function requireBatchWithinPlan(currentCount: bigint, length: number, plannedCou
 
 function validatePlanValidatorCounts(plan: UpdatePlan): void {
   validateBigIntValidatorCount('target', plan.targetValidatorCount, false);
-  validateBigIntValidatorCount('trusted', plan.trustedValidatorCount, isAdjacent(plan));
+  const sameRoot =
+    validateDigest(plan.header.validatorsHash, 'target root') ===
+    validateDigest(plan.trustedConsensusState.next_validators_hash, 'trusted root');
+  validateBigIntValidatorCount('trusted', plan.trustedValidatorCount, isAdjacent(plan) || sameRoot);
   if (isAdjacent(plan) && plan.trustedValidatorCount !== 0n) {
     throw new Error('adjacent session plan must have zero trusted validators');
   }

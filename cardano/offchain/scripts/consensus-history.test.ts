@@ -1418,7 +1418,7 @@ async function fixture(
   };
 }
 
-Deno.test("signed staged clients initialize, verify real signatures and finalize both update modes", async () => {
+Deno.test("signed staged clients finalize adjacent and unchanged-set updates", async () => {
   for (const mode of ["adjacent", "non-adjacent"] as const) {
     const context = await fixture(
       0,

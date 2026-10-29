@@ -375,6 +375,141 @@ test real_non_adjacent_commit_and_memberships_reach_complete() {
   completed_non_adjacent() |> session.is_complete_valid
 }
 
+fn unchanged_initial() -> SessionDatum {
+  session.initial_datum(
+    session_token(),
+    #"44444444444444444444444444444444444444444444444444444444",
+    UpdatePlan { ..plan(1), trusted_validator_count: 0 },
+  )
+}
+
+test unchanged_set_skips_trusted_reconstruction_and_finalizes() {
+  let complete = session.advance(
+    unchanged_initial(),
+    VerifyTarget { entries: adjacent_entries() },
+  )
+  and {
+    session.is_complete_valid(complete),
+    session.validate_finalization(
+      complete,
+      live_client_with_older_trusted_height(1577836801000000000),
+      TxTime { valid_from: 1577836804000000000, valid_to: 1577836806000000000 },
+    ),
+  }
+}
+
+test unchanged_set_rejects_an_unauthenticated_root() {
+  let p = plan(1)
+  !session.validate_plan_basic(
+    UpdatePlan {
+      ..p,
+      trusted_validator_count: 0,
+      trusted_consensus_state: ConsensusState {
+        ..p.trusted_consensus_state,
+        next_validators_hash: #"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      },
+    },
+  )
+}
+
+test unchanged_set_still_requires_custom_trusted_quorum() fail {
+  let initial = unchanged_initial()
+  let strict = SessionDatum {
+    ..initial,
+    plan: UpdatePlan {
+      ..initial.plan,
+      trust_level: unchecked_rational.new(3, 4),
+    },
+  }
+  expect [first, second, third, fourth] = adjacent_entries()
+  session.advance(
+    strict,
+    VerifyTarget {
+      entries: [
+        first,
+        second,
+        third,
+        TargetEntry { ..fourth, commit_sig: absent_signature() },
+      ],
+    },
+  )
+    |> session.is_complete_valid
+}
+
+test unchanged_set_accepts_signatures_above_custom_trusted_quorum() {
+  let initial = unchanged_initial()
+  session.advance(
+    SessionDatum {
+      ..initial,
+      plan: UpdatePlan {
+        ..initial.plan,
+        trust_level: unchecked_rational.new(3, 4),
+      },
+    },
+    VerifyTarget { entries: adjacent_entries() },
+  )
+    |> session.is_complete_valid
+}
+
+test unchanged_set_rejects_changed_voting_power() fail {
+  expect [first, ..rest] = adjacent_entries()
+  session.advance(
+    unchanged_initial(),
+    VerifyTarget {
+      entries: [
+        TargetEntry {
+          ..first,
+          target_validator: Validator {
+            ..first.target_validator,
+            voting_power: 2,
+          },
+        },
+        ..rest
+      ],
+    },
+  )
+    |> session.is_complete_valid
+}
+
+test unchanged_set_rejects_invalid_signatures() fail {
+  expect [first, ..rest] = adjacent_entries()
+  session.advance(
+    unchanged_initial(),
+    VerifyTarget {
+      entries: [
+        TargetEntry {
+          ..first,
+          commit_sig: CommitSig { ..first.commit_sig, signature: #"00" },
+        },
+        ..rest
+      ],
+    },
+  )
+    |> session.is_complete_valid
+}
+
+test unchanged_set_rejects_duplicate_validators() fail {
+  expect [first, ..] = adjacent_entries()
+  session.advance(unchanged_initial(), VerifyTarget { entries: [first, first] })
+    |> session.is_complete_valid
+}
+
+test unchanged_set_rejects_insufficient_target_quorum() fail {
+  expect [first, second, third, fourth] = adjacent_entries()
+  session.advance(
+    unchanged_initial(),
+    VerifyTarget {
+      entries: [
+        first,
+        second,
+        TargetEntry { ..third, commit_sig: absent_signature() },
+        TargetEntry { ..fourth, commit_sig: absent_signature() },
+      ],
+    },
+  )
+    |> session.is_complete_valid
+}
+
 test finalization_binds_live_client_and_time() {
   session.validate_finalization(
     completed_adjacent(),

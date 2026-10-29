@@ -115,7 +115,13 @@ export function buildTendermintStagedPayloads(input: BuildTendermintStagedPayloa
     throw new Error(`target validator root mismatch: expected ${expectedTargetRoot}, computed ${targetValidatorRoot}`);
   }
 
-  if (input.mode === 'adjacent') {
+  if (
+    input.mode === 'unchanged' &&
+    targetValidatorRoot !== normalizeDigest(input.expectedTrustedValidatorsHash ?? '', 'expectedTrustedValidatorsHash')
+  ) {
+    throw new Error('unchanged target root does not match the trusted consensus state');
+  }
+  if (input.mode === 'adjacent' || input.mode === 'unchanged') {
     return {
       targetValidatorRoot,
       trustedValidatorRoot: null,

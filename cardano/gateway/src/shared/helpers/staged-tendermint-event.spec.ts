@@ -90,6 +90,18 @@ function completeSession(): SessionDatum {
 }
 
 describe('reconstructStagedTendermintHeader', () => {
+  it('reconstructs an unchanged trusted set from target batches alone', () => {
+    const session = completeSession();
+    session.plan.trustedValidatorCount = 0n;
+    session.plan.trustedConsensusState.next_validators_hash = session.plan.header.validatorsHash;
+    if (!('Complete' in session.phase)) throw new Error('expected complete session');
+    session.phase.Complete.trustedTotalPower = session.phase.Complete.targetTotalPower;
+    const header = reconstructStagedTendermintHeader(session, [
+      { VerifyTarget: { entries: [targetEntry(TARGET_HIGH, '71'), targetEntry(TARGET_LOW, '72')] } },
+    ]);
+    expect(header.trustedValidators.validators).toEqual(header.validatorSet.validators);
+    expect(header.trustedHeight).toEqual(session.plan.trustedHeight);
+  });
   it('rebuilds validator sets and aligned commit signatures from durable batches', () => {
     const session = completeSession();
     const redeemers: SpendSessionRedeemer[] = [

@@ -54,7 +54,8 @@ export function reconstructStagedTendermintHeader(
   const targetValidators = targetEntries.map((entry) => entry.targetValidator);
   const commitSignatures = targetEntries.map((entry) => entry.commitSig);
   const adjacent = plan.header.height === plan.trustedHeight.revisionHeight + 1n;
-  const eventTrustedValidators = adjacent ? targetValidators : trustedValidators;
+  const singleSet = plan.trustedValidatorCount === 0n;
+  const eventTrustedValidators = singleSet ? targetValidators : trustedValidators;
 
   requireCount('target validators', targetValidators.length, plan.targetValidatorCount);
   requireCount('commit signatures', commitSignatures.length, plan.targetValidatorCount);
