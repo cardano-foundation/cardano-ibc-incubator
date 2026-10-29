@@ -87,28 +87,38 @@ Pass a workload JSON file as the second argument to change the assumptions. Amou
 
 The model reports wallet depletion separately from fees, recipient top-ups and protocol reserve changes. Protocol-held ADA includes sender-owned reserves and must not all be attributed to the relayer. Recipient top-ups and unreimbursed protocol contributions need an explicit funding policy. Options include sender-funded requests, recipient funding, a protocol sponsor or a separately agreed relayer payment. Any payment must be explicit and preserve user transfer principal. A script's ability to reclaim funds at shutdown is not a funding policy.
 
-`relayer-cost-baseline.json` retains the first measured summary and hashes of its full report and transaction journal. Recurring components round up independently to whole lovelace. Their rounded sums can differ slightly from the rounded wallet debit. Reconciliation is checked per transaction before averaging. The 30-day projection is a linear funding scenario. Running that workload for 30 days still requires capacity and pruning qualification.
+`relayer-cost-baseline.json` retains the current summary and hashes of its evidence. It also records the previous baseline for comparison. Recurring components round up independently to whole lovelace. Their rounded sums can differ slightly from the rounded wallet debit. Reconciliation is checked per transaction before averaging. The 30-day projection is a linear funding scenario. Running that workload for 30 days still requires capacity and pruning qualification.
 
 ### Recorded results
 
-The October 28, 2026 compiled-validator emulator run reconciled 143 transactions. The send/acknowledgement and existing-voucher figures below are warmed means. The first-seen voucher figure is a single observation. The Cardano fees use the September 9, 2026 parameter snapshot.
+The October 29, 2026 rerun uses main commit `7ea37e4d` with the reference-script selection from #953 and Hermes packing from #955. It reconciled 143 measured Cardano transactions. The Aiken version, blueprint hash, fee parameters and workload match the October 28 baseline. The send/acknowledgement and existing-voucher figures are warmed means. The first-seen voucher figure is a single observation. Generated fixture wallets can cause small variations between runs. The Cardano fees still use the September 9, 2026 parameter snapshot.
 
-The [Coinbase spot API](https://api.coinbase.com/v2/prices/ADA-USD/spot) returned **0.2022 USD per ADA** when checked at **2026-10-28 16:11:44 UTC**. The USD figures below use that fixed quote. The quote timestamp and conversions are also recorded in `relayer-cost-baseline.json`.
+The [Coinbase spot API](https://api.coinbase.com/v2/prices/ADA-USD/spot) returned **0.20543 USD per ADA** at **2026-10-29 15:49:33 UTC**. Both Cardano baselines use this same quote below so exchange-rate movement does not enter the reported saving. The original quote and the complete new response are recorded in `relayer-cost-baseline.json`.
 
-| Operation | Relayer fees in ADA | Relayer wallet debit in ADA | Wallet debit in USD |
+| Operation | Previous wallet debit in ADA | Current fees in ADA | Current wallet debit in ADA | Current wallet debit in USD |
+| --- | ---: | ---: | ---: | ---: |
+| ADA send plus acknowledgement | 4.76 | 3.91 | 3.91 | $0.80 |
+| Existing voucher receipt | 4.38 | 2.70 | 4.16 | $0.85 |
+| First-seen voucher receipt | 7.87 | 3.06 | 7.64 | $1.57 |
+
+At 100 outbound ADA transfers and 100 inbound voucher transfers per day, including one new trace, projected wallet depletion falls from **916.90 to 810.41 ADA per day**, an **11.6% reduction**. At the common quote that is **$188.36 to $166.48 per day**, saving **$21.88 per day or $656.27 over 30 days**. Cardano fees fall by 13.9%. The entire wallet saving comes from lower fees. Recipient funding and protocol reserve flows are unchanged. One-time 16-lane initialization fees also fall from 1.994221 to 1.488223 ADA and are outside this already-funded-deployment projection.
+
+The 30-day Cardano funding scenario now consumes **24,312.33 ADA ($4,994.48)**. The conservative collateral reserve remains **1,200 ADA ($246.52)**. Collateral is available capital rather than a consumed expense. Including the 10 ADA spendable reserve brings projected peak funding to **25,522.33 ADA ($5,243.05)**. These figures include recipient top-ups and relayer contributions to protocol outputs. They exclude hosting, client maintenance, counterparty fees and pruning. They still require live-chain, capacity and pruning qualification.
+
+Injective comparisons are recorded separately. The first two rows below come from the retained October 29 live Hermes runs. They use 13-pool signed source fixtures and 24 confirmation headers with five fresh-state observations per mode. The last row is a fresh cold replay of 64 full bodies and 32 headers from a five-pool local ledger with one transaction-bearing block. It submits through the native Injective application's socket ABCI interface with a controlled clock. Each row compares the same evidence under both packing modes. The runtime Go sources match the existing native build. No light-client module change is involved.
+
+| Available bodies and measurement | Previous complete update fee in INJ | Packed complete update fee in INJ | Fee reduction |
 | --- | ---: | ---: | ---: |
-| ADA send plus acknowledgement | 4.76 | 4.76 | $0.96 |
-| Existing voucher receipt | 2.92 | 4.38 | $0.88 |
-| First-seen voucher receipt | 3.29 | 7.87 | $1.59 |
+| 1 body, live Hermes median | 0.0103862800 | 0.0103723015 | 0.1% |
+| 4 bodies, live Hermes median | 0.0122104730 | 0.0113448160 | 7.1% |
+| 64 bodies, native replay | 0.0711049890 | 0.0593359560 | 16.55% |
 
-At 100 outbound ADA transfers and 100 inbound voucher transfers per day, including one new trace, the model projects **916.90 ADA ($185.40) of wallet depletion per day** before reimbursement. The 30-day projection is **27,506.92 ADA ($5,561.90)**. Wallet depletion includes recipient top-ups and contributions held in protocol outputs. It excludes hosting, client updates, counterparty fees and pruning. An already funded deployment is assumed.
+All observations use 500000000 INJ base units per gas and a 1.8 gas multiplier. The live figures exclude the separate packet receipt transaction. The cold replay reconciles both wallets against charged fees and produces the same final checkpoint in both modes. The [recorded INJ quote](https://api.coinbase.com/v2/prices/INJ-USD/spot) was $8.0855 at the same observation time. Four bodies is a limit rather than a batching target. Hermes packs bodies already available and does not hold updates to accumulate more. The report assumes neither a 75% fee reduction nor four bodies in every production update. A daily INJ budget needs observed update frequency, backlog sizes, stake-table changes and representative source activity. These sample costs are not added to the Cardano funding projection.
 
-The conservative collateral reserve is **1,200 ADA ($242.64)**. Collateral is available capital rather than a consumed expense. Including the 10 ADA spendable reserve brings projected peak funding to **28,716.92 ADA ($5,806.56)**. These funding projections still require live-chain, capacity and pruning qualification.
-
-The full report, transaction journal and short resource-collector check are committed as gzip files in `evidence/`, about 296 KiB combined. `artifactFiles` in the summary identifies each file. `artifactSha256` records hashes of their uncompressed contents. For example, extract the full transaction report with:
+The full report, transaction journal, counterparty comparisons and historical short resource-collector check are committed as gzip files in `evidence/`, about 0.6 MB combined. The previous full Cardano report and journal have been replaced by the current run. `artifactFiles` identifies each file and `artifactSha256` records hashes of their uncompressed contents. The counterparty artifact includes the native replay inputs and results, all twenty live fee observations and four representative signed transaction sets. The remaining live transaction data is retained locally. For example, extract the full Cardano transaction report with:
 
 ```sh
-gzip -dc scripts/benchmark/evidence/relayer-costs-2026-10-28.json.gz \
+gzip -dc scripts/benchmark/evidence/relayer-costs-2026-10-29.json.gz \
   > /tmp/relayer-costs-recorded.json
 ```
 
