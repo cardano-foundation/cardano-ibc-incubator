@@ -71,10 +71,15 @@ describe('LucidService staged Tendermint transaction wiring', () => {
     expect(builder.addSignerKey).toHaveBeenCalledWith('owner-key-hash');
   });
 
-  it('spends and recreates the unique session output for one verification batch', async () => {
+  it('preserves the existing session reserve when advancing a verification batch', async () => {
     const builder = createBuilder();
     const service = createService(builder);
-    const session = { txHash: 'session-input', outputIndex: 2 };
+    // The trusted accumulator's datum shrinks when its count advances from 30 to 36.
+    const session = {
+      txHash: 'session-input',
+      outputIndex: 2,
+      assets: Object.freeze({ lovelace: 5_434_910n, 'session-unit': 1n }),
+    };
 
     await service.createUnsignedAdvanceTendermintSessionTransaction(
       session,
@@ -89,7 +94,7 @@ describe('LucidService staged Tendermint transaction wiring', () => {
     expect(builder.pay.ToContract).toHaveBeenCalledWith(
       'addr_test1session',
       { kind: 'inline', value: 'next-datum' },
-      { 'session-unit': 1n },
+      { lovelace: 5_434_910n, 'session-unit': 1n },
     );
     expect(builder.addSignerKey).toHaveBeenCalledWith('signer-key-hash');
   });

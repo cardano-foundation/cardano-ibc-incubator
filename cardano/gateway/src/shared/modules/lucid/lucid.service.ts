@@ -1026,7 +1026,7 @@ export class LucidService implements OnModuleInit {
       .pay.ToContract(
         this.getTendermintUpdateSessionAddress(),
         { kind: 'inline', value: encodedNextSessionDatum },
-        { [sessionTokenUnit]: 1n },
+        { ...sessionUtxo.assets, [sessionTokenUnit]: 1n },
       )
       .addSignerKey(signerKeyHash);
   }
