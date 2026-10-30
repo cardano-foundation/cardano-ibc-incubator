@@ -133,9 +133,12 @@ validator spend_tendermint_update_session(host_state_nft_policy_id: PolicyId) {
           output_datum == expected_datum,
         }
       }
+      // The canonical client pins the session policy. Its exact burn validates
+      // the immutable plan, while this spend still checks the complete phase,
+      // owner and the client/HostState threads.
       Finalize -> and {
           list.has(extra_signatories, datum.owner),
-          session.is_complete_valid(datum),
+          session.is_complete_from_authenticated_plan(datum),
           require_burn(datum, outputs, transaction),
           require_client_continuation(datum, inputs, outputs),
           require_host_state_update(

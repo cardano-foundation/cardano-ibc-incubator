@@ -10,6 +10,7 @@ import {
   type Script,
   type TxSignBuilder,
   type UTxO,
+  utxoToCore,
   validatorToRewardAddress,
   walletFromSeed,
 } from "@lucid-evolution/lucid";
@@ -61,6 +62,7 @@ import parameters from "./fixtures/mainnet-protocol-parameters.json" with {
 const MAX_BYTES = parameters.maxTxSize;
 const MAX_MEMORY = BigInt(parameters.maxTxExMem);
 const MAX_STEPS = BigInt(parameters.maxTxExSteps);
+const MAX_STAGED_REFERENCE_BYTES = 61_500;
 const HOST_POLICY = "11".repeat(28);
 const HOST_NAME = fromText("ibc_host_state");
 const TRUSTING_PERIOD = 120_000_000_000n;
@@ -912,7 +914,10 @@ async function fixture(
       steps: Number(units.steps()),
     };
   }
-  async function update(wrongProcessingTime = false) {
+  async function update(
+    wrongProcessingTime = false,
+    forgedSessionPlan = false,
+  ) {
     const session = staged
       ? await submitHistorySession({
         lucid,
@@ -927,6 +932,19 @@ async function fixture(
         owner: signer,
       })
       : undefined;
+    if (forgedSessionPlan) {
+      assert(session);
+      const receipt = Data.from(session.utxo.datum!) as Constr<Data>;
+      const plan = receipt.fields[2] as Constr<Data>;
+      const commit = plan.fields[7] as Constr<Data>;
+      (commit.fields[2] as Constr<Data>).fields[0] = "ff".repeat(32);
+      // Deliberately corrupt authenticated fixture state. The policy's final
+      // burn must reject it even though the lighter spending checks delegate
+      // immutable plan validation to that policy.
+      session.utxo.datum = Data.to(receipt);
+      emulator.ledger[session.utxo.txHash + session.utxo.outputIndex].utxo
+        .datum = session.utxo.datum;
+    }
     const updateNow = emulator.now();
     const updateValidToNs = BigInt(updateNow + 30_000) * 1_000_000n;
     const newHeight = adjacentTmHeader.fields[2] as bigint;
@@ -1040,6 +1058,27 @@ async function fixture(
     const units = CML.compute_total_ex_units(
       signed.toTransaction().witness_set().redeemers()!,
     );
+    let referencedScriptBytes = 0;
+    const referenceInputs = signed.toTransaction().body().reference_inputs();
+    for (
+      let index = 0;
+      referenceInputs && index < referenceInputs.len();
+      index++
+    ) {
+      const ref = referenceInputs.get(index);
+      const entry =
+        emulator.ledger[ref.transaction_id().to_hex() + Number(ref.index())];
+      assert(entry);
+      const script = utxoToCore(entry.utxo).output().script_ref()
+        ?.as_plutus_v3();
+      if (script) referencedScriptBytes += script.to_raw_bytes().length;
+    }
+    if (session && !governedPlan) {
+      assert(
+        referencedScriptBytes <= MAX_STAGED_REFERENCE_BYTES,
+        `finalization references ${referencedScriptBytes} script bytes`,
+      );
+    }
     const bytes = signed.toCBOR().length / 2;
     assert(bytes <= MAX_BYTES - 750, `update uses ${bytes} signed bytes`);
     assert(
@@ -1072,6 +1111,8 @@ async function fixture(
       return {
         operation: `staged ${stagedMode} update`,
         bytes,
+        referencedScriptBytes,
+        fee: Number(signed.toTransaction().body().fee()),
         memory: Number(units.mem()),
         steps: Number(units.steps()),
       };
@@ -1435,6 +1476,23 @@ Deno.test("signed staged clients finalize adjacent and unchanged-set updates", a
     );
     console.log(JSON.stringify(await context.update()));
   }
+});
+
+Deno.test("signed staged finalization rejects a forged immutable session plan", async () => {
+  const context = await fixture(
+    0,
+    false,
+    false,
+    true,
+    true,
+    true,
+    false,
+    true,
+    undefined,
+    undefined,
+    "adjacent",
+  );
+  await assertRejects(() => context.update(false, true));
 });
 
 Deno.test("signed staged recovery stays bounded across 1, 100 and 10000 historical checkpoints", async () => {
