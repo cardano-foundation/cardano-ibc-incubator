@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-10-29T15:54:11.932Z",
+  "generatedAt": "2026-10-30T13:55:18.045Z",
   "denoVersion": "2.9.6",
-  "blueprintSha256": "6fc6d47a5f48a4de4e68cb9ccf25c4558e2ef99e9424df48c01ae364d20ed2d2",
+  "blueprintSha256": "b918d5eda9e0a86c09255abe2e6ceb86619fc9da4c6822879ca6b5d68acf6fdc",
   "mode": "Signed transactions submitted to a compiled-validator emulator. Counterparty checkpoints and initial deployment are authenticated fixture pre-state",
-  "sourceCommit": "b50d406374a33580b0a4a8a52f105a2846a8c96b",
-  "sourceMainCommit": "7ea37e4da0f60072dac1d208962c6d589bed054e",
-  "hermesCommit": "2743a328fc6bb37988251bb73c3bf96006eb51ae",
+  "sourceCommit": "f471b3503b8a1132b213b12759b57ea9d45c40c4",
+  "sourceMainCommit": "45f7075faf6e181ca00a7694cd913553f59b0e1e",
+  "hermesCommit": "6a1ee216e7a3abf4e2cf9583271b794d0b5e19ec",
   "aikenVersion": "v1.1.24",
-  "scope": "Cardano transaction funding projection at a fixed retained parameter snapshot. Counterparty measurements are separate comparisons and are not added to this daily budget. Hosting, client maintenance cadence, pruning and production capacity remain unqualified.",
+  "scope": "Current-main Cardano packet funding plus separately measured client updates. All fees use the retained September 9, 2026 mainnet parameter snapshot. This is not a contemporaneous mainnet fee attestation or a complete operating-cost quote",
   "parameters": {
     "network": "mainnet",
     "epoch": 654,
@@ -22,7 +22,8 @@
     "priceStep": 7.21e-05,
     "minFeeRefScriptCostPerByte": 15
   },
-  "reconciledTransactions": 143,
+  "reconciledPacketTransactions": 223,
+  "reconciledClientUpdateTransactions": 44,
   "rounding": "Recurring components are rounded up independently to whole lovelace. Transaction balances reconcile exactly before averaging.",
   "walletSelection": "Generated fixture keys and change selection can cause small variations between runs. Collateral is reported as reserved capital, not an expense.",
   "channelLaneSetup": {
@@ -36,20 +37,47 @@
       "profileSamples": 16,
       "profile": {
         "name": "outbound-ada-ack",
-        "relayerNetDebitLovelace": 3910377,
-        "relayerFeesLovelace": 3907414,
+        "relayerNetDebitLovelace": 3871302,
+        "relayerFeesLovelace": 3868339,
         "recipientTopUpLovelace": 0,
         "protocolReserveIncreaseLovelace": 3002964,
-        "collateralLovelace": 232341063
+        "collateralLovelace": 232946821
       },
       "basis": "Mean of operations 17..32 after all 16 lanes have been used. No pruning",
       "coldStartProfile": {
         "name": "outbound-ada-ack",
-        "relayerNetDebitLovelace": 4205128,
-        "relayerFeesLovelace": 3877568,
+        "relayerNetDebitLovelace": 4167932,
+        "relayerFeesLovelace": 3840372,
         "recipientTopUpLovelace": 0,
         "protocolReserveIncreaseLovelace": 3327560,
         "collateralLovelace": 300000000
+      }
+    },
+    {
+      "name": "outbound-ada-ack-pairs",
+      "operations": 32,
+      "profileSamples": 16,
+      "profile": {
+        "name": "outbound-ada-ack-pairs",
+        "relayerNetDebitLovelace": 3168368,
+        "relayerFeesLovelace": 3165405,
+        "recipientTopUpLovelace": 0,
+        "protocolReserveIncreaseLovelace": 3002964,
+        "collateralLovelace": 244209617
+      },
+      "basis": "Per-transfer mean of operations 17..32 with two already-ready acknowledgements at a common proof height on distinct lanes. Sends remain single. No pruning or collection timer",
+      "coldStartProfile": {
+        "name": "outbound-ada-ack-pairs",
+        "relayerNetDebitLovelace": 3468098,
+        "relayerFeesLovelace": 3140538,
+        "recipientTopUpLovelace": 0,
+        "protocolReserveIncreaseLovelace": 3327560,
+        "collateralLovelace": 300000000
+      },
+      "pairing": {
+        "requested": 16,
+        "accepted": 16,
+        "fallback": 0
       }
     },
     {
@@ -58,8 +86,8 @@
       "profileSamples": 1,
       "profile": {
         "name": "outbound-native-ack",
-        "relayerNetDebitLovelace": 4189414,
-        "relayerFeesLovelace": 3870474,
+        "relayerNetDebitLovelace": 4150801,
+        "relayerFeesLovelace": 3831861,
         "recipientTopUpLovelace": 0,
         "protocolReserveIncreaseLovelace": 3318940,
         "collateralLovelace": 300000000
@@ -72,8 +100,8 @@
       "profileSamples": 1,
       "profile": {
         "name": "outbound-ada-timeout",
-        "relayerNetDebitLovelace": 4393713,
-        "relayerFeesLovelace": 4066153,
+        "relayerNetDebitLovelace": 4414250,
+        "relayerFeesLovelace": 4086690,
         "recipientTopUpLovelace": 0,
         "protocolReserveIncreaseLovelace": 327560,
         "collateralLovelace": 300000000
@@ -86,8 +114,8 @@
       "profileSamples": 1,
       "profile": {
         "name": "outbound-ada-error",
-        "relayerNetDebitLovelace": 4363264,
-        "relayerFeesLovelace": 4035704,
+        "relayerNetDebitLovelace": 4375667,
+        "relayerFeesLovelace": 4048107,
         "recipientTopUpLovelace": 0,
         "protocolReserveIncreaseLovelace": 327560,
         "collateralLovelace": 300000000
@@ -100,8 +128,8 @@
       "profileSamples": 1,
       "profile": {
         "name": "outbound-ada-return",
-        "relayerNetDebitLovelace": 6634561,
-        "relayerFeesLovelace": 6307001,
+        "relayerNetDebitLovelace": 6607384,
+        "relayerFeesLovelace": 6279824,
         "recipientTopUpLovelace": 0,
         "protocolReserveIncreaseLovelace": 327560,
         "collateralLovelace": 300000000
@@ -114,17 +142,17 @@
       "profileSamples": 16,
       "profile": {
         "name": "receive-existing-voucher",
-        "relayerNetDebitLovelace": 4158880,
-        "relayerFeesLovelace": 2702369,
+        "relayerNetDebitLovelace": 4170457,
+        "relayerFeesLovelace": 2713946,
         "recipientTopUpLovelace": 1295425,
         "protocolReserveIncreaseLovelace": 161087,
-        "collateralLovelace": 231306365
+        "collateralLovelace": 231105567
       },
       "basis": "Mean of operations 17..32 after all 16 lanes have been used. No pruning",
       "coldStartProfile": {
         "name": "receive-existing-voucher",
-        "relayerNetDebitLovelace": 4282401,
-        "relayerFeesLovelace": 2661841,
+        "relayerNetDebitLovelace": 4295230,
+        "relayerFeesLovelace": 2674670,
         "recipientTopUpLovelace": 1293000,
         "protocolReserveIncreaseLovelace": 327560,
         "collateralLovelace": 300000000
@@ -136,8 +164,8 @@
       "profileSamples": 1,
       "profile": {
         "name": "receive-new-voucher",
-        "relayerNetDebitLovelace": 7644173,
-        "relayerFeesLovelace": 3058333,
+        "relayerNetDebitLovelace": 7658171,
+        "relayerFeesLovelace": 3072331,
         "recipientTopUpLovelace": 1293000,
         "protocolReserveIncreaseLovelace": 3292840,
         "collateralLovelace": 300000000
@@ -160,40 +188,194 @@
       "reimbursementDelayDays": 0
     },
     "collateralPolicy": "Conservative dedicated collateral inputs for each concurrent transaction, using the observed wallet UTxO shape",
-    "dailyRelayerNetDebitLovelace": 810410993,
-    "dailyRelayerFeesLovelace": 661334264,
+    "dailyRelayerNetDebitLovelace": 807663614,
+    "dailyRelayerFeesLovelace": 658586885,
     "dailyRecipientTopUpLovelace": 129540075,
     "dailyProtocolReserveIncreaseLovelace": 319536853,
     "collateralReserveLovelace": 1200000000,
-    "peakFundingLovelace": 25522329790,
+    "peakFundingLovelace": 25439908420,
     "reimbursementReceivableLovelace": 0,
-    "netFundingConsumedLovelace": 24312329790
+    "netFundingConsumedLovelace": 24229908420,
+    "days": [
+      {
+        "day": 1,
+        "netFundingConsumedLovelace": 807663614,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 2,
+        "netFundingConsumedLovelace": 1615327228,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 3,
+        "netFundingConsumedLovelace": 2422990842,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 4,
+        "netFundingConsumedLovelace": 3230654456,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 5,
+        "netFundingConsumedLovelace": 4038318070,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 6,
+        "netFundingConsumedLovelace": 4845981684,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 7,
+        "netFundingConsumedLovelace": 5653645298,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 8,
+        "netFundingConsumedLovelace": 6461308912,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 9,
+        "netFundingConsumedLovelace": 7268972526,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 10,
+        "netFundingConsumedLovelace": 8076636140,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 11,
+        "netFundingConsumedLovelace": 8884299754,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 12,
+        "netFundingConsumedLovelace": 9691963368,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 13,
+        "netFundingConsumedLovelace": 10499626982,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 14,
+        "netFundingConsumedLovelace": 11307290596,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 15,
+        "netFundingConsumedLovelace": 12114954210,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 16,
+        "netFundingConsumedLovelace": 12922617824,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 17,
+        "netFundingConsumedLovelace": 13730281438,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 18,
+        "netFundingConsumedLovelace": 14537945052,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 19,
+        "netFundingConsumedLovelace": 15345608666,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 20,
+        "netFundingConsumedLovelace": 16153272280,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 21,
+        "netFundingConsumedLovelace": 16960935894,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 22,
+        "netFundingConsumedLovelace": 17768599508,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 23,
+        "netFundingConsumedLovelace": 18576263122,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 24,
+        "netFundingConsumedLovelace": 19383926736,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 25,
+        "netFundingConsumedLovelace": 20191590350,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 26,
+        "netFundingConsumedLovelace": 20999253964,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 27,
+        "netFundingConsumedLovelace": 21806917578,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 28,
+        "netFundingConsumedLovelace": 22614581192,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 29,
+        "netFundingConsumedLovelace": 23422244806,
+        "reimbursementLovelace": 0
+      },
+      {
+        "day": 30,
+        "netFundingConsumedLovelace": 24229908420,
+        "reimbursementLovelace": 0
+      }
+    ]
   },
-  "projectionScope": "Linear funding scenario with no pruning or capacity qualification. Protocol reserve changes include sender-owned reserves. They are not all relayer-funded or reimbursable to the relayer.",
+  "projectionScope": "Default packet-only funding for 100 outbound ADA transfers with acknowledgements and 100 inbound vouchers per day. One inbound trace is new. Client maintenance is added only in the explicit scenarios below",
   "comparison": {
-    "previousReportCommit": "eb707583ee4967b9b85beb8bc452551d9cc7c05b",
-    "previousGeneratedAt": "2026-10-28T14:35:40.598Z",
-    "sameBlueprint": true,
+    "previousReportCommit": "0eb62bd4476dfcaf42a055eef39bd63be4010bb8",
+    "previousMainCommit": "7ea37e4da0f60072dac1d208962c6d589bed054e",
+    "previousGeneratedAt": "2026-10-29T15:54:11.932Z",
+    "sameBlueprint": false,
+    "sameCompiler": true,
     "sameFeeParameters": true,
-    "sameWorkload": true,
+    "samePacketWorkload": true,
     "previousProfiles": [
       {
         "name": "outbound-ada-ack",
         "profile": {
           "name": "outbound-ada-ack",
-          "relayerNetDebitLovelace": 4758526,
-          "relayerFeesLovelace": 4755563,
+          "relayerNetDebitLovelace": 3910377,
+          "relayerFeesLovelace": 3907414,
           "recipientTopUpLovelace": 0,
           "protocolReserveIncreaseLovelace": 3002964,
-          "collateralLovelace": 218758100
+          "collateralLovelace": 232341063
         }
       },
       {
         "name": "outbound-native-ack",
         "profile": {
           "name": "outbound-native-ack",
-          "relayerNetDebitLovelace": 5035567,
-          "relayerFeesLovelace": 4716627,
+          "relayerNetDebitLovelace": 4189414,
+          "relayerFeesLovelace": 3870474,
           "recipientTopUpLovelace": 0,
           "protocolReserveIncreaseLovelace": 3318940,
           "collateralLovelace": 300000000
@@ -203,8 +385,8 @@
         "name": "outbound-ada-timeout",
         "profile": {
           "name": "outbound-ada-timeout",
-          "relayerNetDebitLovelace": 5242737,
-          "relayerFeesLovelace": 4915177,
+          "relayerNetDebitLovelace": 4393713,
+          "relayerFeesLovelace": 4066153,
           "recipientTopUpLovelace": 0,
           "protocolReserveIncreaseLovelace": 327560,
           "collateralLovelace": 300000000
@@ -214,8 +396,8 @@
         "name": "outbound-ada-error",
         "profile": {
           "name": "outbound-ada-error",
-          "relayerNetDebitLovelace": 5213186,
-          "relayerFeesLovelace": 4885626,
+          "relayerNetDebitLovelace": 4363264,
+          "relayerFeesLovelace": 4035704,
           "recipientTopUpLovelace": 0,
           "protocolReserveIncreaseLovelace": 327560,
           "collateralLovelace": 300000000
@@ -225,8 +407,8 @@
         "name": "outbound-ada-return",
         "profile": {
           "name": "outbound-ada-return",
-          "relayerNetDebitLovelace": 7925816,
-          "relayerFeesLovelace": 7598256,
+          "relayerNetDebitLovelace": 6634561,
+          "relayerFeesLovelace": 6307001,
           "recipientTopUpLovelace": 0,
           "protocolReserveIncreaseLovelace": 327560,
           "collateralLovelace": 300000000
@@ -236,19 +418,19 @@
         "name": "receive-existing-voucher",
         "profile": {
           "name": "receive-existing-voucher",
-          "relayerNetDebitLovelace": 4375483,
-          "relayerFeesLovelace": 2918972,
+          "relayerNetDebitLovelace": 4158880,
+          "relayerFeesLovelace": 2702369,
           "recipientTopUpLovelace": 1295425,
           "protocolReserveIncreaseLovelace": 161087,
-          "collateralLovelace": 227830367
+          "collateralLovelace": 231306365
         }
       },
       {
         "name": "receive-new-voucher",
         "profile": {
           "name": "receive-new-voucher",
-          "relayerNetDebitLovelace": 7871912,
-          "relayerFeesLovelace": 3286072,
+          "relayerNetDebitLovelace": 7644173,
+          "relayerFeesLovelace": 3058333,
           "recipientTopUpLovelace": 1293000,
           "protocolReserveIncreaseLovelace": 3292840,
           "collateralLovelace": 300000000
@@ -270,63 +452,213 @@
         "reimbursementDelayDays": 0
       },
       "collateralPolicy": "Conservative dedicated collateral inputs for each concurrent transaction, using the observed wallet UTxO shape",
-      "dailyRelayerNetDebitLovelace": 916897329,
-      "dailyRelayerFeesLovelace": 767820600,
+      "dailyRelayerNetDebitLovelace": 810410993,
+      "dailyRelayerFeesLovelace": 661334264,
       "dailyRecipientTopUpLovelace": 129540075,
       "dailyProtocolReserveIncreaseLovelace": 319536853,
       "collateralReserveLovelace": 1200000000,
-      "peakFundingLovelace": 28716919870,
+      "peakFundingLovelace": 25522329790,
       "reimbursementReceivableLovelace": 0,
-      "netFundingConsumedLovelace": 27506919870
+      "netFundingConsumedLovelace": 24312329790
     },
-    "dailyWalletDebitSavingLovelace": 106486336,
-    "dailyWalletDebitReductionPercent": "11.6138",
-    "dailyFeeReductionPercent": "13.8686",
-    "channelLaneSetupPreviousFeeLovelace": 1994221,
-    "attribution": "The entire projected wallet saving equals the fee reduction. Recipient funding, protocol reserve flows and the collateral policy are unchanged. Fixture wallet generation introduces small variation between runs."
+    "dailyWalletDebitSavingLovelace": 2747379,
+    "dailyWalletDebitReductionPercent": "0.3390",
+    "attribution": "Same-scope packet funding only. Sender principal, recipient funding and gross protocol reserve flows are unchanged. Wallet savings equal fee savings. Small fixture-wallet variation remains. The older report excluded client maintenance"
+  },
+  "clientUpdates": {
+    "scope": "Complete init, verification and client/history finalization. Same captured signed 45-validator unchanged header in all four controls. Positive trusted counts deliberately retain the general path. These controls measure work, not production validator churn. Client/reference creation and stake registration are outside the measured interval. A 30 ADA reference seed injected by the existing fixture is separately recorded and excluded from income. Session reserves return at finalization",
+    "sourceCommit": "f471b3503b8a1132b213b12759b57ea9d45c40c4",
+    "profiles": [
+      {
+        "name": "general-6",
+        "transactions": 18,
+        "feeLovelace": 17046098,
+        "relayerNetDebitLovelace": 17046098,
+        "peakTemporaryProtocolReserveLovelace": 5667650,
+        "netProtocolReserveIncreaseLovelace": 0,
+        "maxMemory": 10385431,
+        "maxCpu": 4311125319,
+        "maxSignedBytes": 8231,
+        "maxObservedCollateralInputLovelace": 966687378,
+        "maxDeclaredCollateralLovelace": 5000000,
+        "usdPerUpdate": "3.25"
+      },
+      {
+        "name": "unchanged-6",
+        "transactions": 10,
+        "feeLovelace": 10072004,
+        "relayerNetDebitLovelace": 10072004,
+        "peakTemporaryProtocolReserveLovelace": 5452150,
+        "netProtocolReserveIncreaseLovelace": 0,
+        "maxMemory": 10403301,
+        "maxCpu": 4317931993,
+        "maxSignedBytes": 8229,
+        "maxObservedCollateralInputLovelace": 966687378,
+        "maxDeclaredCollateralLovelace": 5000000,
+        "usdPerUpdate": "1.92"
+      },
+      {
+        "name": "unchanged-24",
+        "transactions": 4,
+        "feeLovelace": 6536141,
+        "relayerNetDebitLovelace": 6536141,
+        "peakTemporaryProtocolReserveLovelace": 5115970,
+        "netProtocolReserveIncreaseLovelace": 0,
+        "maxMemory": 10403301,
+        "maxCpu": 4543275761,
+        "maxSignedBytes": 8229,
+        "maxObservedCollateralInputLovelace": 966687378,
+        "maxDeclaredCollateralLovelace": 5000000,
+        "usdPerUpdate": "1.25"
+      },
+      {
+        "name": "general-24",
+        "transactions": 12,
+        "feeLovelace": 13511309,
+        "relayerNetDebitLovelace": 13511309,
+        "peakTemporaryProtocolReserveLovelace": 5667650,
+        "netProtocolReserveIncreaseLovelace": 0,
+        "maxMemory": 10344747,
+        "maxCpu": 4299712245,
+        "maxSignedBytes": 8231,
+        "maxObservedCollateralInputLovelace": 966687378,
+        "maxDeclaredCollateralLovelace": 5000000,
+        "usdPerUpdate": "2.58"
+      }
+    ],
+    "general6ToUnchanged24FeeReductionPercent": "61.6561",
+    "sameHeader": true,
+    "sameFeeParameters": true,
+    "defaultMembershipBatchLimit": 6,
+    "defaultSingleSetBatchLimit": 24,
+    "coordinationAttribution": "Shared in-flight and accepted exact-height work can avoid redundant preparation. These runs do not measure paid duplicate updates or worker CPU/RSS, so no additional monetary saving is assigned",
+    "cadenceModel": "One update for each distinct proof height that is not already retained. The single-packet example assumes 100 receive heights plus 100 acknowledgement heights. The ready-pair example assumes 100 receive heights plus 50 paired acknowledgement heights. No collection timer, churn percentage or production pairing rate is inferred",
+    "fundingCases": [
+      {
+        "name": "single-packets-unchanged",
+        "outboundTransfersPerDay": 100,
+        "inboundTransfersPerDay": 100,
+        "pairedAcknowledgements": false,
+        "distinctProofHeightUpdatesPerDay": 200,
+        "updateProfile": "unchanged-24",
+        "packetNetDebitPerDayLovelace": 807663614,
+        "packetFeesPerDayLovelace": 658586885,
+        "clientFeesPerDayLovelace": 1307228200,
+        "netDebitPerDayLovelace": 2114891814,
+        "feesPerDayLovelace": 1965815085,
+        "thirtyDayNetFundingConsumedLovelace": 63446754420,
+        "observedWalletShapeCollateralReserveLovelace": 3866749512,
+        "temporarySessionReserveAtConcurrencyFourLovelace": 20463880,
+        "peakFundingWithObservedWalletShapeLovelace": 67343967812,
+        "dailyUSD": "403.56",
+        "thirtyDayUSD": "12106.91",
+        "scope": "Conditional funding example with no compensation, pruning, extra refresh updates, Injective daily fees, hosting or production latency qualification. Distinct proof-height counts are assumptions, not inferred from fixture checkpoints"
+      },
+      {
+        "name": "ready-ack-pairs-unchanged",
+        "outboundTransfersPerDay": 100,
+        "inboundTransfersPerDay": 100,
+        "pairedAcknowledgements": true,
+        "distinctProofHeightUpdatesPerDay": 150,
+        "updateProfile": "unchanged-24",
+        "packetNetDebitPerDayLovelace": 737370214,
+        "packetFeesPerDayLovelace": 588293485,
+        "clientFeesPerDayLovelace": 980421150,
+        "netDebitPerDayLovelace": 1717791364,
+        "feesPerDayLovelace": 1568714635,
+        "thirtyDayNetFundingConsumedLovelace": 51533740920,
+        "observedWalletShapeCollateralReserveLovelace": 3866749512,
+        "temporarySessionReserveAtConcurrencyFourLovelace": 20463880,
+        "peakFundingWithObservedWalletShapeLovelace": 55430954312,
+        "dailyUSD": "327.79",
+        "thirtyDayUSD": "9833.67",
+        "scope": "Conditional funding example with no compensation, pruning, extra refresh updates, Injective daily fees, hosting or production latency qualification. Distinct proof-height counts are assumptions, not inferred from fixture checkpoints"
+      },
+      {
+        "name": "single-packets-general-control",
+        "outboundTransfersPerDay": 100,
+        "inboundTransfersPerDay": 100,
+        "pairedAcknowledgements": false,
+        "distinctProofHeightUpdatesPerDay": 200,
+        "updateProfile": "general-24",
+        "packetNetDebitPerDayLovelace": 807663614,
+        "packetFeesPerDayLovelace": 658586885,
+        "clientFeesPerDayLovelace": 2702261800,
+        "netDebitPerDayLovelace": 3509925414,
+        "feesPerDayLovelace": 3360848685,
+        "thirtyDayNetFundingConsumedLovelace": 105297762420,
+        "observedWalletShapeCollateralReserveLovelace": 3866749512,
+        "temporarySessionReserveAtConcurrencyFourLovelace": 22670600,
+        "peakFundingWithObservedWalletShapeLovelace": 109197182532,
+        "dailyUSD": "669.76",
+        "thirtyDayUSD": "20092.92",
+        "scope": "Conditional funding example with no compensation, pruning, extra refresh updates, Injective daily fees, hosting or production latency qualification. Distinct proof-height counts are assumptions, not inferred from fixture checkpoints"
+      }
+    ],
+    "collateralInterpretation": "The client fixture selects an approximately 967 ADA collateral input while declaring only 5 ADA per transaction. The whole input is reserved rather than consumed. Four dedicated 5 ADA collateral inputs would reserve 20 ADA for the observed declared amounts, but that wallet-selection policy is not qualified by this benchmark. Observed-shape peak funding is a fixture scenario, not a production requirement",
+    "observedAt": "2026-10-30T13:46:52.849705+00:00"
   },
   "usdConversion": {
-    "source": "https://api.coinbase.com/v2/prices/ADA-USD/spot",
-    "observedAt": "2026-10-29T15:49:33.426026+00:00",
-    "usdPerAda": "0.20543",
-    "spotResponse": {
-      "data": {
-        "amount": "0.20543",
-        "base": "ADA",
-        "currency": "USD"
+    "ADA": {
+      "source": "https://api.coinbase.com/v2/prices/ADA-USD/spot",
+      "observedAt": "2026-10-30T13:43:53.550914+00:00",
+      "httpDate": "Fri, 30 Oct 2026 13:43:53 GMT",
+      "response": {
+        "data": {
+          "amount": "0.19082",
+          "base": "ADA",
+          "currency": "USD"
+        }
       }
     },
-    "scope": "The same recorded ADA quote prices both Cardano baselines. This isolates fee savings from exchange-rate changes. Counterparty fees and unmeasured operating costs are excluded.",
-    "dailyRelayerNetDebitUSD": "166.48",
-    "dailyRelayerFeesUSD": "135.86",
-    "thirtyDayNetFundingConsumedUSD": "4994.48",
-    "collateralReserveUSD": "246.52",
-    "peakFundingUSD": "5243.05",
-    "averagePerTransferUSD": "0.83",
-    "walletDebitPerOperationUSD": {
-      "outbound-ada-ack": "0.80",
-      "outbound-native-ack": "0.86",
-      "outbound-ada-timeout": "0.90",
-      "outbound-ada-error": "0.90",
-      "outbound-ada-return": "1.36",
-      "receive-existing-voucher": "0.85",
-      "receive-new-voucher": "1.57"
+    "INJ": {
+      "source": "https://api.coinbase.com/v2/prices/INJ-USD/spot",
+      "observedAt": "2026-10-30T13:43:53.574955+00:00",
+      "httpDate": "Fri, 30 Oct 2026 13:43:53 GMT",
+      "response": {
+        "data": {
+          "amount": "7.0645",
+          "base": "INJ",
+          "currency": "USD"
+        }
+      }
     },
-    "previousDailyRelayerNetDebitAtSameQuoteUSD": "188.36",
-    "dailySavingAtSameQuoteUSD": "21.88",
-    "thirtyDaySavingAtSameQuoteUSD": "656.26",
-    "previousQuoteUSDPerAda": "0.2022",
-    "previousHistoricalDailyUSD": "185.40"
+    "scope": "One October 30 spot quote per currency is applied to both previous and current costs. Price movement is separate from protocol savings",
+    "dailyPacketNetDebitUSD": "154.12",
+    "previousDailyPacketNetDebitAtSameQuoteUSD": "154.64",
+    "packetSavingPerDayAtSameQuoteUSD": "0.52",
+    "packetSavingThirtyDaysAtSameQuoteUSD": "15.73",
+    "packetThirtyDayFundingUSD": "4623.55",
+    "packetCollateralReserveUSD": "228.98",
+    "packetPeakFundingUSD": "4854.44",
+    "packetWalletDebitPerOperationUSD": {
+      "outbound-ada-ack": "0.74",
+      "outbound-ada-ack-pairs": "0.60",
+      "outbound-native-ack": "0.79",
+      "outbound-ada-timeout": "0.84",
+      "outbound-ada-error": "0.83",
+      "outbound-ada-return": "1.26",
+      "receive-existing-voucher": "0.80",
+      "receive-new-voucher": "1.46"
+    },
+    "source": "https://api.coinbase.com/v2/prices/ADA-USD/spot",
+    "observedAt": "2026-10-30T13:43:53.550914+00:00",
+    "usdPerAda": "0.19082",
+    "dailyRelayerNetDebitUSD": "154.12",
+    "dailyRelayerFeesUSD": "125.67",
+    "thirtyDayNetFundingConsumedUSD": "4623.55",
+    "collateralReserveUSD": "228.98",
+    "peakFundingUSD": "4854.44"
   },
   "counterpartyComparisons": {
+    "runtimeSourceFilesVerified": 126,
     "currentGoRuntimeSourcesMatchNativeBuild": true,
-    "verifiedRuntimeGoFiles": 126,
     "nativeReplay": {
       "controlled_host_clock": true,
       "gas_multiplier": 1.8,
       "gas_price_inj_base_units": 500000000,
       "history": "retained canonical local Cardano ledger blocks",
-      "initial_app_hash": "6c7da814e80a126fbd2f4b979df5a854bee558c94ac6811f9419e0cbcae82c10",
+      "initial_app_hash": "e5ce15c828deed83c078080641b84e2abfe373826158e7f8407b173d7cf642fa",
       "maximum_gas": 75000000,
       "maximum_signed_bytes": 900000,
       "verifier_maximum_blocks": 4,
@@ -335,69 +667,132 @@
         "one-body": {
           "all_operations": {
             "transactions": 75,
-            "simulated_gas": 79005527,
-            "delivered_gas": 79378674,
+            "simulated_gas": 79008587,
+            "delivered_gas": 79381734,
             "signed_bytes": 132811,
-            "fees_inj": "0.071104989"
+            "fees_inj": "0.071107745"
           },
           "body_submissions": {
             "transactions": 64,
-            "simulated_gas": 68106430,
-            "delivered_gas": 68425073,
+            "simulated_gas": 68108734,
+            "delivered_gas": 68427377,
             "signed_bytes": 97035,
-            "fees_inj": "0.0612958"
+            "fees_inj": "0.061297875"
           },
           "full_bodies": 64,
-          "wallet_debit_inj_base_units": "71104989000000000",
+          "body_packing": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "wallet_debit_inj_base_units": "71107745000000000",
           "wallet_reconciled": true,
-          "verified_state_sha256": "f06edb7c6109c6e002f466426a1b4ef430333a18e357e5ea6ea0c8c04b6d8f4f",
-          "body_packing_histogram": {
-            "1": 64
-          }
+          "verified_state_sha256": "f06edb7c6109c6e002f466426a1b4ef430333a18e357e5ea6ea0c8c04b6d8f4f"
         },
         "adaptive": {
           "all_operations": {
             "transactions": 27,
-            "simulated_gas": 65928834,
-            "delivered_gas": 66063831,
+            "simulated_gas": 65930166,
+            "delivered_gas": 66065163,
             "signed_bytes": 108678,
-            "fees_inj": "0.059335956"
+            "fees_inj": "0.059337156"
           },
           "body_submissions": {
             "transactions": 16,
-            "simulated_gas": 55030511,
-            "delivered_gas": 55110464,
+            "simulated_gas": 55031087,
+            "delivered_gas": 55111040,
             "signed_bytes": 72902,
-            "fees_inj": "0.0495274625"
+            "fees_inj": "0.0495279815"
           },
           "full_bodies": 64,
-          "wallet_debit_inj_base_units": "59335956000000000",
+          "body_packing": [
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4
+          ],
+          "wallet_debit_inj_base_units": "59337156000000000",
           "wallet_reconciled": true,
-          "verified_state_sha256": "f06edb7c6109c6e002f466426a1b4ef430333a18e357e5ea6ea0c8c04b6d8f4f",
-          "body_packing_histogram": {
-            "4": 16
-          }
+          "verified_state_sha256": "f06edb7c6109c6e002f466426a1b4ef430333a18e357e5ea6ea0c8c04b6d8f4f"
         }
       },
       "equal_verified_state": true,
-      "identical_initial_application_state": true,
-      "comparison": {
-        "all_operations": {
-          "transactionReductionPercent": "64.0000",
-          "feeReductionPercent": "16.5516"
-        },
-        "body_submissions": {
-          "transactionReductionPercent": "75.0000",
-          "feeReductionPercent": "19.1993"
-        }
-      },
-      "scope": "Fresh cold native Injective replay per mode. 64 full bodies and 32 headers from a retained five-pool local ledger. One source block contains a transaction. Controlled host clock. Benchmark probe submission, not a live Hermes transport measurement.",
-      "measuredAt": "2026-10-29T15:49:11.089354+00:00",
-      "injectiveSourceCommit": "6632cef271f7482f39f9c5d4b085adc1370e8b7e",
-      "nativeAppBinarySha256": "6730ebc275ab60e69896874c68e3deab98b76923c910642217d112469dc5cf02",
-      "nativeProbeBinarySha256": "8903c4bfa918743d57f21bce6e65bf7fccb6ca82f58ef972e0cef9388a0c8e49",
-      "runtimeSourceManifestSha256": "9566c00e6dca6790a052509e731b047ed348fdbd4a5fd171f06796ab7343ea6b"
+      "identical_initial_application_state": true
     },
+    "nativeReplayFeeReductionPercent": "16.5532",
     "retainedLiveHermes": {
       "measuredDate": "2026-10-29",
       "scope": "Retained live CometBFT and production Hermes runs with signed synthetic Cardano history. 13 pools and 24 confirmation headers. Five fresh-state samples per mode and body count. Update fees exclude the separate ICS-20 receipt transaction.",
@@ -412,7 +807,7 @@
               "updateTransactions": 10,
               "medianUpdateFeeInj": "0.01038628",
               "medianPacketReceiptFeeInj": "0.0002233175",
-              "updateFeeUSD": "0.08",
+              "updateFeeUSD": "0.07",
               "representative": "02-1-one_body"
             },
             "adaptive": {
@@ -420,7 +815,7 @@
               "updateTransactions": 10,
               "medianUpdateFeeInj": "0.0103723015",
               "medianPacketReceiptFeeInj": "0.0002233175",
-              "updateFeeUSD": "0.08",
+              "updateFeeUSD": "0.07",
               "representative": "03-1-adaptive"
             }
           },
@@ -434,7 +829,7 @@
               "updateTransactions": 13,
               "medianUpdateFeeInj": "0.012210473",
               "medianPacketReceiptFeeInj": "0.0002233715",
-              "updateFeeUSD": "0.10",
+              "updateFeeUSD": "0.09",
               "representative": "04-4-one_body"
             },
             "adaptive": {
@@ -442,7 +837,7 @@
               "updateTransactions": 10,
               "medianUpdateFeeInj": "0.011344816",
               "medianPacketReceiptFeeInj": "0.0002233715",
-              "updateFeeUSD": "0.09",
+              "updateFeeUSD": "0.08",
               "representative": "05-4-adaptive"
             }
           },
@@ -450,33 +845,25 @@
         }
       ]
     },
-    "usdQuote": {
-      "source": "https://api.coinbase.com/v2/prices/INJ-USD/spot",
-      "observedAt": "2026-10-29T15:49:33.583041+00:00",
-      "httpDate": "Thu, 29 Oct 2026 15:49:33 GMT",
-      "response": {
-        "data": {
-          "amount": "8.0855",
-          "base": "INJ",
-          "currency": "USD"
-        }
-      }
-    },
     "dailyFundingProjectionIncluded": false,
-    "automaticFourBodyBatchAssumed": false,
-    "interpretation": "Four is a ceiling, not a target or a source of delay. Fees fall when several bodies are already available. A near-tip single-body update has essentially unchanged cost in this fixture. A daily INJ budget requires observed update frequency, backlog sizes, stake-table changes and representative source transactions. No 75 percent fee saving or four-body production average is assumed."
+    "scope": "October 30 native replay is fresh. October 29 live Hermes samples are retained and relabelled. All use controlled retained gas parameters. Neither 75 percent fee savings nor four-body production averages are assumed. A daily INJ budget still needs observed update frequency, backlog and stake-table changes",
+    "nativeReplayObservedAt": "2026-10-30T13:52:23.693346+00:00"
   },
   "artifactFiles": {
-    "fullReport": "evidence/relayer-costs-2026-10-29.json.gz",
-    "transactionJournal": "evidence/relayer-costs-2026-10-29.transactions.jsonl.gz",
-    "resourceSample": "evidence/relayer-resources-idle-2026-10-28.jsonl.gz",
-    "counterpartyComparisons": "evidence/injective-costs-2026-10-29.json.gz"
+    "fullReport": "evidence/relayer-costs-2026-10-30.json.gz",
+    "transactionJournal": "evidence/relayer-costs-2026-10-30.transactions.jsonl.gz",
+    "clientUpdates": "evidence/tendermint-costs-2026-10-30.json.gz",
+    "counterpartyComparisons": "evidence/injective-costs-2026-10-30.json.gz",
+    "resourceSample": "evidence/relayer-resources-idle-2026-10-28.jsonl.gz"
   },
   "artifactSha256": {
-    "fullReport": "cb5f04a7c7bd866321d59b0de36302ef605d9cde269dc6c85180afa697aae1c6",
-    "transactionJournal": "c5fa9556931ae0f208e4537e0c434a50d19d6e485229c89681ceae242dca65b6",
-    "resourceSample": "cd2e3462ec580551c1cda386da8354a5e7e9eb329be62077a3d860649208a136",
-    "counterpartyComparisons": "6b32f3a8f8a793fa277b5cf7f693c7eb779a887a2611a5655c91c6271f396671"
+    "fullReport": "783e612881422ba8e0c160bd5c5e6184200743b5e57dc4f586d54f942f04a554",
+    "transactionJournal": "5ce881c8a808dca6f9f6a9871dfc3841103a561a4bbcac37733a7ead619951f0",
+    "clientUpdates": "8d979ca0d0e54e5f5202194de199828615e92a48094df353b652b6ec3ef9506f",
+    "counterpartyComparisons": "ddab358b5164de1ef296c6a21182a5bac20209ab5cb7b39fed54ea4af17e8160",
+    "resourceSample": "cd2e3462ec580551c1cda386da8354a5e7e9eb329be62077a3d860649208a136"
   },
-  "resourceSampleScope": "Historical October 28 idle collector smoke test, unchanged. Not a new hosting cost or capacity measurement."
+  "resourceSampleScope": "Historical October 28 idle collector smoke test, unchanged. No new hosting, steady-state memory or production capacity measurement",
+  "reconciledTransactions": 223,
+  "totalReconciledCardanoTransactions": 267
 }

@@ -47,9 +47,9 @@ cd ../offchain
 deno task benchmark:relayer-costs /tmp/relayer-costs.json
 ```
 
-This signs and submits transactions to the compiled-validator emulator with Scalus evaluation. It uses the shared packet builders. It covers ADA and native-asset sends, acknowledgements, error refunds, timeouts, ADA returns, and first-seen and existing voucher receipts. The ADA send/acknowledgement and existing-voucher cases each run 32 operations on the same 16 lanes. Recurring profiles use operations 17 through 32. The first operation is reported separately. The other scenarios are single-operation examples. No pruning is performed.
+This signs and submits transactions to the compiled-validator emulator with Scalus evaluation. It uses the shared packet builders. It covers ADA and native-asset sends, acknowledgements, error refunds, timeouts, ADA returns, and first-seen and existing voucher receipts. The ADA send/acknowledgement and existing-voucher cases each run 32 operations on the same 16 lanes. Recurring profiles use operations 17 through 32. The first operation is reported separately. The ready-acknowledgement-pair case also runs 32 transfers and reports warmed per-transfer means. Other scenarios are single-operation examples. No pruning is performed.
 
-These are ledger cost measurements under the retained mainnet parameter snapshot from September 9, 2026. They are not current-mainnet price quotes or live-chain transaction evidence. The report includes the effective parameters, blueprint hash, repository commit, signed CBOR, transaction sizes, execution units and resolved inputs. Counterparty checkpoints and initial deployment are fixture pre-state. Channel-lane initialization is measured separately. Reference publication, client and channel creation, client updates, counterparty gas, hosting and operator time are excluded. The benchmark calls the builders directly and does not exercise Gateway or Hermes funding-policy limits.
+These are ledger cost measurements under the retained mainnet parameter snapshot from September 9, 2026. They are not current-mainnet price quotes or live-chain transaction evidence. The report includes the effective parameters, blueprint hash, repository commit, signed CBOR, transaction sizes, execution units and resolved inputs. Counterparty checkpoints and initial deployment are fixture pre-state. Channel-lane initialization is measured separately. The packet harness excludes reference publication, client and channel creation, client updates, counterparty gas, hosting and operator time. The companion client benchmark below adds complete update measurements. The benchmark calls the builders directly and does not exercise Gateway or Hermes funding-policy limits.
 
 Every successful transaction must reconcile its resolved input ADA against outputs and its fee. Each output records its actual ADA and ledger minimum. Wallet balances are independently checked after submission. Payment credentials identify wallets so a refund to an enterprise address is still attributed to the same owner. Recreated UTxOs contribute only their net change in capital. Successful-transaction collateral and collateral return do not enter expense totals. Both selected collateral inputs and declared collateral are recorded. The companion `.transactions.jsonl` file retains prepared and reconciled records even if a later scenario fails. Existing result paths are never overwritten.
 
@@ -91,34 +91,76 @@ The model reports wallet depletion separately from fees, recipient top-ups and p
 
 ### Recorded results
 
-The October 29, 2026 rerun uses main commit `7ea37e4d` with the reference-script selection from #953 and Hermes packing from #955. It reconciled 143 measured Cardano transactions. The Aiken version, blueprint hash, fee parameters and workload match the October 28 baseline. The send/acknowledgement and existing-voucher figures are warmed means. The first-seen voucher figure is a single observation. Generated fixture wallets can cause small variations between runs. The Cardano fees still use the September 9, 2026 parameter snapshot.
+The October 30 rerun is rebased on main `45f7075f` with Hermes `6a1ee216`. It includes reference selection, adaptive body packing, session reserve preservation, verification that reuses an unchanged validator set, larger verification batches, concurrent update coordination and ready acknowledgement pairs. It reconciles **223 packet-lifecycle transactions and 44 complete client-update transactions**. These are signed compiled-validator emulator transactions. Counterparty checkpoints and deployment are fixture pre-state. The fee parameters remain the September 9, 2026 snapshot so the code comparison is controlled. They are not a fresh mainnet fee attestation.
 
-The [Coinbase spot API](https://api.coinbase.com/v2/prices/ADA-USD/spot) returned **0.20543 USD per ADA** at **2026-10-29 15:49:33 UTC**. Both Cardano baselines use this same quote below so exchange-rate movement does not enter the reported saving. The original quote and the complete new response are recorded in `relayer-cost-baseline.json`.
+The [Coinbase ADA spot API](https://api.coinbase.com/v2/prices/ADA-USD/spot) returned **$0.19082 per ADA** at **2026-10-30 13:43:53 UTC**. The [INJ quote](https://api.coinbase.com/v2/prices/INJ-USD/spot) was **$7.0645** in the same capture. Full responses and HTTP dates are retained in `relayer-cost-baseline.json`. Both old and new costs use these same quotes below. Exchange-rate movement is separate from protocol savings.
 
 | Operation | Previous wallet debit in ADA | Current fees in ADA | Current wallet debit in ADA | Current wallet debit in USD |
 | --- | ---: | ---: | ---: | ---: |
-| ADA send plus acknowledgement | 4.76 | 3.91 | 3.91 | $0.80 |
-| Existing voucher receipt | 4.38 | 2.70 | 4.16 | $0.85 |
-| First-seen voucher receipt | 7.87 | 3.06 | 7.64 | $1.57 |
+| ADA send plus single acknowledgement | 3.910377 | 3.868339 | 3.871302 | $0.74 |
+| Existing voucher receipt | 4.158880 | 2.713946 | 4.170457 | $0.80 |
+| First-seen voucher receipt | 7.644173 | 3.072331 | 7.658171 | $1.46 |
+| ADA send plus acknowledgement in a ready pair, per transfer | Not measured | 3.165405 | 3.168368 | $0.60 |
 
-At 100 outbound ADA transfers and 100 inbound voucher transfers per day, including one new trace, projected wallet depletion falls from **916.90 to 810.41 ADA per day**, an **11.6% reduction**. At the common quote that is **$188.36 to $166.48 per day**, saving **$21.88 per day or $656.27 over 30 days**. Cardano fees fall by 13.9%. The entire wallet saving comes from lower fees. Recipient funding and protocol reserve flows are unchanged. One-time 16-lane initialization fees also fall from 1.994221 to 1.488223 ADA and are outside this already-funded-deployment projection.
+The single-send/acknowledgement and existing-voucher figures are means of operations 17 through 32 on the same 16 lanes. The first-seen voucher figure is one cold operation. Some individual paths are slightly more expensive after the shared contract changes. For the unchanged default workload of **100 outbound transfers and 100 inbound transfers per day**, including one new trace, **packet-only wallet depletion falls from 810.41 to 807.66 ADA per day**, a **0.34% reduction**. At the common quote that is **$154.64 to $154.12 per day**. The saving is **$0.52 per day or $15.73 over 30 days**. Recipient funding and gross protocol reserve flows are unchanged. Lower dollar amounts than the previous report also reflect a different ADA price.
 
-The 30-day Cardano funding scenario now consumes **24,312.33 ADA ($4,994.48)**. The conservative collateral reserve remains **1,200 ADA ($246.52)**. Collateral is available capital rather than a consumed expense. Including the 10 ADA spendable reserve brings projected peak funding to **25,522.33 ADA ($5,243.05)**. These figures include recipient top-ups and relayer contributions to protocol outputs. They exclude hosting, client maintenance, counterparty fees and pruning. They still require live-chain, capacity and pruning qualification.
+This packet-only scenario consumes **24,229.91 ADA ($4623.55) over 30 days**. Its existing wallet-shape assumption reserves another **1,200.00 ADA** as collateral. With 10 ADA of spendable reserve its peak funding is **25,439.91 ADA ($4854.44)**. Collateral is capital, not a successful-transaction expense. These figures still exclude client maintenance, Injective daily fees, hosting and pruning.
 
-Injective comparisons are recorded separately. The first two rows below come from the retained October 29 live Hermes runs. They use 13-pool signed source fixtures and 24 confirmation headers with five fresh-state observations per mode. The last row is a fresh cold replay of 64 full bodies and 32 headers from a five-pool local ledger with one transaction-bearing block. It submits through the native Injective application's socket ABCI interface with a controlled clock. Each row compares the same evidence under both packing modes. The runtime Go sources match the existing native build. No light-client module change is involved.
+The ready-pair fixture keeps sends single so it isolates acknowledgement aggregation within the lifecycle. Both successful acknowledgements are available at one proof height and update different lanes. It runs 32 transfers as 16 pairs. All 16 candidates fit the Gateway's 20 percent execution and size margin. The observed peak is 13,050,834 memory units against a 16,500,000 limit. The warmed per-transfer wallet debit falls from 3.871302 to 3.168368 ADA, about 18.2%. This does not establish a production pairing rate. The runtime submits a singleton immediately and falls back when a candidate exceeds its margins. It adds no collection timer.
 
-| Available bodies and measurement | Previous complete update fee in INJ | Packed complete update fee in INJ | Fee reduction |
-| --- | ---: | ---: | ---: |
-| 1 body, live Hermes median | 0.0103862800 | 0.0103723015 | 0.1% |
-| 4 bodies, live Hermes median | 0.0122104730 | 0.0113448160 | 7.1% |
-| 64 bodies, native replay | 0.0711049890 | 0.0593359560 | 16.55% |
+#### Complete Tendermint updates
 
-All observations use 500000000 INJ base units per gas and a 1.8 gas multiplier. The live figures exclude the separate packet receipt transaction. The cold replay reconciles both wallets against charged fees and produces the same final checkpoint in both modes. The [recorded INJ quote](https://api.coinbase.com/v2/prices/INJ-USD/spot) was $8.0855 at the same observation time. Four bodies is a limit rather than a batching target. Hermes packs bodies already available and does not hold updates to accumulate more. The report assumes neither a 75% fee reduction nor four bodies in every production update. A daily INJ budget needs observed update frequency, backlog sizes, stake-table changes and representative source activity. These sample costs are not added to the Cardano funding projection.
-
-The full report, transaction journal, counterparty comparisons and historical short resource-collector check are committed as gzip files in `evidence/`, about 0.6 MB combined. The previous full Cardano report and journal have been replaced by the current run. `artifactFiles` identifies each file and `artifactSha256` records hashes of their uncompressed contents. The counterparty artifact includes the native replay inputs and results, all twenty live fee observations and four representative signed transaction sets. The remaining live transaction data is retained locally. For example, extract the full Cardano transaction report with:
+The previous report excluded these updates. They are now measured separately with the existing signed consensus-history fixture and a captured 45-validator Injective header. The general controls deliberately use the supported trusted-set reconstruction path for that same unchanged header. They are controls for the extra work, not measurements of validator-set churn. The final transaction really updates the client and host roots, archives the old checkpoint and burns the session token. Every transaction and relayer wallet balance reconciles.
 
 ```sh
-gzip -dc scripts/benchmark/evidence/relayer-costs-2026-10-29.json.gz \
+python3 scripts/benchmark/tendermint-costs.py /tmp/tendermint-costs --deno deno
+```
+
+The command retains its derived runner, source hashes, full signed CBOR and measurements. It changes the fixture's header and batch choice while retaining its validation assertions. The fixture injects a prefunded 30 ADA client reference during finalization. That setup credit is independently identified in the ledger and excluded from measured income. Client creation, stake registration and reference publication precede the measured lifecycle or are fixture pre-state.
+
+| Complete update | Transactions | Fees and net wallet debit in ADA | USD |
+| --- | ---: | ---: | ---: |
+| General control, batches of six | 18 | 17.046098 | $3.25 |
+| Unchanged set, batches of six | 10 | 10.072004 | $1.92 |
+| Unchanged set, batches of 24 | 4 | 6.536141 | $1.25 |
+| General control, trusted batches of 24 and membership batches of six | 12 | 13.511309 | $2.58 |
+
+Comparing the general control with batches of six to the unchanged-set case with batches of 24 reduces fees by **61.7%** and sequential transactions from 18 to four. The general path keeps signature membership batches at six while allowing 24 trusted validators per batch. The unchanged path checks signatures, quorum and time without reconstructing the authenticated set again. No waiting window is needed because the validators and signatures are already available. Emulator elapsed times are retained as diagnostics, not ICS-20 delivery or network inclusion times.
+
+The session with batches of 24 temporarily holds up to **5.115970 ADA** and releases it at finalization. Net protocol reserve growth is zero in this prefunded fixture. This is neither a fee nor a new expense on every continuation. The existing client and host outputs still require funded capital. Long-term history growth and pruning remain separate qualification work.
+
+#### Daily funding including client maintenance
+
+Update frequency is an explicit input. A proof at a height that is already retained can reuse it. A new required height triggers an update immediately. Concurrent coordination shares accepted or in-flight work but this benchmark does not establish a paid-duplicate rate or worker resource saving. No extra monetary saving is credited to coordination.
+
+For the same 200-transfer workload, the following examples assume no extra idle refresh updates. The single-packet cases assume 100 distinct receive proof heights and 100 distinct acknowledgement proof heights. The ready-pair case assumes 100 receive heights and 50 acknowledgement heights. Neither proof-height reuse nor the proportion of unchanged sets is inferred from the fixture. These are scenarios, not production forecasts.
+
+| Cardano funding scenario | ADA per day | USD per day | USD over 30 days |
+| --- | ---: | ---: | ---: |
+| Single packets and 200 unchanged-set updates | 2,114.89 | $403.56 | $12106.91 |
+| 100 outbound packets acknowledged in 50 ready pairs, plus 150 unchanged-set updates | 1,717.79 | $327.79 | $9833.67 |
+| Single packets and 200 general-path control updates | 3,509.93 | $669.76 | $20092.92 |
+
+For example, 200 unchanged-set updates add **1,307.23 ADA per day** to the packet-only figure. The resulting 2,114.89 ADA total has a broader scope than the old 810.41 ADA packet-only quote. The ready-pair row assumes a different traffic opportunity. Its lower proof-height count must not be credited again as an independent coordination saving.
+
+The client fixture selects an approximately 967 ADA collateral input while declaring 5 ADA per transaction. That large input is reserved and returns on success. It is a wallet-shape artifact, not a protocol minimum or an expense. The JSON records the conservative peak for four such inputs plus temporary session reserves. Four dedicated 5 ADA inputs would cover the observed declared collateral with 20 ADA, but this benchmark does not qualify that wallet-selection policy. Neither estimate is a production hosting or wallet-sizing recommendation.
+
+#### Injective comparisons
+
+The October 30 native replay resubmits the same 64 full bodies and 32 headers from a five-pool local Cardano ledger, including one transaction-bearing block. It uses the native Injective application interface (ABCI) with a controlled clock. All 126 runtime Go source hashes match current main. No Go module change or new light-client release is involved. The twenty live Hermes observations remain historical October 29 evidence from 13-pool signed fixtures with 24 confirmation headers. They have not been relabelled as fresh public-testnet transfers.
+
+| Available bodies and measurement | One-body complete update fee in INJ | Adaptive complete update fee in INJ | Fee reduction |
+| --- | ---: | ---: | ---: |
+| 1 body, retained live Hermes median | 0.0103862800 | 0.0103723015 | 0.1% |
+| 4 bodies, retained live Hermes median | 0.0122104730 | 0.0113448160 | 7.1% |
+| 64 bodies, fresh native replay | 0.071107745 | 0.059337156 | 16.55% |
+
+The replay reduces full-body submissions from 64 to 16 and total transactions from 75 to 27. Both wallets reconcile against charged fees and reach the same verified checkpoint. This is **75% fewer body transactions, not 75% lower fees**. It still uses the retained 500000000 INJ base units per gas and 1.8 gas multiplier. Four bodies is a ceiling, not a target or a collection delay. The earlier transport savings are not credited a second time as a new improvement in this rerun. A daily INJ budget still needs observed update frequency, backlog, stake-table changes and representative source activity, so these sample costs remain outside the daily Cardano totals.
+
+The new full packet report, journal, client-update evidence and Injective replay replace the previous fee artifacts. The historical October 28 idle sample remains explicitly historical. All five gzip files total about 0.9 MB. `artifactFiles` and hashes of their uncompressed contents are in `relayer-cost-baseline.json`. For example:
+
+```sh
+gzip -dc scripts/benchmark/evidence/relayer-costs-2026-10-30.json.gz \
   > /tmp/relayer-costs-recorded.json
 ```
 
