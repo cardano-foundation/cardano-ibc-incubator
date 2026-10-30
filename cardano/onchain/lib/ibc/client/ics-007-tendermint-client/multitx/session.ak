@@ -480,9 +480,21 @@ fn advance_target(
             target_root,
             target_total_power: next_total,
             target_signed_power: next_signed,
-            trusted_root: if adjacent { None } else { Some(target_root) },
-            trusted_total_power: if adjacent { 0 } else { next_total },
-            trusted_signed_power: if adjacent { 0 } else { next_signed },
+            trusted_root: if adjacent {
+              None
+            } else {
+              Some(target_root)
+            },
+            trusted_total_power: if adjacent {
+              0
+            } else {
+              next_total
+            },
+            trusted_signed_power: if adjacent {
+              0
+            } else {
+              next_signed
+            },
           }
         } else {
           AdjacentTarget {
