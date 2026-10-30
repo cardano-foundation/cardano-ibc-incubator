@@ -4,6 +4,7 @@
 import { assertEquals } from "@std/assert";
 import {
   applyDoubleCborEncoding,
+  CML,
   type Constr,
   credentialToAddress,
   Data,
@@ -31,6 +32,7 @@ import {
 } from "../src/testing/packet-lane-fixture.ts";
 import {
   buildPacketAcknowledgement,
+  buildPacketAcknowledgementBatch,
   buildPacketReceive,
   buildPacketRejection,
   buildPacketSendBatch,
@@ -77,6 +79,7 @@ const workload: {
 };
 const scenarioNames = [
   "outbound-ada-ack",
+  "outbound-ada-ack-pairs",
   "outbound-native-ack",
   "outbound-ada-timeout",
   "outbound-ada-error",
@@ -114,6 +117,7 @@ const scenarios: Array<
     operations: number;
     profileSamples: number;
     profileBasis: string;
+    pairing?: { requested: number; accepted: number; fallback: number };
     transactions: Observed[];
     coldStartProfile: CostProfile;
     profile: CostProfile;
@@ -277,8 +281,18 @@ async function remotePacket(
 }
 for (const name of selected) {
   const transactions: Observed[] = [];
+  const paired = name === "outbound-ada-ack-pairs";
+  const pairing = { requested: 0, accepted: 0, fallback: 0 };
+  const pending: {
+    packet: Constr<Data>;
+    proofHeight: Constr<Data>;
+    proof: Constr<Data>;
+  }[] = [];
   const iterations =
-    ["outbound-ada-ack", "receive-existing-voucher"].includes(name) ? 32 : 1;
+    ["outbound-ada-ack", "outbound-ada-ack-pairs", "receive-existing-voucher"]
+        .includes(name)
+      ? 32
+      : 1;
   const starts: number[] = [];
   let initLucid: LucidEvolution | undefined;
   const f = await packetLaneFixture(
@@ -432,6 +446,67 @@ for (const name of selected) {
         "send",
         "relayer",
       );
+      if (paired) {
+        const proof = f.proofs.get(BigInt(iteration + 1))!;
+        pending.push({
+          packet: batch.packets[0],
+          proofHeight: proof.height,
+          proof: proof.proof,
+        });
+        if (pending.length < 2) continue;
+        pairing.requested++;
+        const built = await buildPacketAcknowledgementBatch(
+          relayer,
+          f.deployment,
+          pending,
+          f.emulator.now(),
+          f.emulator.now() + 60_000,
+        );
+        const signed = await signMeasured(
+          relayer,
+          built.tx,
+          name + " settlement",
+        );
+        const units = CML.compute_total_ex_units(
+          signed.toTransaction().witness_set().redeemers()!,
+        );
+        const limits = relayer.config().protocolParameters!;
+        const eligible = units.mem() * 5n <= limits.maxTxExMem * 4n &&
+          units.steps() * 5n <= limits.maxTxExSteps * 4n &&
+          signed.toCBOR().length / 2 * 5 <= limits.maxTxSize * 4;
+        await evidence({
+          kind: "batch-candidate",
+          eligible,
+          memory: units.mem(),
+          cpu: units.steps(),
+          bytes: signed.toCBOR().length / 2,
+        });
+        if (eligible) {
+          pairing.accepted++;
+          await submit(relayer, signed, "paired-settlement", "relayer");
+        } else {
+          pairing.fallback++;
+          for (const request of pending) {
+            const single = await buildPacketAcknowledgement(
+              relayer,
+              f.deployment,
+              request.packet,
+              request.proofHeight,
+              request.proof,
+              f.emulator.now(),
+              f.emulator.now() + 60_000,
+            );
+            await submit(
+              relayer,
+              await signMeasured(relayer, single.tx, "pair budget fallback"),
+              "settlement",
+              "relayer",
+            );
+          }
+        }
+        pending.length = 0;
+        continue;
+      }
       let settled;
       if (name === "outbound-ada-timeout") {
         f.emulator.awaitBlock(181);
@@ -671,16 +746,19 @@ for (const name of selected) {
     profileSamples,
   );
   const coldStartProfile = profileFor(
-    transactions.slice(0, starts[1] ?? transactions.length),
-    1,
+    transactions.slice(0, starts[paired ? 2 : 1] ?? transactions.length),
+    paired ? 2 : 1,
   );
   scenarios.push({
     name,
     operations: iterations,
     profileSamples,
     profileBasis: iterations > 1
-      ? "Mean of operations 17..32 after all 16 lanes have been used. No pruning"
+      ? paired
+        ? "Per-transfer mean of operations 17..32 with two already-ready acknowledgements at a common proof height on distinct lanes. Sends remain single. No pruning or collection timer"
+        : "Mean of operations 17..32 after all 16 lanes have been used. No pruning"
       : "Single cold operation. Not a steady-state traffic estimate",
+    ...(paired ? { pairing } : {}),
     transactions,
     coldStartProfile,
     profile,
