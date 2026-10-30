@@ -40,13 +40,19 @@ def main():
     fixture = fixture_path.read_text().split('Deno.test("signed staged', 1)[0]
     if fixture == fixture_path.read_text():
         raise RuntimeError('Cannot locate the fixture/test boundary')
+    # A public test mnemonic makes wallet/input ordering repeatable across runs.
+    fixture = replace_once(fixture,
+        ': generateEmulatorAccount({ lovelace: 1_000_000_000n });',
+        ': { seedPhrase: "abandon ".repeat(11) + "about", privateKey: "", address: walletFromSeed("abandon ".repeat(11) + "about", { network: "Preprod" }).address, assets: { lovelace: 1_000_000_000n } };')
+    start = fixture.index('  async function update(')
+    end = fixture.index('    if (forgedSessionPlan)', start)
+    update = replace_once(fixture[start:end], '        owner: signer,',
+        '        owner: signer,\n        batchSize: Number(Deno.env.get("TM_COST_BATCH")),\n        forceGeneral: Deno.env.get("TM_COST_GENERAL") === "1",\n        resourcePercent: 80,')
+    fixture = fixture[:start] + update + fixture[end:]
+    fixture = replace_once(fixture, 'operation: `staged ${stagedMode} update`,',
+        'operation: `staged ${stagedMode} update`,\n        witnesses: session.witnesses,')
     fixture = absolute_imports(fixture, source)
     helper = absolute_imports(helper_path.read_text(), source)
-    helper = replace_once(helper, 'const singleSet = adjacent ||',
-                          'const singleSet = adjacent || Deno.env.get("TM_COST_GENERAL") !== "1" &&')
-    helper = replace_once(helper, 'const batchSize = args.batchSize ?? 6;',
-                          'const batchSize = Number(Deno.env.get("TM_COST_BATCH"));')
-    helper = replace_once(helper, 'args.resourcePercent ?? 95', 'args.resourcePercent ?? 80')
     helper_out = output / 'session-fixture.ts'
     helper_out.write_text(helper)
     fixture = replace_once(fixture, str(helper_path), str(helper_out))
@@ -98,7 +104,16 @@ Deno.test("complete Tendermint update funding", async () => {
       }
       return result;
     };
+    const referenceScripts = [...resolve(body.inputs()), ...resolve(body.reference_inputs())]
+      .filter(u => u.scriptRef).map(u => {
+        const script = utxoToCore(u).output().script_ref()!;
+        const plutus = script.as_plutus_v3();
+        assert(plutus);
+        return { hash: script.hash().to_hex(), bytes: plutus.to_raw_bytes().length };
+      });
     const observed = {
+      referenceScripts,
+      referenceScriptBytes: referenceScripts.reduce((n, script) => n + script.bytes, 0),
       ...measureTransaction(cbor, resolve(body.inputs()), resolve(body.collateral_inputs()), BigInt(parameters.coinsPerUtxoByte), u => u.address === address
         ? { name: "relayer", wallet: true, controller: "relayer", recoveryRecipient: "relayer", recoveryCondition: "Payment key" }
         : { name: "protocol-state", controller: "Protocol validators", recoveryRecipient: "Session owner or protocol state", recoveryCondition: "Session reserve returns at finalization. Existing host and client outputs are preserved" }),
@@ -120,7 +135,7 @@ Deno.test("complete Tendermint update funding", async () => {
   const before = walletBalance();
   const initialRefs = new Set(Object.keys(emulator.ledger));
   const started = performance.now();
-  await context.update();
+  const execution = await context.update();
   const elapsedMs = performance.now() - started;
   assert(!pending);
   const fees = rows.reduce((n, r) => n + r.feeLovelace, 0n);
@@ -139,7 +154,7 @@ Deno.test("complete Tendermint update funding", async () => {
     peak = reserve > peak ? reserve : peak;
   }
   await Deno.writeTextFile(Deno.env.get("TM_COST_OUTPUT")!, stringifyCosts({
-    name: Deno.env.get("TM_COST_NAME"), transactions: rows, feeLovelace: fees, relayerNetDebitLovelace: debit,
+    name: Deno.env.get("TM_COST_NAME"), witnesses: "witnesses" in execution ? execution.witnesses : undefined, transactions: rows, feeLovelace: fees, relayerNetDebitLovelace: debit,
     fixtureReferenceFundingLovelace: fixtureFunding, fixtureReferenceCredits: fixtureCredits,
     peakTemporaryProtocolReserveLovelace: peak, netProtocolReserveIncreaseLovelace: reserve,
     elapsedMs, latencyScope: "Emulator construction, signing and evaluation time. Not network inclusion or ICS-20 delivery latency",
