@@ -570,10 +570,21 @@ fn advance_target(
   SessionDatum { ..datum, phase: next_phase }
 }
 
-/// Defensive terminal-state validation for the final client validator.
+/// Standalone terminal-state validation including immutable plan checks.
 pub fn is_complete_valid(datum: SessionDatum) -> Bool {
+  expect validate_plan_basic(datum.plan)
+  complete_phase_valid(datum)
+}
+
+/// Use only after authenticating the session policy. The policy validates the
+/// immutable plan when creating the NFT and when burning it for Finalize.
+/// Cancellation intentionally remains independent of plan validity.
+pub fn is_complete_from_authenticated_plan(datum: SessionDatum) -> Bool {
+  complete_phase_valid(datum)
+}
+
+fn complete_phase_valid(datum: SessionDatum) -> Bool {
   let SessionDatum { plan, phase, .. } = datum
-  expect validate_plan_basic(plan)
   when phase is {
     Complete {
       target_root,
@@ -630,6 +641,7 @@ fn validate_live_session(
   datum: SessionDatum,
   client_datum: ClientDatum,
   tx_time: TxTime,
+  complete_check: fn(SessionDatum) -> Bool,
 ) -> Bool {
   let SessionDatum { plan, .. } = datum
   let current_state = client_datum.state.client_state
@@ -637,7 +649,7 @@ fn validate_live_session(
     pairs.get_all(client_datum.state.consensus_states, plan.trusted_height)
 
   and {
-    is_complete_valid(datum),
+    complete_check(datum),
     tx_time.valid_from <= tx_time.valid_to,
     client_datum.token == plan.client_token,
     current_state.chain_id == plan.header.chain_id,
@@ -663,7 +675,7 @@ pub fn validate_finalization(
   tx_time: TxTime,
 ) -> Bool {
   and {
-    validate_live_session(datum, client_datum, tx_time),
+    validate_live_session(datum, client_datum, tx_time, is_complete_valid),
     datum.plan.header.time > datum.plan.trusted_consensus_state.timestamp,
     datum.plan.header.time < tx_time.valid_from + datum.plan.max_clock_drift,
   }
@@ -677,10 +689,44 @@ pub fn validate_misbehaviour_finalization(
   client_datum: ClientDatum,
   tx_time: TxTime,
 ) -> Bool {
-  expect validate_live_session(datum, client_datum, tx_time)
+  expect validate_live_session(datum, client_datum, tx_time, is_complete_valid)
   expect Complete { target_signed_power, target_total_power, .. } = datum.phase
   // Adjacent normal updates require >2/3, but explicit evidence must also
   // satisfy a deployment's potentially higher custom trust level.
+  !is_adjacent(datum.plan) || trusted_quorum(
+    datum.plan,
+    target_signed_power,
+    target_total_power,
+  )
+}
+
+/// The caller must authenticate the pinned session NFT and require its Finalize
+/// spend and exact burn. Its minting policy checks the immutable plan at creation
+/// and on the Finalize burn. Keep quorum, live-client bindings and final
+/// transaction time checks here without another copy of header hashing.
+pub fn validate_finalization_from_authenticated_plan(
+  datum: SessionDatum,
+  client_datum: ClientDatum,
+  tx_time: TxTime,
+) -> Bool {
+  and {
+    validate_live_session(datum, client_datum, tx_time, complete_phase_valid),
+    datum.plan.header.time > datum.plan.trusted_consensus_state.timestamp,
+    datum.plan.header.time < tx_time.valid_from + datum.plan.max_clock_drift,
+  }
+}
+
+/// Explicit evidence retains its higher adjacent trust threshold and permits
+/// the timestamp violations it is proving. Authentication preconditions are the
+/// same as validate_finalization_from_authenticated_plan.
+pub fn validate_misbehaviour_finalization_from_authenticated_plan(
+  datum: SessionDatum,
+  client_datum: ClientDatum,
+  tx_time: TxTime,
+) -> Bool {
+  expect
+    validate_live_session(datum, client_datum, tx_time, complete_phase_valid)
+  expect Complete { target_signed_power, target_total_power, .. } = datum.phase
   !is_adjacent(datum.plan) || trusted_quorum(
     datum.plan,
     target_signed_power,

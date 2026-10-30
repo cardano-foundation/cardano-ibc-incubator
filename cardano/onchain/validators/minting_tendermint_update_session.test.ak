@@ -2,7 +2,7 @@ use aiken/collection/list
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset, quantity_of, zero}
 use cardano/transaction.{
-  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
+  InlineDatum, Input, NoDatum, Output, OutputReference, Spend, Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
@@ -17,8 +17,8 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/multitx/session
 use ibc/client/ics_007_tendermint_client/multitx/types.{
-  BurnSession, BurnSessions, CommitCore, MintSession, MintSessionRedeemer,
-  SessionDatum, UpdatePlan,
+  BurnSession, BurnSessions, Cancel, CommitCore, Finalize, MintSession,
+  MintSessionRedeemer, SessionDatum, UpdatePlan, VerifyTarget,
 }
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_023_vector_commitments/merkle
@@ -346,11 +346,13 @@ fn burn_context() -> (ByteArray, AuthToken, PolicyId, Transaction) {
         reference_script: None,
       },
     }
+  let cancel: Data = Cancel
   let transaction =
     Transaction {
       ..transaction.placeholder,
       inputs: [input],
       mint: from_asset(token.policy_id, token.name, -1),
+      redeemers: [Pair(Spend(seed), cancel)],
     }
 
   (session_script_hash, token, own_policy_id, transaction)
@@ -418,6 +420,7 @@ fn dual_burn_context() -> (ByteArray, PolicyId, List<ByteArray>, Transaction) {
         datum: InlineDatum(second_datum),
       },
     }
+  let cancel: Data = Cancel
   (
     script,
     policy,
@@ -426,6 +429,7 @@ fn dual_burn_context() -> (ByteArray, PolicyId, List<ByteArray>, Transaction) {
       ..tx,
       inputs: [first, second],
       mint: assets.add(tx.mint, policy, second_token.name, -1),
+      redeemers: [Pair(Spend(second.output_reference), cancel), ..tx.redeemers],
     },
   )
 }
@@ -528,5 +532,108 @@ test rejects_two_session_burn_with_wrong_quantity() fail {
     BurnSessions { token_names: names },
     policy,
     Transaction { ..tx, mint: assets.add(tx.mint, policy, first, -1) },
+  )
+}
+
+fn changed_commit_input(input: Input) -> Input {
+  expect datum: SessionDatum = validator_utils.get_inline_datum(input.output)
+  let changed_plan =
+    UpdatePlan {
+      ..datum.plan,
+      commit: CommitCore {
+        ..datum.plan.commit,
+        block_id: BlockID { ..datum.plan.commit.block_id, hash: validator_root },
+      },
+    }
+  let changed: Data = SessionDatum { ..datum, plan: changed_plan }
+  Input {
+    ..input,
+    output: Output { ..input.output, datum: InlineDatum(changed) },
+  }
+}
+
+test finalization_burn_validates_the_immutable_plan() {
+  let (script, token, policy, tx) = burn_context()
+  expect [input] = tx.inputs
+  let finalize: Data = Finalize
+  minting_tendermint_update_session.mint_tendermint_update_session.mint(
+    script,
+    BurnSession { token_name: token.name },
+    policy,
+    Transaction {
+      ..tx,
+      redeemers: [Pair(Spend(input.output_reference), finalize)],
+    },
+  )
+}
+
+test finalization_burn_rejects_a_changed_header_commitment() {
+  let (script, token, policy, tx) = burn_context()
+  expect [input] = tx.inputs
+  let finalize: Data = Finalize
+  !minting_tendermint_update_session.mint_tendermint_update_session.mint(
+    script,
+    BurnSession { token_name: token.name },
+    policy,
+    Transaction {
+      ..tx,
+      inputs: [changed_commit_input(input)],
+      redeemers: [Pair(Spend(input.output_reference), finalize)],
+    },
+  )
+}
+
+test cancellation_can_burn_a_receipt_with_an_invalid_plan() {
+  let (script, token, policy, tx) = burn_context()
+  expect [input] = tx.inputs
+  minting_tendermint_update_session.mint_tendermint_update_session.mint(
+    script,
+    BurnSession { token_name: token.name },
+    policy,
+    Transaction { ..tx, inputs: [changed_commit_input(input)] },
+  )
+}
+
+test burn_rejects_a_nonterminal_session_action() {
+  let (script, token, policy, tx) = burn_context()
+  expect [input] = tx.inputs
+  let verifying: Data = VerifyTarget { entries: [] }
+  !minting_tendermint_update_session.mint_tendermint_update_session.mint(
+    script,
+    BurnSession { token_name: token.name },
+    policy,
+    Transaction {
+      ..tx,
+      redeemers: [Pair(Spend(input.output_reference), verifying)],
+    },
+  )
+}
+
+test burn_requires_the_session_spend_redeemer() fail {
+  let (script, token, policy, tx) = burn_context()
+  minting_tendermint_update_session.mint_tendermint_update_session.mint(
+    script,
+    BurnSession { token_name: token.name },
+    policy,
+    Transaction { ..tx, redeemers: [] },
+  )
+}
+
+test evidence_burn_checks_both_immutable_plans() {
+  let (script, policy, names, tx) = dual_burn_context()
+  expect [first, second] = tx.inputs
+  let finalize: Data = Finalize
+  !minting_tendermint_update_session.mint_tendermint_update_session.mint(
+    script,
+    BurnSessions { token_names: names },
+    policy,
+    Transaction {
+      ..tx,
+      inputs: [first, changed_commit_input(second)],
+      redeemers: [
+        Pair(Spend(first.output_reference), finalize),
+        Pair(Spend(second.output_reference), finalize),
+      ],
+    },
   )
 }

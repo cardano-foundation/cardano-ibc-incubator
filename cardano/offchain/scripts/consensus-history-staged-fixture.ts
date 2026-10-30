@@ -6,6 +6,7 @@ import {
   type LucidEvolution,
   type TxBuilder,
   type UTxO,
+  validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import type { Emulator } from "@lucid-evolution/provider";
 import { createHash } from "node:crypto";
@@ -136,6 +137,15 @@ export async function submitHistorySession(args: {
   );
   const token = constr([scripts.sessionMint.policyId, name]);
   const unit = scripts.sessionMint.policyId + name;
+  const referenceFor = (hash: string) => {
+    const matching = references.filter((utxo) =>
+      utxo.scriptRef && validatorToScriptHash(utxo.scriptRef) === hash
+    );
+    assertEquals(matching.length, 1, "Expected one matching session reference");
+    return matching[0];
+  };
+  const mintReference = referenceFor(scripts.sessionMint.policyId);
+  const spendReference = referenceFor(scripts.sessionSpend.scriptHash);
   let phase = singleSet
     ? constr([emptyAccumulator(), 0n, 0n, none()])
     : constr([emptyAccumulator(), 0n, none()], 1);
@@ -184,7 +194,7 @@ export async function submitHistorySession(args: {
     return output;
   }
   let utxo = await submit(
-    lucid.newTx().readFrom(references)
+    lucid.newTx().readFrom([mintReference])
       .collectFrom([seed])
       .mintAssets({ [unit]: 1n }, encode(constr([seedRef, owner, plan])))
       .pay.ToContract(scripts.sessionSpend.address, {
@@ -238,7 +248,7 @@ export async function submitHistorySession(args: {
         ], 2)
         : constr([accumulator(prefix), total(prefix), last(prefix)], 1);
       utxo = await submit(
-        lucid.newTx().readFrom(references)
+        lucid.newTx().readFrom([spendReference])
           .collectFrom([utxo], encode(constr([batch])))
           .pay.ToContract(scripts.sessionSpend.address, {
             kind: "inline",
@@ -301,7 +311,7 @@ export async function submitHistorySession(args: {
         last(prefix),
       ], 2);
     utxo = await submit(
-      lucid.newTx().readFrom(references)
+      lucid.newTx().readFrom([spendReference])
         .collectFrom([utxo], encode(constr([entries], 1)))
         .pay.ToContract(scripts.sessionSpend.address, {
           kind: "inline",
@@ -315,7 +325,7 @@ export async function submitHistorySession(args: {
     token,
     measurements,
     finalize(builder: TxBuilder) {
-      return builder.readFrom(references).collectFrom(
+      return builder.readFrom([mintReference, spendReference]).collectFrom(
         [utxo],
         encode(constr([], 2)),
       )

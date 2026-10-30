@@ -162,7 +162,12 @@ pub fn validate(
                 consensus_states: proof_states,
               },
             }
-          expect session.validate_finalization(receipt, proof_client, tx_time)
+          expect
+            session.validate_finalization_from_authenticated_plan(
+              receipt,
+              proof_client,
+              tx_time,
+            )
           expect
             validator_utils.require_exact_marker_mint(
               mint,
@@ -238,12 +243,12 @@ pub fn validate(
               |> assets.tokens(session_mint_policy_id)
               |> dict.to_pairs()
           and {
-            session.validate_misbehaviour_finalization(
+            session.validate_misbehaviour_finalization_from_authenticated_plan(
               first,
               proof_client,
               tx_time,
             ),
-            session.validate_misbehaviour_finalization(
+            session.validate_misbehaviour_finalization_from_authenticated_plan(
               second,
               proof_client,
               tx_time,

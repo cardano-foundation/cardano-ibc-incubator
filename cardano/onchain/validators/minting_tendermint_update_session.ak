@@ -1,13 +1,15 @@
 use aiken/collection/dict
 use aiken/collection/list
+use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use cardano/address.{Script as ScriptCredential}
 use cardano/assets.{PolicyId}
-use cardano/transaction.{Input, Output, Transaction}
+use cardano/transaction.{Input, Output, Spend, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/multitx/session
 use ibc/client/ics_007_tendermint_client/multitx/types.{
-  BurnSession, BurnSessions, MintSession, MintSessionRedeemer, SessionDatum,
+  BurnSession, BurnSessions, Cancel, Finalize, MintSession, MintSessionRedeemer,
+  SessionDatum,
 }
 use ibc/utils/validator_utils
 
@@ -32,6 +34,25 @@ fn is_session_input(
   token: AuthToken,
 ) -> Bool {
   is_session_output(input.output, session_script_hash, token)
+}
+
+/// The policy already contains plan validation for creation. Reuse it for the
+/// final burn instead of including header hashing in both spending validators.
+/// Match terminal redeemers as Data to avoid decoding unused signature batches.
+fn validate_burned_plan(
+  input: Input,
+  datum: SessionDatum,
+  transaction: Transaction,
+) -> Bool {
+  expect Some(action) =
+    pairs.get_first(transaction.redeemers, Spend(input.output_reference))
+  let finalize: Data = Finalize
+  let cancel: Data = Cancel
+  if action == finalize {
+    session.validate_plan_basic(datum.plan)
+  } else {
+    action == cancel
+  }
 }
 
 /// One-shot NFT policy for authenticated Tendermint update sessions.
@@ -83,6 +104,7 @@ validator mint_tendermint_update_session(
           validator_utils.get_inline_datum(session_input.output)
         and {
           input_datum.session_token == token,
+          validate_burned_plan(session_input, input_datum, transaction),
           validator_utils.require_exact_marker_mint(
             mint,
             own_policy_id,
@@ -114,6 +136,7 @@ validator mint_tendermint_update_session(
               validator_utils.get_inline_datum(session_input.output)
             and {
               input_datum.session_token == token,
+              validate_burned_plan(session_input, input_datum, transaction),
               validator_utils.no_output_contains_auth_token(outputs, token),
             }
           },
