@@ -2,6 +2,7 @@ import crypto from 'crypto';
 
 import {
   TENDERMINT_MULTITX_MAX_BATCH_SIZE,
+  TENDERMINT_MULTITX_MEMBERSHIP_BATCH_SIZE,
   TENDERMINT_MULTITX_MAX_VALIDATOR_COUNT,
   TendermintUpdateMode,
   TendermintValidatorRange,
@@ -195,7 +196,8 @@ export function buildTendermintStagedPayloads(input: BuildTendermintStagedPayloa
       range,
       validators,
     })),
-    targetBatches: partition(targetEntries, batchSize).map(({ range, values: entries }) => ({ range, entries })),
+    targetBatches: partition(targetEntries, Math.min(batchSize, TENDERMINT_MULTITX_MEMBERSHIP_BATCH_SIZE))
+      .map(({ range, values: entries }) => ({ range, entries })),
   };
 }
 

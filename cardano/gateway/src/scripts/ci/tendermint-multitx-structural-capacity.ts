@@ -56,6 +56,8 @@ function buildTendermintMultitxStructuralReport(
   const verifyTarget = countSteps(plan.steps, 'verify_target');
   const finalize = countSteps(plan.steps, 'finalize');
   const peakValidators = Math.min(targetValidatorCount, plan.batchSize);
+  const targetSteps = plan.steps.filter(step => step.kind === 'verify_target');
+  const peakSignatures = Math.max(...targetSteps.map(step => step.range!.end - step.range!.start));
 
   return {
     classification: 'deterministic-structural-model',
@@ -73,8 +75,8 @@ function buildTendermintMultitxStructuralReport(
     },
     peakPerTransaction: {
       validators: peakValidators,
-      commitSignatures: peakValidators,
-      trustedMembershipProofs: mode === 'non_adjacent' ? peakValidators : 0,
+      commitSignatures: peakSignatures,
+      trustedMembershipProofs: mode === 'non_adjacent' ? peakSignatures : 0,
     },
   };
 }

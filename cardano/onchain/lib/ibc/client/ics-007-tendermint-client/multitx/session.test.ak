@@ -656,7 +656,7 @@ test canonical_order_is_enforced_across_batches() fail {
   session.advance(after_first, VerifyTarget { entries: [out_of_order] }) == completed_adjacent()
 }
 
-test batch_larger_than_six_is_rejected() fail {
+test batch_larger_than_twenty_four_is_rejected() fail {
   expect Some(first) = list.at(validators(), 0)
   let entry =
     TargetEntry {
@@ -668,9 +668,9 @@ test batch_larger_than_six_is_rejected() fail {
     session.initial_datum(
       session_token(),
       #"44444444444444444444444444444444444444444444444444444444",
-      UpdatePlan { ..plan(2), target_validator_count: 7 },
+      UpdatePlan { ..plan(2), target_validator_count: 25 },
     ),
-    VerifyTarget { entries: [entry, entry, entry, entry, entry, entry, entry] },
+    VerifyTarget { entries: list.repeat(entry, 25) },
   ) == completed_adjacent()
 }
 

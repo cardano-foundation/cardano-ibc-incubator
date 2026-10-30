@@ -187,11 +187,11 @@ describe('unchanged Tendermint validator sets', () => {
     return { ...state, payloads };
   }
 
-  it('verifies the frozen 45-validator skipped update in eight target batches', () => {
+  it('verifies the frozen 45-validator skipped update in two target batches', () => {
     const { datum: initial, payloads, consensusState } = fastUpdate();
     expect(initial.plan.trustedValidatorCount).toBe(0n);
     expect(payloads.trustedBatches).toEqual([]);
-    expect(payloads.targetBatches).toHaveLength(8);
+    expect(payloads.targetBatches).toHaveLength(2);
     expect(
       payloads.targetBatches.flatMap((batch) => batch.entries).every((entry) => entry.trustedMembership === null),
     ).toBe(true);
@@ -214,7 +214,7 @@ describe('unchanged Tendermint validator sets', () => {
     const entries = payloads.targetBatches.flatMap((batch) => batch.entries);
     const advanced = advanceTendermintSession(initial, { VerifyTarget: { entries: entries.slice(0, 3) } });
     expect(nextTendermintSessionAdvance(advanced, payloads)).toEqual({
-      VerifyTarget: { entries: entries.slice(3, 9) },
+      VerifyTarget: { entries: entries.slice(3, 27) },
     });
   });
 
@@ -584,7 +584,7 @@ describe('pure Tendermint update-session state transitions', () => {
   it('streams the frozen 45-validator adjacent update to Complete without mutating its input', () => {
     const scenario = capacityFixture.scenarios.adjacent_all_signed;
     const { datum: initial, header } = sessionFor(scenario);
-    const payloads = buildTendermintStagedPayloads({ header, mode: 'adjacent' });
+    const payloads = buildTendermintStagedPayloads({ header, mode: 'adjacent', batchSize: 6 });
     let datum = initial;
 
     payloads.targetBatches.slice(0, -1).forEach((batch) => {
@@ -625,7 +625,7 @@ describe('pure Tendermint update-session state transitions', () => {
     const allTargets = payloads.targetBatches.flatMap((batch) => batch.entries);
 
     let datum = advanceTendermintSession(initial, { VerifyTrusted: { validators: allTrusted.slice(0, 3) } });
-    const resumedTrusted = nextTendermintSessionAdvance(datum, payloads);
+    const resumedTrusted = nextTendermintSessionAdvance(datum, payloads, 6);
     expect(resumedTrusted).toEqual({ VerifyTrusted: { validators: allTrusted.slice(3, 9) } });
 
     while ('NonAdjacentTrusted' in datum.phase) {
@@ -791,7 +791,7 @@ describe('pure Tendermint update-session state transitions', () => {
           entries: [...payloads.targetBatches[0].entries, ...payloads.targetBatches[1].entries.slice(0, 2)],
         },
       }),
-    ).toThrow('between 1 and 6 entries');
+    ).toThrow('between 1 and 24 entries');
     expect(datum.phase).toEqual(initialTendermintSessionPhase(datum.plan));
   });
 });

@@ -26,7 +26,8 @@ use ibc/client/ics_007_tendermint_client/multitx/types.{
   AdjacentTarget, CommitCore, Complete, Finalize, NonAdjacentTarget,
   NonAdjacentTrusted, SessionDatum, SpendSessionRedeemer, TargetEntry,
   TrustedMembership, UpdatePlan, ValidatorOrderKey, VerifyTarget, VerifyTrusted,
-  max_batch_size, max_total_voting_power, max_validator_count,
+  max_batch_size, max_membership_batch_size, max_total_voting_power,
+  max_validator_count,
 }
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/client.{Active}
@@ -515,6 +516,7 @@ fn advance_target(
         used_trusted_indices,
         last_target,
       } -> {
+        expect batch_length <= max_membership_batch_size
         expect
           target_accumulator.count + batch_length <= plan.target_validator_count
         let (

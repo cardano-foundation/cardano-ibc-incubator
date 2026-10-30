@@ -177,7 +177,7 @@ fn take_target_entries(
   }
 }
 
-fn real_adjacent_batch() -> (SessionDatum, List<TargetEntry>) {
+fn real_adjacent_batch_size(size: Int) -> (SessionDatum, List<TargetEntry>) {
   expect Some(data) =
     cbor.deserialise(adjacent_all_signed_spend_client_redeemer_cbor)
   expect redeemer: SpendClientRedeemer = data
@@ -209,8 +209,12 @@ fn real_adjacent_batch() -> (SessionDatum, List<TargetEntry>) {
     }
   (
     session.initial_datum(session_auth_token(), owner, fixture_plan),
-    take_target_entries(target_validators, commit.signatures, 6),
+    take_target_entries(target_validators, commit.signatures, size),
   )
+}
+
+fn real_adjacent_batch() -> (SessionDatum, List<TargetEntry>) {
+  real_adjacent_batch_size(6)
 }
 
 fn accumulate_expected_entries(
@@ -290,6 +294,32 @@ test advances_real_injective_six_validator_target_batch() {
     redeemer,
     input.output_reference,
     transaction,
+  )
+}
+
+test real_injective_twenty_four_validator_fixture_setup_baseline() {
+  let (input_datum, entries) = real_adjacent_batch_size(24)
+  let expected = expected_adjacent_continuation(input_datum, entries)
+  expect AdjacentTarget { target_accumulator, .. } = expected.phase
+  target_accumulator.count == 24
+}
+
+test advances_real_injective_twenty_four_validator_target_batch() {
+  let (input_datum, entries) = real_adjacent_batch_size(24)
+  let input = session_input(input_datum)
+  let expected = expected_adjacent_continuation(input_datum, entries)
+  spending_tendermint_update_session.spend_tendermint_update_session.spend(
+    #"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    Some(input_datum),
+    VerifyTarget { entries },
+    input.output_reference,
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [input],
+      outputs: [continuation(input, expected)],
+      mint: zero,
+      extra_signatories: [owner],
+    },
   )
 }
 

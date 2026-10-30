@@ -106,8 +106,8 @@ describe('Tendermint staged update payloads', () => {
     expect(payloads.targetValidatorRoot).toBe(header.signedHeader.header.validatorsHash);
     expect(payloads.trustedValidatorRoot).toBeNull();
     expect(payloads.trustedBatches).toEqual([]);
-    expect(payloads.targetBatches).toHaveLength(8);
-    expect(payloads.targetBatches.map((batch) => batch.entries.length)).toEqual([6, 6, 6, 6, 6, 6, 6, 3]);
+    expect(payloads.targetBatches).toHaveLength(2);
+    expect(payloads.targetBatches.map((batch) => batch.entries.length)).toEqual([24, 21]);
     expect(payloads.targetBatches.flatMap((batch) => batch.entries).every((entry) => !entry.trustedMembership)).toBe(
       true,
     );
@@ -124,7 +124,7 @@ describe('Tendermint staged update payloads', () => {
 
     expect(payloads.targetValidatorRoot).toBe(scenario.observations.validator_hash);
     expect(payloads.trustedValidatorRoot).toBe(scenario.trusted_consensus_state.next_validators_hash);
-    expect(payloads.trustedBatches.map((batch) => batch.validators.length)).toEqual([6, 6, 6, 6, 6, 6, 6, 3]);
+    expect(payloads.trustedBatches.map((batch) => batch.validators.length)).toEqual([24, 21]);
     expect(payloads.targetBatches.map((batch) => batch.entries.length)).toEqual([6, 6, 6, 6, 6, 6, 6, 3]);
 
     const memberships = payloads.targetBatches

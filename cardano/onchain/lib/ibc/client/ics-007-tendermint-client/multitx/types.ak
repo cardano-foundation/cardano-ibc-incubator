@@ -16,7 +16,10 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
 
 /// Keep every verification transaction comfortably below the ledger execution
 /// budget. This is a consensus rule, not merely an off-chain batching hint.
-pub const max_batch_size = 6
+pub const max_batch_size = 24
+
+/// Membership proofs have a larger worst-case cost than target-only batches.
+pub const max_membership_batch_size = 6
 
 /// Bound the session datum's trusted-validator bitmap and total work per update.
 /// The first protocol version deliberately targets validator sets up to 256.
