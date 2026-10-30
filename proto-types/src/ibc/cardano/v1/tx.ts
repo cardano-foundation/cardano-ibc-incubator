@@ -202,6 +202,9 @@ export interface BuildPacketBatchRequest {
   port_id: string;
   channel_id: string;
   intent_tx_hash: string;
+  /**
+   * Already available successful acknowledgements. Empty selects funded sends.
+   */
   acknowledgements: Uint8Array[];
 }
 /**
@@ -1079,8 +1082,8 @@ export const BuildPacketBatchRequest = {
     if (message.intent_tx_hash !== "") {
       writer.uint32(34).string(message.intent_tx_hash);
     }
-    for (const value of message.acknowledgements) {
-      writer.uint32(42).bytes(value);
+    for (const v of message.acknowledgements) {
+      writer.uint32(42).bytes(v!);
     }
     return writer;
   },
@@ -1119,8 +1122,8 @@ export const BuildPacketBatchRequest = {
     if (isSet(object.port_id)) obj.port_id = String(object.port_id);
     if (isSet(object.channel_id)) obj.channel_id = String(object.channel_id);
     if (isSet(object.intent_tx_hash)) obj.intent_tx_hash = String(object.intent_tx_hash);
-    obj.acknowledgements = Array.isArray(object?.acknowledgements)
-      ? object.acknowledgements.map((value: any) => bytesFromBase64(value)) : [];
+    if (Array.isArray(object?.acknowledgements))
+      obj.acknowledgements = object.acknowledgements.map((e: any) => bytesFromBase64(e));
     return obj;
   },
   toJSON(message: BuildPacketBatchRequest): unknown {
@@ -1129,7 +1132,13 @@ export const BuildPacketBatchRequest = {
     message.port_id !== undefined && (obj.port_id = message.port_id);
     message.channel_id !== undefined && (obj.channel_id = message.channel_id);
     message.intent_tx_hash !== undefined && (obj.intent_tx_hash = message.intent_tx_hash);
-    obj.acknowledgements = message.acknowledgements.map(value => base64FromBytes(value));
+    if (message.acknowledgements) {
+      obj.acknowledgements = message.acknowledgements.map((e) =>
+        base64FromBytes(e !== undefined ? e : new Uint8Array()),
+      );
+    } else {
+      obj.acknowledgements = [];
+    }
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<BuildPacketBatchRequest>, I>>(object: I): BuildPacketBatchRequest {
@@ -1138,7 +1147,7 @@ export const BuildPacketBatchRequest = {
     message.port_id = object.port_id ?? "";
     message.channel_id = object.channel_id ?? "";
     message.intent_tx_hash = object.intent_tx_hash ?? "";
-    message.acknowledgements = object.acknowledgements?.map(value => value) || [];
+    message.acknowledgements = object.acknowledgements?.map((e) => e) || [];
     return message;
   },
 };
