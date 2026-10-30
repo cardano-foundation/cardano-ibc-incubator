@@ -384,10 +384,11 @@ fn unchanged_initial() -> SessionDatum {
 }
 
 test unchanged_set_skips_trusted_reconstruction_and_finalizes() {
-  let complete = session.advance(
-    unchanged_initial(),
-    VerifyTarget { entries: adjacent_entries() },
-  )
+  let complete =
+    session.advance(
+      unchanged_initial(),
+      VerifyTarget { entries: adjacent_entries() },
+    )
   and {
     session.is_complete_valid(complete),
     session.validate_finalization(
@@ -414,13 +415,14 @@ test unchanged_set_rejects_an_unauthenticated_root() {
 
 test unchanged_set_still_requires_custom_trusted_quorum() fail {
   let initial = unchanged_initial()
-  let strict = SessionDatum {
-    ..initial,
-    plan: UpdatePlan {
-      ..initial.plan,
-      trust_level: unchecked_rational.new(3, 4),
-    },
-  }
+  let strict =
+    SessionDatum {
+      ..initial,
+      plan: UpdatePlan {
+        ..initial.plan,
+        trust_level: unchecked_rational.new(3, 4),
+      },
+    }
   expect [first, second, third, fourth] = adjacent_entries()
   session.advance(
     strict,
