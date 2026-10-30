@@ -1,7 +1,7 @@
 /** Reconciled Cardano transaction costs. This is a compiled-validator lab
  * benchmark, not a live two-chain throughput or endurance qualification.
  */
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 import {
   applyDoubleCborEncoding,
   CML,
@@ -15,6 +15,7 @@ import {
   toText,
   type TxSigned,
   type UTxO,
+  utxoToCore,
 } from "@lucid-evolution/lucid";
 import {
   type CostMeasurement,
@@ -33,6 +34,7 @@ import {
 import {
   buildPacketAcknowledgement,
   buildPacketAcknowledgementBatch,
+  buildPacketPrune,
   buildPacketReceive,
   buildPacketRejection,
   buildPacketSendBatch,
@@ -52,6 +54,8 @@ type Fixture = Awaited<ReturnType<typeof packetLaneFixture>>;
 type Observed = CostMeasurement & {
   phase: string;
   feePayer: string;
+  referenceScripts: Array<{ hash: string; bytes: number }>;
+  referenceScriptBytes: number;
   walletBefore: Record<string, bigint>;
   walletBalanceChecks?: Record<string, bigint>;
 };
@@ -176,13 +180,29 @@ async function capture(
     return result;
   };
   const provider = lucid.config().provider!;
-  const [inputs, collateral] = await Promise.all([
+  const [inputs, collateral, references] = await Promise.all([
     provider.getUtxosByOutRef(refs(body.inputs())),
     provider.getUtxosByOutRef(refs(body.collateral_inputs())),
+    provider.getUtxosByOutRef(refs(body.reference_inputs())),
   ]);
+  const referenceScripts = [...inputs, ...references].filter((u) => u.scriptRef)
+    .map((u) => {
+      const script = utxoToCore(u).output().script_ref()!;
+      const plutus = script.as_plutus_v3();
+      assert(plutus);
+      return {
+        hash: script.hash().to_hex(),
+        bytes: plutus.to_raw_bytes().length,
+      };
+    });
   const observed = {
     phase,
     feePayer,
+    referenceScripts,
+    referenceScriptBytes: referenceScripts.reduce(
+      (sum, script) => sum + script.bytes,
+      0,
+    ),
     walletBefore: await balances(lucid, wallets),
     ...measureTransaction(
       signed.toCBOR(),
@@ -706,7 +726,11 @@ for (const name of selected) {
       );
     }
   }
-  const profileFor = (rows: Observed[], count: number): CostProfile => {
+  const profileFor = (
+    rows: Observed[],
+    count: number,
+    profileName = name,
+  ): CostProfile => {
     const total = (field: (tx: Observed) => bigint) => {
       const value = rows.reduce((n, tx) => n + field(tx), 0n);
       // Conservative whole-lovelace average, including negative releases.
@@ -715,7 +739,7 @@ for (const name of selected) {
         : value / BigInt(count);
     };
     return {
-      name,
+      name: profileName,
       relayerNetDebitLovelace: total((tx) =>
         tx.roles.relayer?.netDebitLovelace ?? 0n
       ),
@@ -764,6 +788,43 @@ for (const name of selected) {
     profile,
   });
   console.log(stringifyCosts(profile).trim());
+  if (name === "receive-existing-voucher") {
+    // The 32 receives above are already recorded. Measure cleanup separately so
+    // its cost can be added once per received packet without double counting.
+    const absence = await absenceProof(fromText(
+      "commitments/ports/transfer/channels/channel-7/sequences/1",
+    ));
+    const height = record(1n, 100n);
+    checkpoint(f, height, absence.root);
+    const prune = await buildPacketPrune(
+      relayer,
+      f.deployment,
+      1n,
+      height,
+      absence.proof,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    await submit(
+      relayer,
+      await signMeasured(relayer, prune.tx, "prune received packet"),
+      "prune",
+      "relayer",
+    );
+    const transaction = transactions.pop()!;
+    const profile = profileFor([transaction], 1, "packet-prune");
+    scenarios.push({
+      name: "packet-prune",
+      operations: 1,
+      profileSamples: 1,
+      profileBasis:
+        "One receipt/acknowledgement cleanup after 32 receives on 16 lanes. The counterparty absence proof is fixture pre-state. Prerequisite receives are accounted for in receive-existing-voucher",
+      transactions: [transaction],
+      coldStartProfile: profile,
+      profile,
+    });
+    console.log(stringifyCosts(profile).trim());
+  }
 }
 const repository = new URL("../../../", import.meta.url);
 const commit = new TextDecoder().decode(
