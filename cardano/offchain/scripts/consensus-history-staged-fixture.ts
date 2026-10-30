@@ -84,6 +84,8 @@ export async function submitHistorySession(args: {
   clientState: Constr<Data>;
   header: Constr<Data>;
   owner: string;
+  batchSize?: number;
+  resourcePercent?: number;
 }) {
   const {
     lucid,
@@ -110,10 +112,7 @@ export async function submitHistorySession(args: {
     tmHeader.fields[2] === (trustedHeight.fields[1] as bigint) + 1n;
   const singleSet = adjacent ||
     tmHeader.fields[7] === trustedConsensus.fields[1];
-  assert(
-    validators.length <= 6 && trusted.length <= 6,
-    "Fixture uses one bounded batch per phase",
-  );
+  assert(validators.length <= 256 && trusted.length <= 256);
   const plan = constr([
     clientToken,
     trustedHeight,
@@ -142,8 +141,15 @@ export async function submitHistorySession(args: {
     : constr([emptyAccumulator(), 0n, none()], 1);
   const datum = () => encode(constr([token, owner, plan, phase]));
   const measurements: Array<
-    { operation: string; bytes: number; memory: number; steps: number }
+    {
+      operation: string;
+      bytes: number;
+      memory: number;
+      steps: number;
+      fee: number;
+    }
   > = [];
+  const resourcePercent = BigInt(args.resourcePercent ?? 95);
   async function submit(builder: TxBuilder, operation: string) {
     const tx = await builder.addSignerKey(owner).complete({
       localUPLCEval: true,
@@ -157,17 +163,18 @@ export async function submitHistorySession(args: {
     );
     assert(bytes <= parameters.maxTxSize - 750, `${operation}: ${bytes} bytes`);
     assert(
-      units.mem() <= BigInt(parameters.maxTxExMem) * 95n / 100n,
+      units.mem() <= BigInt(parameters.maxTxExMem) * resourcePercent / 100n,
       `${operation}: ${units.mem()} memory`,
     );
     assert(
-      units.steps() <= BigInt(parameters.maxTxExSteps) * 95n / 100n,
+      units.steps() <= BigInt(parameters.maxTxExSteps) * resourcePercent / 100n,
       `${operation}: ${units.steps()} CPU`,
     );
     assertEquals(await signed.submit(), signed.toHash());
     emulator.awaitBlock();
     measurements.push({
       operation,
+      fee: Number(signed.toTransaction().body().fee()),
       bytes,
       memory: Number(units.mem()),
       steps: Number(units.steps()),
@@ -183,80 +190,126 @@ export async function submitHistorySession(args: {
       .pay.ToContract(scripts.sessionSpend.address, {
         kind: "inline",
         value: datum(),
-      }, { [unit]: 1n, lovelace: 15_000_000n }),
+      }, { [unit]: 1n, lovelace: 0n }),
     "session initialize",
   );
+  function accumulator(values: Constr<Data>[]) {
+    const peaks: { size: bigint; root: string }[] = [];
+    for (const value of values) {
+      let next = { size: 1n, root: validatorLeaf(value) };
+      while (peaks[0]?.size === next.size) {
+        const previous = peaks.shift()!;
+        next = {
+          size: next.size * 2n,
+          root: sha256("01" + previous.root + next.root),
+        };
+      }
+      peaks.unshift(next);
+    }
+    return constr([
+      BigInt(values.length),
+      peaks.map((p) => constr([p.size, p.root])),
+    ]);
+  }
+  const total = (values: Constr<Data>[]) =>
+    values.reduce((sum, value) => sum + (value.fields[2] as bigint), 0n);
+  const last = (values: Constr<Data>[]) => {
+    const value = values.at(-1)!;
+    return some(constr([value.fields[2], value.fields[0]]));
+  };
+  const batchSize = args.batchSize ?? 6;
   const trustedLeaves = trusted.map(validatorLeaf);
   const trustedRoot = root(trustedLeaves);
-  const trustedTotal = trusted.reduce(
-    (sum, validator) => sum + (validator.fields[2] as bigint),
-    0n,
-  );
+  const trustedTotal = total(trusted);
   if (!singleSet) {
-    phase = constr([
-      trustedRoot,
-      trustedTotal,
-      emptyAccumulator(),
-      0n,
-      0n,
-      0n,
-      0n,
-      none(),
-    ], 2);
+    for (let offset = 0; offset < trusted.length; offset += batchSize) {
+      const batch = trusted.slice(offset, offset + batchSize);
+      const prefix = trusted.slice(0, offset + batch.length);
+      phase = prefix.length === trusted.length
+        ? constr([
+          trustedRoot,
+          trustedTotal,
+          emptyAccumulator(),
+          0n,
+          0n,
+          0n,
+          0n,
+          none(),
+        ], 2)
+        : constr([accumulator(prefix), total(prefix), last(prefix)], 1);
+      utxo = await submit(
+        lucid.newTx().readFrom(references)
+          .collectFrom([utxo], encode(constr([batch])))
+          .pay.ToContract(scripts.sessionSpend.address, {
+            kind: "inline",
+            value: datum(),
+          }, utxo.assets),
+        "session verify trusted",
+      );
+    }
+  }
+  let signedPower = 0n;
+  let trustedSigned = 0n;
+  let used = 0n;
+  const targetBatchSize = singleSet ? batchSize : Math.min(batchSize, 6);
+  for (let offset = 0; offset < validators.length; offset += targetBatchSize) {
+    const values = validators.slice(offset, offset + targetBatchSize);
+    const entries = values.map((validator, j) => {
+      const sig = signatures[offset + j];
+      let membership: Constr<Data> = none();
+      if (sig.fields[0] === 2n) {
+        signedPower += validator.fields[2] as bigint;
+        if (!singleSet) {
+          const index = trusted.findIndex((value) =>
+            value.fields[1] === validator.fields[1]
+          );
+          if (index >= 0) {
+            trustedSigned += trusted[index].fields[2] as bigint;
+            used |= 1n << BigInt(index);
+            membership = some(
+              constr([
+                BigInt(index),
+                trusted[index],
+                auditPath(trustedLeaves, index),
+              ]),
+            );
+          }
+        }
+      }
+      return constr([validator, sig, membership]);
+    });
+    const prefix = validators.slice(0, offset + values.length);
+    phase = prefix.length === validators.length
+      ? constr([
+        root(prefix.map(validatorLeaf)),
+        total(prefix),
+        signedPower,
+        adjacent ? none() : some(trustedRoot),
+        adjacent ? 0n : trustedTotal,
+        singleSet && !adjacent ? signedPower : trustedSigned,
+      ], 3)
+      : singleSet
+      ? constr([accumulator(prefix), total(prefix), signedPower, last(prefix)])
+      : constr([
+        trustedRoot,
+        trustedTotal,
+        accumulator(prefix),
+        total(prefix),
+        signedPower,
+        trustedSigned,
+        used,
+        last(prefix),
+      ], 2);
     utxo = await submit(
       lucid.newTx().readFrom(references)
-        .collectFrom([utxo], encode(constr([trusted])))
+        .collectFrom([utxo], encode(constr([entries], 1)))
         .pay.ToContract(scripts.sessionSpend.address, {
           kind: "inline",
           value: datum(),
         }, utxo.assets),
-      "session verify trusted",
+      "session verify target",
     );
   }
-  let signedPower = 0n;
-  let trustedSigned = 0n;
-  const entries = validators.map((validator, index) => {
-    const sig = signatures[index];
-    let membership: Constr<Data> = none();
-    if (sig.fields[0] === 2n) {
-      signedPower += validator.fields[2] as bigint;
-      if (!singleSet) {
-        const trustedIndex = trusted.findIndex((candidate) =>
-          candidate.fields[1] === validator.fields[1]
-        );
-        assert(trustedIndex >= 0);
-        trustedSigned += trusted[trustedIndex].fields[2] as bigint;
-        membership = some(
-          constr([
-            BigInt(trustedIndex),
-            trusted[trustedIndex],
-            auditPath(trustedLeaves, trustedIndex),
-          ]),
-        );
-      }
-    }
-    return constr([validator, sig, membership]);
-  });
-  phase = constr([
-    root(validators.map(validatorLeaf)),
-    validators.reduce(
-      (sum, validator) => sum + (validator.fields[2] as bigint),
-      0n,
-    ),
-    signedPower,
-    adjacent ? none() : some(trustedRoot),
-    adjacent ? 0n : trustedTotal,
-    singleSet && !adjacent ? signedPower : trustedSigned,
-  ], 3);
-  utxo = await submit(
-    lucid.newTx().readFrom(references)
-      .collectFrom([utxo], encode(constr([entries], 1)))
-      .pay.ToContract(scripts.sessionSpend.address, {
-        kind: "inline",
-        value: datum(),
-      }, utxo.assets),
-    "session verify target",
-  );
   return {
     utxo,
     token,

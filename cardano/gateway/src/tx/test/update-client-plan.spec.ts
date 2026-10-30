@@ -2,6 +2,7 @@ import {
   buildTendermintUpdatePlan,
   getReadyTendermintUpdateSteps,
   TENDERMINT_MULTITX_MAX_BATCH_SIZE,
+  TENDERMINT_MULTITX_MEMBERSHIP_BATCH_SIZE,
   TENDERMINT_MULTITX_MAX_VALIDATOR_COUNT,
 } from '../update-client-plan';
 
@@ -26,13 +27,13 @@ describe('Tendermint multi-transaction update plan', () => {
       targetValidatorCount: 45,
       trustedValidatorCount: 0,
     });
-    expect(plan.steps).toHaveLength(10);
+    expect(plan.steps).toHaveLength(4);
     expect(plan.steps.filter((step) => step.kind === 'verify_trusted')).toEqual([]);
   });
   it.each([
-    [45, 8, 10],
-    [100, 17, 19],
-    [200, 34, 36],
+    [45, 2, 4],
+    [100, 5, 7],
+    [200, 9, 11],
   ])('partitions an adjacent %i-validator update into %i batches and %i transactions', (count, batchCount, txCount) => {
     const plan = buildPlan(count);
     const targetSteps = plan.steps.filter((step) => step.kind === 'verify_target');
@@ -49,9 +50,9 @@ describe('Tendermint multi-transaction update plan', () => {
   });
 
   it.each([
-    [45, 18],
-    [100, 36],
-    [200, 70],
+    [45, 12],
+    [100, 24],
+    [200, 45],
   ])('plans trusted and target phases for a non-adjacent %i-validator update', (count, txCount) => {
     const plan = buildPlan(count, 'non_adjacent');
     const trustedSteps = plan.steps.filter((step) => step.kind === 'verify_trusted');
@@ -59,7 +60,7 @@ describe('Tendermint multi-transaction update plan', () => {
 
     expect(plan.steps).toHaveLength(txCount);
     expect(trustedSteps).toHaveLength(Math.ceil(count / TENDERMINT_MULTITX_MAX_BATCH_SIZE));
-    expect(targetSteps).toHaveLength(Math.ceil(count / TENDERMINT_MULTITX_MAX_BATCH_SIZE));
+    expect(targetSteps).toHaveLength(Math.ceil(count / TENDERMINT_MULTITX_MEMBERSHIP_BATCH_SIZE));
     expect(targetSteps[0].dependsOn).toEqual([trustedSteps.at(-1)?.id]);
   });
 
@@ -112,7 +113,7 @@ describe('Tendermint multi-transaction update plan', () => {
         mode: 'adjacent',
         targetValidatorCount: 45,
         trustedValidatorCount: 0,
-        batchSize: 8,
+        batchSize: 0,
       }),
     ).toThrow('batchSize');
 

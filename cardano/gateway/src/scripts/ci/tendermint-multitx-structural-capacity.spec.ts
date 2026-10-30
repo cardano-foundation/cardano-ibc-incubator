@@ -20,58 +20,58 @@ describe('Tendermint staged-v1 structural capacity', () => {
         mode: 'adjacent',
         targetValidatorCount: 45,
         trustedValidatorCount: 0,
-        transactions: { initialize: 1, verifyTrusted: 0, verifyTarget: 8, finalize: 1, total: 10 },
+        transactions: { initialize: 1, verifyTrusted: 0, verifyTarget: 2, finalize: 1, total: 4 },
       },
       {
         mode: 'non_adjacent',
         targetValidatorCount: 45,
         trustedValidatorCount: 45,
-        transactions: { initialize: 1, verifyTrusted: 8, verifyTarget: 8, finalize: 1, total: 18 },
+        transactions: { initialize: 1, verifyTrusted: 2, verifyTarget: 8, finalize: 1, total: 12 },
       },
       {
         mode: 'adjacent',
         targetValidatorCount: 100,
         trustedValidatorCount: 0,
-        transactions: { initialize: 1, verifyTrusted: 0, verifyTarget: 17, finalize: 1, total: 19 },
+        transactions: { initialize: 1, verifyTrusted: 0, verifyTarget: 5, finalize: 1, total: 7 },
       },
       {
         mode: 'non_adjacent',
         targetValidatorCount: 100,
         trustedValidatorCount: 100,
-        transactions: { initialize: 1, verifyTrusted: 17, verifyTarget: 17, finalize: 1, total: 36 },
+        transactions: { initialize: 1, verifyTrusted: 5, verifyTarget: 17, finalize: 1, total: 24 },
       },
       {
         mode: 'adjacent',
         targetValidatorCount: 200,
         trustedValidatorCount: 0,
-        transactions: { initialize: 1, verifyTrusted: 0, verifyTarget: 34, finalize: 1, total: 36 },
+        transactions: { initialize: 1, verifyTrusted: 0, verifyTarget: 9, finalize: 1, total: 11 },
       },
       {
         mode: 'non_adjacent',
         targetValidatorCount: 200,
         trustedValidatorCount: 200,
-        transactions: { initialize: 1, verifyTrusted: 34, verifyTarget: 34, finalize: 1, total: 70 },
+        transactions: { initialize: 1, verifyTrusted: 9, verifyTarget: 34, finalize: 1, total: 45 },
       },
       {
         mode: 'adjacent',
         targetValidatorCount: 256,
         trustedValidatorCount: 0,
-        transactions: { initialize: 1, verifyTrusted: 0, verifyTarget: 43, finalize: 1, total: 45 },
+        transactions: { initialize: 1, verifyTrusted: 0, verifyTarget: 11, finalize: 1, total: 13 },
       },
       {
         mode: 'non_adjacent',
         targetValidatorCount: 256,
         trustedValidatorCount: 256,
-        transactions: { initialize: 1, verifyTrusted: 43, verifyTarget: 43, finalize: 1, total: 88 },
+        transactions: { initialize: 1, verifyTrusted: 11, verifyTarget: 43, finalize: 1, total: 56 },
       },
     ]);
   });
 
   it('caps per-transaction validator and signature work at one batch', () => {
     for (const report of reports) {
-      expect(report.batchSize).toBe(6);
-      expect(report.peakPerTransaction.validators).toBe(6);
-      expect(report.peakPerTransaction.commitSignatures).toBe(6);
+      expect(report.batchSize).toBe(24);
+      expect(report.peakPerTransaction.validators).toBe(24);
+      expect(report.peakPerTransaction.commitSignatures).toBe(report.mode === 'non_adjacent' ? 6 : 24);
       expect(report.peakPerTransaction.trustedMembershipProofs).toBe(report.mode === 'non_adjacent' ? 6 : 0);
     }
   });
@@ -83,6 +83,6 @@ describe('Tendermint staged-v1 structural capacity', () => {
     const rendered = formatTendermintMultitxStructuralReports(reports);
     expect(rendered).toContain(TENDERMINT_MULTITX_STRUCTURAL_DISCLAIMER);
     expect(rendered).toContain('not measurements of serialized transaction bytes, execution units, fees, latency');
-    expect(rendered).toContain('| non_adjacent | 200 | 200 | 1 | 34 | 34 | 1 | 70 | 6 | 6 | 6 |');
+    expect(rendered).toContain('| non_adjacent | 200 | 200 | 1 | 9 | 34 | 1 | 45 | 24 | 6 | 6 |');
   });
 });

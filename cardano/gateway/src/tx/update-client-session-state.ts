@@ -22,7 +22,10 @@ import {
   TendermintStagedPayloads,
   verifyTendermintValidatorMembership,
 } from './update-client-staged-payload';
-import { TENDERMINT_MULTITX_MAX_BATCH_SIZE, TENDERMINT_MULTITX_MAX_VALIDATOR_COUNT } from './update-client-plan';
+import {
+  TENDERMINT_MULTITX_MAX_BATCH_SIZE, TENDERMINT_MULTITX_MAX_VALIDATOR_COUNT,
+  TENDERMINT_MULTITX_MEMBERSHIP_BATCH_SIZE,
+} from './update-client-plan';
 
 const BLOCK_ID_FLAG_ABSENT = 1n;
 const BLOCK_ID_FLAG_COMMIT = 2n;
@@ -347,7 +350,9 @@ export function nextTendermintSessionAdvance(
       ? datum.phase.AdjacentTarget.targetAccumulator.count
       : datum.phase.NonAdjacentTarget.targetAccumulator.count;
   const start = sessionProgressIndex(count, datum.plan.targetValidatorCount, entries.length, 'target validator');
-  return { VerifyTarget: { entries: entries.slice(start, start + batchSize) } };
+  const limit = 'NonAdjacentTarget' in datum.phase
+    ? Math.min(batchSize, TENDERMINT_MULTITX_MEMBERSHIP_BATCH_SIZE) : batchSize;
+  return { VerifyTarget: { entries: entries.slice(start, start + limit) } };
 }
 
 export function emptyTendermintMerkleAccumulator(): MerkleAccumulator {
@@ -520,6 +525,9 @@ function advanceAdjacentTarget(datum: SessionDatum, entries: TargetEntry[]): Ses
 }
 
 function advanceNonAdjacentTarget(datum: SessionDatum, entries: TargetEntry[]): SessionDatum {
+  if (entries.length > TENDERMINT_MULTITX_MEMBERSHIP_BATCH_SIZE) {
+    throw new Error('membership batches cannot exceed six target validators');
+  }
   if (!('NonAdjacentTarget' in datum.phase)) throw new Error('non-adjacent target phase is required');
   const current = datum.phase.NonAdjacentTarget;
   requireBatchWithinPlan(current.targetAccumulator.count, entries.length, datum.plan.targetValidatorCount, 'target');

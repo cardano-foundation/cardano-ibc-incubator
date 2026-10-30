@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 
 const TENDERMINT_MULTITX_PROTOCOL = 'tendermint-multitx-v1' as const;
-export const TENDERMINT_MULTITX_MAX_BATCH_SIZE = 6;
+export const TENDERMINT_MULTITX_MAX_BATCH_SIZE = 24;
+export const TENDERMINT_MULTITX_MEMBERSHIP_BATCH_SIZE = 6;
 export const TENDERMINT_MULTITX_MAX_VALIDATOR_COUNT = 256;
 
 export type TendermintUpdateMode = 'adjacent' | 'unchanged' | 'non_adjacent';
@@ -117,7 +118,9 @@ export function buildTendermintUpdatePlan(input: BuildTendermintUpdatePlanInput)
     }
   }
 
-  for (const range of partitionValidatorRange(targetValidatorCount, batchSize)) {
+  const targetBatchSize = input.mode === 'non_adjacent'
+    ? Math.min(batchSize, TENDERMINT_MULTITX_MEMBERSHIP_BATCH_SIZE) : batchSize;
+  for (const range of partitionValidatorRange(targetValidatorCount, targetBatchSize)) {
     appendStep({
       id: rangeStepId('verify_target', range),
       kind: 'verify_target',
