@@ -967,6 +967,9 @@ export class TendermintClientService {
     const payloads = buildTendermintStagedPayloads({
       header: updateClientOperator.header,
       mode,
+      trustLevel: plan.trustLevel,
+      misbehaviour: prepareMisbehaviour,
+      phase: this.orderStagedTendermintSessions(exactSessions)[0]?.datum.phase,
       ...(mode !== 'adjacent'
         ? {
             expectedTrustedValidatorsHash: plan.trustedConsensusState.next_validators_hash,

@@ -100,7 +100,11 @@ describe('Tendermint staged update payloads', () => {
   it('matches the frozen 45-validator Injective root and produces bounded adjacent batches', () => {
     const scenario = capacityFixture.scenarios.adjacent_all_signed;
     const header = fixtureHeader(scenario);
-    const payloads = buildTendermintStagedPayloads({ header, mode: 'adjacent' });
+    const payloads = buildTendermintStagedPayloads({
+      trustLevel: { numerator: 1n, denominator: 3n },
+      header,
+      mode: 'adjacent',
+    });
 
     expect(payloads.targetValidatorRoot).toBe(scenario.observations.validator_hash);
     expect(payloads.targetValidatorRoot).toBe(header.signedHeader.header.validatorsHash);
@@ -117,6 +121,7 @@ describe('Tendermint staged update payloads', () => {
     const scenario = capacityFixture.scenarios.non_adjacent_mixed;
     const header = fixtureHeader(scenario);
     const payloads = buildTendermintStagedPayloads({
+      trustLevel: { numerator: 1n, denominator: 3n },
       header,
       mode: 'non_adjacent',
       expectedTrustedValidatorsHash: scenario.trusted_consensus_state.next_validators_hash,
@@ -135,7 +140,11 @@ describe('Tendermint staged update payloads', () => {
     const trustedValidatorRoot = payloads.trustedValidatorRoot;
     if (trustedValidatorRoot === null) throw new Error('expected a trusted validator root');
 
-    expect(memberships).toHaveLength(scenario.observations.commit_vote_count);
+    const entries = payloads.targetBatches.flatMap((batch) => batch.entries);
+    expect(entries.filter((entry) => entry.commitSig.block_id_flag === 2n)).toHaveLength(17);
+    expect(memberships).toHaveLength(6);
+    expect(entries.map((entry) => entry.targetValidator)).toEqual(header.validatorSet.validators);
+    expect(header.signedHeader.commit.signatures.filter((sig) => sig.block_id_flag === 2n)).toHaveLength(43);
     expect(new Set(membershipIndices).size).toBe(membershipIndices.length);
     memberships.forEach((membership) => {
       expect(
@@ -148,6 +157,141 @@ describe('Tendermint staged update payloads', () => {
         }),
       ).toBe(true);
     });
+  });
+
+  function powersHeader(powers: bigint[], trustedPowers = powers): DecodedTendermintHeaderForStaging {
+    const keys = deterministicValidators(powers.length);
+    const order = (left: StagedTendermintValidator, right: StagedTendermintValidator) =>
+      left.votingPower === right.votingPower
+        ? left.address.localeCompare(right.address)
+        : left.votingPower > right.votingPower
+          ? -1
+          : 1;
+    const validators = keys.map((key, index) => ({ ...key, votingPower: powers[index] })).sort(order);
+    const trusted = keys.map((key, index) => ({ ...key, votingPower: trustedPowers[index] })).sort(order);
+    return {
+      signedHeader: {
+        header: { validatorsHash: hashTendermintValidatorSet(validators) },
+        commit: { signatures: commitSignatures(validators) },
+      },
+      validatorSet: { validators },
+      trustedValidators: { validators: trusted },
+    };
+  }
+
+  function selected(
+    header: DecodedTendermintHeaderForStaging,
+    options: {
+      mode?: 'adjacent' | 'unchanged' | 'non_adjacent';
+      trustLevel?: { numerator: bigint; denominator: bigint };
+      misbehaviour?: boolean;
+    } = {},
+  ) {
+    return buildTendermintStagedPayloads({
+      header,
+      mode: 'unchanged',
+      trustLevel: { numerator: 1n, denominator: 3n },
+      expectedTrustedValidatorsHash: hashTendermintValidatorSet(header.trustedValidators.validators),
+      ...options,
+    }).targetBatches.flatMap((batch) => batch.entries);
+  }
+
+  it('keeps strict voting-power boundaries with integers beyond Number precision', () => {
+    const above = selected(powersHeader([600_000_000_000_000_001n, 300_000_000_000_000_000n]));
+    expect(above.filter((entry) => entry.commitSig.block_id_flag === 2n)).toHaveLength(1);
+    expect(above[1].commitSig).toEqual({ block_id_flag: 1n, validator_address: '', timestamp: 0n, signature: '' });
+    const equal = selected(powersHeader([600_000_000_000_000_000n, 300_000_000_000_000_000n]));
+    expect(equal.filter((entry) => entry.commitSig.block_id_flag === 2n)).toHaveLength(2);
+  });
+
+  it('uses the configured higher trust fraction for unchanged sets and adjacent evidence', () => {
+    const header = powersHeader([80n, 10n, 10n]);
+    const trustLevel = { numerator: 9n, denominator: 10n };
+    expect(selected(header).filter((entry) => entry.commitSig.block_id_flag === 2n)).toHaveLength(1);
+    for (const options of [{ mode: 'unchanged' as const }, { mode: 'adjacent' as const, misbehaviour: true }]) {
+      expect(selected(header, { ...options, trustLevel }).every((entry) => entry.commitSig.block_id_flag === 2n)).toBe(
+        true,
+      );
+    }
+    expect(
+      selected(header, { mode: 'adjacent', trustLevel }).filter((entry) => entry.commitSig.block_id_flag === 2n),
+    ).toHaveLength(3);
+  });
+
+  it('permits normal adjacent updates when the available commit cannot meet the higher evidence threshold', () => {
+    const header = powersHeader([80n, 10n, 10n]);
+    header.signedHeader.commit.signatures[2] = {
+      block_id_flag: 1n,
+      validator_address: '',
+      timestamp: 0n,
+      signature: '',
+    };
+    const trustLevel = { numerator: 9n, denominator: 10n };
+    expect(
+      selected(header, { mode: 'adjacent', trustLevel }).filter((entry) => entry.commitSig.block_id_flag === 2n),
+    ).toHaveLength(1);
+    expect(() => selected(header, { mode: 'adjacent', trustLevel, misbehaviour: true })).toThrow(
+      'target voting-power quorum',
+    );
+  });
+
+  it('counts overlap with trusted voting powers and removes redundant memberships', () => {
+    const header = powersHeader([70n, 20n, 10n], [1n, 1n, 98n]);
+    const entries = selected(header, { mode: 'non_adjacent' });
+    expect(
+      entries.filter((entry) => entry.commitSig.block_id_flag === 2n).map((entry) => entry.targetValidator.votingPower),
+    ).toEqual([70n, 10n]);
+    expect(
+      entries
+        .filter((entry) => entry.trustedMembership)
+        .map((entry) => entry.trustedMembership!.trustedValidator.votingPower),
+    ).toEqual([98n]);
+  });
+
+  it('finds the necessary signer when the authenticated sets share only one key', () => {
+    const header = powersHeader([70n, 20n, 10n], [1n, 1n, 98n]);
+    const shared = header.trustedValidators.validators[0];
+    const outsiders = deterministicValidators(5)
+      .slice(3)
+      .map((validator) => ({ ...validator, votingPower: 1n }));
+    outsiders.sort((left, right) => left.address.localeCompare(right.address));
+    header.trustedValidators.validators = [shared, ...outsiders];
+    const entries = selected(header, { mode: 'non_adjacent' });
+    expect(entries.filter((entry) => entry.trustedMembership).map((entry) => entry.targetValidator.pubkey)).toEqual([
+      shared.pubkey,
+    ]);
+    expect(entries.filter((entry) => entry.commitSig.block_id_flag === 2n)).toHaveLength(2);
+    header.signedHeader.commit.signatures[2] = {
+      block_id_flag: 1n,
+      validator_address: '',
+      timestamp: 0n,
+      signature: '',
+    };
+    expect(() => selected(header, { mode: 'non_adjacent' })).toThrow('trusted voting-power quorum');
+  });
+
+  it('rejects insufficient overlap even when the available target power exceeds two thirds', () => {
+    const header = powersHeader([70n, 20n, 10n], [1n, 1n, 98n]);
+    header.signedHeader.commit.signatures[2].block_id_flag = 3n;
+    expect(() => selected(header, { mode: 'non_adjacent' })).toThrow('trusted voting-power quorum');
+  });
+
+  it('does not count absent slots or nil votes toward target quorum', () => {
+    const header = powersHeader([2n, 2n, 2n]);
+    for (const flag of [1n, 3n]) {
+      header.signedHeader.commit.signatures[2] =
+        flag === 1n
+          ? { block_id_flag: 1n, validator_address: '', timestamp: 0n, signature: '' }
+          : { ...commitSignatures(header.validatorSet.validators)[2], block_id_flag: flag };
+      expect(() => selected(header)).toThrow('target voting-power quorum');
+    }
+  });
+
+  it('makes the same witness choices on retry without mutating the supplied header', () => {
+    const header = fixtureHeader(capacityFixture.scenarios.non_adjacent_mixed);
+    const before = structuredClone(header);
+    expect(selected(header, { mode: 'non_adjacent' })).toEqual(selected(header, { mode: 'non_adjacent' }));
+    expect(header).toEqual(before);
   });
 
   it('rejects truncated, padded, and index-shifted trusted paths', () => {
@@ -198,6 +342,7 @@ describe('Tendermint staged update payloads', () => {
 
     expect(() =>
       buildTendermintStagedPayloads({
+        trustLevel: { numerator: 1n, denominator: 3n },
         header,
         mode: 'non_adjacent',
         expectedTrustedValidatorsHash: hashTendermintValidatorSet(header.trustedValidators.validators),
@@ -210,7 +355,9 @@ describe('Tendermint staged update payloads', () => {
     const header = fixtureHeader(scenario);
     header.signedHeader.header.validatorsHash = '00'.repeat(32);
 
-    expect(() => buildTendermintStagedPayloads({ header, mode: 'adjacent' })).toThrow('target validator root mismatch');
+    expect(() =>
+      buildTendermintStagedPayloads({ trustLevel: { numerator: 1n, denominator: 3n }, header, mode: 'adjacent' }),
+    ).toThrow('target validator root mismatch');
   });
 
   it('rejects zero voting power exactly as the session validator does', () => {

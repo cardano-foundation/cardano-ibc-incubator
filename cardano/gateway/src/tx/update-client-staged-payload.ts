@@ -1,5 +1,8 @@
 import crypto from 'crypto';
 
+import type { SessionPhase } from '../shared/types/tendermint-update-session';
+import { selectTendermintQuorumWitnesses } from './tendermint-quorum-witnesses';
+
 import {
   TENDERMINT_MULTITX_MAX_BATCH_SIZE,
   TENDERMINT_MULTITX_MEMBERSHIP_BATCH_SIZE,
@@ -87,6 +90,9 @@ interface BuildTendermintStagedPayloadsInput {
   /** Required for skipped updates; sourced from the trusted consensus state. */
   expectedTrustedValidatorsHash?: string;
   batchSize?: number;
+  trustLevel: { numerator: bigint; denominator: bigint };
+  misbehaviour?: boolean;
+  phase?: SessionPhase;
 }
 
 /**
@@ -122,7 +128,37 @@ export function buildTendermintStagedPayloads(input: BuildTendermintStagedPayloa
   ) {
     throw new Error('unchanged target root does not match the trusted consensus state');
   }
+  const phase = input.phase;
+  const progress =
+    phase && ('AdjacentTarget' in phase || 'NonAdjacentTarget' in phase)
+      ? (() => {
+          const current = 'AdjacentTarget' in phase ? phase.AdjacentTarget : phase.NonAdjacentTarget;
+          return {
+            targetCount: current.targetAccumulator.count,
+            targetSignedPower: current.targetSignedPower,
+            trustedSignedPower: 'NonAdjacentTarget' in phase ? phase.NonAdjacentTarget.trustedSignedPower : 0n,
+          };
+        })()
+      : phase && 'Complete' in phase
+        ? { targetCount: BigInt(targetValidators.length), ...phase.Complete }
+        : undefined;
+  const select = (trustedValidators?: StagedTendermintValidator[]) =>
+    selectTendermintQuorumWitnesses({
+      targetValidators,
+      commitSignatures,
+      trustedValidators,
+      trustLevel: input.trustLevel,
+      requireSingleSetTrust: input.mode === 'unchanged' || (input.mode === 'adjacent' && input.misbehaviour),
+      preserveEvidenceQuorum: input.mode === 'adjacent' && !input.misbehaviour,
+      progress,
+    });
+  const signatureAt = (index: number, selected: Set<number>): StagedTendermintCommitSig =>
+    selected.has(index)
+      ? commitSignatures[index]
+      : { block_id_flag: BLOCK_ID_FLAG_ABSENT, validator_address: '', timestamp: 0n, signature: '' };
+
   if (input.mode === 'adjacent' || input.mode === 'unchanged') {
+    const witnesses = select();
     return {
       targetValidatorRoot,
       trustedValidatorRoot: null,
@@ -133,7 +169,7 @@ export function buildTendermintStagedPayloads(input: BuildTendermintStagedPayloa
           const targetIndex = range.start + offset;
           return {
             targetValidator: validator,
-            commitSig: commitSignatures[targetIndex],
+            commitSig: signatureAt(targetIndex, witnesses.signatures),
             trustedMembership: null,
           };
         }),
@@ -162,15 +198,16 @@ export function buildTendermintStagedPayloads(input: BuildTendermintStagedPayloa
   const trustedIndexByPublicKey = new Map<string, number>();
   trustedValidators.forEach((validator, index) => trustedIndexByPublicKey.set(validator.pubkey, index));
   const claimedTrustedIndices = new Set<number>();
+  const witnesses = select(trustedValidators);
 
   const targetEntries = targetValidators.map((validator, index): TargetValidatorEntryPayload => {
-    const commitSig = commitSignatures[index];
+    const commitSig = signatureAt(index, witnesses.signatures);
     if (commitSig.block_id_flag !== BLOCK_ID_FLAG_COMMIT) {
       return { targetValidator: validator, commitSig, trustedMembership: null };
     }
 
     const trustedIndex = trustedIndexByPublicKey.get(validator.pubkey);
-    if (trustedIndex === undefined) {
+    if (trustedIndex === undefined || !witnesses.memberships.has(index)) {
       return { targetValidator: validator, commitSig, trustedMembership: null };
     }
     if (claimedTrustedIndices.has(trustedIndex)) {
@@ -196,8 +233,9 @@ export function buildTendermintStagedPayloads(input: BuildTendermintStagedPayloa
       range,
       validators,
     })),
-    targetBatches: partition(targetEntries, Math.min(batchSize, TENDERMINT_MULTITX_MEMBERSHIP_BATCH_SIZE))
-      .map(({ range, values: entries }) => ({ range, entries })),
+    targetBatches: partition(targetEntries, Math.min(batchSize, TENDERMINT_MULTITX_MEMBERSHIP_BATCH_SIZE)).map(
+      ({ range, values: entries }) => ({ range, entries }),
+    ),
   };
 }
 
