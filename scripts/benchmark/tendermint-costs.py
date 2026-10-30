@@ -118,13 +118,21 @@ Deno.test("complete Tendermint update funding", async () => {
     }
   };
   const before = walletBalance();
+  const initialRefs = new Set(Object.keys(emulator.ledger));
   const started = performance.now();
   await context.update();
   const elapsedMs = performance.now() - started;
   assert(!pending);
   const fees = rows.reduce((n, r) => n + r.feeLovelace, 0n);
   const debit = rows.reduce((n, r) => n + r.roles.relayer.netDebitLovelace, 0n);
-  assertEquals(before - walletBalance(), debit);
+  const measuredHashes = new Set(rows.map(row => row.transaction));
+  const fixtureCredits = Object.entries(emulator.ledger).filter(([key, entry]) =>
+    !initialRefs.has(key) && !measuredHashes.has(entry.utxo.txHash)
+  ).map(([, entry]) => entry.utxo);
+  assertEquals(fixtureCredits.length, 1, "Only the fixture's client reference may be injected during finalization");
+  assert(fixtureCredits.every(u => u.address === address && u.scriptRef));
+  const fixtureFunding = fixtureCredits.reduce((sum, u) => sum + u.assets.lovelace, 0n);
+  assertEquals(before + fixtureFunding - walletBalance(), debit);
   let reserve = 0n, peak = 0n;
   for (const row of rows) {
     reserve += row.roles["protocol-state"]?.netReserveIncreaseLovelace ?? 0n;
@@ -132,6 +140,7 @@ Deno.test("complete Tendermint update funding", async () => {
   }
   await Deno.writeTextFile(Deno.env.get("TM_COST_OUTPUT")!, stringifyCosts({
     name: Deno.env.get("TM_COST_NAME"), transactions: rows, feeLovelace: fees, relayerNetDebitLovelace: debit,
+    fixtureReferenceFundingLovelace: fixtureFunding, fixtureReferenceCredits: fixtureCredits,
     peakTemporaryProtocolReserveLovelace: peak, netProtocolReserveIncreaseLovelace: reserve,
     elapsedMs, latencyScope: "Emulator construction, signing and evaluation time. Not network inclusion or ICS-20 delivery latency",
     seededStateScope: "Deployment, reference publication, stake registration and client creation precede measurement. Existing protocol input values are retained in the transaction evidence",
