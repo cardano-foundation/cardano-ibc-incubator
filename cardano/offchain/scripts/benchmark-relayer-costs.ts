@@ -95,10 +95,14 @@ const selected = Deno.args[2]?.split(",") ?? scenarioNames;
 if (selected.some((name) => !scenarioNames.includes(name))) {
   throw new Error("Unknown benchmark scenario");
 }
+const measuredNames = [
+  ...selected,
+  ...(selected.includes("receive-existing-voucher") ? ["packet-prune"] : []),
+];
 if (
   new Set(selected).size !== selected.length ||
   Object.keys(workload.executionsPerDay).some((name) =>
-    !selected.includes(name)
+    !measuredNames.includes(name)
   )
 ) {
   throw new Error("Workload must reference unique measured scenarios");
@@ -835,7 +839,7 @@ const commit = new TextDecoder().decode(
 ).trim();
 const usedWorkload = Object.fromEntries(
   Object.entries(workload.executionsPerDay).filter(([name]) =>
-    selected.includes(name)
+    scenarios.some((scenario) => scenario.name === name)
   ),
 );
 if (
