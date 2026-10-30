@@ -10,6 +10,7 @@ import {
 } from "@lucid-evolution/lucid";
 import type { Emulator } from "@lucid-evolution/provider";
 import { createHash } from "node:crypto";
+import { selectTendermintQuorumWitnesses } from "../../gateway/src/tx/tendermint-quorum-witnesses.ts";
 import { Buffer } from "node:buffer";
 import type { loadStagedTendermintValidators } from "../src/deployment-plan.ts";
 import { serialisePlutusData } from "../src/plutus_serialise.ts";
@@ -87,6 +88,8 @@ export async function submitHistorySession(args: {
   owner: string;
   batchSize?: number;
   resourcePercent?: number;
+  quorumWitnesses?: boolean;
+  forceGeneral?: boolean;
 }) {
   const {
     lucid,
@@ -111,9 +114,31 @@ export async function submitHistorySession(args: {
   const signatures = commit.fields[3] as Constr<Data>[];
   const adjacent =
     tmHeader.fields[2] === (trustedHeight.fields[1] as bigint) + 1n;
-  const singleSet = adjacent ||
-    tmHeader.fields[7] === trustedConsensus.fields[1];
+  const singleSet = !args.forceGeneral && (adjacent ||
+    tmHeader.fields[7] === trustedConsensus.fields[1]);
   assert(validators.length <= 256 && trusted.length <= 256);
+  const votingValidator = (value: Constr<Data>) => ({
+    pubkey: value.fields[1] as string,
+    votingPower: value.fields[2] as bigint,
+  });
+  const trust = clientState.fields[1] as Constr<Data>;
+  const selected = args.quorumWitnesses === false
+    ? undefined
+    : selectTendermintQuorumWitnesses({
+      targetValidators: validators.map(votingValidator),
+      commitSignatures: signatures.map((value) => ({
+        block_id_flag: value.fields[0] as bigint,
+      })),
+      trustedValidators: singleSet ? undefined : trusted.map(votingValidator),
+      trustLevel: {
+        numerator: trust.fields[0] as bigint,
+        denominator: trust.fields[1] as bigint,
+      },
+      requireSingleSetTrust: singleSet && !adjacent,
+      preserveEvidenceQuorum: adjacent,
+    });
+  let signatureCount = 0;
+  let membershipCount = 0;
   const plan = constr([
     clientToken,
     trustedHeight,
@@ -265,15 +290,22 @@ export async function submitHistorySession(args: {
   for (let offset = 0; offset < validators.length; offset += targetBatchSize) {
     const values = validators.slice(offset, offset + targetBatchSize);
     const entries = values.map((validator, j) => {
-      const sig = signatures[offset + j];
+      const entryIndex = offset + j;
+      const sig = !selected || selected.signatures.has(entryIndex)
+        ? signatures[entryIndex]
+        : constr([1n, "", 0n, ""]);
       let membership: Constr<Data> = none();
       if (sig.fields[0] === 2n) {
+        signatureCount++;
         signedPower += validator.fields[2] as bigint;
         if (!singleSet) {
           const index = trusted.findIndex((value) =>
             value.fields[1] === validator.fields[1]
           );
-          if (index >= 0) {
+          if (
+            index >= 0 && (!selected || selected.memberships.has(entryIndex))
+          ) {
+            membershipCount++;
             trustedSigned += trusted[index].fields[2] as bigint;
             used |= 1n << BigInt(index);
             membership = some(
@@ -324,6 +356,7 @@ export async function submitHistorySession(args: {
     utxo,
     token,
     measurements,
+    witnesses: { signatures: signatureCount, memberships: membershipCount },
     finalize(builder: TxBuilder) {
       return builder.readFrom([mintReference, spendReference]).collectFrom(
         [utxo],

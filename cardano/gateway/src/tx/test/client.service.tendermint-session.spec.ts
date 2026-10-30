@@ -443,6 +443,10 @@ describe('ClientService staged Tendermint update chain integration', () => {
         }),
       }),
     );
+    expect(StagedPayload.buildTendermintStagedPayloads).toHaveBeenCalledWith(expect.objectContaining({
+      trustLevel: PLAN.trustLevel,
+      misbehaviour: false,
+    }));
     expect(verifyClientMessage).not.toHaveBeenCalled();
     expect(checkForMisbehaviour).not.toHaveBeenCalled();
     expect((service as any).computeTxValidityWindow).toHaveBeenCalledWith(5_000, TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE);
@@ -663,6 +667,10 @@ describe('ClientService staged Tendermint update chain integration', () => {
     expect(decodeChainCbor(response.unsigned_tx.value)).toHaveLength(1);
     expect(decodeChainEnvelope(response.unsigned_tx.value).rebuildAfterSubmission).toBe(true);
     expect(pendingUpdates.take('advance-hash')?.kind).toBe('tree_neutral');
+    expect(StagedPayload.buildTendermintStagedPayloads).toHaveBeenCalledWith(expect.objectContaining({
+      trustLevel: PLAN.trustLevel,
+      phase: currentDatum.phase,
+    }));
     expect(buildFinal).not.toHaveBeenCalled();
   });
 

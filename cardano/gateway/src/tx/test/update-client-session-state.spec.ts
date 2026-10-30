@@ -1,5 +1,7 @@
 import crypto from 'crypto';
 
+import { reconstructStagedTendermintHeader } from '../../shared/helpers/staged-tendermint-event';
+
 import type { ClientDatum } from '../../shared/types/client-datum';
 import type { BlockID } from '../../shared/types/cometbft/commit';
 import type { TmHeader } from '../../shared/types/cometbft/header';
@@ -180,6 +182,7 @@ describe('unchanged Tendermint validator sets', () => {
     const scenario = capacityFixture.scenarios.non_adjacent_mixed;
     const state = sessionFor(scenario, true);
     const payloads = buildTendermintStagedPayloads({
+      trustLevel: { numerator: 1n, denominator: 3n },
       header: state.header,
       mode: 'unchanged',
       expectedTrustedValidatorsHash: state.consensusState.next_validators_hash,
@@ -204,7 +207,7 @@ describe('unchanged Tendermint validator sets', () => {
         targetRoot: consensusState.next_validators_hash,
         trustedRoot: consensusState.next_validators_hash,
         trustedTotalPower: BigInt(capacityFixture.scenarios.non_adjacent_mixed.header.validator_set.total_voting_power),
-        trustedSignedPower: BigInt(capacityFixture.scenarios.non_adjacent_mixed.observations.commit_voting_power),
+        trustedSignedPower: 39_280_627n,
       },
     });
   });
@@ -216,6 +219,68 @@ describe('unchanged Tendermint validator sets', () => {
     expect(nextTendermintSessionAdvance(advanced, payloads)).toEqual({
       VerifyTarget: { entries: entries.slice(3, 27) },
     });
+  });
+
+  it('finishes authenticating the set after a resumed session has already verified quorum', () => {
+    const { datum: initial, payloads, header, consensusState } = fastUpdate();
+    const first = advanceTendermintSession(initial, { VerifyTarget: { entries: payloads.targetBatches[0].entries } });
+    const resumed = buildTendermintStagedPayloads({
+      header,
+      mode: 'unchanged',
+      expectedTrustedValidatorsHash: consensusState.next_validators_hash,
+      trustLevel: initial.plan.trustLevel,
+      phase: first.phase,
+    });
+    const next = nextTendermintSessionAdvance(first, resumed);
+    if (!next || !('VerifyTarget' in next)) throw new Error('expected remaining target entries');
+    expect(next.VerifyTarget.entries).toHaveLength(21);
+    expect(next.VerifyTarget.entries.every((entry) => entry.commitSig.block_id_flag === 1n)).toBe(true);
+    expect(advanceTendermintSession(first, next).phase).toHaveProperty('Complete');
+  });
+
+  it('resumes from actual verified power when an earlier request omitted an available signature', () => {
+    const { datum: initial, payloads, header, consensusState } = fastUpdate();
+    const first = payloads.targetBatches[0].entries[0];
+    const absent = { ...first, commitSig: { block_id_flag: 1n, validator_address: '', timestamp: 0n, signature: '' } };
+    let datum = advanceTendermintSession(initial, { VerifyTarget: { entries: [absent] } });
+    const resumed = buildTendermintStagedPayloads({
+      header,
+      mode: 'unchanged',
+      expectedTrustedValidatorsHash: consensusState.next_validators_hash,
+      trustLevel: datum.plan.trustLevel,
+      phase: datum.phase,
+    });
+    let next;
+    while ((next = nextTendermintSessionAdvance(datum, resumed)) !== null) {
+      datum = advanceTendermintSession(datum, next);
+    }
+    expect(datum.phase).toHaveProperty('Complete');
+    if (!('Complete' in datum.phase)) throw new Error('expected complete session');
+    expect(datum.phase.Complete.targetSignedPower * 3n).toBeGreaterThan(datum.phase.Complete.targetTotalPower * 2n);
+  });
+
+  it('reconstructs a usable sparse commit from durable verification batches', () => {
+    const { datum: initial, payloads, header } = fastUpdate();
+    const redeemers = payloads.targetBatches.map((batch) => ({ VerifyTarget: { entries: batch.entries } }));
+    const complete = redeemers.reduce(advanceTendermintSession, initial);
+    const rebuilt = reconstructStagedTendermintHeader(complete, redeemers);
+    expect(rebuilt.signedHeader.header).toEqual(header.signedHeader.header);
+    expect(rebuilt.validatorSet.validators).toEqual(header.validatorSet.validators);
+    expect(rebuilt.signedHeader.commit.signatures).toHaveLength(45);
+    expect(rebuilt.signedHeader.commit.signatures.filter((sig) => sig.block_id_flag === 2n)).toHaveLength(17);
+    const replay = buildTendermintStagedPayloads({
+      header: rebuilt,
+      mode: 'unchanged',
+      trustLevel: initial.plan.trustLevel,
+      expectedTrustedValidatorsHash: initial.plan.trustedConsensusState.next_validators_hash,
+    });
+    expect(replay).toEqual(payloads);
+    expect(
+      replay.targetBatches.reduce(
+        (datum, batch) => advanceTendermintSession(datum, { VerifyTarget: { entries: batch.entries } }),
+        initial,
+      ).phase,
+    ).toEqual(complete.phase);
   });
 
   it('retains a custom trust threshold above the target commit threshold', () => {
@@ -233,6 +298,7 @@ describe('unchanged Tendermint validator sets', () => {
     const { header } = fastUpdate();
     expect(() =>
       buildTendermintStagedPayloads({
+        trustLevel: { numerator: 1n, denominator: 3n },
         header,
         mode: 'unchanged',
         expectedTrustedValidatorsHash: '00'.repeat(32),
@@ -584,7 +650,12 @@ describe('pure Tendermint update-session state transitions', () => {
   it('streams the frozen 45-validator adjacent update to Complete without mutating its input', () => {
     const scenario = capacityFixture.scenarios.adjacent_all_signed;
     const { datum: initial, header } = sessionFor(scenario);
-    const payloads = buildTendermintStagedPayloads({ header, mode: 'adjacent', batchSize: 6 });
+    const payloads = buildTendermintStagedPayloads({
+      trustLevel: { numerator: 1n, denominator: 3n },
+      header,
+      mode: 'adjacent',
+      batchSize: 6,
+    });
     let datum = initial;
 
     payloads.targetBatches.slice(0, -1).forEach((batch) => {
@@ -604,7 +675,7 @@ describe('pure Tendermint update-session state transitions', () => {
       Complete: {
         targetRoot: scenario.observations.validator_hash,
         targetTotalPower: BigInt(scenario.header.validator_set.total_voting_power),
-        targetSignedPower: BigInt(scenario.header.validator_set.total_voting_power),
+        targetSignedPower: 39_763_360n,
         trustedRoot: null,
         trustedTotalPower: 0n,
         trustedSignedPower: 0n,
@@ -617,6 +688,7 @@ describe('pure Tendermint update-session state transitions', () => {
     const scenario = capacityFixture.scenarios.non_adjacent_mixed;
     const { datum: initial, header, consensusState } = sessionFor(scenario);
     const payloads = buildTendermintStagedPayloads({
+      trustLevel: { numerator: 1n, denominator: 3n },
       header,
       mode: 'non_adjacent',
       expectedTrustedValidatorsHash: consensusState.next_validators_hash,
@@ -645,6 +717,7 @@ describe('pure Tendermint update-session state transitions', () => {
     const scenario = capacityFixture.scenarios.non_adjacent_mixed;
     const { datum: initial, header, consensusState } = sessionFor(scenario);
     const payloads = buildTendermintStagedPayloads({
+      trustLevel: { numerator: 1n, denominator: 3n },
       header,
       mode: 'non_adjacent',
       expectedTrustedValidatorsHash: consensusState.next_validators_hash,
@@ -710,10 +783,38 @@ describe('pure Tendermint update-session state transitions', () => {
     });
   });
 
+  it('selects remaining overlap witnesses using a resumed general-path receipt', () => {
+    const scenario = capacityFixture.scenarios.non_adjacent_mixed;
+    const { datum: initial, header, consensusState } = sessionFor(scenario);
+    const makePayloads = (phase?: SessionDatum['phase']) => buildTendermintStagedPayloads({
+      header,
+      mode: 'non_adjacent',
+      expectedTrustedValidatorsHash: consensusState.next_validators_hash,
+      trustLevel: initial.plan.trustLevel,
+      phase,
+    });
+    const first = makePayloads();
+    let datum = first.trustedBatches.reduce((value, batch) =>
+      advanceTendermintSession(value, { VerifyTrusted: { validators: batch.validators } }), initial);
+    datum = advanceTendermintSession(datum, { VerifyTarget: { entries: first.targetBatches[0].entries } });
+    const resumed = makePayloads(datum.phase);
+    let next;
+    while ((next = nextTendermintSessionAdvance(datum, resumed)) !== null) {
+      datum = advanceTendermintSession(datum, next);
+    }
+    if (!('Complete' in datum.phase)) throw new Error('expected complete session');
+    expect(datum.phase.Complete.targetSignedPower * 3n).toBeGreaterThan(datum.phase.Complete.targetTotalPower * 2n);
+    expect(datum.phase.Complete.trustedSignedPower * 3n).toBeGreaterThan(datum.phase.Complete.trustedTotalPower);
+  });
+
   it('rejects a tampered commit signature and leaves the prior datum reusable', () => {
     const scenario = capacityFixture.scenarios.adjacent_all_signed;
     const { datum, header } = sessionFor(scenario);
-    const [batch] = buildTendermintStagedPayloads({ header, mode: 'adjacent' }).targetBatches;
+    const [batch] = buildTendermintStagedPayloads({
+      trustLevel: { numerator: 1n, denominator: 3n },
+      header,
+      mode: 'adjacent',
+    }).targetBatches;
     const entries = batch.entries.map((entry, index) =>
       index === 0
         ? {
@@ -736,6 +837,7 @@ describe('pure Tendermint update-session state transitions', () => {
     const scenario = capacityFixture.scenarios.non_adjacent_mixed;
     const { datum: initial, header, consensusState } = sessionFor(scenario);
     const payloads = buildTendermintStagedPayloads({
+      trustLevel: { numerator: 1n, denominator: 3n },
       header,
       mode: 'non_adjacent',
       expectedTrustedValidatorsHash: consensusState.next_validators_hash,
@@ -782,7 +884,11 @@ describe('pure Tendermint update-session state transitions', () => {
   it('rejects wrong-phase and over-limit batches before changing accumulator state', () => {
     const scenario = capacityFixture.scenarios.adjacent_all_signed;
     const { datum, header } = sessionFor(scenario);
-    const payloads = buildTendermintStagedPayloads({ header, mode: 'adjacent' });
+    const payloads = buildTendermintStagedPayloads({
+      trustLevel: { numerator: 1n, denominator: 3n },
+      header,
+      mode: 'adjacent',
+    });
 
     expect(() => advanceTendermintSession(datum, { VerifyTrusted: { validators: [] } })).toThrow('wrong session phase');
     expect(() =>

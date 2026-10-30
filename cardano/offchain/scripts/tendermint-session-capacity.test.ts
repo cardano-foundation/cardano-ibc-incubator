@@ -80,7 +80,11 @@ const header = c([
   validatorSet(scenario.header.trusted_validators),
 ]);
 
-async function verify(batchSize: number) {
+async function verify(
+  batchSize: number,
+  quorumWitnesses = true,
+  forceGeneral = false,
+) {
   const account = generateEmulatorAccount({ lovelace: 1_000_000_000n });
   const emulator = new Emulator([account]);
   Object.assign(emulator.protocolParameters, {
@@ -122,6 +126,8 @@ async function verify(batchSize: number) {
     references,
     header,
     batchSize,
+    quorumWitnesses,
+    forceGeneral,
     resourcePercent: 80,
     clientToken: c(["33".repeat(28), "44".repeat(32)]),
     trustedHeight: c([
@@ -146,16 +152,16 @@ async function verify(batchSize: number) {
     .fields[3] as Constr<Data>;
   assertEquals(complete.index, 3);
   assertEquals(complete.fields[0], rawHeader.validators_hash);
-  return result.measurements;
+  return { measurements: result.measurements, witnesses: result.witnesses };
 }
 
 Deno.test("45-validator signed sessions use fewer fees and retain 20 percent execution headroom", async () => {
   const baseline = await verify(6);
   const larger = await verify(24);
-  assertEquals(baseline.length, 9);
-  assertEquals(larger.length, 3);
+  assertEquals(baseline.measurements.length, 9);
+  assertEquals(larger.measurements.length, 3);
   const fee = (values: typeof larger) =>
-    values.reduce((sum, value) => sum + value.fee, 0);
+    values.measurements.reduce((sum, value) => sum + value.fee, 0);
   assert(fee(larger) < fee(baseline));
 });
 
@@ -165,4 +171,23 @@ Deno.test("signed sessions reject a batch above the onchain limit", async () => 
     Error,
     "Failed signed session verify target",
   );
+});
+
+Deno.test("45-validator quorum witnesses lower signed session fees with unchanged contracts and batches", async () => {
+  for (const forceGeneral of [false, true]) {
+    const full = await verify(24, false, forceGeneral);
+    const selected = await verify(24, true, forceGeneral);
+    assertEquals(selected.measurements.length, full.measurements.length);
+    assertEquals(full.witnesses, {
+      signatures: 43,
+      memberships: forceGeneral ? 43 : 0,
+    });
+    assertEquals(selected.witnesses, {
+      signatures: 17,
+      memberships: forceGeneral ? 6 : 0,
+    });
+    const fee = (value: typeof selected) =>
+      value.measurements.reduce((sum, tx) => sum + tx.fee, 0);
+    assert(fee(selected) < fee(full) * 0.95);
+  }
 });
