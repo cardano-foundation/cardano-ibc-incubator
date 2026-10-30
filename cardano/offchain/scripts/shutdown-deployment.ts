@@ -1129,7 +1129,14 @@ async function recoveryStakeRegistered(
   const response = await queryOgmiosJsonRpc(
     ogmiosUrl,
     "queryLedgerState/rewardAccountSummaries",
-    { keys: [recovery.address] },
+    {
+      keys: [
+        recovery.address,
+        ...(deployment.validators.updateClient
+          ? [deployment.validators.updateClient.address]
+          : []),
+      ],
+    },
     30000,
     5,
   );
@@ -1157,8 +1164,12 @@ export function buildReclaimRecoveryStakeTx(
 ) {
   const recovery = deployment.validators.recoverClient;
   if (!recovery) throw new Error("Missing client recovery validator");
-  return lucid.newTx().readFrom([hostUtxo, recovery.refUtxo])
-    .deregister.Stake(recovery.address, Data.void())
+  const update = deployment.validators.updateClient;
+  const tx = lucid.newTx().readFrom([hostUtxo, recovery.refUtxo]);
+  if (update) {
+    tx.readFrom([update.refUtxo]).deregister.Stake(update.address, Data.void());
+  }
+  return tx.deregister.Stake(recovery.address, Data.void())
     .addSignerKey(signerKeyHash)
     .validFrom(validFrom).validTo(validFrom + TX_VALIDITY_WINDOW_MS);
 }

@@ -272,8 +272,8 @@ for (const splitRequired of [true, false]) {
       }
       assertEquals(fundedOutputs, RESERVED_DEPLOYMENT_NONCE_COUNT + 16);
     } else {
-      // Recovery registration comes first when the original nonces are funded.
-      assertEquals(firstBody.certs()?.len(), 1);
+      // Register the recovery and ordinary update credentials before deployment.
+      assertEquals(firstBody.certs()?.len(), 2);
     }
   });
 }

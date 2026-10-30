@@ -113,7 +113,20 @@ for (const clientMode of ["legacy", "staged"] as const) {
     );
     // The pinned emulator only updates its stake map for pre-Conway certificates.
     // Evaluate the actual Conway deregistration and check its deposit refund.
-    const certificate = body.certs()!.get(0).as_unreg_cert()!;
+    const certificates = Array.from(
+      { length: body.certs()!.len() },
+      (_, index) => body.certs()!.get(index).as_unreg_cert()!,
+    );
+    assertEquals(certificates.length, 2);
+    const certificate = certificates.find((entry) =>
+      entry.stake_credential().as_script()!.to_hex() === credential.scriptHash
+    )!;
+    assert(
+      certificates.some((entry) =>
+        entry.stake_credential().as_script()!.to_hex() ===
+          f.deployment.validators.updateClient!.scriptHash
+      ),
+    );
     assertEquals(
       certificate.stake_credential().as_script()!.to_hex(),
       credential.scriptHash,
@@ -122,7 +135,10 @@ for (const clientMode of ["legacy", "staged"] as const) {
       certificate.deposit(),
       f.lucid.config().protocolParameters!.keyDeposit,
     );
-    assertEquals(await balance(), before + certificate.deposit() - body.fee());
+    assertEquals(
+      await balance(),
+      before + 2n * certificate.deposit() - body.fee(),
+    );
   });
 }
 
@@ -253,3 +269,15 @@ for (
     await rejectClientReclaimMutation(f, mutation);
   });
 }
+
+Deno.test("ordinary update credential cannot retire without authenticated recovery retirement", async () => {
+  const f = await fixture(0n, "staged");
+  const update = f.deployment.validators.updateClient!;
+  await assertRejects(async () => {
+    await f.lucid.newTx().readFrom([f.hostUtxo, update.refUtxo])
+      .deregister.Stake(update.address, Data.void())
+      .addSignerKey(f.hostDatum.deployer)
+      .validFrom(f.emulator.now()).validTo(f.emulator.now() + 30_000)
+      .complete({ localUPLCEval: true });
+  });
+});

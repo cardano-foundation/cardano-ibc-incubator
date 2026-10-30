@@ -1,7 +1,7 @@
 use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
-use cardano/address.{Credential}
+use cardano/address.{Credential, Script}
 use cardano/assets.{PolicyId}
 use cardano/transaction.{OutputReference, Spend, Transaction, Withdraw}
 use ibc/auth.{AuthToken}
@@ -14,6 +14,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set
 use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/header.{Header}
+use ibc/client/ics_007_tendermint_client/height
 use ibc/client/ics_007_tendermint_client/misbehaviour.{Misbehaviour}
 use ibc/client/ics_007_tendermint_client/misbehaviour_handle
 use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase, MisbehaviourCase}
@@ -25,8 +26,88 @@ use ibc/client/ics_007_tendermint_client/multitx/session
 use ibc/client/ics_007_tendermint_client/multitx/types.{
   Finalize, SessionDatum, SpendSessionRedeemer, UpdatePlan,
 }
+use ibc/utils/forwarding
 use ibc/utils/tx_time.{TxTime}
 use ibc/utils/validator_utils
+
+/// NFT identity binds this input to the subject checked by the forwarded
+/// invocation. The ordinary script checks the complete state transition.
+pub fn validate_guard(
+  allow_retirement: Bool,
+  host_policy: PolicyId,
+  update_script: ByteArray,
+  recovery: Credential,
+  datum: Option<ClientDatum>,
+  redeemer: SpendMultitxClientRedeemer,
+  own_ref: OutputReference,
+  transaction: Transaction,
+) -> Bool {
+  expect Some(datum) = datum
+  expect Some(input) = transaction.find_input(transaction.inputs, own_ref)
+  expect auth.contain_auth_token(input.output, datum.token)
+  when redeemer is {
+    ReclaimClient ->
+      allow_retirement && assets.quantity_of(
+        transaction.mint,
+        datum.token.policy_id,
+        datum.token.name,
+      ) == -1
+    FinalizeUpdate { .. } | FinalizeMisbehaviour { .. } -> {
+      let expected: Data =
+        CheckStagedClientHistory { subject_token: datum.token }
+      forwarding.require_zero(Script(update_script), expected, transaction)
+    }
+    RecoverClient { substitute_token, .. } -> {
+      expect _ =
+        validator_utils.require_host_state_redeemer(
+          transaction.inputs,
+          transaction.outputs,
+          transaction.redeemers,
+          host_policy,
+          validator_utils.ExpectUpdateClient,
+        )
+      let expected: Data =
+        RecoverClientWithdrawal { subject_token: datum.token, substitute_token }
+      forwarding.require_zero(recovery, expected, transaction)
+    }
+    UpgradeClient -> {
+      expect _ =
+        validator_utils.require_host_state_redeemer(
+          transaction.inputs,
+          transaction.outputs,
+          transaction.redeemers,
+          host_policy,
+          validator_utils.ExpectUpdateClient,
+        )
+      let expected: Data =
+        UpgradeClientWithdrawal { subject_token: datum.token }
+      forwarding.require_zero(recovery, expected, transaction)
+    }
+    _ -> False
+  }
+}
+
+fn validate_history(
+  datum: ClientDatum,
+  updated: ClientDatum,
+  siblings: List<ByteArray>,
+) -> Bool {
+  when
+    height.compare(
+      updated.state.client_state.latest_height,
+      datum.state.client_state.latest_height,
+    )
+  is {
+    Greater ->
+      consensus_history.insert(
+        datum.history_root,
+        consensus_history.from_client(datum),
+        siblings,
+      ) == updated.history_root
+    Equal -> siblings == [] && updated.history_root == datum.history_root
+    Less -> False
+  }
+}
 
 fn header_from_plan(plan: UpdatePlan) -> Header {
   Header {
@@ -139,7 +220,7 @@ pub fn validate(
             }
           withdrawal == Some(expected)
         }
-        FinalizeUpdate { session_token, history_witnesses, .. } -> {
+        FinalizeUpdate { session_token, history_witnesses, history_siblings } -> {
           expect withdrawal == Some(expected_history)
           let receipt =
             finalized_session(
@@ -147,11 +228,13 @@ pub fn validate(
               session_mint_policy_id,
               transaction,
             )
+          expect validate_history(client_datum, updated_datum, history_siblings)
           let header = header_from_plan(receipt.plan)
           let proof_states =
-            consensus_history.message_witness_states(
+            consensus_history.consensus_states_for_message(
               client_datum,
               history_witnesses,
+              valid_to * 1_000_000,
               HeaderCase(header),
             )
           let proof_client =
@@ -220,9 +303,10 @@ pub fn validate(
               },
             )
           let proof_states =
-            consensus_history.message_witness_states(
+            consensus_history.consensus_states_for_message(
               client_datum,
               history_witnesses,
+              valid_to * 1_000_000,
               msg,
             )
           let proof_client =
@@ -233,6 +317,7 @@ pub fn validate(
                 consensus_states: proof_states,
               },
             }
+          expect validate_history(client_datum, updated_datum, [])
           expect first.owner == second.owner
           // Both distinct session tokens were authenticated above, including
           // their policy and exact -1 quantities. Two entries under that

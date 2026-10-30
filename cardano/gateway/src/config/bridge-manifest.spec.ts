@@ -131,6 +131,7 @@ function buildStagedHandlerJsonDeployment() {
     ...deployment,
     validators: {
       ...deployment.validators,
+      updateClient: buildValidator('updateClient'),
       spendTendermintUpdateSession: buildValidator('spendTendermintUpdateSession'),
       mintTendermintUpdateSession: buildValidator('mintTendermintUpdateSession'),
     },
@@ -333,6 +334,14 @@ console.log(JSON.stringify(smokeManifest()))`,
       network: 'Custom',
     });
 
+    expect(staged.deployment.validators.updateClient).toEqual({
+      scriptHash: 'updateClient-hash', address: 'updateClient-address',
+      refUtxo: { txHash: 'updateClient-tx', outputIndex: 1 },
+    });
+    expect(staged.bridgeManifest.validators.update_client).toEqual({
+      script_hash: 'updateClient-hash', address: 'updateClient-address',
+      ref_utxo: { tx_hash: 'updateClient-tx', output_index: 1 },
+    });
     expect(staged.deployment.validators.spendTendermintUpdateSession).toEqual({
       scriptHash: 'spendTendermintUpdateSession-hash',
       address: 'spendTendermintUpdateSession-address',
@@ -353,6 +362,18 @@ console.log(JSON.stringify(smokeManifest()))`,
     const manifestLoaded = normalizeBridgeManifestConfig(staged.bridgeManifest);
     expect(manifestLoaded.deployment).toEqual(staged.deployment);
     expect(bridgeManifestsEqual(manifestLoaded.bridgeManifest, staged.bridgeManifest)).toBe(true);
+  });
+
+  it('rejects ordinary forwarding support without staged sessions', () => {
+    const deployment = buildHandlerJsonDeployment();
+    const options = { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' as const };
+    expect(() => normalizeHandlerJsonDeploymentConfig({
+      ...deployment, validators: { ...deployment.validators, updateClient: buildValidator('updateClient') },
+    }, options)).toThrow('Ordinary client forwarding requires staged Tendermint sessions');
+    const manifest = normalizeHandlerJsonDeploymentConfig(deployment, options).bridgeManifest;
+    expect(() => normalizeBridgeManifestConfig({
+      ...manifest, validators: { ...manifest.validators, update_client: manifest.validators.recover_client },
+    })).toThrow('Ordinary client forwarding requires staged Tendermint sessions');
   });
 
   it('accepts legacy deployments without Tendermint session validators', () => {

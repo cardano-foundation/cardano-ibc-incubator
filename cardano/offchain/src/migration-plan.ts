@@ -85,6 +85,7 @@ type BasePlan = {
   mintImplementationRegistry: PlannedValidator | null;
   governanceAuthority: PlannedValidator | null;
   sessionMint: PlannedValidator;
+  updateClient: PlannedValidator;
   recoverClient: PlannedValidator;
   verifyProof: PlannedValidator;
   mintPort: PlannedValidator;
@@ -126,6 +127,7 @@ export async function compatibilityDigest(plan: BasePlan): Promise<string> {
               plan.mintImplementationRegistry,
               plan.governanceAuthority,
               plan.sessionMint,
+              plan.updateClient,
               plan.recoverClient,
               plan.verifyProof,
               plan.mintPort,
@@ -244,7 +246,7 @@ export async function loadSuccessorImplementation(
   );
   load(
     "upgradeable/client.client.spend",
-    [...base, baseline.hostNft.hash, baseline.sessionMint.hash, {
+    [...base, baseline.hostNft.hash, baseline.updateClient.hash, {
       Script: [baseline.recoverClient.hash],
     }],
     Data.Tuple([

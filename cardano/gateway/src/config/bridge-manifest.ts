@@ -122,6 +122,7 @@ export type DeploymentConfig = {
   hostStateNFT: AuthToken;
   validators: {
     hostStateStt: DeploymentValidator;
+    updateClient?: DeploymentValidator;
     recoverClient?: DeploymentValidator;
     spendClient: DeploymentValidator;
     // Both session validators are present for staged Tendermint deployments;
@@ -230,6 +231,7 @@ export type BridgeManifest = {
   host_state_nft: BridgeManifestAuthToken;
   validators: {
     host_state_stt: BridgeManifestValidator;
+    update_client?: BridgeManifestValidator;
     recover_client?: BridgeManifestValidator;
     spend_client: BridgeManifestValidator;
     // Presence of this pair selects the staged Tendermint protocol.
@@ -761,6 +763,7 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
     hasSpendSession === hasMintSession,
     'Invalid bridge config: staged Tendermint spend and mint session validators must be configured together',
   );
+  assert(!validators.updateClient || hasSpendSession, 'Ordinary client forwarding requires staged Tendermint sessions');
 
   return {
     packetState: requirePacketState(deploymentAny.packetState),
@@ -778,6 +781,9 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
     hostStateNFT: requireAuthToken(deploymentAny.hostStateNFT, 'hostStateNFT'),
     validators: {
       hostStateStt: requireDeploymentValidator(validators.hostStateStt, 'validators.hostStateStt'),
+      ...(validators.updateClient
+        ? { updateClient: requireDeploymentValidator(validators.updateClient, 'validators.updateClient') }
+        : {}),
       ...(validators.recoverClient
         ? { recoverClient: requireDeploymentValidator(validators.recoverClient, 'validators.recoverClient') }
         : {}),
@@ -867,6 +873,9 @@ export function normalizeHandlerJsonDeploymentConfig(
       host_state_nft: deploymentAuthTokenToManifest(normalizedDeployment.hostStateNFT),
       validators: {
         host_state_stt: deploymentValidatorToManifest(normalizedDeployment.validators.hostStateStt),
+        ...(normalizedDeployment.validators.updateClient
+          ? { update_client: deploymentValidatorToManifest(normalizedDeployment.validators.updateClient) }
+          : {}),
         ...(normalizedDeployment.validators.recoverClient
           ? { recover_client: deploymentValidatorToManifest(normalizedDeployment.validators.recoverClient) }
           : {}),
@@ -940,6 +949,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
     hasSpendSession === hasMintSession,
     'Invalid bridge config: staged Tendermint spend and mint session validators must be configured together',
   );
+  assert(!validators.update_client || hasSpendSession, 'Ordinary client forwarding requires staged Tendermint sessions');
 
   // Manifest startup is the inverse path: validate the public document, then
   // rebuild the internal deployment shape so downstream Gateway code stays
@@ -964,6 +974,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
     host_state_nft: requireManifestAuthToken(manifestAny.host_state_nft, 'host_state_nft'),
     validators: {
       host_state_stt: requireManifestValidator(validators.host_state_stt, 'validators.host_state_stt'),
+      ...(validators.update_client
+        ? { update_client: requireManifestValidator(validators.update_client, 'validators.update_client') }
+        : {}),
       ...(validators.recover_client
         ? { recover_client: requireManifestValidator(validators.recover_client, 'validators.recover_client') }
         : {}),
@@ -1042,6 +1055,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       hostStateNFT: manifestAuthTokenToDeployment(bridgeManifest.host_state_nft),
       validators: {
         hostStateStt: manifestValidatorToDeployment(bridgeManifest.validators.host_state_stt),
+        ...(bridgeManifest.validators.update_client
+          ? { updateClient: manifestValidatorToDeployment(bridgeManifest.validators.update_client) }
+          : {}),
         ...(bridgeManifest.validators.recover_client
           ? { recoverClient: manifestValidatorToDeployment(bridgeManifest.validators.recover_client) }
           : {}),

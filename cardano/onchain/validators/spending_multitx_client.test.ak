@@ -1,6 +1,6 @@
 use aiken/collection/list
 use aiken/interval
-use cardano/address.{Credential, Script, from_script}
+use cardano/address.{Credential, Script, VerificationKey, from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
@@ -43,9 +43,9 @@ use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/core/ics_025_handler_interface/host_state_redeemer
 use ibc/utils/validator_utils
 use minting_tendermint_update_session
-use recover_client
 use spending_multitx_client
 use spending_tendermint_update_session
+use update_staged_client
 
 fn verify_client(
   host_policy: PolicyId,
@@ -56,13 +56,14 @@ fn verify_client(
   ref: OutputReference,
   tx: Transaction,
 ) -> Bool {
+  expect Script(update_script) = credential
   let raw: Data = redeemer
   let tx =
     Transaction { ..tx, redeemers: [Pair(Spend(ref), raw), ..tx.redeemers] }
   and {
     spending_multitx_client.spend_multitx_client.spend(
       host_policy,
-      session_policy,
+      update_script,
       credential,
       client,
       redeemer,
@@ -71,8 +72,9 @@ fn verify_client(
     ),
     {
       expect Some(datum) = client
-      recover_client.recover_client.withdraw(
+      update_staged_client.update_staged_client.withdraw(
         host_policy,
+        session_policy,
         #"",
         CheckStagedClientHistory { subject_token: datum.token },
         credential,
@@ -329,6 +331,12 @@ fn valid_context() -> (
       outputs: [client_output, host_output],
       mint: from_asset(session_policy, session_token.name, -1),
       redeemers,
+      withdrawals: [
+        Pair(
+          Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+          0,
+        ),
+      ],
       validity_range: interval.between(2_000, 3_000),
     }
   (
@@ -1133,7 +1141,7 @@ test header_time_violation_against_retained_height_freezes_client() {
   )
 }
 
-test staged_finalization_rejects_a_tampered_history_root() {
+test staged_finalization_rejects_a_tampered_history_root() fail {
   let (_, _, input, token, client_ref, tx) = valid_context()
   expect [output, host] = tx.outputs
   let changed: Data =
@@ -1141,7 +1149,7 @@ test staged_finalization_rejects_a_tampered_history_root() {
       ..expected_client_output_datum(input),
       history_root: input.history_root,
     }
-  !verify_client(
+  verify_client(
     #"33333333333333333333333333333333333333333333333333333333",
     token.policy_id,
     Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
@@ -1177,4 +1185,160 @@ test staged_conflicting_header_requires_its_archived_trusted_state() fail {
     client_ref,
     tx,
   )
+}
+
+fn ordinary_redeemer(token: AuthToken) -> SpendMultitxClientRedeemer {
+  FinalizeUpdate {
+    session_token: token,
+    history_witnesses: [],
+    history_siblings: list.repeat(
+      #"0000000000000000000000000000000000000000000000000000000000000000",
+      64,
+    ),
+  }
+}
+
+fn verify_ordinary(tx: Transaction) -> Bool {
+  let (host, policy, datum, token, ref, _) = valid_context()
+  verify_client(
+    host,
+    policy,
+    Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+    Some(datum),
+    ordinary_redeemer(token),
+    ref,
+    tx,
+  )
+}
+
+test forwarded_update_requires_a_ledger_withdrawal() fail {
+  let (_, _, _, _, _, tx) = valid_context()
+  expect verify_ordinary(Transaction { ..tx, withdrawals: [] })
+}
+
+test forwarded_update_rejects_nonzero_withdrawal() fail {
+  let (_, _, _, _, _, tx) = valid_context()
+  expect [Pair(credential, _)] = tx.withdrawals
+  expect
+    verify_ordinary(Transaction { ..tx, withdrawals: [Pair(credential, 1)] })
+}
+
+test forwarded_update_rejects_duplicate_withdrawals() fail {
+  let (_, _, _, _, _, tx) = valid_context()
+  expect
+    verify_ordinary(
+      Transaction {
+        ..tx,
+        withdrawals: list.concat(tx.withdrawals, tx.withdrawals),
+      },
+    )
+}
+
+test forwarded_update_rejects_another_credential() fail {
+  let (_, _, _, _, _, tx) = valid_context()
+  expect
+    verify_ordinary(
+      Transaction {
+        ..tx,
+        withdrawals: [
+          Pair(
+            Script(#"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+            0,
+          ),
+        ],
+      },
+    )
+}
+
+test forwarded_update_rejects_key_withdrawal() fail {
+  let (_, _, _, _, _, tx) = valid_context()
+  expect
+    verify_ordinary(
+      Transaction {
+        ..tx,
+        withdrawals: [
+          Pair(
+            VerificationKey(
+              #"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            ),
+            0,
+          ),
+        ],
+      },
+    )
+}
+
+test forwarded_update_rejects_another_subject() fail {
+  let (_, _, datum, _, _, tx) = valid_context()
+  expect [Pair(purpose, _), ..others] = tx.redeemers
+  let wrong: Data =
+    CheckStagedClientHistory {
+      subject_token: AuthToken { ..datum.token, name: "other" },
+    }
+  expect
+    verify_ordinary(
+      Transaction { ..tx, redeemers: [Pair(purpose, wrong), ..others] },
+    )
+}
+
+test forwarded_update_rejects_duplicate_invocation_redeemers() fail {
+  let (_, _, _, _, _, tx) = valid_context()
+  expect [first, ..] = tx.redeemers
+  expect
+    verify_ordinary(Transaction { ..tx, redeemers: [first, ..tx.redeemers] })
+}
+
+test forwarded_update_rejects_a_reference_instead_of_the_subject_input() fail {
+  let (_, _, _, _, _, tx) = valid_context()
+  expect [client, ..others] = tx.inputs
+  expect
+    verify_ordinary(
+      Transaction { ..tx, inputs: others, reference_inputs: [client] },
+    )
+}
+
+test forwarded_update_cannot_share_one_invocation_between_subjects() fail {
+  let (host, policy, datum, token, ref, tx) = valid_context()
+  expect [client, ..others] = tx.inputs
+  let other =
+    ClientDatum { ..datum, token: AuthToken { ..datum.token, name: "other" } }
+  let other_input =
+    Input {
+      ..client,
+      output: script_output(
+        #"66666666666666666666666666666666666666666666666666666666",
+        other.token.policy_id,
+        other.token.name,
+        other,
+      ),
+    }
+  expect
+    verify_client(
+      host,
+      policy,
+      Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+      Some(other),
+      ordinary_redeemer(token),
+      ref,
+      Transaction { ..tx, inputs: [other_input, ..others] },
+    )
+}
+
+test ordinary_withdrawal_rejects_a_different_spent_input() fail {
+  let (host, policy, datum, token, _, tx) = valid_context()
+  let raw: Data = ordinary_redeemer(token)
+  let wrong =
+    output_ref(
+      #"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      0,
+    )
+  expect
+    update_staged_client.update_staged_client.withdraw(
+      host,
+      policy,
+      #"",
+      CheckStagedClientHistory { subject_token: datum.token },
+      Script(#"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+      Transaction { ..tx, redeemers: [Pair(Spend(wrong), raw), ..tx.redeemers] },
+    )
 }

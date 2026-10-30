@@ -52,6 +52,7 @@ use recover_client
 use spending_client
 use spending_multitx_client
 use spending_tendermint_update_session
+use update_staged_client
 
 const host_policy = #"11111111111111111111111111111111111111111111111111111111"
 
@@ -1032,16 +1033,17 @@ fn run_atomic_staged_freeze(correct_root: Bool, verify_validators: Bool) -> Bool
     True
   } else {
     and {
-      recover_client.recover_client.withdraw(
+      update_staged_client.update_staged_client.withdraw(
         host_policy,
-        #"",
+        evidence_session_policy,
+        recovery_script_hash,
         history_redeemer,
         address.Script(recovery_script_hash),
         tx,
       ),
       spending_multitx_client.spend_multitx_client.spend(
         host_policy,
-        evidence_session_policy,
+        recovery_script_hash,
         address.Script(recovery_script_hash),
         Some(subject),
         client_redeemer,

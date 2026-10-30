@@ -11,7 +11,7 @@ validator client(
   registry_policy: ByteArray,
   generation: Int,
   host_policy: ByteArray,
-  session_policy: ByteArray,
+  update_client_script_hash: ByteArray,
   recovery: Credential,
 ) {
   spend(
@@ -39,11 +39,11 @@ validator client(
           generation,
           2,
         )
-      // validate(False, ...) rejects retirement in this wrapper.
-      spending_multitx_client.validate(
+      // The guard rejects retirement in this wrapper.
+      spending_multitx_client.validate_guard(
         False,
         host_policy,
-        session_policy,
+        update_client_script_hash,
         recovery,
         datum,
         redeemer,

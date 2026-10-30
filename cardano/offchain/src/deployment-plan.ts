@@ -78,11 +78,22 @@ export const loadStagedTendermintValidators = (
       Data.Tuple([Data.Bytes()]) as unknown as [string],
     );
 
+  const [updateValidator, updateHash, updateAddress] = readValidator(
+    "update_staged_client.update_staged_client.withdraw",
+    lucid,
+    [hostStateNftPolicyId, sessionMintPolicyId, recoveryScriptHash],
+    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
+      string,
+      string,
+      string,
+    ],
+  );
+
   const [clientSpendValidator, clientSpendScriptHash, clientSpendAddress] =
     readValidator(
       "spending_multitx_client.spend_multitx_client.spend",
       lucid,
-      [hostStateNftPolicyId, sessionMintPolicyId, {
+      [hostStateNftPolicyId, updateHash, {
         Script: [recoveryScriptHash],
       }],
       Data.Tuple([
@@ -96,6 +107,11 @@ export const loadStagedTendermintValidators = (
     );
 
   return {
+    updateClient: {
+      validator: updateValidator,
+      scriptHash: updateHash,
+      address: updateAddress,
+    },
     sessionSpend: {
       validator: sessionSpendValidator,
       scriptHash: sessionSpendScriptHash,
@@ -331,6 +347,15 @@ export const loadDeploymentPlan = async (
       staged.sessionMint.address,
     ],
   );
+  const updateClient = register(
+    "update_staged_client.update_staged_client.withdraw",
+    "runtime",
+    [
+      staged.updateClient.validator,
+      staged.updateClient.scriptHash,
+      staged.updateClient.address,
+    ],
+  );
   const spendClient = registryPolicy
     ? load(
       "upgradeable/client.client.spend",
@@ -339,7 +364,7 @@ export const loadDeploymentPlan = async (
         registryPolicy,
         1n,
         hostPolicy,
-        sessionMint.hash,
+        updateClient.hash,
         { Script: [recoverClient.hash] },
       ],
       Data.Tuple([
@@ -707,6 +732,7 @@ export const loadDeploymentPlan = async (
     verifyProof,
     mintPort,
     recoverClient,
+    updateClient,
     sessionSpend,
     sessionMint,
     spendClient,

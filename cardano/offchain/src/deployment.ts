@@ -685,6 +685,10 @@ export const createDeployment = async (
     lucid.config().network || "Custom",
     recoverClientValidator,
   );
+  const updateClientAddress = validatorToRewardAddress(
+    lucid.config().network || "Custom",
+    plan.updateClient.script,
+  );
   const spendTendermintUpdateSessionValidator = plan.sessionSpend.script;
   const spendTendermintUpdateSessionScriptHash = plan.sessionSpend.hash;
   const spendTendermintUpdateSessionAddress = plan.sessionSpend.address;
@@ -705,7 +709,10 @@ export const createDeployment = async (
   const mintChannelSttPolicyId = plan.mintChannel.hash;
 
   await submitTx(
-    () => lucid.newTx().register.Stake(recoverClientAddress),
+    () =>
+      lucid.newTx().register.Stake(recoverClientAddress).register.Stake(
+        updateClientAddress,
+      ),
     lucid,
     "RegisterRecoverClient",
     false,
@@ -953,6 +960,13 @@ export const createDeployment = async (
     }, networkMagic),
     ics20PacketCodec: "ics20-classic-json-v1",
     validators: {
+      updateClient: {
+        title: plan.updateClient.title,
+        script: plan.updateClient.script.script,
+        scriptHash: plan.updateClient.hash,
+        address: updateClientAddress,
+        refUtxo: refUtxosInfo[plan.updateClient.hash],
+      },
       recoverClient: {
         title: plan.recoverClient.title,
         script: recoverClientValidator.script,
