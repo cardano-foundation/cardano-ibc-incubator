@@ -166,60 +166,66 @@ export class PacketStateService {
       channel.datum!,
       'channel',
     );
-    const operation = authorized.fields[1] as Constr<Data>;
-    if (![0, 1, 2, 5, 6, 8].includes(operation.index)) return [];
-    const packets =
-      operation.index === 0 ? (operation.fields[2] as Constr<Data>[]) : [operation.fields[0] as Constr<Data>];
-    return packets.flatMap((packet, index) => {
-      const height = packet.fields[6] as Constr<Data>;
-      const attributes: Record<string, string> = {
-        packet_sequence: String(packet.fields[0]),
-        packet_src_port: toText(String(packet.fields[1])),
-        packet_src_channel: toText(String(packet.fields[2])),
-        packet_dst_port: toText(String(packet.fields[3])),
-        packet_dst_channel: toText(String(packet.fields[4])),
-        packet_data: toText(String(packet.fields[5])),
-        packet_data_hex: String(packet.fields[5]),
-        packet_timeout_height: `${height.fields[0]}-${height.fields[1]}`,
-        packet_timeout_timestamp: String(packet.fields[7]),
-        packet_channel_ordering: 'ORDER_UNORDERED',
-        packet_connection: toText(channelDatum.state.channel.connection_hops[0]),
-      };
-      if (operation.index === 0) {
-        const intent = (operation.fields[1] as Constr<Data>[])[index];
-        attributes.intent_tx_hash = String(intent.fields[0]);
-        attributes.intent_output_index = String(intent.fields[1]);
-      }
-      const make = (type: string, values = attributes) => ({
-        type,
-        event_attribute: Object.entries(values).map(([key, value]) => ({ key, value, index: true })),
-      });
-      if (operation.index === 5) {
-        const ack = '{"result":"AQ=="}';
+    const rootOperation = authorized.fields[1] as Constr<Data>;
+    const operations = rootOperation.index === 10 ? rootOperation.fields[0] as Constr<Data>[] : [rootOperation];
+    if (rootOperation.index === 10 && (operations.length !== 2 || operations.some(operation => operation.index !== 1))) {
+      throw new Error('Invalid acknowledgement batch');
+    }
+    return operations.flatMap(operation => {
+      if (![0, 1, 2, 5, 6, 8].includes(operation.index)) return [];
+      const packets =
+        operation.index === 0 ? (operation.fields[2] as Constr<Data>[]) : [operation.fields[0] as Constr<Data>];
+      return packets.flatMap((packet, index) => {
+        const height = packet.fields[6] as Constr<Data>;
+        const attributes: Record<string, string> = {
+          packet_sequence: String(packet.fields[0]),
+          packet_src_port: toText(String(packet.fields[1])),
+          packet_src_channel: toText(String(packet.fields[2])),
+          packet_dst_port: toText(String(packet.fields[3])),
+          packet_dst_channel: toText(String(packet.fields[4])),
+          packet_data: toText(String(packet.fields[5])),
+          packet_data_hex: String(packet.fields[5]),
+          packet_timeout_height: `${height.fields[0]}-${height.fields[1]}`,
+          packet_timeout_timestamp: String(packet.fields[7]),
+          packet_channel_ordering: 'ORDER_UNORDERED',
+          packet_connection: toText(channelDatum.state.channel.connection_hops[0]),
+        };
+        if (operation.index === 0) {
+          const intent = (operation.fields[1] as Constr<Data>[])[index];
+          attributes.intent_tx_hash = String(intent.fields[0]);
+          attributes.intent_output_index = String(intent.fields[1]);
+        }
+        const make = (type: string, values = attributes) => ({
+          type,
+          event_attribute: Object.entries(values).map(([key, value]) => ({ key, value, index: true })),
+        });
+        if (operation.index === 5) {
+          const ack = '{"result":"AQ=="}';
+          return [
+            make('recv_packet'),
+            make('write_acknowledgement', {
+              ...attributes,
+              packet_ack: ack,
+              packet_ack_hex: Buffer.from(ack).toString('hex'),
+            }),
+          ];
+        }
+        if (operation.index === 1 || operation.index === 6) {
+          const ack =
+            operation.index === 1 ? '{"result":"AQ=="}' : '{"error":"' + toText(String(operation.fields[2])) + '"}';
+          attributes.packet_ack = ack;
+          attributes.packet_ack_hex = Buffer.from(ack).toString('hex');
+        }
         return [
-          make('recv_packet'),
-          make('write_acknowledgement', {
-            ...attributes,
-            packet_ack: ack,
-            packet_ack_hex: Buffer.from(ack).toString('hex'),
-          }),
+          make(
+            operation.index === 0
+              ? 'send_packet'
+              : [2, 8].includes(operation.index)
+                ? 'timeout_packet'
+                : 'acknowledge_packet',
+          ),
         ];
-      }
-      if (operation.index === 1 || operation.index === 6) {
-        const ack =
-          operation.index === 1 ? '{"result":"AQ=="}' : '{"error":"' + toText(String(operation.fields[2])) + '"}';
-        attributes.packet_ack = ack;
-        attributes.packet_ack_hex = Buffer.from(ack).toString('hex');
-      }
-      return [
-        make(
-          operation.index === 0
-            ? 'send_packet'
-            : [2, 8].includes(operation.index)
-              ? 'timeout_packet'
-              : 'acknowledge_packet',
-        ),
-      ];
+      });
     });
   }
 

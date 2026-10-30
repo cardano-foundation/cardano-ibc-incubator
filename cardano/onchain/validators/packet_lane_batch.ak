@@ -3,8 +3,8 @@ use cardano/address.{Script}
 use cardano/assets.{PolicyId}
 use cardano/transaction.{OutputReference, Transaction}
 use ibc/apps/transfer/packet_batch.{
-  Acknowledge, AuthorizedOperation, Consolidate, Prune, Receive, Reject,
-  RetireEmpty, RetireLanes, SendBatch, Timeout, TimeoutOnClose,
+  Acknowledge, AcknowledgeBatch, AuthorizedOperation, Consolidate, Prune,
+  Receive, Reject, RetireEmpty, RetireLanes, SendBatch, Timeout, TimeoutOnClose,
 }
 use ibc/utils/validator_utils
 
@@ -35,7 +35,7 @@ validator packet_lane_batch(
     let delegate =
       when authorized.operation is {
         SendBatch { .. } -> policies.send
-        Acknowledge { .. } -> policies.acknowledge
+        Acknowledge { .. } | AcknowledgeBatch { .. } -> policies.acknowledge
         Timeout { .. } -> policies.timeout
         Reject { .. } -> policies.reject
         Receive { .. } -> policies.receive
@@ -52,6 +52,7 @@ validator packet_lane_batch(
       when authorized.operation is {
         SendBatch { .. } |
         Acknowledge { .. } |
+        AcknowledgeBatch { .. } |
         Timeout { .. } |
         TimeoutOnClose { .. } |
         Reject { .. } |

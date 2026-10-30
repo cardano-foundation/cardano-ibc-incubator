@@ -6,8 +6,8 @@ use cardano/assets.{PolicyId}
 use cardano/transaction.{Mint, OutputReference, Transaction}
 use ibc/apps/transfer/packet_accounting
 use ibc/apps/transfer/packet_batch.{
-  Acknowledge, Prune, Receive, Reject, SendBatch, Timeout, TimeoutOnClose,
-  TransferIntent,
+  Acknowledge, AcknowledgeBatch, Prune, Receive, Reject, SendBatch, Timeout,
+  TimeoutOnClose, TransferIntent,
 }
 use ibc/core/ics_004/packet_lane_state
 use ibc/utils/validator_utils
@@ -80,7 +80,24 @@ validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
         }
       }
       Lane -> {
-        let op = packet_batch.operation(transaction, batch_policy)
+        let operation = packet_batch.operation(transaction, batch_policy)
+        let op =
+          when operation is {
+            AcknowledgeBatch { packets } -> {
+              expect Some(child) =
+                list.find(
+                  packets,
+                  fn(child) {
+                    when child is {
+                      Acknowledge { lane, .. } -> lane.input_ref == ref
+                      _ -> False
+                    }
+                  },
+                )
+              child
+            }
+            _ -> operation
+          }
         when op is {
           SendBatch { lanes, .. } -> {
             expect Some(lane) =

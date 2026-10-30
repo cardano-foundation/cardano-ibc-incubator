@@ -1,8 +1,11 @@
 import { PacketInputsBusyError } from '../tx-input-reservations';
 import { PacketLaneService } from '../packet-lane.service';
+import { MsgAcknowledgement } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
+import { BuildPacketBatchRequest as PacketBatchCodec } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
 import {
   PacketLaneAccountingCapacityError,
   buildPacketSendBatch,
+  buildPacketAcknowledgementBatch,
   buildTransferIntentCancellation,
   buildPacketBalanceCompaction,
   usableTransferIntent,
@@ -12,6 +15,8 @@ jest.mock('@cardano-ibc/tx-builder-runtime/packetLaneTransactions', () => ({
   PacketLaneAccountingCapacityError: jest.requireActual('@cardano-ibc/tx-builder-runtime/packetLaneTransactions')
     .PacketLaneAccountingCapacityError,
   buildPacketSendBatch: jest.fn(),
+  buildPacketAcknowledgementBatch: jest.fn(),
+  record: jest.requireActual('@cardano-ibc/tx-builder-runtime/packetLaneTransactions').record,
   buildTransferIntentCancellation: jest.fn(),
   buildPacketBalanceCompaction: jest.fn(),
   usableTransferIntent: jest.fn(),
@@ -75,6 +80,13 @@ describe('packet reference collection', () => {
 });
 
 describe('default funded packet batches', () => {
+  it('uses the same acknowledgement batch wire fields as Hermes', () => {
+    const encoded = PacketBatchCodec.encode(PacketBatchCodec.fromPartial({
+      signer: 'a', port_id: 'p', channel_id: 'c',
+      acknowledgements: [new Uint8Array([1, 2]), new Uint8Array([3])],
+    })).finish();
+    expect(Buffer.from(encoded).toString('hex')).toBe('0a01611201701a01632a0201022a0103');
+  });
   let service: PacketLaneService;
   let pending: any[];
   let history: any;
@@ -89,9 +101,10 @@ describe('default funded packet batches', () => {
     const lucid = {
       LucidImporter: { Data: { from: (data: any) => data }, Constr: Datum, fromText: (text: string) => text },
       lucid: { utxosAt: jest.fn(async () => pending) },
+      resolveClientAtHeights: jest.fn(async () => ({ clientUtxo: {}, historyWitnesses: [] })),
     };
     service = new PacketLaneService(
-      { getOrThrow: () => ({ packetState: {} }) } as any,
+      { getOrThrow: () => ({ packetState: { acknowledgementBatchSize: 2 } }) } as any,
       lucid as any,
       {} as any,
       {} as any,
@@ -106,6 +119,43 @@ describe('default funded packet batches', () => {
     });
     jest.mocked(usableTransferIntent).mockReturnValue(true);
     jest.mocked(buildPacketSendBatch).mockResolvedValue({ tx: {} } as any);
+  });
+
+  const acknowledgement = (sequence: bigint, height = 10n) => MsgAcknowledgement.encode(
+    MsgAcknowledgement.fromPartial({
+      signer: 'batcher',
+      packet: { sequence, source_port: 'transfer', source_channel: 'channel-0' },
+      acknowledgement: Buffer.from('{"result":"AQ=="}'),
+      proof_height: { revision_number: 1n, revision_height: height },
+      proof_acked: new Uint8Array([1]),
+    }),
+  ).finish();
+
+  it('builds two already ready acknowledgements in one transaction', async () => {
+    jest.spyOn(service as any, 'packet').mockReturnValue({});
+    jest.spyOn(service as any, 'proof').mockReturnValue({});
+    jest.mocked(buildPacketAcknowledgementBatch).mockResolvedValue({ tx: {}, inputs: [] } as any);
+    const response = await service.batch({
+      ...request, intent_tx_hash: '', acknowledgements: [acknowledgement(1n), acknowledgement(2n)],
+    });
+    expect(response.stage).toBe('acknowledge');
+    expect(buildPacketAcknowledgementBatch).toHaveBeenCalledTimes(1);
+    expect(buildPacketSendBatch).not.toHaveBeenCalled();
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects incompatible acknowledgement proof heights before building', async () => {
+    await expect(service.batch({
+      ...request, intent_tx_hash: '', acknowledgements: [acknowledgement(1n), acknowledgement(2n, 11n)],
+    })).rejects.toThrow('incompatible');
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('does not collect a lone acknowledgement into a batch', async () => {
+    await expect(service.batch({
+      ...request, intent_tx_hash: '', acknowledgements: [acknowledgement(1n)],
+    })).rejects.toThrow('two ready');
+    expect(complete).not.toHaveBeenCalled();
   });
 
   it('cancels an expired funded request without trying to send it', async () => {

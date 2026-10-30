@@ -22,6 +22,7 @@ import {
 import {
   buildLiquidityRetirement,
   buildPacketAcknowledgement,
+  buildPacketAcknowledgementBatch,
   buildPacketBalanceCompaction,
   buildPacketPrune,
   buildPacketReceive,
@@ -376,9 +377,29 @@ Deno.test("five funded requests batch without acknowledgements and complete thro
   );
   const pending = [];
   const inputs: UTxO[] = [];
-  for (const packet of packets) {
+  for (
+    const group of [packets.slice(0, 2), packets.slice(2, 4), packets.slice(4)]
+  ) {
+    const packet = group[0];
     const relayer = await f.wallet();
     const proof = f.proofs.get(packet.fields[0] as bigint)!;
+    if (group.length === 2) {
+      const batch = await buildPacketAcknowledgementBatch(
+        relayer,
+        f.deployment,
+        group.map((packet) => {
+          const proof = f.proofs.get(packet.fields[0] as bigint)!;
+          return { packet, proofHeight: proof.height, proof: proof.proof };
+        }),
+        f.emulator.now(),
+        f.emulator.now() + 60_000,
+      );
+      inputs.push(...batch.inputs);
+      pending.push(
+        await signMeasured(relayer, batch.tx, "two ready acknowledgements"),
+      );
+      continue;
+    }
     const ack = await buildPacketAcknowledgement(
       relayer,
       f.deployment,
@@ -407,6 +428,105 @@ Deno.test("five funded requests batch without acknowledgements and complete thro
   for (const input of inputs) {
     assertEquals((await batcher.utxosByOutRef([input])).length, 0);
   }
+});
+
+Deno.test("two ready acknowledgements share fees with reconciled balances and execution headroom", async () => {
+  const f = await packetLaneFixture();
+  const { intents } = await f.admit(2);
+  let wallet = await f.wallet();
+  const sent = await buildPacketSendBatch(
+    wallet,
+    f.deployment,
+    intents,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await submitReconciled(
+    f,
+    wallet,
+    await signMeasured(wallet, sent.tx, "ready acknowledgement source send"),
+  );
+  const requests = sent.packets.map((packet) => {
+    const proof = f.proofs.get(packet.fields[0] as bigint)!;
+    return { packet, proofHeight: proof.height, proof: proof.proof };
+  });
+  const restore = snapshot(f);
+  let baseline = 0n;
+  for (const request of requests) {
+    wallet = await f.wallet();
+    const built = await buildPacketAcknowledgement(
+      wallet,
+      f.deployment,
+      request.packet,
+      request.proofHeight,
+      request.proof,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    baseline += (await submitReconciled(
+      f,
+      wallet,
+      await signMeasured(wallet, built.tx, "single ready acknowledgement"),
+    )).fee;
+  }
+  restore();
+  wallet = await f.wallet();
+  await assertRejects(
+    () =>
+      buildPacketAcknowledgementBatch(
+        wallet,
+        f.deployment,
+        [requests[0], requests[0]],
+        f.emulator.now(),
+        f.emulator.now() + 60_000,
+      ),
+    Error,
+    "independent lanes",
+  );
+  const wrongProof = [requests[0], {
+    ...requests[1],
+    proof: requests[0].proof,
+  }];
+  const forged = await buildPacketAcknowledgementBatch(
+    wallet,
+    f.deployment,
+    wrongProof,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await assertRejects(
+    () => signMeasured(wallet, forged.tx, "forged second acknowledgement"),
+    Error,
+  );
+  wallet = await f.wallet();
+  const combined = await buildPacketAcknowledgementBatch(
+    wallet,
+    f.deployment,
+    requests,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  const signed = await signMeasured(
+    wallet,
+    combined.tx,
+    "two ready acknowledgements",
+  );
+  const units = CML.compute_total_ex_units(
+    signed.toTransaction().witness_set().redeemers()!,
+  );
+  const limits = wallet.config().protocolParameters!;
+  assert(units.mem() * 5n <= limits.maxTxExMem * 4n);
+  assert(units.steps() * 5n <= limits.maxTxExSteps * 4n);
+  const reduced = await submitReconciled(f, wallet, signed);
+  assert(reduced.fee < baseline);
+  console.log(JSON.stringify({
+    profile: "two ready successful acknowledgements",
+    separateFee: baseline.toString(),
+    combinedFee: reduced.fee.toString(),
+    memory: units.mem().toString(),
+    cpu: units.steps().toString(),
+    bytes: signed.toCBOR().length / 2,
+  }));
 });
 
 Deno.test("same-lane sends use sequential witnesses and stale packet completions rebuild safely", async () => {

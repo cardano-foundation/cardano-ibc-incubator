@@ -909,6 +909,7 @@ export const createDeployment = async (
       ),
       format: "packet-lanes-v1",
       laneCount: plan.packetLaneCount,
+      acknowledgementBatchSize: 2,
       configToken: {
         policyId: plan.packetConfig.hash,
         name: fromText("ibc_packet_config"),

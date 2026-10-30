@@ -93,6 +93,7 @@ type PacketStateDeployment = {
   operations: Record<string, DeploymentValidator>;
   format: 'packet-lanes-v1';
   laneCount: number;
+  acknowledgementBatchSize?: 2;
   configToken: AuthToken;
   state: DeploymentValidator;
   batch: DeploymentValidator;
@@ -103,6 +104,7 @@ type PacketStateManifest = {
   operations: Record<string, BridgeManifestValidator>;
   format: 'packet-lanes-v1';
   lane_count: number;
+  acknowledgement_batch_size?: 2;
   config_token: BridgeManifestAuthToken;
   state: BridgeManifestValidator;
   batch: BridgeManifestValidator;
@@ -678,6 +680,8 @@ function requirePacketState(value: unknown): PacketStateDeployment {
   assert(packet.format === 'packet-lanes-v1', 'A fresh packet-lane deployment is required');
   const laneCount = requireNonNegativeInteger(packet.laneCount, 'packetState.laneCount');
   assert(laneCount >= 1 && laneCount <= 64, 'Invalid packet lane count');
+  assert(packet.acknowledgementBatchSize === undefined || packet.acknowledgementBatchSize === 2,
+    'Invalid acknowledgement batch capability');
   const validator = (name: string) => {
     const result = requireDeploymentValidator(packet[name], `packetState.${name}`);
     assert(!!result.address, `Missing packetState.${name}.address`);
@@ -693,6 +697,7 @@ function requirePacketState(value: unknown): PacketStateDeployment {
     ),
     format: 'packet-lanes-v1',
     laneCount,
+    ...(packet.acknowledgementBatchSize === 2 ? { acknowledgementBatchSize: 2 as const } : {}),
     configToken: requireAuthToken(packet.configToken, 'packetState.configToken'),
     state: validator('state'),
     batch: validator('batch'),
@@ -707,6 +712,7 @@ function packetStateToManifest(packet: PacketStateDeployment): PacketStateManife
     ),
     format: packet.format,
     lane_count: packet.laneCount,
+    ...(packet.acknowledgementBatchSize === 2 ? { acknowledgement_batch_size: 2 as const } : {}),
     config_token: deploymentAuthTokenToManifest(packet.configToken),
     state: deploymentValidatorToManifest(packet.state),
     batch: deploymentValidatorToManifest(packet.batch),
@@ -726,6 +732,7 @@ function packetStateFromManifest(value: unknown): PacketStateDeployment {
     ),
     format: packet.format,
     laneCount: packet.lane_count,
+    acknowledgementBatchSize: packet.acknowledgement_batch_size,
     configToken: manifestAuthTokenToDeployment(
       requireManifestAuthToken(packet.config_token, 'packet_state.config_token'),
     ),

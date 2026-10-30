@@ -138,6 +138,17 @@ function buildStagedHandlerJsonDeployment() {
 }
 
 describe('bridge manifest normalization', () => {
+  it('advertises acknowledgement batching only for deployments that enable it', () => {
+    const deployment = buildHandlerJsonDeployment();
+    const options = { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' as const };
+    const legacy = normalizeHandlerJsonDeploymentConfig(deployment, options);
+    expect(legacy.bridgeManifest.packet_state.acknowledgement_batch_size).toBeUndefined();
+    const enabled = normalizeHandlerJsonDeploymentConfig({
+      ...deployment, packetState: { ...deployment.packetState, acknowledgementBatchSize: 2 },
+    }, options);
+    expect(enabled.bridgeManifest.packet_state.acknowledgement_batch_size).toBe(2);
+    expect(normalizeBridgeManifestConfig(enabled.bridgeManifest).deployment.packetState.acknowledgementBatchSize).toBe(2);
+  });
   it('accepts the deployment used by the Gateway image smoke test', () => {
     const fixtureUrl = pathToFileURL(resolve(__dirname, '../../../../scripts/ci/image-smoke-fixture.mjs')).href;
     const manifest = JSON.parse(
