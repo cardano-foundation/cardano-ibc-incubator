@@ -178,6 +178,7 @@ type ReferenceScripts = {
   mintIdentifier: UTxO;
   spendConnection: UTxO;
   spendClient: UTxO;
+  updateClient?: UTxO;
   recoverClient?: UTxO;
   spendTendermintUpdateSession?: UTxO;
   mintTendermintUpdateSession?: UTxO;
@@ -224,6 +225,7 @@ export class LucidService implements OnModuleInit {
       spendChannel: deploymentConfig.validators.spendChannel.refUtxo,
       spendTraceRegistry: deploymentConfig.validators.spendTraceRegistry?.refUtxo,
       spendClient: deploymentConfig.validators.spendClient.refUtxo,
+      updateClient: deploymentConfig.validators.updateClient?.refUtxo,
       recoverClient: deploymentConfig.validators.recoverClient?.refUtxo,
       spendTendermintUpdateSession: deploymentConfig.validators.spendTendermintUpdateSession?.refUtxo,
       mintTendermintUpdateSession: deploymentConfig.validators.mintTendermintUpdateSession?.refUtxo,
@@ -1074,9 +1076,11 @@ export class LucidService implements OnModuleInit {
     if (!spendSession || !mintSession) {
       throw new GrpcInternalException('Staged Tendermint session reference scripts are not configured');
     }
-    const recoveryConfig = deploymentConfig.validators.recoverClient;
-    const recoveryReference = this.referenceScripts.recoverClient;
-    if (!recoveryConfig?.address || !recoveryReference) {
+    const updateConfig = deploymentConfig.validators.updateClient ?? deploymentConfig.validators.recoverClient;
+    const updateReference = deploymentConfig.validators.updateClient
+      ? this.referenceScripts.updateClient
+      : this.referenceScripts.recoverClient;
+    if (!updateConfig?.address || !updateReference) {
       throw new GrpcInternalException('Staged Tendermint history support is not configured');
     }
     const hostStateUtxoWithRawDatum = {
@@ -1091,7 +1095,7 @@ export class LucidService implements OnModuleInit {
         this.referenceScripts.spendClient,
         spendSession,
         mintSession,
-        recoveryReference,
+        updateReference,
       ])
       .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
       .collectFrom([currentClientUtxo], encodedSpendClientRedeemer)
@@ -1115,7 +1119,7 @@ export class LucidService implements OnModuleInit {
         { kind: 'inline', value: encodedNewClientDatum },
         currentClientUtxo.assets,
       )
-      .withdraw(recoveryConfig.address, 0n, encodedHistoryWithdrawalRedeemer)
+      .withdraw(updateConfig.address, 0n, encodedHistoryWithdrawalRedeemer)
       .addSignerKey(signerKeyHash);
   }
 

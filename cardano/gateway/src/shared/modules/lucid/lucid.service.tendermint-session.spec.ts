@@ -122,9 +122,14 @@ describe('LucidService staged Tendermint transaction wiring', () => {
     expect(builder.pay.ToContract).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])('atomically finalizes authenticated sessions, explicit evidence: %s', async (evidence) => {
+  it.each([[false, false], [true, false], [false, true], [true, true]])(
+    'atomically finalizes sessions, evidence: %s, forwarded: %s', async (evidence, forwarded) => {
     const builder = createBuilder();
     const service = createService(builder);
+    if (forwarded) {
+      service.configService.get('deployment').validators.updateClient = { address: 'stake_test1update' };
+      service.referenceScripts.updateClient = { txHash: 'update-ref', outputIndex: 0 };
+    }
     const host = {
       txHash: 'host-input', outputIndex: 0, datum: 'raw-host', datumHash: 'old-hash',
       assets: { lovelace: 8_000_000n, 'host-policyhost-name': 1n, reserve: 7n },
@@ -160,7 +165,7 @@ describe('LucidService staged Tendermint transaction wiring', () => {
       service.referenceScripts.spendClient,
       service.referenceScripts.spendTendermintUpdateSession,
       service.referenceScripts.mintTendermintUpdateSession,
-      service.referenceScripts.recoverClient,
+      forwarded ? service.referenceScripts.updateClient : service.referenceScripts.recoverClient,
     ]);
     expect(builder.collectFrom).toHaveBeenCalledWith(
       [{ ...host, datum: 'raw-host', datumHash: undefined }],
@@ -185,7 +190,19 @@ describe('LucidService staged Tendermint transaction wiring', () => {
       { kind: 'inline', value: 'updated-client' },
       client.assets,
     );
-    expect(builder.withdraw).toHaveBeenCalledWith('stake_test1history', 0n, 'history-redeemer');
+    expect(builder.withdraw).toHaveBeenCalledWith(
+      forwarded ? 'stake_test1update' : 'stake_test1history', 0n, 'history-redeemer',
+    );
     expect(builder.addSignerKey).toHaveBeenCalledWith('signer-key-hash');
+  });
+
+  it('does not fall back to recovery when configured ordinary support is incomplete', async () => {
+    const builder = createBuilder();
+    const service = createService(builder);
+    service.configService.get('deployment').validators.updateClient = { address: 'stake_test1update' };
+    await expect(service.createUnsignedFinalizeTendermintSessionTransaction(
+      {}, '', {}, '', {}, '', '', '', '', '', '', '', '',
+    )).rejects.toThrow('Staged Tendermint history support is not configured');
+    expect(builder.readFrom).not.toHaveBeenCalled();
   });
 });

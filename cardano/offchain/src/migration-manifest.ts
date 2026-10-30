@@ -51,6 +51,7 @@ export async function assertBaselineAliases(plan: DeploymentPlan) {
   }
   visit(plan);
   const expectedAliases: Record<string, string> = {
+    updateClient: "update_staged_client.update_staged_client.withdraw",
     sessionSpend:
       "spending_tendermint_update_session.spend_tendermint_update_session.spend",
     traceRegistry: "trace_registry.spend_trace_registry.spend",
@@ -90,6 +91,7 @@ export async function assertRetainedManifest(
   host: HostStateDatum,
 ) {
   const retained: Record<string, PlannedValidator | null> = {
+    updateClient: plan.updateClient,
     recoverClient: plan.recoverClient,
     spendTendermintUpdateSession: plan.sessionSpend,
     mintTendermintUpdateSession: plan.sessionMint,
@@ -122,7 +124,8 @@ export async function assertRetainedManifest(
       !field || !expected || field.script !== expected.script.script ||
       field.scriptHash !== expected.hash ||
       (field.address !== undefined &&
-        field.address !== (name === "recoverClient"
+        field.address !==
+          ((name === "recoverClient" || name === "updateClient")
             ? validatorToRewardAddress(
               lucid.config().network || "Custom",
               expected.script,

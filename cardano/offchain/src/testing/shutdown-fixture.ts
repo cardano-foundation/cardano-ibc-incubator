@@ -131,10 +131,22 @@ export async function shutdownFixture(
     "minting_tendermint_update_session.mint_tendermint_update_session.mint",
     [spendTendermintUpdateSession.scriptHash],
   );
+  const updateClient = validator(
+    "update_staged_client.update_staged_client.withdraw",
+    [
+      hostPolicy,
+      mintTendermintUpdateSession.scriptHash,
+      recoverClient.scriptHash,
+    ],
+  );
+  updateClient.address = validatorToRewardAddress("Custom", {
+    type: "PlutusV3",
+    script: updateClient.script,
+  });
   const spendClient = clientMode === "staged"
     ? validator("spending_multitx_client.spend_multitx_client.spend", [
       hostPolicy,
-      mintTendermintUpdateSession.scriptHash,
+      updateClient.scriptHash,
       { Script: [recoverClient.scriptHash] },
     ])
     : validator("spending_client.spend_client.spend", [hostPolicy, {
@@ -296,6 +308,7 @@ export async function shutdownFixture(
   }, Data.to(hostDatum, HostStateDatum));
   const deployment = {
     validators: {
+      updateClient,
       recoverClient,
       spendClient,
       spendTendermintUpdateSession,
@@ -483,7 +496,11 @@ export async function shutdownFixture(
     emulator.awaitBlock();
     return completed.toTransaction().body();
   }
-  await submit(lucid.newTx().register.Stake(recoverClient.address));
+  await submit(
+    lucid.newTx().register.Stake(recoverClient.address).register.Stake(
+      updateClient.address,
+    ),
+  );
   const packetReferences = [
     seed(
       referenceAccount.address,

@@ -144,6 +144,7 @@ Deno.test("the deployment inventory uses the staged client and session policy gr
     plan.hostNft.hash,
     plan.recoverClient.hash,
   );
+  assertEquals(plan.updateClient.hash, staged.updateClient.scriptHash);
   assertEquals(plan.sessionSpend.hash, staged.sessionSpend.scriptHash);
   assertEquals(plan.sessionMint.hash, staged.sessionMint.policyId);
   assertEquals(plan.spendClient.hash, staged.clientSpend.scriptHash);
@@ -157,6 +158,7 @@ Deno.test("the deployment inventory uses the staged client and session policy gr
       plan.sessionMint,
       plan.spendClient,
       plan.recoverClient,
+      plan.updateClient,
     ]
   ) {
     assert(plan.referenceValidators.includes(validator));
@@ -174,6 +176,7 @@ Deno.test("the plan carries nonce changes through the full applied dependency gr
       "hostNft",
       "hostState",
       "mintPort",
+      "updateClient",
       "sessionSpend",
       "sessionMint",
       "spendClient",

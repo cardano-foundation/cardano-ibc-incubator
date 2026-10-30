@@ -9,7 +9,7 @@ use ibc/implementation/spending_multitx_client as implementation
 
 validator spend_multitx_client(
   host_state_nft_policy_id: PolicyId,
-  session_mint_policy_id: PolicyId,
+  update_client_script_hash: ByteArray,
   recover_client_credential: Credential,
 ) {
   spend(
@@ -18,10 +18,10 @@ validator spend_multitx_client(
     spent_output_ref: OutputReference,
     transaction: Transaction,
   ) {
-    implementation.validate(
+    implementation.validate_guard(
       True,
       host_state_nft_policy_id,
-      session_mint_policy_id,
+      update_client_script_hash,
       recover_client_credential,
       datum,
       redeemer,

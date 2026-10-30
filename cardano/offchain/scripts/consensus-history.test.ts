@@ -237,6 +237,9 @@ async function fixture(
       ],
     );
   const rewardAddress = validatorToRewardAddress("Preprod", recoveryScript);
+  const updateRewardAddress = staged
+    ? validatorToRewardAddress("Preprod", staged.updateClient.validator)
+    : rewardAddress;
   if (recovery || normalUpdate) {
     const registration = await lucid.newTx().register.Stake(rewardAddress)
       .complete();
@@ -249,6 +252,12 @@ async function fixture(
     0n,
   );
   const clientToken = new Constr(0, [clientPolicyId, clientName]);
+  if (staged && (recovery || normalUpdate)) {
+    const registration = await lucid.newTx().register.Stake(updateRewardAddress)
+      .complete();
+    await registration.sign.withWallet().complete().then((tx) => tx.submit());
+    emulator.awaitBlock();
+  }
   const latestHeight = normalUpdate && historyCount === 0
     ? stagedMode === "non-adjacent" ? 1n : 2n
     : BigInt(historyCount + 1);
@@ -365,6 +374,9 @@ async function fixture(
   const references = [hostScript, clientPolicy, recoveryScript].map((script) =>
     seed(account.address, {}, Data.void(), script)
   );
+  const updateReference = staged
+    ? seed(account.address, {}, Data.void(), staged.updateClient.validator)
+    : references[2];
   const sessionReferences = staged
     ? [staged.sessionMint.validator, staged.sessionSpend.validator].map((
       script,
@@ -1009,7 +1021,7 @@ async function fixture(
     );
     let builder = lucid.newTx().readFrom([
       references[0],
-      references[2],
+      updateReference,
       clientReference,
     ])
       .collectFrom(
@@ -1036,7 +1048,7 @@ async function fixture(
         ),
       )
       .withdraw(
-        rewardAddress,
+        updateRewardAddress,
         0n,
         encodeStored(new Constr(staged ? 4 : 1, [clientToken])),
       )
@@ -1239,7 +1251,7 @@ async function fixture(
     );
     let builder = lucid.newTx().readFrom([
       references[0],
-      references[2],
+      updateReference,
       clientReference,
     ])
       .collectFrom(
@@ -1278,7 +1290,7 @@ async function fixture(
         ),
       )
       .withdraw(
-        rewardAddress,
+        updateRewardAddress,
         0n,
         encodeStored(new Constr(staged ? 4 : 1, [clientToken])),
       )

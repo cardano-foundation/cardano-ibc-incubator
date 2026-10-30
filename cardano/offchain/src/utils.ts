@@ -945,6 +945,7 @@ export const getLiveWalletUtxos = async (
 };
 
 type Validator =
+  | "updateClient"
   | "recoverClient"
   | "spendClient"
   | "spendTendermintUpdateSession"
@@ -1044,6 +1045,13 @@ export type DeploymentTemplate = {
   consensusHistoryFormat: "proof-backed-v1";
   ics20PacketCodec: "ics20-classic-json-v1";
   validators: {
+    updateClient?: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
     recoverClient?: {
       title: string;
       script: string;

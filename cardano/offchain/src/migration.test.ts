@@ -734,13 +734,14 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
     );
     for (
       const field of [
+        "updateClient",
         "mintVoucher",
         "spendTendermintUpdateSession",
         "verifyProof",
       ] as const
     ) {
       const substituted = structuredClone(deployment);
-      substituted.validators[field].scriptHash = "ff".repeat(28);
+      substituted.validators[field]!.scriptHash = "ff".repeat(28);
       await assertRejects(
         () => verifyAndInstallMigration(lucid, substituted, artifact),
         Error,
@@ -754,15 +755,19 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
       Error,
       "Substituted application capability transfer",
     );
-    const substitutedAlias = structuredClone(deployment);
-    const aliasBaseline = substitutedAlias.migration!
-      .baseline as DeploymentPlan;
-    aliasBaseline.sessionSpend = aliasBaseline.recoverClient;
-    await assertRejects(
-      () => verifyAndInstallMigration(lucid, substitutedAlias, artifact),
-      Error,
-      "Substituted baseline alias sessionSpend",
-    );
+    for (const field of ["sessionSpend", "updateClient"] as const) {
+      const substitutedAlias = structuredClone(deployment);
+      const aliasBaseline = substitutedAlias.migration!
+        .baseline as DeploymentPlan;
+      aliasBaseline[field] = aliasBaseline.recoverClient;
+      await assertRejects(
+        () => verifyAndInstallMigration(lucid, substitutedAlias, artifact),
+        Error,
+        field === "updateClient"
+          ? "Baseline compatibility commitment mismatch"
+          : `Substituted baseline alias ${field}`,
+      );
+    }
     const verified = await verifyAndInstallMigration(
       lucid,
       deployment,

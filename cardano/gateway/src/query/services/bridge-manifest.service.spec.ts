@@ -55,6 +55,7 @@ function manifest(): BridgeManifest {
     validators: {
       host_state_stt: validator('host'),
       recover_client: validator('recover', 12),
+      update_client: validator('update', 13),
       spend_client: validator('client'),
       spend_connection: validator('connection'),
       spend_channel: {

@@ -304,7 +304,9 @@ Deno.test("staged Tendermint validators preserve their hash dependencies", () =>
   const [, expectedClientSpendScriptHash] = readValidator(
     "spending_multitx_client.spend_multitx_client.spend",
     lucid,
-    [hostPolicy, staged.sessionMint.policyId, { Script: [recoveryScriptHash] }],
+    [hostPolicy, staged.updateClient.scriptHash, {
+      Script: [recoveryScriptHash],
+    }],
     Data.Tuple([
       Data.Bytes(),
       Data.Bytes(),
