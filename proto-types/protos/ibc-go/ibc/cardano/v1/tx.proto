@@ -155,6 +155,8 @@ message BuildPacketBatchRequest {
   string port_id = 2;
   string channel_id = 3;
   string intent_tx_hash = 4;
+  // Already available successful acknowledgements. Empty selects funded sends.
+  repeated bytes acknowledgements = 5;
 }
 message BuildPacketBatchResponse {
   string stage = 1;

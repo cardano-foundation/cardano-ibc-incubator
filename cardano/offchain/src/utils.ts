@@ -971,6 +971,7 @@ type Tokens = "mock";
 
 export type DeploymentTemplate = {
   packetState: {
+    acknowledgementBatchSize?: 2;
     configuration: {
       title: string;
       script: string;

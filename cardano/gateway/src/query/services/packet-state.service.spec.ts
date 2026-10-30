@@ -64,6 +64,41 @@ function fixture() {
 }
 
 describe('canonical packet query state', () => {
+  it('emits both packet events for a successful acknowledgement batch', async () => {
+    const batchPolicy = 'batch', channelPolicy = 'channel';
+    const ack = (sequence: bigint) => {
+      const packet = new Datum([sequence, 'transfer', 'channel-0', 'transfer', 'channel-7', 'data', new Datum([0n, 0n]), 1n]);
+      const operation = new Datum([packet]);
+      operation.index = 1;
+      return operation;
+    };
+    const batch = new Datum([[ack(1n), ack(2n)]]);
+    batch.index = 10;
+    const authorization = new Datum([new Datum([channelPolicy, 'token']), batch, null]);
+    const evidence = { txBodyCborHex: '', blockNo: 1, redeemers: [{ type: 'mint', index: 0, data: authorization }] };
+    const history = {
+      findTransactionEvidenceByHash: jest.fn(async () => evidence),
+      findUtxoByUnitAtOrBeforeBlockNo: jest.fn(async () => ({ datum: '' })),
+    };
+    const lucid = {
+      LucidImporter: {
+        CML: { TransactionBody: { from_cbor_hex: () => ({ mint: () => ({
+          keys: () => ({ len: () => 1, get: () => ({ to_hex: () => batchPolicy }) }),
+        }) }) } },
+        Data: { from: (value: unknown) => value }, Constr: Datum, toText: (value: string) => value,
+      },
+      decodeDatum: async () => ({ state: { channel: { connection_hops: ['connection-0'] } } }),
+    };
+    const config = { getOrThrow: () => ({
+      packetState: { batch: { scriptHash: batchPolicy } },
+      validators: { mintChannelStt: { scriptHash: channelPolicy } },
+    }) };
+    const service = new PacketStateService(config as any, lucid as any, history as any, {} as any);
+    const events = await service.events('tx');
+    expect(events.map(event => event.type)).toEqual(['acknowledge_packet', 'acknowledge_packet']);
+    expect(events.map(event => event.event_attribute.find(item => item.key === 'packet_sequence')?.value))
+      .toEqual(['1', '2']);
+  });
   it('encodes the same snapshot fixture consumed by both partner light clients', async () => {
     const { service } = fixture();
     const expected = readFileSync(

@@ -140,6 +140,8 @@ const operationNames = [
   "reject",
   "prune",
   "timeout_on_close",
+  "retire",
+  "acknowledge",
 ];
 
 export const MAX_LANE_BALANCES = 8;
@@ -255,7 +257,7 @@ async function authorizeOperation(
   );
   tx = tx.mintAssets(mint, authorized);
   const names = [operationNames[operation.index]];
-  if ([0, 1, 2, 5, 6, 8].includes(operation.index)) {
+  if ([0, 1, 2, 5, 6, 8, 10].includes(operation.index)) {
     names.push(operation.index === 0 ? "send_funds" : "funds");
   }
   for (const name of names) {
@@ -288,6 +290,14 @@ async function packetProof(
   deployment: PacketLaneDeployment,
   op: Constr<Data>,
 ): Promise<Constr<Data>> {
+  if (op.index === 10) {
+    const members = await Promise.all(
+      (op.fields[0] as Constr<Data>[]).map((child) =>
+        packetProof(deployment, child)
+      ),
+    );
+    return variant(2, members);
+  }
   const receive = op.index === 5;
   const prune = op.index === 7;
   const timeout = op.index === 2 || op.index === 8;
@@ -398,7 +408,9 @@ function protobufVarint(value: bigint): string {
 
 // proto3 omits a zero integer field.
 function protobufUint(field: number, value: bigint): string {
-  return value === 0n ? "" : protobufVarint(BigInt(field * 8)) + protobufVarint(value);
+  return value === 0n
+    ? ""
+    : protobufVarint(BigInt(field * 8)) + protobufVarint(value);
 }
 
 function protobufBytes(field: number, hex: string): string {
@@ -770,17 +782,10 @@ export async function buildPacketSendBatch(
   };
 }
 
-async function buildPacketCompletion(
+async function packetCompletionLane(
   lucid: LucidEvolution,
   deployment: PacketLaneDeployment,
   packet: Constr<Data>,
-  proofHeight: Constr<Data>,
-  proof: Constr<Data>,
-  validFrom: number,
-  validTo: number,
-  liquidity?: UTxO[],
-  rejection?: string,
-  close?: { proof: Constr<Data>; counterpartyUpgradeSequence: bigint },
 ) {
   const { port, channelId } = channelIdentity(deployment);
   const sequence = packet.fields[0] as bigint;
@@ -803,6 +808,28 @@ async function buildPacketCompletion(
   const update = record(outRef(input), [
     record(variant(2, packet), [siblings]),
   ]);
+  return { input, datum, update };
+}
+
+async function buildPacketCompletion(
+  lucid: LucidEvolution,
+  deployment: PacketLaneDeployment,
+  packet: Constr<Data>,
+  proofHeight: Constr<Data>,
+  proof: Constr<Data>,
+  validFrom: number,
+  validTo: number,
+  liquidity?: UTxO[],
+  rejection?: string,
+  close?: { proof: Constr<Data>; counterpartyUpgradeSequence: bigint },
+) {
+  const { port, channelId } = channelIdentity(deployment);
+  const sequence = packet.fields[0] as bigint;
+  const { input, datum, update } = await packetCompletionLane(
+    lucid,
+    deployment,
+    packet,
+  );
   let operation = variant(1, packet, proofHeight, proof, update);
   const mint: Record<string, bigint> = {
     [deployment.batchPolicy + fromText("acknowledge")]: 1n,
@@ -950,6 +977,83 @@ export const buildPacketAcknowledgement = (
     validFrom,
     validTo,
   );
+
+/** Pack only already available successful acknowledgements on distinct lanes. */
+export async function buildPacketAcknowledgementBatch(
+  lucid: LucidEvolution,
+  deployment: PacketLaneDeployment,
+  requests: readonly {
+    packet: Constr<Data>;
+    proofHeight: Constr<Data>;
+    proof: Constr<Data>;
+  }[],
+  validFrom: number,
+  validTo: number,
+) {
+  if (
+    requests.length !== 2 ||
+    encode(requests[0].proofHeight) !== encode(requests[1].proofHeight)
+  ) {
+    throw new Error(
+      "Acknowledgement batching requires two packets at the same proof height",
+    );
+  }
+  const lanes = await Promise.all(
+    requests.map((request) =>
+      packetCompletionLane(lucid, deployment, request.packet)
+    ),
+  );
+  if (
+    new Set(
+      lanes.map((lane) => `${lane.input.txHash}#${lane.input.outputIndex}`),
+    ).size !== 2
+  ) {
+    throw new Error("Acknowledgement batch packets must use independent lanes");
+  }
+  let tx = lucid.newTx().readFrom([
+    deployment.channel,
+    deployment.connection,
+    deployment.client,
+    ...await packetReferences(deployment, [
+      deployment.batchPolicy,
+      guardScriptHash(deployment),
+    ]),
+  ]).validFrom(validFrom).validTo(validTo);
+  for (const { input, datum } of lanes) {
+    tx = tx.collectFrom([input], encode(variant(3))).pay.ToContract(
+      deployment.guardAddress,
+      {
+        kind: "inline",
+        value: encode(datum),
+      },
+      input.assets,
+    );
+  }
+  await requireUnspent(lucid, [
+    ...lanes.map((lane) => lane.input),
+    deployment.channel,
+    deployment.connection,
+    deployment.client,
+  ]);
+  const operation = variant(
+    10,
+    requests.map((request, index) =>
+      variant(
+        1,
+        request.packet,
+        request.proofHeight,
+        request.proof,
+        lanes[index].update,
+      )
+    ),
+  );
+  return {
+    tx: await authorizeOperation(tx, deployment, operation, {
+      [deployment.batchPolicy + fromText("acknowledge")]: 1n,
+    }),
+    inputs: lanes.map((lane) => lane.input),
+  };
+}
 
 /** Full-drain timeout refunds. Partial releases require a separate selection strategy. */
 export const buildPacketTimeout = (

@@ -24,6 +24,7 @@ import {
   usableTransferIntent,
   selectPacketLiquidity,
   buildPacketAcknowledgement,
+  buildPacketAcknowledgementBatch,
   buildPacketTimeout,
   buildPacketTimeoutOnClose,
   buildPacketRejection,
@@ -37,7 +38,7 @@ import {
 } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
 import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
 import type { Packet } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
-import type {
+import {
   MsgTransfer,
   MsgRecvPacket,
   MsgAcknowledgement,
@@ -55,7 +56,10 @@ import { TRANSACTION_TIME_TO_LIVE } from '../config/constant.config';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { validateAndFormatSendPacketParams } from './helper/packet.validate';
 
-export type BuildPacketBatchRequest = { signer: string; port_id: string; channel_id: string; intent_tx_hash?: string };
+export type BuildPacketBatchRequest = {
+  signer: string; port_id: string; channel_id: string; intent_tx_hash?: string;
+  acknowledgements?: Uint8Array[];
+};
 export type BuildPacketBatchResponse = {
   stage: string;
   unsigned_tx?: { type_url: string; value: Uint8Array };
@@ -179,13 +183,25 @@ export class PacketLaneService {
       wallet: { mode: 'refresh_from_address', address: signer, context: name },
       build: async (scope) => {
         const built = await build(window.validFromTime, window.validToTime, scope.availableInputs);
-        return scope.complete({
+        const completed = await scope.complete({
           operationName: name,
           requireWalletInput: name !== 'cancelTransferIntent',
           unsignedTx: 'tx' in built ? built.tx : built,
           spendingInputs: 'tx' in built ? (built.inputs ?? (built.input ? [built.input] : undefined)) : undefined,
           validity: { apply: (tx) => tx.validFrom(window.validFromTime).validTo(window.validToTime) },
         });
+        if (name === 'packetAcknowledgementBatch') {
+          const { CML } = this.lucid.LucidImporter;
+          const tx = CML.Transaction.from_cbor_hex(completed.unsignedTxCbor);
+          const units = CML.compute_total_ex_units(tx.witness_set().redeemers()!);
+          const limits = this.lucid.lucid.config().protocolParameters!;
+          if (units.mem() * 5n > BigInt(limits.maxTxExMem) * 4n ||
+            units.steps() * 5n > BigInt(limits.maxTxExSteps) * 4n ||
+            (completed.unsignedTxCbor.length / 2 + 112) * 5 > limits.maxTxSize * 4) {
+            throw new Error('Acknowledgement batch exceeds the execution or size safety margin');
+          }
+        }
+        return completed;
       },
     });
     return { type_url: '', value: result.value.unsignedTxBytes };
@@ -323,6 +339,7 @@ export class PacketLaneService {
   }
 
   async batch(request: BuildPacketBatchRequest): Promise<BuildPacketBatchResponse> {
+    if (request.acknowledgements?.length) return this.acknowledgementBatch(request);
     if (request.port_id !== 'transfer') throw new Error('Expected transfer port');
     const deployment = await this.deployment(request.channel_id);
     const { Data, Constr, fromText } = this.lucid.LucidImporter;
@@ -432,6 +449,51 @@ export class PacketLaneService {
       }
     }
     return { stage: 'idle', intent_tx_hashes: [] };
+  }
+
+  private async acknowledgementBatch(request: BuildPacketBatchRequest): Promise<BuildPacketBatchResponse> {
+    if (this.config.getOrThrow<DeploymentConfig>('deployment').packetState.acknowledgementBatchSize !== 2) {
+      throw new Error('Deployed packet contracts do not support acknowledgement batches');
+    }
+    if (request.port_id !== 'transfer' || request.intent_tx_hash || request.acknowledgements?.length !== 2) {
+      throw new Error('Expected two ready transfer acknowledgements');
+    }
+    const packets = request.acknowledgements.map(value => MsgAcknowledgement.decode(value));
+    const first = packets[0];
+    const height = rpcHeight(first.proof_height);
+    for (const entry of packets) {
+      const proofHeight = rpcHeight(entry.proof_height);
+      if (entry.signer !== request.signer || entry.packet?.source_port !== request.port_id ||
+        entry.packet?.source_channel !== request.channel_id ||
+        proofHeight.revision_number !== height.revision_number || proofHeight.revision_height !== height.revision_height ||
+        Buffer.from(entry.acknowledgement).toString('utf8') !== '{"result":"AQ=="}') {
+        throw new Error('Acknowledgement batch requests are incompatible');
+      }
+    }
+    const deployment = await this.deployment(request.channel_id);
+    const resolved = await this.lucid.resolveClientAtHeights(deployment.client, [
+      { revisionNumber: height.revision_number, revisionHeight: height.revision_height },
+    ]);
+    deployment.client = resolved.clientUtxo;
+    if (resolved.historyWitnesses[0]) {
+      const { Data } = this.lucid.LucidImporter;
+      deployment.historyWitness = Data.from(Data.to(
+        resolved.historyWitnesses[0] as never, consensusHistoryWitnessSchema(this.lucid.LucidImporter) as never,
+      ));
+    }
+    const unsigned_tx = await this.complete(request.signer, 'packetAcknowledgementBatch', async (from, to) =>
+      await buildPacketAcknowledgementBatch(this.lucid.lucid, deployment, packets.map(entry => ({
+        packet: this.packet({
+          ...entry.packet,
+          sequence: rpcInteger(entry.packet.sequence),
+          timeout_height: rpcHeight(entry.packet.timeout_height),
+          timeout_timestamp: rpcInteger(entry.packet.timeout_timestamp),
+        }),
+        proofHeight: record(height.revision_number, height.revision_height),
+        proof: this.proof(entry.proof_acked),
+      })), from, to),
+    );
+    return { stage: 'acknowledge', intent_tx_hashes: [], unsigned_tx };
   }
 
   private packet(packet: Packet): Constr<Data> {

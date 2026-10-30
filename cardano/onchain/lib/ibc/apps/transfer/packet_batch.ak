@@ -20,7 +20,7 @@ use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/core/ics_002_client_semantics/client_view
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/verify_proof_redeemer.{
-  BatchVerifyMembershipAndNonMembership, VerifyMembership,
+  BatchVerifyMembership, BatchVerifyMembershipAndNonMembership, VerifyMembership,
   VerifyMembershipParams, VerifyNonMembership, VerifyNonMembershipParams,
   VerifyProofRedeemer,
 }
@@ -119,6 +119,24 @@ pub type BatchOperation {
     counterparty_upgrade_sequence: Int,
   }
   RetireLanes
+  AcknowledgeBatch { packets: List<BatchOperation> }
+}
+
+/// Each packet updates an independent lane at one already available proof height.
+pub fn acknowledgements(op: BatchOperation) -> List<BatchOperation> {
+  when op is {
+    Acknowledge { .. } -> [op]
+    AcknowledgeBatch { packets } -> {
+      expect [
+        Acknowledge { lane: first, proof_height, .. },
+        Acknowledge { lane: second, proof_height: other_height, .. },
+      ] = packets
+      expect first.input_ref != second.input_ref
+      expect proof_height == other_height
+      packets
+    }
+    _ -> fail
+  }
 }
 
 pub type AuthorizedOperation {
@@ -573,6 +591,103 @@ pub fn validate_settlement(
     ]
   expect authenticate_lane(transaction, lane.input_ref, lane_policy)
   True
+}
+
+/// Authenticate the common proof context once, then bind every request and lane.
+pub fn validate_acknowledgements(
+  transaction: Transaction,
+  policy: PolicyId,
+  channel_token: AuthToken,
+  lane_policy: PolicyId,
+  client_policy: PolicyId,
+  connection_policy: PolicyId,
+  lane_count: Int,
+  op: BatchOperation,
+  verify_policy: PolicyId,
+) -> Bool {
+  let packets = acknowledgements(op)
+  expect [Acknowledge { proof_height, .. }, ..] = packets
+  let channel = channel_reference(transaction, channel_token)
+  expect [connection_id] = channel.channel.connection_hops
+  let valid_to =
+    validator_utils.get_tx_valid_to(transaction.validity_range) * 1_000_000
+  let (connection, client) =
+    validator_utils.validate_referred_connection_and_client(
+      transaction.reference_inputs,
+      channel_token.name,
+      client_policy,
+      connection_policy,
+      connection_id,
+      valid_to,
+      Some(proof_height),
+      history_witness(transaction, policy),
+    )
+  expect connection.state.state == connection_state.Open
+  expect client.status == Active
+  expect Some(consensus) =
+    pairs.get_first(client.state.consensus_states, proof_height)
+  expect Some(processed_time) =
+    pairs.get_first(client.state.processed_times, proof_height)
+  expect Some(processed_height) =
+    pairs.get_first(client.state.processed_heights, proof_height)
+  let memberships =
+    list.map(
+      packets,
+      fn(entry) {
+        expect Acknowledge { packet, proof, lane, .. } = entry
+        expect validate_local_packet(packet, channel)
+        let input = input_at(transaction, lane.input_ref)
+        expect datum: PacketLaneDatum =
+          validator_utils.get_inline_datum(input.output)
+        expect datum.lane_count == lane_count
+        expect
+          list.map(lane.updates, fn(update) { update.mutation }) == [
+            CompletePacket { packet },
+          ]
+        expect authenticate_lane(transaction, lane.input_ref, lane_policy)
+        VerifyMembershipParams {
+          cs: client.state.client_state,
+          cons_state: consensus,
+          height: proof_height,
+          processed_time,
+          processed_height,
+          delay_time_period: connection.state.delay_period,
+          delay_block_period: verify.get_block_delay(connection.state),
+          proof,
+          path: merkle.apply_prefix(
+            connection.state.counterparty.prefix,
+            merkle.new_merkle_path(
+              [
+                packet_keys.packet_acknowledgement_path(
+                  packet.destination_port,
+                  packet.destination_channel,
+                  packet.sequence,
+                ),
+              ],
+            ),
+          ),
+          value: crypto.sha2_256("{\"result\":\"AQ==\"}"),
+        }
+      },
+    )
+  let expected =
+    when memberships is {
+      [single] ->
+        VerifyMembership {
+          cs: single.cs,
+          cons_state: single.cons_state,
+          height: single.height,
+          processed_time: single.processed_time,
+          processed_height: single.processed_height,
+          delay_time_period: single.delay_time_period,
+          delay_block_period: single.delay_block_period,
+          proof: single.proof,
+          path: single.path,
+          value: single.value,
+        }
+      _ -> BatchVerifyMembership(memberships)
+    }
+  require_proof(transaction, verify_policy, expected)
 }
 
 fn validate_release(
@@ -1054,7 +1169,7 @@ pub fn validate_funds(
         )
       }
     }
-    Acknowledge { .. } ->
+    Acknowledge { .. } | AcknowledgeBatch { .. } ->
       assets.tokens(transaction.mint, policy) == dict.singleton(
         "acknowledge",
         1,
