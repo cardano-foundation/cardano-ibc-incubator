@@ -28,7 +28,7 @@ export function smokeManifest() {
     'chan_upgrade', 'chan_upgrade_handshake', 'chan_upgrade_finish',
   ].map(name => [name, validator()]));
   const packet_state = {
-    format: 'packet-lanes-v1', lane_count: 16,
+    format: 'packet-lanes-v1', receipt_storage: 'merkle-history-v1', lane_count: 16,
     config_token: { policy_id: '77'.repeat(28), token_name: '6962635f7061636b65745f636f6e666967' },
     state: validator(), batch: validator(), guard: validator(),
     operations: Object.fromEntries([

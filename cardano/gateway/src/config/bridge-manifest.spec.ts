@@ -42,6 +42,7 @@ function buildHandlerJsonDeployment() {
         ].map((name) => [name, buildValidator(`packet-${name}`)]),
       ),
       format: 'packet-lanes-v1',
+      receiptStorage: 'merkle-history-v1',
       laneCount: 16,
       configToken: { policyId: 'config-policy', name: 'config-name' },
       state: buildValidator('packetState'),
@@ -139,6 +140,13 @@ function buildStagedHandlerJsonDeployment() {
 }
 
 describe('bridge manifest normalization', () => {
+  it('rejects legacy packet receipt storage rather than interpreting it as history-backed state', () => {
+    const deployment = buildHandlerJsonDeployment();
+    delete (deployment.packetState as any).receiptStorage;
+    expect(() => normalizeHandlerJsonDeploymentConfig(deployment, {
+      chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom',
+    })).toThrow('fresh history-backed packet-lane deployment');
+  });
   it('advertises acknowledgement batching only for deployments that enable it', () => {
     const deployment = buildHandlerJsonDeployment();
     const options = { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' as const };

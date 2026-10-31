@@ -26,6 +26,7 @@ function manifest(): BridgeManifest {
     schema_version: 6,
     packet_state: {
       format: 'packet-lanes-v1',
+      receipt_storage: 'merkle-history-v1',
       lane_count: 16,
       config_token: { policy_id: 'config-policy', token_name: 'config-token' },
       state: validator('state'),

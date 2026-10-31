@@ -92,6 +92,7 @@ const PACKET_OPERATIONS = [
 type PacketStateDeployment = {
   operations: Record<string, DeploymentValidator>;
   format: 'packet-lanes-v1';
+  receiptStorage: 'merkle-history-v1';
   laneCount: number;
   acknowledgementBatchSize?: 2;
   configToken: AuthToken;
@@ -103,6 +104,7 @@ type PacketStateDeployment = {
 type PacketStateManifest = {
   operations: Record<string, BridgeManifestValidator>;
   format: 'packet-lanes-v1';
+  receipt_storage: 'merkle-history-v1';
   lane_count: number;
   acknowledgement_batch_size?: 2;
   config_token: BridgeManifestAuthToken;
@@ -680,6 +682,7 @@ function manifestSpendChannelToDeployment(
 function requirePacketState(value: unknown): PacketStateDeployment {
   const packet = requireObject(value, 'packetState');
   assert(packet.format === 'packet-lanes-v1', 'A fresh packet-lane deployment is required');
+  assert(packet.receiptStorage === 'merkle-history-v1', 'A fresh history-backed packet-lane deployment is required. Changing the storage marker does not migrate existing contracts.');
   const laneCount = requireNonNegativeInteger(packet.laneCount, 'packetState.laneCount');
   assert(laneCount >= 1 && laneCount <= 64, 'Invalid packet lane count');
   assert(packet.acknowledgementBatchSize === undefined || packet.acknowledgementBatchSize === 2,
@@ -698,6 +701,7 @@ function requirePacketState(value: unknown): PacketStateDeployment {
       ]),
     ),
     format: 'packet-lanes-v1',
+    receiptStorage: 'merkle-history-v1',
     laneCount,
     ...(packet.acknowledgementBatchSize === 2 ? { acknowledgementBatchSize: 2 as const } : {}),
     configToken: requireAuthToken(packet.configToken, 'packetState.configToken'),
@@ -713,6 +717,7 @@ function packetStateToManifest(packet: PacketStateDeployment): PacketStateManife
       PACKET_OPERATIONS.map((name) => [name, deploymentValidatorToManifest(packet.operations[name])]),
     ),
     format: packet.format,
+    receipt_storage: packet.receiptStorage,
     lane_count: packet.laneCount,
     ...(packet.acknowledgementBatchSize === 2 ? { acknowledgement_batch_size: 2 as const } : {}),
     config_token: deploymentAuthTokenToManifest(packet.configToken),
@@ -733,6 +738,7 @@ function packetStateFromManifest(value: unknown): PacketStateDeployment {
       ]),
     ),
     format: packet.format,
+    receiptStorage: packet.receipt_storage,
     laneCount: packet.lane_count,
     acknowledgementBatchSize: packet.acknowledgement_batch_size,
     configToken: manifestAuthTokenToDeployment(

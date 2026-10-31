@@ -34,6 +34,8 @@ import { readLocalEpochStake } from './local-epoch-stake';
 import { YaciRestClient } from '../../shared/helpers/yaci-rest';
 import { YaciRestHistory, type RestOutput, type RestTransaction } from '../../shared/helpers/yaci-rest-history';
 import * as CML from '@dcspark/cardano-multiplatform-lib-nodejs';
+import { decodePacketLaneHistoryTransaction, PacketLaneHistory, type PacketLaneTree } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
+import type { Constr, Data, UTxO } from '@lucid-evolution/lucid';
 import {
   StaleIbcTreeStateError,
   type IbcTreeHostStateRef,
@@ -196,6 +198,50 @@ export class YaciHistoryService implements HistoryService {
       }
     }
   }
+  private readonly packetLaneHistory = new Map<string, {
+    history: PacketLaneHistory;
+    blockNo: number;
+    blockHash: string;
+    txIndex: number;
+  }>();
+
+  async rebuildPacketLaneTreeAtBlock(height: bigint, target: UTxO): Promise<PacketLaneTree> {
+    const config = this.configService.getOrThrow('deployment').packetState;
+    const units = Object.entries(target.assets).filter(([unit, amount]) =>
+      unit.startsWith(config.state.scriptHash) && unit.length === 120 && amount === 1n,
+    );
+    if (units.length !== 1) throw new Error('Expected exactly one packet lane NFT');
+    const unit = units[0][0];
+    const source = this.restHistory();
+    let completed: { history: PacketLaneHistory; blockNo: number; blockHash: string; txIndex: number } | undefined;
+    const tree = await source.snapshot(height, async () => {
+      const cached = this.packetLaneHistory.get(unit);
+      const old = cached?.history.current();
+      const version = (output: UTxO) => (this.lucidService.LucidImporter.Data.from(output.datum!) as Constr<Data>).fields[4] as bigint;
+      const reusable = cached && old && cached.blockNo <= Number(height) && version(old) <= version(target) &&
+        (await source.api.block(cached.blockNo))?.hash === cached.blockHash;
+      const history = reusable ? cached.history.clone() : new PacketLaneHistory(unit, config.batch.scriptHash);
+      if (reusable && old.txHash === target.txHash && old.outputIndex === target.outputIndex) return history.at(target);
+      for (const tx of await source.transactionsFor(`assets/${unit}/transactions`, Number(height), reusable ? cached.blockNo : 0)) {
+        if (reusable && (tx.block.number < cached.blockNo || (tx.block.number === cached.blockNo && tx.index <= cached.txIndex))) continue;
+        history.apply(decodePacketLaneHistoryTransaction(tx.cborHex, tx.hash));
+        const output = history.current();
+        if (output?.txHash === target.txHash && output.outputIndex === target.outputIndex) {
+          completed = { history, blockNo: tx.block.number, blockHash: tx.block.hash, txIndex: tx.index };
+          return history.at(target);
+        }
+      }
+      throw new Error('Canonical packet history does not reach the requested lane output');
+    });
+    // Publish only after the surrounding canonical snapshot check succeeds.
+    if (completed) {
+      this.packetLaneHistory.delete(unit);
+      this.packetLaneHistory.set(unit, completed);
+      while (this.packetLaneHistory.size > 64) this.packetLaneHistory.delete(this.packetLaneHistory.keys().next().value!);
+    }
+    return tree;
+  }
+
   private readonly epochNonceCache: BoundedCache<string, string>;
   private readonly epochNonceLookups: BoundedCache<string, Promise<string>>;
   private readonly historicalEpochContextCache: BoundedCache<string, HistoryEpochContextAtBlock>;

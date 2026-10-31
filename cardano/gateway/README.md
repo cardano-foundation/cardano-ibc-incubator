@@ -5,6 +5,8 @@ building APIs for Cardano. It queries chain data, prepares proofs and unsigned
 transactions with Lucid Evolution, and tracks confirmed IBC state updates. Hermes
 validates and signs relayer transactions before submitting them to Ogmios.
 
+Packet deployments retain `packet-lanes-v1` and require `receipt_storage: "merkle-history-v1"` in their manifest. Receipts and acknowledgement hashes remain in the lane's Merkle tree while their datum fields stay empty. The Gateway rebuilds proofs from canonical raw transactions retained by Yaci and checks every continuation root. Keep that history available when restarting or moving the Gateway. This requires fresh Cardano scripts and deployment artifacts. Changing a manifest marker does not migrate existing contracts. The Go light-client modules and packet proof format are unchanged. Ordinary receives no longer require pruning to free lane capacity. Authenticated pruning remains optional.
+
 ## Published Container Image
 
 The shared [image workflow](../../.github/workflows/publish.yaml) publishes same-repository PR images to the configured private registry. Fork and Dependabot PRs build without publishing or registry credentials. Ordinary merges to `main` do not publish images.

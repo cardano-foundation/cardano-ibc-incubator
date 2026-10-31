@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { encodeCanonical } from 'cbor';
 import type { Constr, Data } from '@lucid-evolution/lucid';
 import { packetLane, packetLaneTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
-import { laneTree } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import type { DeploymentConfig } from '../../config/bridge-manifest';
 import { HISTORY_SERVICE, type HistoryService } from './history.service';
@@ -58,7 +57,13 @@ export class PacketStateService {
       datum.fields[3] !== BigInt(config.laneCount)
     )
       throw new Error('Invalid historical packet lane identity');
-    const tree = await laneTree(datum);
+    const tree = await this.history.rebuildPacketLaneTreeAtBlock(height, {
+      txHash: output.txHash,
+      outputIndex: output.outputIndex,
+      address: output.address,
+      datum: output.datum,
+      assets: { [config.state.scriptHash + name]: 1n },
+    });
     return { output, datum, tree: tree.tree, name };
   }
 
@@ -75,12 +80,7 @@ export class PacketStateService {
     const count = this.config.getOrThrow<DeploymentConfig>('deployment').packetState.laneCount;
     const lane = await this.lane(port, channel, packetLane(port, channel, sequence, count), height);
     const key = `${kind}/ports/${port}/channels/${channel}/sequences/${sequence}`;
-    const value =
-      kind === 'receipts'
-        ? (lane.datum.fields[7] as bigint[]).includes(sequence)
-          ? '01'
-          : undefined
-        : (lane.datum.fields[kind === 'commitments' ? 6 : 8] as Map<bigint, string>).get(sequence);
+    const value = lane.tree.get(key)?.toString('hex');
     const proof = value
       ? serializeExistenceProof(lane.tree.generateProof(key))
       : serializeNonExistenceProof(lane.tree.generateNonExistenceProof(key));
@@ -97,12 +97,11 @@ export class PacketStateService {
     const count = this.config.getOrThrow<DeploymentConfig>('deployment').packetState.laneCount;
     const result = new Map<bigint, string>();
     for (let index = 0; index < count; index++) {
-      const { datum } = await this.lane(port, channel, index, height);
-      const entries =
-        kind === 'receipts'
-          ? (datum.fields[7] as bigint[]).map((seq) => [seq, '01'] as const)
-          : (datum.fields[kind === 'commitments' ? 6 : 8] as Map<bigint, string>);
-      for (const [sequence, value] of entries) result.set(sequence, value);
+      const { tree } = await this.lane(port, channel, index, height);
+      const prefix = `${kind}/ports/${port}/channels/${channel}/sequences/`;
+      for (const key of tree.getKeys()) {
+        if (key.startsWith(prefix)) result.set(BigInt(key.slice(prefix.length)), tree.get(key)!.toString('hex'));
+      }
     }
     return {
       height: { revision_number: 0n, revision_height: height },
@@ -117,22 +116,24 @@ export class PacketStateService {
     const count = this.config.getOrThrow<DeploymentConfig>('deployment').packetState.laneCount;
     const lanes = [];
     for (let index = 0; index < count; index++) {
-      const { datum } = await this.lane(port, channel, index, height);
+      const { datum, tree } = await this.lane(port, channel, index, height);
       const commitments = (datum.fields[6] as Map<bigint, string>).size;
-      const receipts = datum.fields[7] as bigint[];
-      const acknowledgements = datum.fields[8] as Map<bigint, string>;
-      const entries = commitments + receipts.length + acknowledgements.size;
+      const receiptPrefix = `receipts/ports/${port}/channels/${channel}/sequences/`;
+      const ackPrefix = `acks/ports/${port}/channels/${channel}/sequences/`;
+      const receipts = tree.getKeys().filter(key => key.startsWith(receiptPrefix));
+      const acknowledgements = tree.getKeys().filter(key => key.startsWith(ackPrefix));
+      const entries = commitments;
       lanes.push({
         lane: index,
         commitments,
         receipts: receipts.length,
-        acknowledgements: acknowledgements.size,
+        acknowledgements: acknowledgements.length,
         entries,
         capacity: 64,
-        remaining_receive_slots: Math.max(0, Math.floor((64 - entries) / 2)),
-        maintenance_required: entries >= 48,
-        // These still need authenticated source commitment absence before pruning.
-        prune_candidates: receipts.filter((sequence) => acknowledgements.has(sequence)).map(String),
+        // Historical receipts do not consume live datum capacity.
+        remaining_receive_slots: null,
+        maintenance_required: false,
+        prune_candidates: [],
       });
     }
     if ((await this.history.findBlockByHeight(height))?.hash !== block.hash)

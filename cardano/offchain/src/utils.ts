@@ -991,6 +991,7 @@ export type DeploymentTemplate = {
       }
     >;
     format: "packet-lanes-v1";
+    receiptStorage: "merkle-history-v1";
     laneCount: number;
     configToken: { policyId: string; name: string };
     state: {

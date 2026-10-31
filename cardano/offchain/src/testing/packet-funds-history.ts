@@ -294,7 +294,13 @@ export async function checkPacketFundsCase(sample: FundsCase) {
       for (const entry of state.fields[6] as Map<Data, Data>) {
         commitments.set(...entry);
       }
-      receipts.push(...state.fields[7] as bigint[]);
+      assertEquals(state.fields[7], []);
+      assertEquals(state.fields[8], new Map());
+      const history = await f.packetHistory.resolve(f.deployment, output);
+      receipts.push(
+        ...history.tree.getKeys().filter((key) => key.startsWith("receipts/"))
+          .map((key) => BigInt(key.slice(key.lastIndexOf("/") + 1))),
+      );
     }
     assertEquals(
       commitments,
