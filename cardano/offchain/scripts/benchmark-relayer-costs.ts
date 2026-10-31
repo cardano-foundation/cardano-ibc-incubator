@@ -34,7 +34,6 @@ import {
 import {
   buildPacketAcknowledgement,
   buildPacketAcknowledgementBatch,
-  buildPacketPrune,
   buildPacketReceive,
   buildPacketRejection,
   buildPacketSendBatch,
@@ -95,10 +94,7 @@ const selected = Deno.args[2]?.split(",") ?? scenarioNames;
 if (selected.some((name) => !scenarioNames.includes(name))) {
   throw new Error("Unknown benchmark scenario");
 }
-const measuredNames = [
-  ...selected,
-  ...(selected.includes("receive-existing-voucher") ? ["packet-prune"] : []),
-];
+const measuredNames = selected;
 if (
   new Set(selected).size !== selected.length ||
   Object.keys(workload.executionsPerDay).some((name) =>
@@ -783,8 +779,8 @@ for (const name of selected) {
     profileSamples,
     profileBasis: iterations > 1
       ? paired
-        ? "Per-transfer mean of operations 17..32 with two already-ready acknowledgements at a common proof height on distinct lanes. Sends remain single. No pruning or collection timer"
-        : "Mean of operations 17..32 after all 16 lanes have been used. No pruning"
+        ? "Per-transfer mean of operations 17..32 with two already-ready acknowledgements at a common proof height on distinct lanes. Sends remain single. No collection timer"
+        : "Mean of operations 17..32 after all 16 lanes have been used. Receipt history is retained"
       : "Single cold operation. Not a steady-state traffic estimate",
     ...(paired ? { pairing } : {}),
     transactions,
@@ -792,43 +788,6 @@ for (const name of selected) {
     profile,
   });
   console.log(stringifyCosts(profile).trim());
-  if (name === "receive-existing-voucher") {
-    // The 32 receives above are already recorded. Measure cleanup separately so
-    // its cost can be added once per received packet without double counting.
-    const absence = await absenceProof(fromText(
-      "commitments/ports/transfer/channels/channel-7/sequences/1",
-    ));
-    const height = record(1n, 100n);
-    checkpoint(f, height, absence.root);
-    const prune = await buildPacketPrune(
-      relayer,
-      f.deployment,
-      1n,
-      height,
-      absence.proof,
-      f.emulator.now(),
-      f.emulator.now() + 60_000,
-    );
-    await submit(
-      relayer,
-      await signMeasured(relayer, prune.tx, "prune received packet"),
-      "prune",
-      "relayer",
-    );
-    const transaction = transactions.pop()!;
-    const profile = profileFor([transaction], 1, "packet-prune");
-    scenarios.push({
-      name: "packet-prune",
-      operations: 1,
-      profileSamples: 1,
-      profileBasis:
-        "One receipt/acknowledgement cleanup after 32 receives on 16 lanes. The counterparty absence proof is fixture pre-state. Prerequisite receives are accounted for in receive-existing-voucher",
-      transactions: [transaction],
-      coldStartProfile: profile,
-      profile,
-    });
-    console.log(stringifyCosts(profile).trim());
-  }
 }
 const repository = new URL("../../../", import.meta.url);
 const commit = new TextDecoder().decode(
