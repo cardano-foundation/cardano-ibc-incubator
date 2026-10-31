@@ -32,7 +32,7 @@ export function smokeManifest() {
     config_token: { policy_id: '77'.repeat(28), token_name: '6962635f7061636b65745f636f6e666967' },
     state: validator(), batch: validator(), guard: validator(),
     operations: Object.fromEntries([
-      'send', 'acknowledge', 'timeout', 'reject', 'receive', 'prune',
+      'send', 'acknowledge', 'timeout', 'reject', 'receive',
       'timeout_on_close', 'retire', 'funds', 'send_funds',
     ].map(name => [name, validator()])),
   };

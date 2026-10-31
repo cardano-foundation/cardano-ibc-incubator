@@ -138,7 +138,6 @@ const operationNames = [
   "retire",
   "receive",
   "reject",
-  "prune",
   "timeout_on_close",
   "retire",
   "acknowledge",
@@ -290,7 +289,7 @@ async function packetProof(
   deployment: PacketLaneDeployment,
   op: Constr<Data>,
 ): Promise<Constr<Data>> {
-  if (op.index === 10) {
+  if (op.index === 9) {
     const members = await Promise.all(
       (op.fields[0] as Constr<Data>[]).map((child) =>
         packetProof(deployment, child)
@@ -299,9 +298,8 @@ async function packetProof(
     return variant(2, members);
   }
   const receive = op.index === 5;
-  const prune = op.index === 7;
-  const timeout = op.index === 2 || op.index === 8;
-  const heightIndex = op.index === 1 || prune ? 1 : op.index === 6 ? 3 : 2;
+  const timeout = op.index === 2 || op.index === 7;
+  const heightIndex = op.index === 1 ? 1 : op.index === 6 ? 3 : 2;
   const height = op.fields[heightIndex];
   const proof = op.fields[heightIndex + 1];
   const client = decode(deployment.client).fields[0] as Constr<Data>;
@@ -331,16 +329,11 @@ async function packetProof(
     delay,
     (delay + 3_999_999_999n) / 4_000_000_000n,
   ];
-  const channel = channelIdentity(deployment);
   const packet = op.fields[0] as Constr<Data>;
-  const port = prune
-    ? channel.counterparty.fields[0]
-    : packet.fields[receive ? 1 : 3];
-  const channelId = prune
-    ? channel.counterparty.fields[1]
-    : packet.fields[receive ? 2 : 4];
-  const sequence = prune ? op.fields[0] : packet.fields[0];
-  const kind = prune || receive ? "commitments" : timeout ? "receipts" : "acks";
+  const port = packet.fields[receive ? 1 : 3];
+  const channelId = packet.fields[receive ? 2 : 4];
+  const sequence = packet.fields[0];
+  const kind = receive ? "commitments" : timeout ? "receipts" : "acks";
   const path = record([
     prefix,
     fromText(
@@ -349,7 +342,7 @@ async function packetProof(
       }/sequences/${sequence}`,
     ),
   ]);
-  if (op.index === 8) {
+  if (op.index === 7) {
     const end = (decode(deployment.channel).fields[0] as Constr<Data>)
       .fields[0] as Constr<Data>;
     const counterpart = protobufBytes(1, String(packet.fields[1])) +
@@ -376,7 +369,7 @@ async function packetProof(
     );
     return variant(4, [membership], [record(...common, proof, path)]);
   }
-  if (timeout || prune) return variant(1, ...common, proof, path);
+  if (timeout) return variant(1, ...common, proof, path);
   const value = receive
     ? await sha256(
       (packet.fields[7] as bigint).toString(16).padStart(16, "0") +
@@ -910,7 +903,7 @@ async function buildPacketCompletion(
     mint[deployment.batchPolicy + fromText("timeout")] = 1n;
     if (close) {
       operation = variant(
-        8,
+        7,
         packet,
         fields,
         proofHeight,
@@ -1056,7 +1049,7 @@ export async function buildPacketAcknowledgementBatch(
     deployment.client,
   ]);
   const operation = variant(
-    10,
+    9,
     requests.map((request, index) =>
       variant(
         1,
@@ -1377,12 +1370,6 @@ export async function buildPacketReceive(
   ];
   datum.fields[4] = (datum.fields[4] as bigint) + 1n;
   datum.fields[5] = await tree.getRoot();
-  const maximum = datum.fields[10] as Constr<Data>;
-  const compareHeight = (a: Constr<Data>, b: Constr<Data>) =>
-    a.fields[0] === b.fields[0]
-      ? (a.fields[1] as bigint) > (b.fields[1] as bigint)
-      : (a.fields[0] as bigint) > (b.fields[0] as bigint);
-  if (compareHeight(proofHeight, maximum)) datum.fields[10] = proofHeight;
   const data = JSON.parse(toText(String(packet.fields[5])));
   const prefix = `${toText(String(packet.fields[1]))}/${
     toText(String(packet.fields[2]))
@@ -1530,79 +1517,6 @@ function voucherPayment(
       },
       { [unit]: amount },
     );
-}
-
-export async function buildPacketPrune(
-  lucid: LucidEvolution,
-  deployment: PacketLaneDeployment,
-  sequence: bigint,
-  proofHeight: Constr<Data>,
-  proof: Constr<Data>,
-  validFrom: number,
-  validTo: number,
-) {
-  const { port, channelId } = channelIdentity(deployment);
-  const lane = packetLane(port, channelId, sequence, deployment.laneCount);
-  const input = await lucid.utxoByUnit(
-    deployment.statePolicy +
-      packetLaneTokenName(port, channelId, lane, deployment.laneCount),
-  );
-  const datum = copy(decode(input));
-  const tree = await resolveLaneTree(deployment, input);
-  const receiptKey =
-    `receipts/ports/${port}/channels/${channelId}/sequences/${sequence}`;
-  const ackKey =
-    `acks/ports/${port}/channels/${channelId}/sequences/${sequence}`;
-  const acknowledgement = tree.get(ackKey);
-  if (tree.get(receiptKey) !== "01" || !acknowledgement) {
-    throw new Error("Packet has no retained receipt and acknowledgement");
-  }
-  const receiptSiblings = tree.getSiblings(receiptKey);
-  tree.set(receiptKey, "");
-  const ackSiblings = tree.getSiblings(ackKey);
-  tree.set(ackKey, "");
-  datum.fields[4] = (datum.fields[4] as bigint) + 1n;
-  datum.fields[5] = await tree.getRoot();
-  datum.fields[9] = proofHeight;
-  const update = record(variant(3, sequence, proofHeight), [
-    receiptSiblings,
-    ackSiblings,
-    [acknowledgement],
-  ]);
-  const operation = variant(
-    7,
-    sequence,
-    proofHeight,
-    proof,
-    record(outRef(input), [update]),
-  );
-  await requireUnspent(lucid, [
-    input,
-    deployment.channel,
-    deployment.connection,
-    deployment.client,
-  ]);
-  const tx = lucid.newTx().readFrom([
-    deployment.channel,
-    deployment.connection,
-    deployment.client,
-    ...await packetReferences(deployment, [
-      deployment.batchPolicy,
-      guardScriptHash(deployment),
-    ]),
-  ])
-    .collectFrom([input], encode(variant(3)))
-    .pay.ToContract(deployment.guardAddress, {
-      kind: "inline",
-      value: encode(datum),
-    }, input.assets)
-    .validFrom(validFrom).validTo(validTo);
-  return {
-    tx: await authorizeOperation(tx, deployment, operation, {
-      [deployment.batchPolicy + fromText("prune")]: 1n,
-    }),
-    input,
-  };
 }
 
 export const buildPacketTimeoutOnClose = (

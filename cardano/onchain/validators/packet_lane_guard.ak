@@ -6,7 +6,7 @@ use cardano/assets.{PolicyId}
 use cardano/transaction.{Mint, OutputReference, Transaction}
 use ibc/apps/transfer/packet_accounting
 use ibc/apps/transfer/packet_batch.{
-  Acknowledge, AcknowledgeBatch, Prune, Receive, Reject, SendBatch, Timeout,
+  Acknowledge, AcknowledgeBatch, Receive, Reject, SendBatch, Timeout,
   TimeoutOnClose, TransferIntent,
 }
 use ibc/core/ics_004/packet_lane_state
@@ -143,14 +143,6 @@ validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
               fn(old) { packet_accounting.balance_after(transaction, old, op) },
             )
           Reject { lane, .. } ->
-            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
-              transaction,
-              ref,
-              lane_policy,
-              lane.updates,
-              fn(old) { packet_accounting.balance_after(transaction, old, op) },
-            )
-          Prune { lane, .. } ->
             action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
               transaction,
               ref,

@@ -24,7 +24,6 @@ import {
   buildPacketAcknowledgement,
   buildPacketAcknowledgementBatch,
   buildPacketBalanceCompaction,
-  buildPacketPrune,
   buildPacketReceive,
   buildPacketRejection,
   buildPacketSendBatch,
@@ -1456,7 +1455,7 @@ for (const firstSeen of [false, true]) {
       1000n,
     );
     // Authenticated full-channel accounting is test pre-state. The receive,
-    // burn, pruning and refund below execute the compiled validators.
+    // burn and refund below execute the compiled validators.
     let occupiedSlots = 0;
     for (const { utxo, spent } of Object.values(f.emulator.ledger)) {
       if (spent || utxo.address !== f.deployment.guardAddress || !utxo.datum) {
@@ -1579,38 +1578,6 @@ for (const firstSeen of [false, true]) {
       Error,
       "Settle outstanding sends",
     );
-    const absent = await absenceProof(
-      fromText("commitments/ports/transfer/channels/channel-7/sequences/1"),
-    );
-    const pruningHeight = record(1n, 20n);
-    checkpoint(f, pruningHeight, absent.root);
-    const prune = await buildPacketPrune(
-      wallet,
-      f.deployment,
-      1n,
-      pruningHeight,
-      absent.proof,
-      f.emulator.now(),
-      f.emulator.now() + 60_000,
-    );
-    await (await signMeasured(wallet, prune.tx, "packet lane pruning"))
-      .submit();
-    f.emulator.awaitBlock();
-    const laneUnit = Object.keys(prune.input.assets).find((unit) =>
-      unit.startsWith(f.deployment.statePolicy)
-    )!;
-    const lane = Data.from(
-      (await wallet.utxoByUnit(laneUnit)).datum!,
-    ) as Constr<Data>;
-    assertEquals(lane.fields[7], []);
-    assertEquals(lane.fields[8], new Map());
-    assertEquals(lane.fields[9], pruningHeight);
-    assertEquals(
-      (lane.fields[11] as Map<string, bigint>).get(
-        await sha256(fromText(fullDenom)),
-      ),
-      0n,
-    );
     const refundHeight = record(1n, 21n);
     let refund;
     if (firstSeen) {
@@ -1662,9 +1629,16 @@ for (const firstSeen of [false, true]) {
       "full-capacity voucher refund",
     )).submit();
     f.emulator.awaitBlock();
-    const refundedLane = Data.from(
-      (await wallet.utxoByUnit(laneUnit)).datum!,
-    ) as Constr<Data>;
+    const laneUnit = Object.keys(receive.input.assets).find((unit) =>
+      unit.startsWith(f.deployment.statePolicy)
+    )!;
+    const laneOutput = await wallet.utxoByUnit(laneUnit);
+    const refundedLane = Data.from(laneOutput.datum!) as Constr<Data>;
+    const history = await f.deployment.resolveLaneTree!(laneOutput);
+    assertEquals(
+      history.get("receipts/ports/transfer/channels/channel-0/sequences/1"),
+      "01",
+    );
     assertEquals((refundedLane.fields[11] as Map<string, bigint>).size, 8);
     assertEquals(
       (refundedLane.fields[11] as Map<string, bigint>).get(
@@ -1917,25 +1891,6 @@ Deno.test("repeated multi-asset round trips reclaim full accounting maps across 
     await (await signMeasured(wallet, receive.tx, `asset ${index} return`))
       .submit();
     f.emulator.awaitBlock();
-    const absent = await absenceProof(
-      fromText(
-        `commitments/ports/transfer/channels/channel-7/sequences/${remoteSequence}`,
-      ),
-    );
-    const pruneHeight = record(1n, 102n + BigInt(index) * 3n);
-    checkpoint(f, pruneHeight, absent.root);
-    const prune = await buildPacketPrune(
-      wallet,
-      f.deployment,
-      remoteSequence,
-      pruneHeight,
-      absent.proof,
-      f.emulator.now(),
-      f.emulator.now() + 60_000,
-    );
-    await (await signMeasured(wallet, prune.tx, `asset ${index} prune`))
-      .submit();
-    f.emulator.awaitBlock();
     const returned = await wallet.utxosAt(
       credentialToAddress("Custom", { type: "Key", hash: receiver }),
     );
@@ -1972,6 +1927,16 @@ Deno.test("repeated multi-asset round trips reclaim full accounting maps across 
     }
   }
   assertEquals((await wallet.utxosAt(f.deployment.batchAddress)).length, 0);
+  let retainedReceipts = 0;
+  for (const input of await wallet.utxosAt(f.deployment.guardAddress)) {
+    if ((Data.from(input.datum!) as Constr<Data>).fields.length !== 12) {
+      continue;
+    }
+    const history = await f.deployment.resolveLaneTree!(input);
+    retainedReceipts += history.tree.count("receipts");
+    assertEquals(history.tree.count("receipts"), history.tree.count("acks"));
+  }
+  assertEquals(retainedReceipts, 24);
   assert(
     Math.max(...sizes) - Math.min(...sizes) < 128,
     "maintenance size must not grow with historical assets",

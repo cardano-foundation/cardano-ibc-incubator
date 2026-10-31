@@ -29,7 +29,7 @@ describe('validateAndFormatPrunePacketHistoryParams', () => {
 
     const operator = validateAndFormatPrunePacketHistoryParams({
       signer: 'addr_test1signer',
-      port_id: 'transfer',
+      port_id: 'mock',
       channel_id: 'channel-3',
       sequence: 9n,
       proof_commitment_absence: proofBytes,
@@ -38,7 +38,7 @@ describe('validateAndFormatPrunePacketHistoryParams', () => {
 
     expect(operator).toMatchObject({
       signer: 'addr_test1signer',
-      portId: 'transfer',
+      portId: 'mock',
       channelId: 'channel-3',
       sequence: 9n,
       proofHeight: { revisionNumber: 1n, revisionHeight: 55n },
@@ -50,7 +50,7 @@ describe('validateAndFormatPrunePacketHistoryParams', () => {
     expect(() =>
       validateAndFormatPrunePacketHistoryParams({
         signer: 'addr_test1signer',
-        port_id: 'transfer',
+        port_id: 'mock',
         channel_id: 'channel-3',
         sequence: 9n,
         proof_commitment_absence: new Uint8Array(),

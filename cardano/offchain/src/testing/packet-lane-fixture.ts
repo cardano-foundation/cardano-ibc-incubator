@@ -137,7 +137,6 @@ export async function packetLaneFixture(
       "timeout",
       "reject",
       "receive",
-      "prune",
       "timeout_on_close",
       "retire",
       "funds",

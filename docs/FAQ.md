@@ -151,41 +151,23 @@ codec change. [Issue #614](https://github.com/cardano-foundation/cardano-ibc-inc
 tracks codec versioning and historical proof support. Until then the existing
 receipt bytes and roots stay unchanged.
 
-## Why can finalized packet history be pruned without keeping an off-chain copy?
+## Does ICS-20 packet history need pruning?
 
-Pruning removes only finalized destination history: a receipt and
-acknowledgement pair from an unordered channel, or an acknowledgement from an
-ordered channel. Ordered channels do not store receipt entries; their monotonic
-`next_sequence_recv` counter prevents the same sequence from being received
-again. Unresolved outbound packet commitments remain on-chain. Before allowing
-deletion, Cardano verifies at a sufficiently new authenticated counterparty
-height that the corresponding source commitment no longer exists, then
-atomically raises the channel's on-chain receive-proof floor so an older
-membership proof cannot replay the packet.
+No. Receipts and acknowledgement hashes remain authenticated by each lane's
+fixed-size Merkle root. They do not accumulate in the live datum or consume
+receive capacity. Packet lanes have no receipt-pruning operation or recurring
+cleanup transaction.
 
-Packet sequences advance monotonically, so a resolved commitment for that
-sequence cannot later be recreated. The proof floor, sequence counters,
-remaining commitments, and commitment root all remain in live on-chain datums,
-which means a fresh Gateway can reconstruct the current proof tree from chain
-state alone without relying on a unique Gateway database, relayer, or historical
-off-chain copy.
+The Gateway reconstructs proofs from canonical Yaci transaction history. Its
+SQLite checkpoints are disposable caches. Keep the canonical transaction history
+available when restarting or moving a Gateway. Outstanding sends still occupy
+live commitment slots until acknowledgement or timeout processing completes.
+
+The separate legacy inline channel format used by other application ports still
+supports authenticated cleanup. It does not apply to ICS-20 lanes and the Gateway
+rejects pruning requests for the `transfer` port.
 
 Hermes uses `packet_executor_concurrency = 4` by default to execute funded batches across independent channels while each channel has at most one batch in flight. Set it to `1` for serial execution. Increasing it needs separate signer inputs for fees and collateral. Shared initialization inputs and busy wallet inputs still cause retries. The send builder still includes at most two intents in each transaction. Measure drain time on the intended network before claiming a throughput gain.
-
-Funded intent execution does not schedule pruning. Operators must monitor each active transfer channel with `GET /api/packet-history/channel-0/occupancy`. The response reports occupancy at one settled Cardano height. Alert on failed queries and any lane with `maintenance_required: true`. The flag starts at 48 of 64 entries. Each receive uses two entries. Poll often enough that traffic and indexing delay cannot consume the remaining receive slots before maintenance runs.
-
-`prune_candidates` lists stored receipt and acknowledgement pairs. A candidate still needs authenticated source commitment absence. Relay its acknowledgement to the source first. Then use the source channel paired with this Cardano channel:
-
-```sh
-hermes --config "$HERMES_CONFIG" tx packet-prune \
-  --dst-chain "$CARDANO_CHAIN_ID" \
-  --src-chain "$SOURCE_CHAIN_ID" \
-  --src-port transfer \
-  --src-channel "$SOURCE_CHANNEL_ID" \
-  --sequence "$SEQUENCE"
-```
-
-Hermes obtains the proof and signs and submits the pruning transaction. With a connection delay use `--proof-height REVISION-HEIGHT` for a matured authenticated height that meets the receive high-water mark and pruning floor. Submit maintenance serially for a lane. Wait for inclusion and indexing before polling again. Continue until the alert clears. If there are no history pairs to prune the lane may need outgoing acknowledgements or timeouts instead. Reduce incoming traffic if maintenance cannot keep pace.
 
 ## Why was Mithril removed from the maintained path?
 

@@ -2,13 +2,12 @@ import { join } from 'path';
 import { loadSync } from '@grpc/proto-loader';
 import * as Lucid from '@lucid-evolution/lucid';
 import { consensusHistoryKey, CONSENSUS_HISTORY_KEY_PREFIX } from '@cardano-ibc/tx-builder-runtime/consensusHistory';
-import { buildPacketReceive, buildPacketPrune } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
+import { buildPacketReceive } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
 import { PacketLaneService } from '../packet-lane.service';
 
 jest.mock('@cardano-ibc/tx-builder-runtime/packetLaneTransactions', () => ({
   ...jest.requireActual('@cardano-ibc/tx-builder-runtime/packetLaneTransactions'),
   buildPacketReceive: jest.fn(),
-  buildPacketPrune: jest.fn(),
 }));
 jest.mock('../../query/services/packet-state.service', () => ({ PacketStateService: class {} }));
 
@@ -57,7 +56,6 @@ describe('packet lane protobuf integer boundary', () => {
       return { type_url: '', value: new Uint8Array([1]) };
     });
     jest.mocked(buildPacketReceive).mockResolvedValue({ tx: {}, input: {} } as any);
-    jest.mocked(buildPacketPrune).mockResolvedValue({} as any);
   });
 
   it('preserves uint64 packet values and resolves the real history key after gRPC decoding', async () => {
@@ -80,15 +78,4 @@ describe('packet lane protobuf integer boundary', () => {
     expect(height.fields).toEqual([2n, 1455n]);
   });
 
-  it('preserves the pruning sequence and proof height after gRPC decoding', async () => {
-    const request = requestFromWire('ibc.cardano.v1.CardanoMsg', 'PrunePacketHistory', {
-      signer: 'signer', port_id: 'transfer', channel_id: 'channel-0', sequence,
-      proof_height: proofHeight, proof_commitment_absence: Buffer.alloc(0),
-    });
-    await service.prune(request);
-    expect(resolvedHeights).toEqual([[2n, 1455n]]);
-    const [, , actualSequence, height] = jest.mocked(buildPacketPrune).mock.calls[0];
-    expect(actualSequence).toBe(BigInt(sequence));
-    expect(height.fields).toEqual([2n, 1455n]);
-  });
 });

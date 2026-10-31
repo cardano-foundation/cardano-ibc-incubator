@@ -3,8 +3,8 @@ use cardano/address.{Script}
 use cardano/assets.{PolicyId}
 use cardano/transaction.{OutputReference, Transaction}
 use ibc/apps/transfer/packet_batch.{
-  Acknowledge, AcknowledgeBatch, AuthorizedOperation, Consolidate, Prune,
-  Receive, Reject, RetireEmpty, RetireLanes, SendBatch, Timeout, TimeoutOnClose,
+  Acknowledge, AcknowledgeBatch, AuthorizedOperation, Consolidate, Receive,
+  Reject, RetireEmpty, RetireLanes, SendBatch, Timeout, TimeoutOnClose,
 }
 use ibc/utils/validator_utils
 
@@ -15,7 +15,6 @@ pub type OperationPolicies {
   timeout: PolicyId,
   reject: PolicyId,
   receive: PolicyId,
-  prune: PolicyId,
   timeout_on_close: PolicyId,
   retire: PolicyId,
   funds: PolicyId,
@@ -39,7 +38,6 @@ validator packet_lane_batch(
         Timeout { .. } -> policies.timeout
         Reject { .. } -> policies.reject
         Receive { .. } -> policies.receive
-        Prune { .. } -> policies.prune
         TimeoutOnClose { .. } -> policies.timeout_on_close
         RetireEmpty { .. } | Consolidate { .. } | RetireLanes -> policies.retire
       }

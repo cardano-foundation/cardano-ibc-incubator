@@ -1372,7 +1372,7 @@ async function fixture(
         recovered.close();
       }
     },
-    async coldRecoverAndPrune() {
+    async coldRecoverAndAcknowledge() {
       assert(packet && createClient);
       const directory = await Deno.makeTempDir({
         prefix: "ibc-production-history-",
@@ -1448,16 +1448,14 @@ async function fixture(
           revisionNumber: 1n,
           revisionHeight: 2n,
         });
-        const result = await packet.prune(
+        const result = await packet.acknowledge(
           live,
           liveHost,
-          references[0],
-          tree,
           witness,
           emulator.now(),
         );
         emulator.awaitBlock();
-        await packet.assertPruned();
+        await packet.assertAcknowledged();
         assertEquals(
           (await lucid.utxoByUnit(clientPolicyId + clientName)).datum,
           live.datum,
@@ -1605,7 +1603,7 @@ Deno.test("signed staged update uses an old checkpoint after deleting both histo
     "adjacent",
   );
   console.log(JSON.stringify(await context.update()));
-  console.log(JSON.stringify(await context.coldRecoverAndPrune()));
+  console.log(JSON.stringify(await context.coldRecoverAndAcknowledge()));
 });
 
 Deno.test("cold recovery retains consensus bytes accepted by signed client creation", async () => {
@@ -1711,7 +1709,7 @@ Deno.test("client recovery accepts equivalent input and output CBOR container en
 Deno.test("a production packet uses an old consensus state after deleting all local history", async () => {
   const context = await fixture(0, false, false, true, true, true, true, false);
   console.log(JSON.stringify(await context.update()));
-  console.log(JSON.stringify(await context.coldRecoverAndPrune()));
+  console.log(JSON.stringify(await context.coldRecoverAndAcknowledge()));
 });
 
 // Regenerate the Hermes policy fixtures with:

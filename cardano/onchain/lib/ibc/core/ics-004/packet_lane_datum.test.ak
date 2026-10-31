@@ -1,7 +1,8 @@
+use aiken/builtin
 use aiken/collection/list
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_004/packet_lane_datum.{
-  CommitPacket, CompletePacket, LaneUpdate, PacketLaneDatum, PrunePacket,
+  CommitPacket, CompletePacket, LaneMutation, LaneUpdate, PacketLaneDatum,
   ReceivePacket,
 }
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
@@ -57,29 +58,6 @@ fn received() -> PacketLaneDatum {
         siblings: [
           sparse_tree.siblings([], receipt),
           sparse_tree.siblings([Pair(receipt, #"01")], ack),
-        ],
-      },
-    ],
-  )
-}
-
-fn prune(datum: PacketLaneDatum, proof_height: Height) -> PacketLaneDatum {
-  let receipt = packet_keys.packet_receipt_path("transfer", "channel-0", 1)
-  let ack = packet_keys.packet_acknowledgement_path("transfer", "channel-0", 1)
-  let ack_entry =
-    Pair(
-      ack,
-      #"1111111111111111111111111111111111111111111111111111111111111111",
-    )
-  packet_lane_datum.apply_updates(
-    datum,
-    [
-      LaneUpdate {
-        mutation: PrunePacket { sequence: 1, proof_height },
-        siblings: [
-          sparse_tree.siblings([Pair(receipt, #"01"), ack_entry], receipt),
-          sparse_tree.siblings([ack_entry], ack),
-          [#"1111111111111111111111111111111111111111111111111111111111111111"],
         ],
       },
     ],
@@ -172,103 +150,6 @@ test packet_lane_receive_keeps_only_the_root() {
   }
 }
 
-test packet_lane_legacy_receipts_require_explicit_migration() fail {
-  expect _ = prune(PacketLaneDatum { ..received(), receipts: [1] }, height(12))
-}
-
-test packet_lane_prune_preserves_replay_floor() {
-  let next = prune(received(), height(12))
-  and {
-    next.minimum_receive_proof_height == height(12),
-    next.maximum_receive_proof_height == height(10),
-    next.root == empty().root,
-    next.receipts == [],
-    next.acknowledgements == [],
-  }
-}
-
-test packet_lane_prune_cannot_predate_receive() fail {
-  expect _ = prune(received(), height(9))
-}
-
-test packet_lane_prune_rejects_an_uncommitted_acknowledgement() fail {
-  let receipt = packet_keys.packet_receipt_path("transfer", "channel-0", 1)
-  let ack = packet_keys.packet_acknowledgement_path("transfer", "channel-0", 1)
-  let ack_entry =
-    Pair(
-      ack,
-      #"1111111111111111111111111111111111111111111111111111111111111111",
-    )
-  expect _ =
-    packet_lane_datum.apply_updates(
-      received(),
-      [
-        LaneUpdate {
-          mutation: PrunePacket { sequence: 1, proof_height: height(12) },
-          siblings: [
-            sparse_tree.siblings([Pair(receipt, #"01"), ack_entry], receipt),
-            sparse_tree.siblings([ack_entry], ack),
-            [
-              #"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-            ],
-          ],
-        },
-      ],
-    )
-}
-
-test packet_lane_old_membership_rejected_after_prune() fail {
-  let receipt = packet_keys.packet_receipt_path("transfer", "channel-0", 1)
-  let ack = packet_keys.packet_acknowledgement_path("transfer", "channel-0", 1)
-  let old = prune(received(), height(12))
-  expect _ =
-    packet_lane_datum.apply_updates(
-      old,
-      [
-        LaneUpdate {
-          mutation: ReceivePacket {
-            packet: packet(1),
-            acknowledgement: #"1111111111111111111111111111111111111111111111111111111111111111",
-            proof_height: height(10),
-          },
-          siblings: [
-            sparse_tree.siblings([], receipt),
-            sparse_tree.siblings([Pair(receipt, #"01")], ack),
-          ],
-        },
-      ],
-    )
-}
-
-test packet_lane_current_membership_accepted_after_prune() {
-  let receipt = packet_keys.packet_receipt_path("transfer", "channel-0", 1)
-  let ack = packet_keys.packet_acknowledgement_path("transfer", "channel-0", 1)
-  let old = prune(received(), height(12))
-  let next =
-    packet_lane_datum.apply_updates(
-      old,
-      [
-        LaneUpdate {
-          mutation: ReceivePacket {
-            packet: packet(1),
-            acknowledgement: #"1111111111111111111111111111111111111111111111111111111111111111",
-            proof_height: height(12),
-          },
-          siblings: [
-            sparse_tree.siblings([], receipt),
-            sparse_tree.siblings([Pair(receipt, #"01")], ack),
-          ],
-        },
-      ],
-    )
-  next == PacketLaneDatum {
-    ..received(),
-    version: 3,
-    minimum_receive_proof_height: height(12),
-    maximum_receive_proof_height: height(12),
-  }
-}
-
 test packet_lane_wrong_witness_rejected() fail {
   let witnesses: List<List<ByteArray>> = list.repeat([], 1)
   expect _ =
@@ -304,6 +185,33 @@ test packet_lane_opaque_witness_rejects_non_bytes_siblings() fail {
         LaneUpdate {
           mutation: CommitPacket { packet: packet(1) },
           siblings: [list.repeat(0, 64)],
+        },
+      ],
+    )
+}
+
+test packet_lane_removed_prune_mutation_is_rejected() fail {
+  let sequence: Data = 1
+  let proof_height: Data = height(12)
+  let raw = builtin.constr_data(3, [sequence, proof_height])
+  expect mutation: LaneMutation = raw
+  packet_lane_datum.mutation_sequence(mutation) == 1
+}
+
+test packet_lane_legacy_receipts_require_explicit_migration() fail {
+  let key = packet_keys.packet_commitment_path("transfer", "channel-0", 1)
+  expect _ =
+    packet_lane_datum.apply_updates(
+      PacketLaneDatum { ..committed(), receipts: [1] },
+      [
+        LaneUpdate {
+          mutation: CompletePacket { packet: packet(1) },
+          siblings: [
+            sparse_tree.siblings(
+              [Pair(key, packet_mod.commit_packet(packet(1)))],
+              key,
+            ),
+          ],
         },
       ],
     )

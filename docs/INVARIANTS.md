@@ -499,9 +499,11 @@ The lane helpers in `lib/ibc/core/ics-004/packet_lanes.test.ak`,
 - Every lane transition consumes its authenticated token and creates one exact
   continuation. It preserves identity, verifies sequential Merkle witnesses
   and increments the lane version once per spent output.
-- Each lane retains at most 64 combined commitments, receipts and
-  acknowledgements. Receive replay and stale proofs below the prune floor are
-  rejected. Each lane has its own entry bound.
+- Each lane retains at most 64 outstanding commitments in its datum. Receipts
+  and acknowledgements stay in the authenticated tree permanently. They do not
+  consume live datum capacity. Authenticated non-membership prevents duplicate
+  receives and no lane mutation can delete a receipt or acknowledgement. The
+  proof-height slots remain in the datum for Go decoder compatibility.
 - Balance maps have at most eight asset entries. Compaction conserves each
   asset's combined obligation across two authenticated lanes without changing
   packet roots. It cannot replace packet execution or bypass pending refunds.
@@ -697,6 +699,10 @@ check these invariants:
   native-unescrow witness shapes before the packet commitment can be removed.
 
 ### Packet History Pruning
+
+This section covers the legacy inline channel format used by other application
+ports. ICS-20 packet lanes retain history permanently and expose no pruning
+operation.
 
 Covered by the deterministic
 `channel_datum_test/validate_prune_packet_history.ak`,

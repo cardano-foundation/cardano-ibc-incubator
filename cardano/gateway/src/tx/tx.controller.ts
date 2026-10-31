@@ -268,7 +268,6 @@ export class TxController {
 
   @GrpcMethod('CardanoMsg', 'PrunePacketHistory')
   async PrunePacketHistory(data: MsgPrunePacketHistory): Promise<MsgPrunePacketHistoryResponse> {
-    if (data.port_id === 'transfer') return this.packetLaneService.prune(data);
     return this.packetService.prunePacketHistory(validateAndFormatPrunePacketHistoryParams(data));
   }
 }

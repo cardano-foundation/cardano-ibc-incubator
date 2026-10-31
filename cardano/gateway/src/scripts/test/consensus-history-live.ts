@@ -1,15 +1,12 @@
 // Run with the isolated devnet Gateway environment, after a real ICS-20 return
 // has settled and its Tendermint client has advanced beyond the chosen height.
-// Never deletes a database or stops a service. --prune submits a real transaction.
+// Never submits a transaction, deletes a database or stops a service.
 import { strict as assert } from 'node:assert';
-import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
-import { promisify, parseArgs } from 'node:util';
+import { parseArgs } from 'node:util';
 import type { ClientDatum } from '../../shared/types/client-datum';
-import type { ChannelDatum } from '../../shared/types/channel/channel-datum';
-import type { ConnectionDatum } from '../../shared/types/connection/connection-datum';
 import type { HostStateDatum } from '../../shared/types/host-state-datum';
 import type { Height } from '../../shared/types/height';
 import type { AuthToken } from '../../shared/types/auth-token';
@@ -18,8 +15,6 @@ import type { HistorySource, HistoryTransaction } from '@cardano-ibc/tx-builder-
 const HELP = `Usage: ts-node -r tsconfig-paths/register src/scripts/test/consensus-history-live.ts
   --client-id 07-tendermint-N --proof-height REVISION-HEIGHT --report-dir NEW_DIRECTORY
   [--resume-history-cache EXISTING_DIRECTORY | --pause-after-checkpoints N]
-  [--prune --hermes-bin PATH --hermes-config PATH --src-chain ID --dst-chain ID
-   --src-channel channel-N --dst-channel channel-N --sequence N]
 
 Uses the normal Gateway environment and requires cardanoNetwork=Custom.
 The report directory must not exist. By default both private SQLite history and
@@ -30,8 +25,7 @@ disable historical proof-query cache reads. Use a fresh isolated Gateway DB or
 preserve and replace that cache table while Gateway and Hermes are stopped.
 For audit-only, leave Gateway stopped until this command finishes, then restart
 it with normal caching so freshly reconstructed snapshots remain available.
-The optional prune checks a REAL packet operation at the explicit older height.
-It is not an ICS-20 transfer. Run a separate transfer after recovering Gateway.
+Run a separate transfer after recovering Gateway.
 Stop automatic relaying while selecting the checkpoint and running this test.
 For a deterministic crash test, --pause-after-checkpoints writes
 checkpoint-barrier.json only after N durable checkpoints and refuses witnesses.
@@ -58,11 +52,6 @@ export function requireEmptyPublicTreeCache(count: string | number): void {
 export function requireSameHistoryDeployment(saved: { clientToken: AuthToken; stateAddress: string }, token: AuthToken, address: string): void {
   assert.deepEqual(saved.clientToken, token, 'Resume cache belongs to another client token');
   assert.equal(saved.stateAddress, address, 'Resume cache belongs to another client address');
-}
-
-export function requirePruneChains(source: string, destination: string, clientChainIdHex: string, gatewayChainId: string): void {
-  assert.equal(Buffer.from(clientChainIdHex, 'hex').toString(), source, 'Prune source chain does not match the client');
-  assert.equal(destination, gatewayChainId, 'Prune destination chain does not match Gateway');
 }
 
 /** Pause only after the real consumer has committed an actual source record. */
@@ -144,12 +133,9 @@ function json(value: unknown): string {
 
 export async function runLiveHistoryTest(args: string[]): Promise<void> {
   const { values } = parseArgs({ args, options: {
-    help: { type: 'boolean' }, prune: { type: 'boolean' },
+    help: { type: 'boolean' },
     'client-id': { type: 'string' }, 'proof-height': { type: 'string' }, 'report-dir': { type: 'string' },
     'resume-history-cache': { type: 'string' }, 'pause-after-checkpoints': { type: 'string' },
-    'hermes-bin': { type: 'string' }, 'hermes-config': { type: 'string' },
-    'src-chain': { type: 'string' }, 'dst-chain': { type: 'string' },
-    'src-channel': { type: 'string' }, 'dst-channel': { type: 'string' }, sequence: { type: 'string' },
   } });
   if (values.help) { console.log(HELP); return; }
   const required = (key: keyof typeof values): string => {
@@ -165,21 +151,10 @@ export async function runLiveHistoryTest(args: string[]): Promise<void> {
   const pauseAt = values['pause-after-checkpoints'] === undefined ? undefined : Number(values['pause-after-checkpoints']);
   if (pauseAt !== undefined) {
     assert(Number.isSafeInteger(pauseAt) && pauseAt > 0, 'pause-after-checkpoints must be a positive safe integer');
-    assert(!resumeDirectory && !values.prune, 'The checkpoint barrier requires a fresh audit-only run');
+    assert(!resumeDirectory, 'The checkpoint barrier requires a fresh audit-only run');
   }
   const resumedCheckpoint = resumeDirectory ? await savedCheckpoint(resumeDirectory, clientId) : undefined;
   assert(!resumeDirectory || resumedCheckpoint, 'Resume directory has no saved checkpoints for this client');
-  const prune = values.prune ? {
-    binary: resolve(required('hermes-bin')), config: resolve(required('hermes-config')),
-    sourceChain: required('src-chain'), destinationChain: required('dst-chain'),
-    sourceChannel: required('src-channel'), destinationChannel: required('dst-channel'),
-    sequence: required('sequence'),
-  } : undefined;
-  if (prune) {
-    identifier(prune.sourceChannel, 'channel-');
-    identifier(prune.destinationChannel, 'channel-');
-    assert(/^[1-9][0-9]*$/.test(prune.sequence), 'sequence must be a positive integer');
-  }
   await mkdir(directory);
   process.env.CONSENSUS_HISTORY_CACHE_DIR = resumeDirectory ?? join(directory, 'history');
   process.env.IBC_TREE_CACHE_ENABLED = 'false';
@@ -256,51 +231,6 @@ export async function runLiveHistoryTest(args: string[]): Promise<void> {
     await writeFile(join(directory, 'recovery.json'), json(report));
     await writeFile(join(directory, 'historical-witness.json'), json(witness));
 
-    if (prune) {
-      requirePruneChains(prune.sourceChain, prune.destinationChain, datum.state.clientState.chainId, config.getOrThrow('cardanoChainId'));
-      const channelUnit = lucid.getChannelTokenUnit(identifier(prune.destinationChannel, 'channel-')).join('');
-      const readChannel = async () => {
-        const utxo = await lucid.findUtxoByUnit(channelUnit);
-        assert(utxo.datum, 'Channel has no inline datum');
-        return { utxo, datum: await lucid.decodeDatum<ChannelDatum>(utxo.datum, 'channel') };
-      };
-      const before = await readChannel();
-      const channel = before.datum.state.channel;
-      assert.equal(Buffer.from(before.datum.port, 'hex').toString(), 'transfer', 'Prune destination is not a transfer channel');
-      assert.equal(Buffer.from(channel.counterparty.port_id, 'hex').toString(), 'transfer', 'Prune source is not a transfer channel');
-      assert.equal(Buffer.from(channel.counterparty.channel_id, 'hex').toString(), prune.sourceChannel);
-      assert.equal(channel.connection_hops.length, 1);
-      const connectionId = Buffer.from(channel.connection_hops[0], 'hex').toString();
-      const connection = await lucid.findUtxoByUnit(lucid.getConnectionTokenUnit(identifier(connectionId, 'connection-')).join(''));
-      assert(connection.datum, 'Connection has no inline datum');
-      const connectionDatum = await lucid.decodeDatum<ConnectionDatum>(connection.datum, 'connection');
-      assert.equal(Buffer.from(connectionDatum.state.client_id, 'hex').toString(), clientId, 'Prune route uses another client');
-      const sequence = BigInt(prune.sequence);
-      assert(before.datum.state.packet_receipt.has(sequence), 'Packet receipt is missing before pruning');
-      assert(before.datum.state.packet_acknowledgement.has(sequence), 'Packet acknowledgement is missing before pruning');
-
-      const command = ['--config', prune.config, '--json', 'tx', 'packet-prune',
-        '--src-chain', prune.sourceChain, '--dst-chain', prune.destinationChain,
-        '--src-port', 'transfer', '--src-channel', prune.sourceChannel, '--sequence', prune.sequence,
-        '--proof-height', required('proof-height')];
-      const started = performance.now();
-      const { stdout, stderr } = await promisify(execFile)(prune.binary, command, { timeout: 900_000, maxBuffer: 16 * 1024 * 1024 });
-      await writeFile(join(directory, 'hermes-prune.log'), stdout + stderr);
-      const envelopes = stdout.split('\n').flatMap((line) => {
-        try { const value = JSON.parse(line); return value?.status ? [value] : []; } catch { return []; }
-      });
-      assert.equal(envelopes.at(-1)?.status, 'success', 'Hermes did not report a successful prune');
-      const after = await readChannel();
-      assert.notEqual(after.utxo.txHash, before.utxo.txHash, 'Prune did not produce a new channel output');
-      assert(!after.datum.state.packet_receipt.has(sequence), 'Receipt survived pruning');
-      assert(!after.datum.state.packet_acknowledgement.has(sequence), 'Acknowledgement survived pruning');
-      assert.deepEqual(after.datum.state.minimum_receive_proof_height, proofHeight, 'On-chain prune used another proof height');
-      assert.equal((await lucid.findUtxoByUnit(unit)).datum, client.datum, 'Pruning changed the client checkpoint');
-      const final = await store.rebuildTreeFromChain();
-      report.prune = { txHash: after.utxo.txHash, proofHeight, publicRoot: final.root,
-        milliseconds: Math.round(performance.now() - started), hermesResult: envelopes.at(-1).result };
-      await writeFile(join(directory, 'recovery.json'), json(report));
-    }
     console.log(json(report));
   } finally {
     await app.close();

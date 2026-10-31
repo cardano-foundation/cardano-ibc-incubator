@@ -129,15 +129,15 @@ function constructor(value: Data, fields?: number): Constr<Data> {
 }
 
 function laneUpdates(operation: Constr<Data>): Constr<Data>[] {
-  if (operation.index === 10) {
+  if (operation.index === 9) {
     return (operation.fields[0] as Constr<Data>[]).flatMap(laneUpdates);
   }
   if (operation.index === 0) return operation.fields[3] as Constr<Data>[];
-  const field = operation.index === 1 || operation.index === 7
+  const field = operation.index === 1
     ? 3
     : operation.index === 6
     ? 5
-    : [2, 5, 8].includes(operation.index)
+    : [2, 5, 7].includes(operation.index)
     ? 4
     : undefined;
   return field === undefined ? [] : [constructor(operation.fields[field], 2)];
@@ -305,10 +305,8 @@ export class PacketLaneHistory {
         }
         for (const raw of updates[0].fields[1] as Data[]) {
           const mutation = constructor(constructor(raw, 2).fields[0]);
-          const packet = mutation.index === 3
-            ? undefined
-            : constructor(mutation.fields[0], 8);
-          const sequence = packet?.fields[0] ?? mutation.fields[0];
+          const packet = constructor(mutation.fields[0], 8);
+          const sequence = packet.fields[0];
           const path = `/ports/${toText(String(port))}/channels/${
             toText(String(channel))
           }/sequences/${sequence}`;
@@ -325,12 +323,6 @@ export class PacketLaneHistory {
               throw new Error("Packet history completes an absent commitment");
             }
             tree.set("commitments" + path, "");
-          } else if (mutation.index === 3) {
-            if (!tree.get("receipts" + path) || !tree.get("acks" + path)) {
-              throw new Error("Packet history prunes absent state");
-            }
-            tree.set("receipts" + path, "");
-            tree.set("acks" + path, "");
           } else throw new Error("Unknown packet history mutation");
         }
       }

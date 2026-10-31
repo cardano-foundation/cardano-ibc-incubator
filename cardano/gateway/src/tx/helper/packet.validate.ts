@@ -116,6 +116,9 @@ export function validateAndFormatPrunePacketHistoryParams(
   if (!data.port_id) {
     throw new GrpcInvalidArgumentException('Invalid argument: "port_id" is required');
   }
+  if (data.port_id === 'transfer') {
+    throw new GrpcFailedPreconditionException('ICS-20 packet history is retained permanently and cannot be pruned');
+  }
   if (!data.channel_id?.startsWith(`${CHANNEL_ID_PREFIX}-`)) {
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,

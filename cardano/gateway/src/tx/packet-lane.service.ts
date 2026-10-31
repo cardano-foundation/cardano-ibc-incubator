@@ -20,7 +20,6 @@ import {
   buildPacketSendBatch,
   buildPacketBalanceCompaction,
   buildPacketLaneInitialization,
-  buildPacketPrune,
   usableTransferIntent,
   selectPacketLiquidity,
   buildPacketAcknowledgement,
@@ -584,43 +583,6 @@ export class PacketLaneService {
       amount,
       sequence,
     );
-  }
-
-  async prune(request: import('@cardano-ibc/proto-types/build/ibc/cardano/v1/tx').MsgPrunePacketHistory) {
-    const sequence = rpcInteger(request.sequence ?? 0n);
-    if (request.port_id !== 'transfer' || sequence < 1n || !request.proof_height)
-      throw new Error('Invalid packet pruning request');
-    const deployment = await this.deployment(request.channel_id);
-    const height = rpcHeight(request.proof_height);
-    const resolved = await this.lucid.resolveClientAtHeights(deployment.client, [
-      { revisionNumber: height.revision_number, revisionHeight: height.revision_height },
-    ]);
-    deployment.client = resolved.clientUtxo;
-    if (resolved.historyWitnesses[0]) {
-      const { Data } = this.lucid.LucidImporter;
-      deployment.historyWitness = Data.from(
-        Data.to(
-          resolved.historyWitnesses[0] as never,
-          consensusHistoryWitnessSchema(this.lucid.LucidImporter) as never,
-        ),
-      );
-    }
-    return {
-      unsigned_tx: await this.complete(
-        request.signer,
-        'prunePacketLane',
-        async (from, to) =>
-          await buildPacketPrune(
-            this.lucid.lucid,
-            deployment,
-            sequence,
-            record(height.revision_number, height.revision_height),
-            this.proof(request.proof_commitment_absence),
-            from,
-            to,
-          ),
-      ),
-    };
   }
 
   async settle(
