@@ -26,6 +26,12 @@ export {
   PacketLaneHistory,
   PacketLaneTree,
 } from "./packetLaneHistory.ts";
+export {
+  type PacketLaneCheckpoint,
+  PacketLaneHistoryStore,
+  packetLaneVersion,
+} from "./packetLaneHistoryStore.ts";
+export { PacketMerkleTree } from "./packetLaneTree.ts";
 
 export const record = (...fields: Data[]) => new Constr(0, fields);
 export const variant = (index: number, ...fields: Data[]) =>

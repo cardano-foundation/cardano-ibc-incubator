@@ -1,5 +1,9 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { PacketLaneHistoryStore } from "./packetLaneHistoryStore.ts";
 import { Constr, Data, fromText, type UTxO } from "@lucid-evolution/lucid";
 import { packetLaneTokenName } from "@cardano-ibc/tx-builder/dist/packet-lanes";
 import {
@@ -204,4 +208,66 @@ test("packet history permits balance-only continuations without inventing receip
   const forged = transaction(2n, "ff".repeat(32), balance.outputs[0]);
   forged.mintPolicies = [];
   assert.throws(() => history.apply(forged), /does not match the lane root/);
+});
+
+test("SQLite lane checkpoints reopen current and historical versions without replay and isolate deployments", () => {
+  const directory = mkdtempSync(join(tmpdir(), "packet-lane-history-"));
+  const path = join(directory, "history.sqlite");
+  let store = new PacketLaneHistoryStore(path);
+  try {
+    const history = store.empty(unit, batchPolicy);
+    const tree = new PacketLaneTree();
+    const initial = transaction(0n, tree.getRoot());
+    history.apply(initial);
+    store.publish([{
+      unit,
+      batchPolicy,
+      history: history.clone(),
+      blockNo: 10,
+      blockHash: "aa".repeat(32),
+      txIndex: 0,
+    }]);
+    const next = receive(1n, initial.outputs[0], tree);
+    history.apply(next);
+    store.publish([{
+      unit,
+      batchPolicy,
+      history: history.clone(),
+      blockNo: 11,
+      blockHash: "bb".repeat(32),
+      txIndex: 0,
+    }]);
+    store.close();
+    store = new PacketLaneHistoryStore(path);
+    assert.equal(
+      store.find(unit, batchPolicy, next.outputs[0])!.history.at(
+        next.outputs[0],
+      ).tree.size(),
+      2,
+    );
+    assert.equal(
+      store.find(unit, batchPolicy, initial.outputs[0])!.history.at(
+        initial.outputs[0],
+      ).tree.size(),
+      0,
+    );
+    assert.equal(
+      store.before(unit, batchPolicy, 1n, 11)!.history.current()!.txHash,
+      next.txHash,
+    );
+    assert.equal(store.find(unit, "ff".repeat(28), next.outputs[0]), undefined);
+    const fork = store.find(unit, batchPolicy, next.outputs[0])!.history.at(
+      next.outputs[0],
+    );
+    fork.set(key("acks", 1n), "cd".repeat(32));
+    assert.equal(
+      store.find(unit, batchPolicy, next.outputs[0])!.history.at(
+        next.outputs[0],
+      ).get(key("acks", 1n)),
+      ack,
+    );
+  } finally {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

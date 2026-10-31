@@ -34,8 +34,8 @@ import { readLocalEpochStake } from './local-epoch-stake';
 import { YaciRestClient } from '../../shared/helpers/yaci-rest';
 import { YaciRestHistory, type RestOutput, type RestTransaction } from '../../shared/helpers/yaci-rest-history';
 import * as CML from '@dcspark/cardano-multiplatform-lib-nodejs';
-import { decodePacketLaneHistoryTransaction, PacketLaneHistory, type PacketLaneTree } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
-import type { Constr, Data, UTxO } from '@lucid-evolution/lucid';
+import { decodePacketLaneHistoryTransaction, PacketLaneHistoryStore, packetLaneVersion, type PacketLaneCheckpoint, type PacketLaneTree } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
+import type { UTxO } from '@lucid-evolution/lucid';
 import {
   StaleIbcTreeStateError,
   type IbcTreeHostStateRef,
@@ -198,12 +198,9 @@ export class YaciHistoryService implements HistoryService {
       }
     }
   }
-  private readonly packetLaneHistory = new Map<string, {
-    history: PacketLaneHistory;
-    blockNo: number;
-    blockHash: string;
-    txIndex: number;
-  }>();
+  private readonly packetLaneHistory = new Map<string, PacketLaneCheckpoint>();
+  private readonly packetLaneRebuilds = new Map<string, Promise<{ checkpoint: PacketLaneCheckpoint; staged: PacketLaneCheckpoint[] }>>();
+  private packetLaneStore?: PacketLaneHistoryStore;
 
   async rebuildPacketLaneTreeAtBlock(height: bigint, target: UTxO): Promise<PacketLaneTree> {
     const config = this.configService.getOrThrow('deployment').packetState;
@@ -212,35 +209,95 @@ export class YaciHistoryService implements HistoryService {
     );
     if (units.length !== 1) throw new Error('Expected exactly one packet lane NFT');
     const unit = units[0][0];
+    const key = `${unit}:${config.batch.scriptHash}:${target.txHash}#${target.outputIndex}`;
     const source = this.restHistory();
-    let completed: { history: PacketLaneHistory; blockNo: number; blockHash: string; txIndex: number } | undefined;
-    const tree = await source.snapshot(height, async () => {
-      const cached = this.packetLaneHistory.get(unit);
-      const old = cached?.history.current();
-      const version = (output: UTxO) => (this.lucidService.LucidImporter.Data.from(output.datum!) as Constr<Data>).fields[4] as bigint;
-      const reusable = cached && old && cached.blockNo <= Number(height) && version(old) <= version(target) &&
-        (await source.api.block(cached.blockNo))?.hash === cached.blockHash;
-      const history = reusable ? cached.history.clone() : new PacketLaneHistory(unit, config.batch.scriptHash);
-      if (reusable && old.txHash === target.txHash && old.outputIndex === target.outputIndex) return history.at(target);
-      for (const tx of await source.transactionsFor(`assets/${unit}/transactions`, Number(height), reusable ? cached.blockNo : 0)) {
-        if (reusable && (tx.block.number < cached.blockNo || (tx.block.number === cached.blockNo && tx.index <= cached.txIndex))) continue;
+    const store = this.packetLaneStore ??= new PacketLaneHistoryStore(process.env.PACKET_LANE_HISTORY_DB ?? ':memory:');
+    let pending: Promise<{ checkpoint: PacketLaneCheckpoint; staged: PacketLaneCheckpoint[] }> | undefined;
+    try {
+      const result = await source.snapshot(height, async () => {
+        pending = this.packetLaneRebuilds.get(key);
+        if (!pending) {
+          pending = this.reconstructPacketLane(source, store, height, target, unit, config.batch.scriptHash);
+          this.packetLaneRebuilds.set(key, pending);
+        }
+        const candidate = await pending!;
+        const checkpoint = candidate.checkpoint;
+        if (checkpoint.blockNo > Number(height) || (await source.api.block(checkpoint.blockNo))?.hash !== checkpoint.blockHash) {
+          throw new Error('Packet checkpoint is not canonical at the requested height');
+        }
+        checkpoint.history.at(target);
+        return candidate;
+      });
+      // Publish only after canonicality is checked. Historical reads cannot
+      // move the latest pointer backwards, including when requests overlap.
+      store.publish(result.staged);
+      result.staged.length = 0;
+      const checkpoint = result.checkpoint;
+      const latest = this.packetLaneHistory.get(unit);
+      if (!latest || packetLaneVersion(checkpoint.history.current()!) >= packetLaneVersion(latest.history.current()!)) {
+        this.packetLaneHistory.delete(unit);
+        this.packetLaneHistory.set(unit, checkpoint);
+        while (this.packetLaneHistory.size > 64) this.packetLaneHistory.delete(this.packetLaneHistory.keys().next().value!);
+      }
+      return checkpoint.history.at(target);
+    } finally {
+      if (this.packetLaneRebuilds.get(key) === pending) this.packetLaneRebuilds.delete(key);
+    }
+  }
+
+  private async reconstructPacketLane(source: YaciRestHistory, store: PacketLaneHistoryStore, height: bigint, target: UTxO, unit: string, batchPolicy: string) {
+    const latest = this.packetLaneHistory.get(unit);
+    if (latest && (await source.api.block(latest.blockNo))?.hash !== latest.blockHash && this.packetLaneHistory.get(unit) === latest) this.packetLaneHistory.delete(unit);
+    const current = this.packetLaneHistory.get(unit);
+    const version = packetLaneVersion(target);
+    const currentOutput = current?.history.current();
+    const exactCurrent = current?.batchPolicy === batchPolicy && currentOutput?.txHash === target.txHash && currentOutput.outputIndex === target.outputIndex;
+    const stored = exactCurrent ? undefined : store.find(unit, batchPolicy, target) ?? store.before(unit, batchPolicy, version, Number(height));
+    const usableCurrent = current && current.batchPolicy === batchPolicy && current.blockNo <= Number(height) && packetLaneVersion(current.history.current()!) <= version;
+    let cached = exactCurrent ? current : usableCurrent && (!stored || packetLaneVersion(currentOutput!) > packetLaneVersion(stored.history.current()!)) ? current : stored;
+    while (cached) {
+      if ((await source.api.block(cached.blockNo))?.hash === cached.blockHash) {
+        // Disk checkpoints also bind to their original canonical transaction.
+        if (cached !== current) {
+          await this.assertPacketCheckpointTransaction(source, cached, unit);
+        }
+        break;
+      }
+      store.discard(cached);
+      cached = store.before(unit, batchPolicy, version, Number(height));
+    }
+    const history = cached ? cached.history.clone() : store.empty(unit, batchPolicy);
+    const sameTarget = () => history.current()?.txHash === target.txHash && history.current()?.outputIndex === target.outputIndex;
+    if (sameTarget()) return { checkpoint: cached!, staged: [] };
+    const staged: PacketLaneCheckpoint[] = [];
+    for await (const transactions of source.transactionBlocksFor(`assets/${unit}/transactions`, Number(height), cached?.blockNo ?? 0)) {
+      for (const tx of transactions) {
+        if (!tx.valid || (cached && (tx.block.number < cached.blockNo || (tx.block.number === cached.blockNo && tx.index <= cached.txIndex)))) continue;
+        const previous = history.current();
         history.apply(decodePacketLaneHistoryTransaction(tx.cborHex, tx.hash));
         const output = history.current();
-        if (output?.txHash === target.txHash && output.outputIndex === target.outputIndex) {
-          completed = { history, blockNo: tx.block.number, blockHash: tx.block.hash, txIndex: tx.index };
-          return history.at(target);
+        if (output && (previous?.txHash !== output.txHash || previous.outputIndex !== output.outputIndex)) {
+          staged.push({ unit, batchPolicy, history: history.clone(), blockNo: tx.block.number, blockHash: tx.block.hash, txIndex: tx.index });
         }
+        if (sameTarget()) return { checkpoint: staged[staged.length - 1], staged };
       }
-      throw new Error('Canonical packet history does not reach the requested lane output');
-    });
-    // Publish only after the surrounding canonical snapshot check succeeds.
-    if (completed) {
-      this.packetLaneHistory.delete(unit);
-      this.packetLaneHistory.set(unit, completed);
-      while (this.packetLaneHistory.size > 64) this.packetLaneHistory.delete(this.packetLaneHistory.keys().next().value!);
+      source.reset();
     }
-    return tree;
+    throw new Error('Canonical packet history does not reach the requested lane output');
   }
+
+  private async assertPacketCheckpointTransaction(source: YaciRestHistory, checkpoint: PacketLaneCheckpoint, unit: string): Promise<void> {
+    const output = checkpoint.history.current()!;
+    const transaction = await source.transaction(output.txHash);
+    if (!transaction || !transaction.valid || transaction.block.number !== checkpoint.blockNo || transaction.block.hash !== checkpoint.blockHash || transaction.index !== checkpoint.txIndex) {
+      throw new Error('Packet checkpoint transaction is unavailable or changed');
+    }
+    const actual = decodePacketLaneHistoryTransaction(transaction.cborHex, transaction.hash).outputs.find(input => input.outputIndex === output.outputIndex);
+    if (!actual || actual.assets[unit] !== 1n) throw new Error('Packet checkpoint output lacks its lane NFT');
+    checkpoint.history.at(actual);
+  }
+
+  onModuleDestroy(): void { this.packetLaneStore?.close(); }
 
   private readonly epochNonceCache: BoundedCache<string, string>;
   private readonly epochNonceLookups: BoundedCache<string, Promise<string>>;

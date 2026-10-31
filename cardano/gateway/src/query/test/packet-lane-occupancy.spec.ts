@@ -20,7 +20,7 @@ describe('packet lane history occupancy', () => {
     lane.mockImplementation(
       async (_port, _channel, index) =>
         ({
-          tree: { getKeys: () => keys(32) },
+          tree: { count: (kind: string) => keys(32).filter(key => key.startsWith(kind + '/')).length },
           datum: {
             fields: [
               '',
@@ -48,7 +48,7 @@ describe('packet lane history occupancy', () => {
 
   it('counts only outstanding commitments against live capacity', async () => {
     lane.mockResolvedValue({
-      tree: { getKeys: () => keys(2, 1) },
+      tree: { count: (kind: string) => keys(2, 1).filter(key => key.startsWith(kind + '/')).length },
       datum: { fields: ['', '', 0n, 16n, 0n, '', new Map([[10n, 'commitment']]), [], new Map()] },
     } as any);
     const result = await state.occupancy('transfer', 'channel-0');
@@ -68,7 +68,7 @@ describe('packet lane history occupancy', () => {
     lane.mockImplementation(
       async () =>
         ({
-          tree: { getKeys: () => keys(receives) },
+          tree: { count: (kind: string) => keys(receives).filter(key => key.startsWith(kind + '/')).length },
           datum: {
             fields: [
               '',

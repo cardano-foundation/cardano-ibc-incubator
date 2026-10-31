@@ -52,4 +52,18 @@ describe('default transfer packet queries', () => {
     });
     expect(proof).toHaveBeenCalledWith('transfer', 'channel-0', 3n, 'receipts', 42n);
   });
+
+  it('passes pagination to the index rather than listing history first', async () => {
+    entries.mockResolvedValue({ entries: new Map([[8n, 'ab']]), height, total: 1000, hasMore: true });
+    const result = await service.queryPacketAcknowledgements({ port_id: 'transfer', channel_id: 'channel-0', pagination: { key: Buffer.from('7'), limit: 1n, count_total: true } } as any);
+    expect(entries).toHaveBeenCalledWith('transfer', 'channel-0', 'acks', undefined, { offset: 7, limit: 1, reverse: undefined });
+    expect(result.acknowledgements[0].sequence).toBe(8n);
+    expect(result.pagination).toEqual({ next_key: Buffer.from('8'), total: 1000n });
+  });
+
+  it('checks requested unreceived sequences with point lookups', async () => {
+    entries.mockResolvedValue({ entries: new Map([[1n, '01']]), height });
+    expect((await service.queryUnreceivedPackets({ port_id: 'transfer', channel_id: 'channel-0', packet_commitment_sequences: [1n, 33n] })).sequences).toEqual([33n]);
+    expect(entries).toHaveBeenCalledWith('transfer', 'channel-0', 'receipts', undefined, { sequences: [1n, 33n] });
+  });
 });
