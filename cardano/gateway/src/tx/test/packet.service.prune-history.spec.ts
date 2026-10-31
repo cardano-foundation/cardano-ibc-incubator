@@ -1,8 +1,9 @@
-import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import * as Lucid from '@lucid-evolution/lucid';
-import { PacketService } from '../packet.service';
 import { convertString2Hex } from '../../shared/helpers/hex';
 import { packetCommitmentPath } from '../../shared/helpers/packet-keys';
+import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
+import { PacketService } from '../packet.service';
+
 
 const sequence = 7n;
 const proofHeight = { revisionNumber: 0n, revisionHeight: 40n };
@@ -19,14 +20,14 @@ function createService(ordering: 'Unordered' | 'Ordered' | 'None' = 'Unordered')
     },
   };
   const channelDatum = {
-    port: convertString2Hex('transfer'),
+    port: convertString2Hex('icqhost'),
     token: { policyId: 'channel-policy', name: 'channel-name' },
     state: {
       channel: {
         state: 'Open',
         ordering,
         counterparty: {
-          port_id: convertString2Hex('transfer'),
+          port_id: convertString2Hex('icqhost'),
           channel_id: convertString2Hex('channel-44'),
         },
         connection_hops: [convertString2Hex('connection-0')],
@@ -101,7 +102,6 @@ function createService(ordering: 'Unordered' | 'Ordered' | 'None' = 'Unordered')
     lucidService,
     {} as any,
     {} as any,
-    {} as any,
       createTestTreeStore(),
   );
   jest.spyOn(service as any, 'buildHostStateUpdateForPrunePacketHistory').mockResolvedValue({
@@ -121,7 +121,7 @@ describe('PacketService packet-history prune builder', () => {
 
     const result = await service.buildUnsignedPrunePacketHistoryTx({
       signer: 'addr_test1signer',
-      portId: 'transfer',
+      portId: 'icqhost',
       channelId: 'channel-7',
       sequence,
       proofCommitmentAbsence: { proofs: [] },
@@ -155,7 +155,7 @@ describe('PacketService packet-history prune builder', () => {
 
     const txDto = lucidService.createUnsignedPrunePacketHistoryTx.mock.calls[0][0];
     expect(txDto.encodedVerifyProofRedeemer).toContain(
-      convertString2Hex(packetCommitmentPath('transfer', 'channel-44', sequence)),
+      convertString2Hex(packetCommitmentPath('icqhost', 'channel-44', sequence)),
     );
     expect(txDto).toMatchObject({
       prunePacketHistoryPolicyId: 'prune-policy',
@@ -170,7 +170,7 @@ describe('PacketService packet-history prune builder', () => {
     await expect(
       service.buildUnsignedPrunePacketHistoryTx({
         signer: 'addr_test1signer',
-        portId: 'transfer',
+        portId: 'icqhost',
         channelId: 'channel-7',
         sequence,
         proofCommitmentAbsence: { proofs: [] },
@@ -188,7 +188,7 @@ describe('PacketService packet-history prune builder', () => {
 
     await service.buildUnsignedPrunePacketHistoryTx({
       signer: 'addr_test1signer',
-      portId: 'transfer',
+      portId: 'icqhost',
       channelId: 'channel-7',
       sequence,
       proofCommitmentAbsence: { proofs: [] },
@@ -216,7 +216,7 @@ describe('PacketService packet-history prune builder', () => {
     await expect(
       service.buildUnsignedPrunePacketHistoryTx({
         signer: 'addr_test1signer',
-        portId: 'transfer',
+        portId: 'icqhost',
         channelId: 'channel-7',
         sequence,
         proofCommitmentAbsence: { proofs: [] },
@@ -234,7 +234,7 @@ describe('PacketService packet-history prune builder', () => {
     await expect(
       service.buildUnsignedPrunePacketHistoryTx({
         signer: 'addr_test1signer',
-        portId: 'transfer',
+        portId: 'icqhost',
         channelId: 'channel-7',
         sequence,
         proofCommitmentAbsence: { proofs: [] },
@@ -250,7 +250,7 @@ describe('PacketService packet-history prune builder', () => {
     await expect(
       service.buildUnsignedPrunePacketHistoryTx({
         signer: 'addr_test1signer',
-        portId: 'transfer',
+        portId: 'icqhost',
         channelId: 'channel-7',
         sequence,
         proofCommitmentAbsence: { proofs: [] },

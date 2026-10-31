@@ -43,7 +43,7 @@ def main():
     offset = json.loads((runtime / 'benchmark-offset.json').read_text())['offset']
     config = (runtime / 'hermes.toml').read_text()
     # Keep only the Cardano chain and its pinned manifest/key store. These runs
-    # measure source packet execution, not counterparty relay or pruning.
+    # measure source packet execution, not counterparty relay.
     parts = config.split('[[chains]]')
     cardano = next(p for p in parts[1:] if "type = 'Cardano'" in p)
     prefix = parts[0]
@@ -166,7 +166,7 @@ def main():
                         os.killpg(process.pid, signal.SIGKILL)
                         process.wait(timeout=15)
     report = {
-        'scope': 'Actual Hermes binary with production Gateway signing policy, trusted Ogmios evaluation/submission and real node inclusion. Source packet execution only. Admission and channel setup are outside the timer. No acknowledgements, pruning or rollback exercise.',
+        'scope': 'Actual Hermes binary with production Gateway signing policy, trusted Ogmios evaluation/submission and real node inclusion. Source packet execution only. Admission and channel setup are outside the timer. No acknowledgements or rollback exercise.',
         'warmup': args.warmup, 'channels': args.channels, 'perChannel': args.per_channel,
         'warmupTopUpLovelace': args.warmup_top_up_lovelace,
         'genesisSha256': hashlib.sha256(genesis_bytes).hexdigest(),

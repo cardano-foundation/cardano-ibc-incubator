@@ -1,6 +1,7 @@
 import { PacketStateService } from '../services/packet-state.service';
 
 
+
 describe('packet lane history occupancy', () => {
   const keys = (receipts: number, acknowledgements = receipts) => [
     ...Array.from({ length: receipts }, (_, i) => `receipts/ports/transfer/channels/channel-0/sequences/${i + 1}`),
@@ -42,8 +43,7 @@ describe('packet lane history occupancy', () => {
     const result = await state.occupancy('transfer', 'channel-0');
     expect(result.height).toBe('42');
     expect(result.lanes).toHaveLength(16);
-    expect(result.lanes.every((lane) => lane.entries === 0 && lane.remaining_receive_slots === null)).toBe(true);
-    expect(result.lanes.every((lane) => !lane.maintenance_required && lane.prune_candidates.length === 0 && lane.receipts === 32)).toBe(true);
+    expect(result.lanes.every((lane) => lane.entries === 0 && lane.receipts === 32)).toBe(true);
   });
 
   it('counts only outstanding commitments against live capacity', async () => {
@@ -57,13 +57,10 @@ describe('packet lane history occupancy', () => {
       commitments: 1,
       receipts: 2,
       acknowledgements: 1,
-      remaining_receive_slots: null,
-      maintenance_required: false,
-      prune_candidates: [],
     });
   });
 
-  it('does not schedule mandatory pruning as historical receipt counts grow', async () => {
+  it('counts historical receipts independently of live commitment capacity', async () => {
     let receives = 24;
     lane.mockImplementation(
       async () =>
@@ -85,13 +82,13 @@ describe('packet lane history occupancy', () => {
         }) as any,
     );
     expect((await state.occupancy('transfer', 'channel-0')).lanes[0]).toMatchObject({
-      maintenance_required: false,
-      remaining_receive_slots: null,
+      entries: 0,
+      receipts: 24,
     });
     receives = 1000;
     expect((await state.occupancy('transfer', 'channel-0')).lanes[0]).toMatchObject({
-      maintenance_required: false,
-      remaining_receive_slots: null,
+      entries: 0,
+      receipts: 1000,
     });
   });
 

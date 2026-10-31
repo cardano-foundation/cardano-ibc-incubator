@@ -1,11 +1,17 @@
-import { migrationReference, withMigrationReference, type MigrationRuntimeConfig } from './migrationRuntime';
-import { credentialToAddress, type LucidEvolution, type TxBuilder, type UTxO } from '@lucid-evolution/lucid';
-import { sha3_256 } from 'js-sha3';
-import { acknowledgementSchema } from './acknowledgementCodec';
-import { decodeChannelDatum, encodeChannelDatum } from './channelDatum';
-import type { UnsignedSendPacketEscrowTxInput } from '@cardano-ibc/tx-builder';
-import { createUnsignedSendPacketEscrowTx } from './sendPacketEscrow';
-import type { IbcTreeLucidService, IbcTreeUtxo } from './ibcStateRoot';
+import {
+  credentialToAddress,
+  type LucidEvolution,
+  type UTxO,
+} from "@lucid-evolution/lucid";
+import { sha3_256 } from "js-sha3";
+import { acknowledgementSchema } from "./acknowledgementCodec";
+import { decodeChannelDatum, encodeChannelDatum } from "./channelDatum";
+import type { IbcTreeLucidService, IbcTreeUtxo } from "./ibcStateRoot";
+import {
+  migrationReference,
+  type MigrationRuntimeConfig,
+} from "./migrationRuntime";
+
 
 const CHANNEL_TOKEN_PREFIX = '6368616e6e656c'; // fromText('channel')
 const CLIENT_PREFIX = '6962635f636c69656e74'; // fromText('ibc_client')
@@ -48,15 +54,7 @@ type DeploymentConfig = {
   };
 };
 
-type ReferenceScripts = {
-  spendChannel: UTxO;
-  spendTransferModule: UTxO;
-  sendPacket: UTxO;
-  hostStateStt: UTxO;
-  mintVoucher: UTxO;
-  mintPort: UTxO;
-  mintTransferEscrowShard: UTxO;
-};
+
 
 export type CodecType =
   | 'client'
@@ -818,7 +816,6 @@ export class UtxosAtAddressNotFoundError extends Error {
 
 export class LucidIbcAdapter {
   public readonly LucidImporter: typeof import('@lucid-evolution/lucid');
-  private referenceScripts!: ReferenceScripts;
   private walletSelectionScopeCounter = 0;
   private activeWalletSelectionScopeId: number | null = null;
   private explicitWalletSelectionForScopeId: number | null = null;
@@ -836,55 +833,6 @@ export class LucidIbcAdapter {
   async consensusHistoryRecords(client: IbcTreeUtxo) {
     if (!this.readConsensusHistory) throw new Error('Consensus history reader is unavailable');
     return this.readConsensusHistory(client);
-  }
-
-  async onModuleInit(): Promise<void> {
-    this.referenceScripts = await this.loadReferenceScripts();
-  }
-
-  private async loadReferenceScripts(): Promise<ReferenceScripts> {
-    const outRefs: Record<keyof ReferenceScripts, RefUtxo> = {
-      spendChannel: this.deployment.validators.spendChannel.refUtxo,
-      spendTransferModule: this.deployment.validators.spendTransferModule.refUtxo,
-      sendPacket: this.deployment.validators.spendChannel.refValidator.send_packet.refUtxo,
-      hostStateStt: this.deployment.validators.hostStateStt.refUtxo,
-      mintVoucher: this.deployment.validators.mintVoucher.refUtxo,
-      mintPort: this.deployment.validators.mintPort.refUtxo,
-      mintTransferEscrowShard:
-        this.deployment.validators.mintTransferEscrowShard.refUtxo,
-    };
-
-    const entries = await Promise.all(
-      Object.entries(outRefs).map(async ([label, outRef]) => {
-        const utxo = await this.resolveReferenceScriptUtxo(label as keyof ReferenceScripts, outRef);
-        return [label, utxo] as const;
-      }),
-    );
-
-    return Object.fromEntries(entries) as ReferenceScripts;
-  }
-
-  private async resolveReferenceScriptUtxo(
-    label: keyof ReferenceScripts,
-    outRef: RefUtxo,
-  ): Promise<UTxO> {
-    for (let attempt = 1; attempt <= 30; attempt += 1) {
-      const utxos = await this.lucid.utxosByOutRef([outRef]);
-      const utxo = utxos.find((candidate) =>
-        candidate.txHash === outRef.txHash &&
-        candidate.outputIndex === outRef.outputIndex
-      );
-      if (utxo?.address) {
-        return utxo;
-      }
-      if (attempt < 30) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-    }
-
-    throw new Error(
-      `Unable to resolve reference script UTxO "${String(label)}" at ${outRef.txHash}#${outRef.outputIndex}`,
-    );
   }
 
   private normalizeAddressOrCredential(addressOrCredential: string): string {
@@ -1166,66 +1114,6 @@ export class LucidIbcAdapter {
     return [mintChannelPolicyId, channelTokenName];
   }
 
-  public async createUnsignedSendPacketEscrowTx(dto: UnsignedSendPacketEscrowTxInput): Promise<TxBuilder> {
-    const tx = await withMigrationReference(this.lucid, this.lucid.newTx(), this.deployment);
-    return createUnsignedSendPacketEscrowTx({
-      newTx: () => tx,
-      hostStateAddress: this.deployment.validators.hostStateStt.address,
-      hostStateTokenUnit: this.deployment.hostStateNFT.policyId + this.deployment.hostStateNFT.name,
-      transferModuleRootAddress: this.deployment.modules.transfer.address,
-      referenceScripts: this.referenceScripts,
-      encodeAuthToken: (token) => encodeAuthToken(token, this.LucidImporter),
-    }, dto);
-  }
-
-  public async createUnsignedSendPacketBurnTx(dto: any): Promise<TxBuilder> {
-    const hostStateAddress = this.deployment.validators.hostStateStt.address;
-    const spendChannelAddress = this.deployment.validators.spendChannel.address;
-    if (!hostStateAddress) {
-      throw new Error('Host state script address is missing from deployment config');
-    }
-    if (!spendChannelAddress) {
-      throw new Error('Spend channel script address is missing from deployment config');
-    }
-    const hostStateUtxoWithRawDatum = {
-      ...dto.hostStateUtxo,
-      datum: dto.hostStateUtxo.datum,
-      datumHash: undefined,
-    };
-
-    const tx = await withMigrationReference(this.lucid, this.lucid.newTx(), this.deployment);
-    tx.readFrom([
-      this.referenceScripts.spendChannel,
-      this.referenceScripts.mintVoucher,
-      this.referenceScripts.sendPacket,
-      this.referenceScripts.hostStateStt,
-    ])
-      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
-      .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
-      .collectFrom([dto.senderVoucherTokenUtxo])
-      .readFrom([dto.connectionUTxO, dto.clientUTxO])
-      .mintAssets(
-        { [dto.voucherTokenUnit]: -BigInt(dto.transferAmount) },
-        dto.encodedMintVoucherRedeemer,
-      )
-      .pay.ToContract(
-        hostStateAddress,
-        { kind: 'inline', value: dto.encodedUpdatedHostStateDatum },
-        dto.hostStateUtxo.assets,
-      )
-      .pay.ToContract(
-        spendChannelAddress,
-        { kind: 'inline', value: dto.encodedUpdatedChannelDatum },
-        dto.channelUTxO.assets,
-      )
-      .mintAssets(
-        { [dto.sendPacketPolicyId]: 1n },
-        encodeAuthToken(dto.channelToken, this.LucidImporter),
-      );
-
-    return tx;
-  }
-
   private generateTokenName(baseToken: AuthToken, prefix: string, postfix: bigint): string {
     if (postfix < 0) {
       throw new Error('sequence must be unsigned integer');
@@ -1254,4 +1142,4 @@ export async function findUtxosAtAllowEmpty(
   }
 }
 
-export type { AuthToken, DeploymentConfig };
+export type { AuthToken,DeploymentConfig };

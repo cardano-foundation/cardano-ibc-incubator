@@ -1,7 +1,8 @@
-import { gatewayDiagnostics } from '../../helpers/gateway-diagnostics';
-import { migrationReference, withMigrationReference, withClientRecoveryApproval } from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import {
+  migrationReference,
+  withClientRecoveryApproval,
+  withMigrationReference,
+} from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
 import {
   credentialToAddress,
   getAddressDetails,
@@ -9,67 +10,14 @@ import {
   TxBuilder,
   type UTxO,
 } from '@lucid-evolution/lucid';
-import { LUCID_CLIENT, LUCID_IMPORTER } from './lucid.provider';
-import { ConsensusHistoryService } from './consensus-history.service';
-import type { UnsignedSendPacketEscrowTxInput } from '@cardano-ibc/tx-builder';
-import type { TraceRegistryInsertContext } from 'src/query/services/denom-trace.service';
-import { createUnsignedSendPacketEscrowTx } from '@cardano-ibc/tx-builder-runtime/sendPacketEscrow';
-import { CHANNEL_TOKEN_PREFIX, CLIENT_PREFIX, CONNECTION_TOKEN_PREFIX } from '../../../constant';
-import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '../../../config/constant.config';
-import { decodeHostStateDatum, encodeHostStateDatum, HostStateDatum } from '../../types/host-state-datum';
-import {
-  GrpcFailedPreconditionException,
-  GrpcInternalException,
-  GrpcNotFoundException,
-} from '~@/exception/grpc_exceptions';
-import { ClientDatum, encodeClientDatum } from '../../types/client-datum';
-import { decodeClientDatum } from '../../types/client-datum';
-import {
-  encodeMintClientRedeemer,
-  encodeSpendClientRedeemer,
-  MintClientRedeemer,
-  SpendClientRedeemer,
-} from '../../types/client-redeemer';
-import {
-  encodeRecoverClientWithdrawalRedeemer,
-  RecoverClientWithdrawalRedeemer,
-} from '../../types/recover-client-redeemer';
-import { AuthToken, encodeAuthToken } from '../../types/auth-token';
-import { Height } from '../../types/height';
-import {
-  ConsensusHistoryWitness,
-  ConsensusStateDatum,
-  decodeConsensusStateDatum,
-  encodeConsensusStateDatum,
-} from '../../types/consensus-state-datum';
-import { getHeightMapValue } from '../../helpers/verify';
-import { ConnectionDatum, decodeConnectionDatum, encodeConnectionDatum } from '../../types/connection/connection-datum';
-import {
-  encodeMintConnectionRedeemer,
-  encodeSpendConnectionRedeemer,
-  MintConnectionRedeemer,
-  SpendConnectionRedeemer,
-} from '../../types/connection/connection-redeemer';
-import {
-  encodeMintChannelRedeemer,
-  encodeSpendChannelRedeemer,
-  MintChannelRedeemer,
-  SpendChannelRedeemer,
-} from '../../types/channel/channel-redeemer';
-import { ChannelDatum, decodeChannelDatum, encodeChannelDatum } from '../../types/channel/channel-datum';
-import { convertString2Hex, hashSha3_256 } from '../../helpers/hex';
-import { LedgerStateUtxo, queryLedgerStateUtxosAtAddresses } from '../../helpers/ogmios-utxo';
-import { encodeIBCModuleRedeemer, IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
-import {
-  encodeTransferIBCModuleRedeemer,
-  TransferIBCModuleRedeemer,
-} from '@shared/types/apps/transfer/transfer-ibc-module-redeemer';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { GatewayModuleKey } from '@shared/helpers/module-port';
 import {
   decodeMockModuleDatum,
   encodeMockModuleDatum,
   MockModuleDatum,
 } from '@shared/types/apps/mock/mock-module-datum';
-import { updateTransferModuleAssets } from './helpers/send-packet.helper';
 import {
   encodeMintVoucherRedeemer,
   MintVoucherRedeemer,
@@ -80,35 +28,78 @@ import {
   TransferEscrowDatum,
 } from '@shared/types/apps/transfer/transfer-escrow-datum';
 import {
+  encodeTransferIBCModuleRedeemer,
+  TransferIBCModuleRedeemer,
+} from '@shared/types/apps/transfer/transfer-ibc-module-redeemer';
+import {
   decodeTransferModuleDatum,
   encodeTransferModuleDatum,
   TransferModuleDatum,
 } from '@shared/types/apps/transfer/transfer-module-datum';
+import { encodeIBCModuleRedeemer, IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
 import {
-  UnsignedAckPacketMintDto,
+  GrpcFailedPreconditionException,
+  GrpcInternalException,
+  GrpcNotFoundException,
+} from '~@/exception/grpc_exceptions';
+import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '../../../config/constant.config';
+import { CHANNEL_TOKEN_PREFIX, CLIENT_PREFIX, CONNECTION_TOKEN_PREFIX } from '../../../constant';
+import { gatewayDiagnostics } from '../../helpers/gateway-diagnostics';
+import { convertString2Hex, hashSha3_256 } from '../../helpers/hex';
+import { LedgerStateUtxo, queryLedgerStateUtxosAtAddresses } from '../../helpers/ogmios-utxo';
+import { computeLedgerAnchoredValidityWindow } from '../../helpers/time';
+import { getHeightMapValue } from '../../helpers/verify';
+import { AuthToken, encodeAuthToken } from '../../types/auth-token';
+import { ChannelDatum, decodeChannelDatum, encodeChannelDatum } from '../../types/channel/channel-datum';
+import {
+  encodeMintChannelRedeemer,
+  encodeSpendChannelRedeemer,
+  MintChannelRedeemer,
+  SpendChannelRedeemer,
+} from '../../types/channel/channel-redeemer';
+import { ClientDatum, decodeClientDatum, encodeClientDatum } from '../../types/client-datum';
+import {
+  encodeMintClientRedeemer,
+  encodeSpendClientRedeemer,
+  MintClientRedeemer,
+  SpendClientRedeemer,
+} from '../../types/client-redeemer';
+import { ConnectionDatum, decodeConnectionDatum, encodeConnectionDatum } from '../../types/connection/connection-datum';
+import {
+  encodeMintConnectionRedeemer,
+  encodeSpendConnectionRedeemer,
+  MintConnectionRedeemer,
+  SpendConnectionRedeemer,
+} from '../../types/connection/connection-redeemer';
+import {
+  ConsensusHistoryWitness,
+  ConsensusStateDatum,
+  decodeConsensusStateDatum,
+  encodeConsensusStateDatum,
+} from '../../types/consensus-state-datum';
+import { Height } from '../../types/height';
+import { decodeHostStateDatum, encodeHostStateDatum, HostStateDatum } from '../../types/host-state-datum';
+import {
+  encodeRecoverClientWithdrawalRedeemer,
+  RecoverClientWithdrawalRedeemer,
+} from '../../types/recover-client-redeemer';
+import { ConsensusHistoryService } from './consensus-history.service';
+import {
   UnsignedAckPacketModuleDto,
-  UnsignedAckPacketSucceedDto,
-  UnsignedAckPacketUnescrowDto,
   UnsignedChannelCloseConfirmDto,
   UnsignedChannelCloseInitDto,
-  UnsignedChannelUpgradeDto,
   UnsignedChannelOpenAckDto,
   UnsignedChannelOpenConfirmDto,
   UnsignedChannelOpenInitDto,
   UnsignedChannelOpenTryDto,
+  UnsignedChannelUpgradeDto,
   UnsignedConnectionOpenAckDto,
   UnsignedPrunePacketHistoryDto,
-  UnsignedRecvPacketDto,
-  UnsignedRecvPacketMintDto,
   UnsignedRecvPacketModuleDto,
-  UnsignedRecvPacketUnescrowDto,
-  UnsignedSendPacketBurnDto,
   UnsignedSendPacketModuleDto,
-  UnsignedTimeoutPacketMintDto,
-  UnsignedTimeoutPacketUnescrowDto,
+  UnsignedTimeoutPacketModuleDto,
 } from './dtos';
-import { GatewayModuleKey } from '@shared/helpers/module-port';
-import { computeLedgerAnchoredValidityWindow } from '../../helpers/time';
+import { LUCID_CLIENT, LUCID_IMPORTER } from './lucid.provider';
 
 export type CodecType =
   | 'client'
@@ -1520,68 +1511,6 @@ export class LucidService implements OnModuleInit {
     return tx.pay.ToContract(moduleAddress, undefined, moduleUtxo.assets);
   }
 
-  private payVoucherObligationDelta(tx: TxBuilder, moduleUtxo: UTxO, delta: bigint): TxBuilder {
-    if (!moduleUtxo.datum) {
-      throw new GrpcInternalException('Transfer module datum is required');
-    }
-    const datum = decodeTransferModuleDatum(moduleUtxo.datum, this.LucidImporter);
-    const obligation = datum.outstanding_voucher_obligation + delta;
-    if (obligation < 0n) {
-      throw new GrpcInternalException('Voucher obligation cannot be negative');
-    }
-    return this.payModuleUtxo(
-      tx,
-      'transfer',
-      moduleUtxo,
-      encodeTransferModuleDatum({ ...datum, outstanding_voucher_obligation: obligation }, this.LucidImporter),
-    );
-  }
-
-  private requireTransferEscrowDatum(encodedTransferEscrowDatum?: string): string {
-    if (!encodedTransferEscrowDatum) {
-      throw new GrpcInternalException('Transfer escrow datum is required for sharded escrow updates');
-    }
-    return encodedTransferEscrowDatum;
-  }
-
-  private requireTransferEscrowUtxo(transferEscrowUtxo?: UTxO): UTxO {
-    if (!transferEscrowUtxo) {
-      throw new GrpcInternalException('Transfer escrow shard UTxO is required for native unescrow/refund');
-    }
-    return transferEscrowUtxo;
-  }
-
-  private payTransferEscrowDelta(
-    tx: TxBuilder,
-    transferModuleAddress: string,
-    encodedTransferEscrowDatum: string,
-    transferAmount: bigint,
-    denomToken: string,
-    transferEscrowUtxo?: UTxO,
-    transferEscrowShardTokenUnit?: string,
-  ): TxBuilder {
-    const baseAssets = transferEscrowUtxo?.assets ?? {};
-    const updatedAssets = updateTransferModuleAssets(baseAssets, transferAmount, denomToken);
-    if (transferEscrowShardTokenUnit && !transferEscrowUtxo) {
-      updatedAssets[transferEscrowShardTokenUnit] = (updatedAssets[transferEscrowShardTokenUnit] ?? 0n) + 1n;
-    }
-    const targetAmount = updatedAssets[denomToken] ?? 0n;
-    const keepsNonLovelace = Object.keys(updatedAssets).some((unit) => unit !== 'lovelace');
-
-    if (targetAmount <= 0n && !keepsNonLovelace) {
-      return tx;
-    }
-
-    return tx.pay.ToContract(
-      transferModuleAddress,
-      {
-        kind: 'inline',
-        value: encodedTransferEscrowDatum,
-      },
-      updatedAssets,
-    );
-  }
-
   public async createUnsignedChannelOpenInitTransaction(dto: UnsignedChannelOpenInitDto): Promise<TxBuilder> {
     const deploymentConfig = this.configService.get('deployment');
     const tx: TxBuilder = await this.newTxBuilder(true);
@@ -1932,125 +1861,6 @@ export class LucidService implements OnModuleInit {
 
     return tx;
   }
-  public async createUnsignedRecvPacketUnescrowTx(dto: UnsignedRecvPacketUnescrowDto): Promise<TxBuilder> {
-    const deploymentConfig = this.configService.get('deployment');
-    const transferEscrowUtxo = this.requireTransferEscrowUtxo(dto.transferEscrowUtxo);
-    const hostStateUtxoWithRawDatum = {
-      ...dto.hostStateUtxo,
-      datum: dto.hostStateUtxo.datum,
-      datumHash: undefined,
-    };
-
-    const tx: TxBuilder = await this.newTxBuilder();
-    tx.readFrom([
-      this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
-      this.referenceScripts.receivePacket,
-      this.referenceScripts.verifyProof,
-      this.referenceScripts.hostStateStt,
-    ])
-      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
-      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom([transferEscrowUtxo], dto.encodedSpendTransferModuleRedeemer)
-      .readFrom([dto.connectionUtxo, dto.clientUtxo, dto.transferModuleReferenceUtxo])
-      .pay.ToContract(
-        deploymentConfig.validators.hostStateStt.address,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedHostStateDatum,
-        },
-        hostStateUtxoWithRawDatum.assets,
-      )
-      .pay.ToContract(
-        deploymentConfig.validators.spendChannel.address,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedChannelDatum,
-        },
-        dto.channelUtxo.assets,
-      )
-      .pay.ToAddress(dto.receiverAddress, {
-        [dto.denomToken]: dto.transferAmount,
-      })
-      .mintAssets(
-        {
-          [dto.recvPacketPolicyId]: 1n,
-        },
-        encodeAuthToken(dto.channelToken, this.LucidImporter),
-      )
-      .mintAssets(
-        {
-          [dto.verifyProofPolicyId]: 1n,
-        },
-        dto.encodedVerifyProofRedeemer,
-      );
-
-    this.payTransferEscrowDelta(
-      tx,
-      deploymentConfig.modules.transfer.address,
-      this.requireTransferEscrowDatum(dto.encodedTransferEscrowDatum),
-      -dto.transferAmount,
-      dto.denomToken,
-      transferEscrowUtxo,
-      dto.transferEscrowShardTokenUnit,
-    );
-
-    return tx;
-  }
-
-  public async createUnsignedRecvPacketTx(dto: UnsignedRecvPacketDto): Promise<TxBuilder> {
-    const deploymentConfig = this.configService.get('deployment');
-    const hostStateUtxoWithRawDatum = {
-      ...dto.hostStateUtxo,
-      datum: dto.hostStateUtxo.datum,
-      datumHash: undefined,
-    };
-    const tx: TxBuilder = await this.newTxBuilder();
-
-    tx.readFrom([
-      this.referenceScripts.spendChannel,
-      this.getModuleReferenceScript(dto.moduleKey),
-      this.referenceScripts.receivePacket,
-      this.referenceScripts.verifyProof,
-      this.referenceScripts.hostStateStt,
-    ])
-      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
-      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
-      .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .pay.ToContract(
-        deploymentConfig.validators.hostStateStt.address,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedHostStateDatum,
-        },
-        hostStateUtxoWithRawDatum.assets,
-      )
-      .pay.ToContract(
-        deploymentConfig.validators.spendChannel.address,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedChannelDatum,
-        },
-        dto.channelUtxo.assets,
-      )
-      .mintAssets(
-        {
-          [dto.recvPacketPolicyId]: 1n,
-        },
-        encodeAuthToken(dto.channelToken, this.LucidImporter),
-      )
-      .mintAssets(
-        {
-          [dto.verifyProofPolicyId]: 1n,
-        },
-        dto.encodedVerifyProofRedeemer,
-      );
-
-    this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
-
-    return tx;
-  }
 
   public async createUnsignedPrunePacketHistoryTx(dto: UnsignedPrunePacketHistoryDto): Promise<TxBuilder> {
     const deploymentConfig = this.configService.get('deployment');
@@ -2139,170 +1949,6 @@ export class LucidService implements OnModuleInit {
     return tx;
   }
 
-  public async createUnsignedRecvPacketMintTx(dto: UnsignedRecvPacketMintDto): Promise<TxBuilder> {
-    const deploymentConfig = this.configService.get('deployment');
-    const hostStateUtxoWithRawDatum = {
-      ...dto.hostStateUtxo,
-      datum: dto.hostStateUtxo.datum,
-      datumHash: undefined,
-    };
-
-    const tx: TxBuilder = await this.newTxBuilder();
-    const isFirstSeenVoucher = !!dto.traceRegistryUpdate && dto.traceRegistryUpdate.kind !== 'existing';
-    const mintVoucherAssets = isFirstSeenVoucher
-      ? {
-          [dto.voucherTokenUnit]: dto.transferAmount,
-          [dto.voucherReferenceTokenUnit!]: 1n,
-        }
-      : {
-          [dto.voucherTokenUnit]: dto.transferAmount,
-        };
-    tx.readFrom([
-      this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
-      this.referenceScripts.mintVoucher,
-      this.referenceScripts.receivePacket,
-      this.referenceScripts.verifyProof,
-      this.referenceScripts.hostStateStt,
-    ]);
-
-    this.applyTraceRegistryUpdate(tx, dto);
-
-    tx.collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
-      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
-      .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .mintAssets(mintVoucherAssets, dto.encodedMintVoucherRedeemer)
-      .pay.ToContract(
-        deploymentConfig.validators.hostStateStt.address,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedHostStateDatum,
-        },
-        hostStateUtxoWithRawDatum.assets,
-      )
-      .pay.ToContract(
-        deploymentConfig.validators.spendChannel.address,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedChannelDatum,
-        },
-        dto.channelUtxo.assets,
-      )
-      .pay.ToAddress(dto.receiverAddress, {
-        [dto.voucherTokenUnit]: dto.transferAmount,
-      })
-      .mintAssets(
-        {
-          [dto.recvPacketPolicyId]: 1n,
-        },
-        encodeAuthToken(dto.channelToken, this.LucidImporter),
-      )
-      .mintAssets(
-        {
-          [dto.verifyProofPolicyId]: 1n,
-        },
-        dto.encodedVerifyProofRedeemer,
-      );
-
-    this.payVoucherObligationDelta(tx, dto.transferModuleUtxo, dto.transferAmount);
-
-    if (isFirstSeenVoucher) {
-      if (!dto.voucherMetadataAddress || !dto.encodedVoucherMetadataDatum || !dto.voucherReferenceTokenUnit) {
-        throw new GrpcInternalException('Missing CIP-68 voucher metadata output fields for first-seen voucher mint');
-      }
-      tx.pay.ToContract(
-        dto.voucherMetadataAddress,
-        {
-          kind: 'inline',
-          value: dto.encodedVoucherMetadataDatum,
-        },
-        {
-          [dto.voucherReferenceTokenUnit]: 1n,
-        },
-      );
-    }
-
-    return tx;
-  }
-
-  /** Retained only to fail explicitly for callers of the former split path.
-   * The voucher policy requires the spent RecvPacket and both voucher tokens
-   * in the same transaction; publishing a registry prelude is unsupported. */
-  public async createUnsignedTraceRegistryUpdateTx(
-    _update: Exclude<TraceRegistryInsertContext, { kind: 'existing' }>,
-    _voucher: {
-      voucherReferenceTokenUnit: string;
-      voucherMetadataAddress: string;
-      encodedVoucherMetadataDatum: string;
-      encodedMintVoucherRedeemer: string;
-    },
-  ): Promise<TxBuilder> {
-    throw new GrpcInternalException(
-      'Standalone trace-registry prelude is unsupported: first-seen voucher receive must atomically spend RecvPacket and mint the user and reference tokens',
-    );
-  }
-
-  public async createUnsignedAckPacketSucceedTx(dto: UnsignedAckPacketSucceedDto): Promise<TxBuilder> {
-    const deploymentConfig = this.configService.get('deployment');
-    const hostStateUtxoWithRawDatum = {
-      ...dto.hostStateUtxo,
-      datum: dto.hostStateUtxo.datum,
-      datumHash: undefined,
-    };
-
-    const tx: TxBuilder = await this.newTxBuilder();
-    tx.readFrom([
-      this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
-      // minting 1
-      this.referenceScripts.ackPacket,
-      // minting 2
-      this.referenceScripts.verifyProof,
-      this.referenceScripts.hostStateStt,
-    ])
-      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
-      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom([dto.transferModuleReferenceUtxo], dto.encodedSpendTransferModuleRedeemer)
-      .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .pay.ToContract(
-        deploymentConfig.validators.hostStateStt.address,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedHostStateDatum,
-        },
-        hostStateUtxoWithRawDatum.assets,
-      )
-      .pay.ToContract(
-        deploymentConfig.validators.spendChannel.address,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedChannelDatum,
-        },
-        dto.channelUtxo.assets,
-      )
-      .mintAssets(
-        {
-          [dto.ackPacketPolicyId]: 1n,
-        },
-        encodeAuthToken(dto.channelToken, this.LucidImporter),
-      )
-      .mintAssets(
-        {
-          [dto.verifyProofPolicyId]: 1n,
-        },
-        dto.encodedVerifyProofRedeemer,
-      );
-
-    if (dto.voucherObligationDelta !== undefined) {
-      this.payVoucherObligationDelta(tx, dto.transferModuleReferenceUtxo, dto.voucherObligationDelta);
-    } else {
-      this.payModuleUtxo(tx, 'transfer', dto.transferModuleReferenceUtxo);
-    }
-
-    return tx;
-  }
-
   public async createUnsignedAckPacketModuleTx(dto: UnsignedAckPacketModuleDto): Promise<TxBuilder> {
     const deploymentConfig = this.configService.get('deployment');
     const hostStateUtxoWithRawDatum = {
@@ -2339,9 +1985,6 @@ export class LucidService implements OnModuleInit {
         },
         dto.channelUtxo.assets,
       )
-      .pay.ToContract(this.getModuleAddress(dto.moduleKey), undefined, {
-        ...dto.moduleUtxo.assets,
-      })
       .mintAssets(
         {
           [dto.ackPacketPolicyId]: 1n,
@@ -2355,12 +1998,13 @@ export class LucidService implements OnModuleInit {
         dto.encodedVerifyProofRedeemer,
       );
 
+    this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
+
     return tx;
   }
 
-  public async createUnsignedAckPacketUnescrowTx(dto: UnsignedAckPacketUnescrowDto): Promise<TxBuilder> {
+  public async createUnsignedTimeoutPacketModuleTx(dto: UnsignedTimeoutPacketModuleDto): Promise<TxBuilder> {
     const deploymentConfig = this.configService.get('deployment');
-    const transferEscrowUtxo = this.requireTransferEscrowUtxo(dto.transferEscrowUtxo);
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
       datum: dto.hostStateUtxo.datum,
@@ -2370,93 +2014,15 @@ export class LucidService implements OnModuleInit {
     const tx: TxBuilder = await this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
-      this.referenceScripts.ackPacket,
+      this.getModuleReferenceScript(dto.moduleKey),
+      this.referenceScripts.timeoutPacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom([transferEscrowUtxo], dto.encodedSpendTransferModuleRedeemer)
-      .readFrom([dto.transferModuleReferenceUtxo, dto.connectionUtxo, dto.clientUtxo])
-      .pay.ToContract(
-        deploymentConfig.validators.hostStateStt.address,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedHostStateDatum,
-        },
-        hostStateUtxoWithRawDatum.assets,
-      )
-      .pay.ToContract(
-        deploymentConfig.validators.spendChannel.address,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedChannelDatum,
-        },
-        dto.channelUtxo.assets,
-      )
-      .pay.ToAddress(dto.senderAddress, {
-        [dto.denomToken]: dto.transferAmount,
-      })
-      .mintAssets(
-        {
-          [dto.ackPacketPolicyId]: 1n,
-        },
-        encodeAuthToken(dto.channelToken, this.LucidImporter),
-      )
-      .mintAssets(
-        {
-          [dto.verifyProofPolicyId]: 1n,
-        },
-        dto.encodedVerifyProofRedeemer,
-      );
-
-    this.payTransferEscrowDelta(
-      tx,
-      deploymentConfig.modules.transfer.address,
-      this.requireTransferEscrowDatum(dto.encodedTransferEscrowDatum),
-      -dto.transferAmount,
-      dto.denomToken,
-      transferEscrowUtxo,
-      dto.transferEscrowShardTokenUnit,
-    );
-
-    return tx;
-  }
-  public async createUnsignedAckPacketMintTx(dto: UnsignedAckPacketMintDto): Promise<TxBuilder> {
-    const deploymentConfig = this.configService.get('deployment');
-    const hostStateUtxoWithRawDatum = {
-      ...dto.hostStateUtxo,
-      datum: dto.hostStateUtxo.datum,
-      datumHash: undefined,
-    };
-
-    const tx: TxBuilder = await this.newTxBuilder();
-    const isFirstSeenVoucher = !!dto.traceRegistryUpdate && dto.traceRegistryUpdate.kind !== 'existing';
-    const mintVoucherAssets = isFirstSeenVoucher
-      ? {
-          [dto.voucherTokenUnit]: dto.transferAmount,
-          [dto.voucherReferenceTokenUnit!]: 1n,
-        }
-      : {
-          [dto.voucherTokenUnit]: dto.transferAmount,
-        };
-    tx.readFrom([
-      this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
-      this.referenceScripts.mintVoucher,
-      this.referenceScripts.ackPacket,
-      this.referenceScripts.verifyProof,
-      this.referenceScripts.hostStateStt,
-    ]);
-
-    this.applyTraceRegistryUpdate(tx, dto);
-
-    tx.collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
-      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom([dto.transferModuleReferenceUtxo], dto.encodedSpendTransferModuleRedeemer)
+      .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .mintAssets(mintVoucherAssets, dto.encodedMintVoucherRedeemer)
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         {
@@ -2473,12 +2039,9 @@ export class LucidService implements OnModuleInit {
         },
         dto.channelUtxo.assets,
       )
-      .pay.ToAddress(dto.senderAddress, {
-        [dto.voucherTokenUnit]: dto.transferAmount,
-      })
       .mintAssets(
         {
-          [dto.ackPacketPolicyId]: 1n,
+          [dto.timeoutPacketPolicyId]: 1n,
         },
         encodeAuthToken(dto.channelToken, this.LucidImporter),
       )
@@ -2489,42 +2052,9 @@ export class LucidService implements OnModuleInit {
         dto.encodedVerifyProofRedeemer,
       );
 
-    this.payModuleUtxo(tx, 'transfer', dto.transferModuleReferenceUtxo);
-
-    if (isFirstSeenVoucher) {
-      if (!dto.voucherMetadataAddress || !dto.encodedVoucherMetadataDatum || !dto.voucherReferenceTokenUnit) {
-        throw new GrpcInternalException('Missing CIP-68 voucher metadata output fields for first-seen voucher mint');
-      }
-      tx.pay.ToContract(
-        dto.voucherMetadataAddress,
-        {
-          kind: 'inline',
-          value: dto.encodedVoucherMetadataDatum,
-        },
-        {
-          [dto.voucherReferenceTokenUnit]: 1n,
-        },
-      );
-    }
+    this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
 
     return tx;
-  }
-
-  public async createUnsignedSendPacketEscrowTx(dto: UnsignedSendPacketEscrowTxInput): Promise<TxBuilder> {
-    const deploymentConfig = this.configService.get('deployment');
-    const tx = createUnsignedSendPacketEscrowTx(
-      {
-        newTx: () => this.lucid.newTx(),
-        hostStateAddress: deploymentConfig.validators.hostStateStt.address,
-        hostStateTokenUnit: deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name,
-        transferModuleRootAddress: deploymentConfig.modules.transfer.address,
-        referenceScripts: this.referenceScripts,
-        encodeAuthToken: (token) => encodeAuthToken(token, this.LucidImporter),
-        internalError: (message) => new GrpcInternalException(message),
-      },
-      dto,
-    );
-    return withMigrationReference(this.lucid, tx, deploymentConfig);
   }
 
   public async createUnsignedSendPacketModuleTx(dto: UnsignedSendPacketModuleDto): Promise<TxBuilder> {
@@ -2570,210 +2100,6 @@ export class LucidService implements OnModuleInit {
       );
 
     this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
-
-    return tx;
-  }
-
-  public async createUnsignedSendPacketBurnTx(dto: UnsignedSendPacketBurnDto): Promise<TxBuilder> {
-    const deploymentConfig = this.configService.get('deployment');
-    const hostStateUtxoWithRawDatum = {
-      ...dto.hostStateUtxo,
-      datum: dto.hostStateUtxo.datum,
-      datumHash: undefined,
-    };
-    const tx = await this.newTxBuilder();
-    tx.readFrom([
-      this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
-      this.referenceScripts.mintVoucher,
-      this.referenceScripts.sendPacket,
-      this.referenceScripts.hostStateStt,
-    ])
-      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
-      .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
-      .collectFrom([dto.transferModuleReferenceUtxo], dto.encodedSpendTransferModuleRedeemer)
-      .collectFrom([dto.senderVoucherTokenUtxo])
-      .readFrom([dto.connectionUTxO, dto.clientUTxO])
-      .mintAssets(
-        {
-          [dto.voucherTokenUnit]: -BigInt(dto.transferAmount),
-        },
-        dto.encodedMintVoucherRedeemer,
-      )
-      .pay.ToContract(
-        deploymentConfig.validators.hostStateStt.address,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedHostStateDatum,
-        },
-        hostStateUtxoWithRawDatum.assets,
-      )
-      .pay.ToContract(
-        deploymentConfig.validators.spendChannel.address,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedChannelDatum,
-        },
-        dto.channelUTxO.assets,
-      )
-      .mintAssets(
-        {
-          [dto.sendPacketPolicyId]: 1n,
-        },
-        encodeAuthToken(dto.channelToken, this.LucidImporter),
-      );
-
-    this.payModuleUtxo(tx, 'transfer', dto.transferModuleReferenceUtxo);
-
-    return tx;
-  }
-
-  public async createUnsignedTimeoutPacketMintTx(dto: UnsignedTimeoutPacketMintDto): Promise<TxBuilder> {
-    const deploymentConfig = this.configService.get('deployment');
-    const hostStateUtxoWithRawDatum = {
-      ...dto.hostStateUtxo,
-      datum: dto.hostStateUtxo.datum,
-      datumHash: undefined,
-    };
-    const tx: TxBuilder = await this.newTxBuilder();
-    const isFirstSeenVoucher = !!dto.traceRegistryUpdate && dto.traceRegistryUpdate.kind !== 'existing';
-    const mintVoucherAssets = isFirstSeenVoucher
-      ? {
-          [dto.voucherTokenUnit]: dto.transferAmount,
-          [dto.voucherReferenceTokenUnit!]: 1n,
-        }
-      : {
-          [dto.voucherTokenUnit]: dto.transferAmount,
-        };
-    tx.readFrom([
-      this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
-      this.referenceScripts.mintVoucher,
-      this.referenceScripts.timeoutPacket,
-      this.referenceScripts.verifyProof,
-      this.referenceScripts.hostStateStt,
-    ]);
-
-    this.applyTraceRegistryUpdate(tx, dto);
-
-    tx.collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
-      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom([dto.transferModuleReferenceUtxo], dto.encodedSpendTransferModuleRedeemer)
-      .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .mintAssets(mintVoucherAssets, dto.encodedMintVoucherRedeemer)
-      .pay.ToContract(
-        deploymentConfig.validators.hostStateStt.address,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedHostStateDatum,
-        },
-        hostStateUtxoWithRawDatum.assets,
-      )
-      .pay.ToContract(
-        dto.spendChannelAddress,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedChannelDatum,
-        },
-        dto.channelUtxo.assets,
-      )
-      .pay.ToAddress(dto.senderAddress, {
-        [dto.voucherTokenUnit]: dto.transferAmount,
-      })
-      .mintAssets(
-        {
-          [dto.timeoutPacketPolicyId]: 1n,
-        },
-        encodeAuthToken(dto.channelToken, this.LucidImporter),
-      )
-      .mintAssets(
-        {
-          [dto.verifyProofPolicyId]: 1n,
-        },
-        dto.encodedVerifyProofRedeemer,
-      );
-
-    this.payModuleUtxo(tx, 'transfer', dto.transferModuleReferenceUtxo);
-
-    if (isFirstSeenVoucher) {
-      if (!dto.voucherMetadataAddress || !dto.encodedVoucherMetadataDatum || !dto.voucherReferenceTokenUnit) {
-        throw new GrpcInternalException('Missing CIP-68 voucher metadata output fields for first-seen voucher mint');
-      }
-      tx.pay.ToContract(
-        dto.voucherMetadataAddress,
-        {
-          kind: 'inline',
-          value: dto.encodedVoucherMetadataDatum,
-        },
-        {
-          [dto.voucherReferenceTokenUnit]: 1n,
-        },
-      );
-    }
-
-    return tx;
-  }
-  public async createUnsignedTimeoutPacketUnescrowTx(dto: UnsignedTimeoutPacketUnescrowDto): Promise<TxBuilder> {
-    const deploymentConfig = this.configService.get('deployment');
-    const transferEscrowUtxo = this.requireTransferEscrowUtxo(dto.transferEscrowUtxo);
-    const hostStateUtxoWithRawDatum = {
-      ...dto.hostStateUtxo,
-      datum: dto.hostStateUtxo.datum,
-      datumHash: undefined,
-    };
-    const tx: TxBuilder = await this.newTxBuilder();
-    tx.readFrom([
-      this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
-      this.referenceScripts.timeoutPacket,
-      this.referenceScripts.verifyProof,
-      this.referenceScripts.hostStateStt,
-    ])
-      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
-      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom([transferEscrowUtxo], dto.encodedSpendTransferModuleRedeemer)
-      .readFrom([dto.transferModuleReferenceUtxo, dto.connectionUtxo, dto.clientUtxo])
-      .pay.ToContract(
-        deploymentConfig.validators.hostStateStt.address,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedHostStateDatum,
-        },
-        hostStateUtxoWithRawDatum.assets,
-      )
-      .pay.ToContract(
-        dto.spendChannelAddress,
-        {
-          kind: 'inline',
-          value: dto.encodedUpdatedChannelDatum,
-        },
-        dto.channelUtxo.assets,
-      )
-      .pay.ToAddress(dto.senderAddress, {
-        [dto.denomToken]: dto.transferAmount,
-      })
-      .mintAssets(
-        {
-          [dto.timeoutPacketPolicyId]: 1n,
-        },
-        encodeAuthToken(dto.channelToken, this.LucidImporter),
-      )
-      .mintAssets(
-        {
-          [dto.verifyProofPolicyId]: 1n,
-        },
-        dto.encodedVerifyProofRedeemer,
-      );
-
-    this.payTransferEscrowDelta(
-      tx,
-      dto.transferModuleAddress,
-      this.requireTransferEscrowDatum(dto.encodedTransferEscrowDatum),
-      -dto.transferAmount,
-      dto.denomToken,
-      transferEscrowUtxo,
-      dto.transferEscrowShardTokenUnit,
-    );
 
     return tx;
   }

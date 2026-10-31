@@ -73,10 +73,6 @@ export const deleteSortMap = <K, V>(
   return updatedMap;
 };
 
-export function getDenomPrefix(portId: string, channelId: string): string {
-  return `${portId}/${channelId}/`;
-}
-
 // write function delete key of sort map by typescript
 export const deleteKeySortMap = <K, V>(inputMap: Map<K, V>, deleteKey: K): Map<K, V> => {
   // Keep deletion immutable for consistency with the insert helpers above.

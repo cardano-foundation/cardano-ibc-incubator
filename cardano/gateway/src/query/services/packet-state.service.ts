@@ -1,16 +1,17 @@
+import { PacketMerkleTree } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
+import { packetLane, packetLaneTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
+import type { Constr, Data } from '@lucid-evolution/lucid';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { encodeCanonical } from 'cbor';
-import type { Constr, Data } from '@lucid-evolution/lucid';
-import { PacketMerkleTree } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
-import { packetLane, packetLaneTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
-import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import type { DeploymentConfig } from '../../config/bridge-manifest';
-import { HISTORY_SERVICE, type HistoryService } from './history.service';
-import { loadStakeWeightedStabilityEvidenceByHeight } from './stability-evidence';
-import { latestPacketProofHeight } from './settled-proof-height';
-import type { HostStateDatum } from '../../shared/types/host-state-datum';
 import { serializeExistenceProof, serializeNonExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
+import { LucidService } from '../../shared/modules/lucid/lucid.service';
+import type { HostStateDatum } from '../../shared/types/host-state-datum';
+import { HISTORY_SERVICE, type HistoryService } from './history.service';
+import { latestPacketProofHeight } from './settled-proof-height';
+import { loadStakeWeightedStabilityEvidenceByHeight } from './stability-evidence';
+
 
 export { latestPacketProofHeight } from './settled-proof-height';
 
@@ -177,10 +178,6 @@ export class PacketStateService {
         acknowledgements,
         entries,
         capacity: 64,
-        // Historical receipts do not consume live datum capacity.
-        remaining_receive_slots: null,
-        maintenance_required: false,
-        prune_candidates: [],
       });
     }
     if ((await this.history.findBlockByHeight(height))?.hash !== block.hash)

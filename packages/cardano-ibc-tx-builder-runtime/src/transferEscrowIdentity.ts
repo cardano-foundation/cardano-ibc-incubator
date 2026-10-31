@@ -43,28 +43,3 @@ export function transferEscrowShardTokenName(
     ),
   ).toString('hex');
 }
-
-export function transferEscrowShardRegistryKey(tokenName: string): string {
-  if (!/^[0-9a-fA-F]{56}$/.test(tokenName)) {
-    throw new Error('Escrow shard token name must be a 28-byte hexadecimal string');
-  }
-  return `escrowShards/${tokenName.toLowerCase()}`;
-}
-
-export function escrowDenomTokenFromPacketDenom(encodedDenom: string): string {
-  const packetDenomBytes = decodeHexBytes(encodedDenom, 'transfer escrow shard datum denom');
-  const packetDenom = packetDenomBytes.toString('utf8');
-  if (!Buffer.from(packetDenom, 'utf8').equals(packetDenomBytes)) {
-    throw new Error('Transfer escrow shard datum denom is not canonical UTF-8');
-  }
-  if (packetDenom.toLowerCase() === Buffer.from('lovelace').toString('hex')) {
-    return 'lovelace';
-  }
-  if (!/^(?:[0-9a-fA-F]{2})+$/.test(packetDenom)) {
-    throw new Error('Transfer escrow shard datum contains a non-hex denomination');
-  }
-  if (packetDenom.length < 56 || packetDenom.length > 120) {
-    throw new Error('Transfer escrow shard datum contains an invalid Cardano asset unit');
-  }
-  return packetDenom.toLowerCase();
-}

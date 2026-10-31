@@ -700,8 +700,8 @@ check these invariants:
 
 ### Packet History Pruning
 
-This section covers the legacy inline channel format used by other application
-ports. ICS-20 packet lanes retain history permanently and expose no pruning
+This section covers cleanup of the inline channel storage used by interchain
+queries. ICS-20 packet lanes retain history permanently and expose no pruning
 operation.
 
 Covered by the deterministic
