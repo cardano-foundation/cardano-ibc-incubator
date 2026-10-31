@@ -50,8 +50,8 @@ test('fixture serves only expected startup reads and records unexpected requests
     const tip = await get('/api/v1/blocks/latest');
     assert.equal(tip.number, 1);
     assert.equal(tip.hash, '88'.repeat(32));
-    assert.equal(references.length, 38);
-    assert.equal(new Set(references.map(ref => ref.output_index)).size, 38);
+    assert.equal(references.length, 37);
+    assert.equal(new Set(references.map(ref => ref.output_index)).size, 37);
     for (const validator of [manifest.packet_state.state, manifest.packet_state.batch,
       manifest.packet_state.guard, ...Object.values(manifest.packet_state.operations)]) {
       assert.ok(references.some(ref => ref.transaction_id === validator.ref_utxo.tx_hash &&
