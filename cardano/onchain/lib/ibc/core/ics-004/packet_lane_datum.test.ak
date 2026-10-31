@@ -79,6 +79,7 @@ fn prune(datum: PacketLaneDatum, proof_height: Height) -> PacketLaneDatum {
         siblings: [
           sparse_tree.siblings([Pair(receipt, #"01"), ack_entry], receipt),
           sparse_tree.siblings([ack_entry], ack),
+          [#"1111111111111111111111111111111111111111111111111111111111111111"],
         ],
       },
     ],
@@ -133,7 +134,18 @@ test packet_lane_cannot_modify_another_lane() fail {
 }
 
 test packet_lane_cannot_replay_receive() fail {
-  let witnesses: List<List<ByteArray>> = []
+  let receipt = packet_keys.packet_receipt_path("transfer", "channel-0", 1)
+  let ack = packet_keys.packet_acknowledgement_path("transfer", "channel-0", 1)
+  let entries =
+    [
+      Pair(receipt, #"01"),
+      Pair(
+        ack,
+        #"1111111111111111111111111111111111111111111111111111111111111111",
+      ),
+    ]
+  let witnesses: List<List<ByteArray>> =
+    [sparse_tree.siblings(entries, receipt), sparse_tree.siblings(entries, ack)]
   expect _ =
     packet_lane_datum.apply_updates(
       received(),
@@ -150,6 +162,20 @@ test packet_lane_cannot_replay_receive() fail {
     )
 }
 
+test packet_lane_receive_keeps_only_the_root() {
+  let datum = received()
+  and {
+    datum.root != empty().root,
+    datum.receipts == [],
+    datum.acknowledgements == [],
+    packet_lane_datum.entry_count(datum) == 0,
+  }
+}
+
+test packet_lane_legacy_receipts_require_explicit_migration() fail {
+  expect _ = prune(PacketLaneDatum { ..received(), receipts: [1] }, height(12))
+}
+
 test packet_lane_prune_preserves_replay_floor() {
   let next = prune(received(), height(12))
   and {
@@ -163,6 +189,32 @@ test packet_lane_prune_preserves_replay_floor() {
 
 test packet_lane_prune_cannot_predate_receive() fail {
   expect _ = prune(received(), height(9))
+}
+
+test packet_lane_prune_rejects_an_uncommitted_acknowledgement() fail {
+  let receipt = packet_keys.packet_receipt_path("transfer", "channel-0", 1)
+  let ack = packet_keys.packet_acknowledgement_path("transfer", "channel-0", 1)
+  let ack_entry =
+    Pair(
+      ack,
+      #"1111111111111111111111111111111111111111111111111111111111111111",
+    )
+  expect _ =
+    packet_lane_datum.apply_updates(
+      received(),
+      [
+        LaneUpdate {
+          mutation: PrunePacket { sequence: 1, proof_height: height(12) },
+          siblings: [
+            sparse_tree.siblings([Pair(receipt, #"01"), ack_entry], receipt),
+            sparse_tree.siblings([ack_entry], ack),
+            [
+              #"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            ],
+          ],
+        },
+      ],
+    )
 }
 
 test packet_lane_old_membership_rejected_after_prune() fail {

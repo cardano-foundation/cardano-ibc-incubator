@@ -156,6 +156,7 @@ function migrationHandler() {
   return {
     packetState: {
       format: 'packet-lanes-v1',
+      receiptStorage: 'merkle-history-v1',
       laneCount: 16,
       configToken: { policyId: '98'.repeat(28), name: hex('ibc_packet_config') },
       state: validator(),

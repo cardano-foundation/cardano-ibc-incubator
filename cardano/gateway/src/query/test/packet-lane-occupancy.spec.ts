@@ -1,8 +1,11 @@
 import { PacketStateService } from '../services/packet-state.service';
 
-jest.mock('@cardano-ibc/tx-builder-runtime/packetLaneTransactions', () => ({ laneTree: jest.fn() }));
 
-describe('packet lane maintenance occupancy', () => {
+describe('packet lane history occupancy', () => {
+  const keys = (receipts: number, acknowledgements = receipts) => [
+    ...Array.from({ length: receipts }, (_, i) => `receipts/ports/transfer/channels/channel-0/sequences/${i + 1}`),
+    ...Array.from({ length: acknowledgements }, (_, i) => `acks/ports/transfer/channels/channel-0/sequences/${i + 1}`),
+  ];
   const history = { findBlockByHeight: jest.fn() };
   const state = new PacketStateService(
     { getOrThrow: () => ({ packetState: { laneCount: 16 } }) } as any,
@@ -17,6 +20,7 @@ describe('packet lane maintenance occupancy', () => {
     lane.mockImplementation(
       async (_port, _channel, index) =>
         ({
+          tree: { count: (kind: string) => keys(32).filter(key => key.startsWith(kind + '/')).length },
           datum: {
             fields: [
               '',
@@ -26,43 +30,45 @@ describe('packet lane maintenance occupancy', () => {
               0n,
               '',
               new Map(),
-              Array.from({ length: 32 }, (_, i) => BigInt(i + 1)),
-              new Map(Array.from({ length: 32 }, (_, i) => [BigInt(i + 1), 'ack'])),
+              [],
+              new Map(),
             ],
           },
         }) as any,
     );
   });
 
-  it('reports 512 unpruned receives as full rather than spare channel capacity', async () => {
+  it('keeps receive capacity available after 512 retained receives', async () => {
     const result = await state.occupancy('transfer', 'channel-0');
     expect(result.height).toBe('42');
     expect(result.lanes).toHaveLength(16);
-    expect(result.lanes.every((lane) => lane.entries === 64 && lane.remaining_receive_slots === 0)).toBe(true);
-    expect(result.lanes.every((lane) => lane.maintenance_required && lane.prune_candidates.length === 32)).toBe(true);
+    expect(result.lanes.every((lane) => lane.entries === 0 && lane.remaining_receive_slots === null)).toBe(true);
+    expect(result.lanes.every((lane) => !lane.maintenance_required && lane.prune_candidates.length === 0 && lane.receipts === 32)).toBe(true);
   });
 
-  it('counts commitments too and only lists complete history pairs', async () => {
+  it('counts only outstanding commitments against live capacity', async () => {
     lane.mockResolvedValue({
-      datum: { fields: ['', '', 0n, 16n, 0n, '', new Map([[10n, 'commitment']]), [1n, 2n], new Map([[1n, 'ack']])] },
+      tree: { count: (kind: string) => keys(2, 1).filter(key => key.startsWith(kind + '/')).length },
+      datum: { fields: ['', '', 0n, 16n, 0n, '', new Map([[10n, 'commitment']]), [], new Map()] },
     } as any);
     const result = await state.occupancy('transfer', 'channel-0');
     expect(result.lanes[0]).toMatchObject({
-      entries: 4,
+      entries: 1,
       commitments: 1,
       receipts: 2,
       acknowledgements: 1,
-      remaining_receive_slots: 30,
+      remaining_receive_slots: null,
       maintenance_required: false,
-      prune_candidates: ['1'],
+      prune_candidates: [],
     });
   });
 
-  it('requires maintenance before the lane fills and reflects pruning at the next height', async () => {
+  it('does not schedule mandatory pruning as historical receipt counts grow', async () => {
     let receives = 24;
     lane.mockImplementation(
       async () =>
         ({
+          tree: { count: (kind: string) => keys(receives).filter(key => key.startsWith(kind + '/')).length },
           datum: {
             fields: [
               '',
@@ -72,20 +78,20 @@ describe('packet lane maintenance occupancy', () => {
               0n,
               '',
               new Map(),
-              Array.from({ length: receives }, (_, i) => BigInt(i + 1)),
-              new Map(Array.from({ length: receives }, (_, i) => [BigInt(i + 1), 'ack'])),
+              [],
+              new Map(),
             ],
           },
         }) as any,
     );
     expect((await state.occupancy('transfer', 'channel-0')).lanes[0]).toMatchObject({
-      maintenance_required: true,
-      remaining_receive_slots: 8,
+      maintenance_required: false,
+      remaining_receive_slots: null,
     });
-    receives = 8;
+    receives = 1000;
     expect((await state.occupancy('transfer', 'channel-0')).lanes[0]).toMatchObject({
       maintenance_required: false,
-      remaining_receive_slots: 24,
+      remaining_receive_slots: null,
     });
   });
 

@@ -915,6 +915,7 @@ export const createDeployment = async (
         ) => [name, packetValidator(validator)]),
       ),
       format: "packet-lanes-v1",
+      receiptStorage: "merkle-history-v1",
       laneCount: plan.packetLaneCount,
       acknowledgementBatchSize: 2,
       configToken: {

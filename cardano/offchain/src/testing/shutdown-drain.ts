@@ -41,6 +41,7 @@ import {
 } from "./shutdown-model.ts";
 import { membershipProof } from "./channel-fixture.ts";
 import { absenceProof } from "./packet-budget-fixture.ts";
+import { trackPacketLaneHistory } from "./packet-lane-history.ts";
 
 const record = (...fields: Data[]) => new Constr(0, fields);
 const variant = (index: number, ...fields: Data[]) => new Constr(index, fields);
@@ -90,6 +91,7 @@ export async function checkShutdownDrain(
 ) {
   const f = await deploymentScenario();
   const { lucid, emulator, deployment } = f;
+  const packetHistory = trackPacketLaneHistory(emulator);
   const v = deployment.validators;
   const voucherUserSeed =
     "letter advice cage absurd amount doctor acoustic avoid letter advice cage above";
@@ -305,6 +307,8 @@ export async function checkShutdownDrain(
       p.configToken.policyId + p.configToken.name,
     );
     const laneDeployment: PacketLaneDeployment = {
+      resolveLaneTree: (input) =>
+        packetHistory.resolve(laneDeployment, input),
       batchPolicy: p.batch.scriptHash,
       batchAddress: p.batch.address,
       guardAddress: p.guard.address,
@@ -440,8 +444,7 @@ export async function checkShutdownDrain(
     await f.enter(graceDays);
     laneDeployment.scripts[laneDeployment.scripts.length - 1] = await f.host();
     await assertRejects(
-      async () =>
-        (await newDeposit()).tx.complete({ localUPLCEval: true }),
+      async () => (await newDeposit()).tx.complete({ localUPLCEval: true }),
       Error,
       "failed script execution",
     );

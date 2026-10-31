@@ -20,19 +20,18 @@ import {
   sendSequencerTokenName,
 } from "@cardano-ibc/tx-builder/dist/packet-lanes";
 import { stringifyIcs20PacketData } from "@cardano-ibc/tx-builder/dist/ics20-json-codec";
-import { ICS23MerkleTree } from "./ics23MerkleTree.ts";
-class PacketLaneTree {
-  readonly tree = new ICS23MerkleTree();
-  set(key: string, value: string) {
-    this.tree.set(key, value);
-  }
-  getRoot() {
-    return this.tree.getRoot();
-  }
-  getSiblings(key: string) {
-    return this.tree.getSiblings(key).map((value) => value.toString("hex"));
-  }
-}
+import { PacketLaneTree } from "./packetLaneHistory.ts";
+export {
+  decodePacketLaneHistoryTransaction,
+  PacketLaneHistory,
+  PacketLaneTree,
+} from "./packetLaneHistory.ts";
+export {
+  type PacketLaneCheckpoint,
+  PacketLaneHistoryStore,
+  packetLaneVersion,
+} from "./packetLaneHistoryStore.ts";
+export { PacketMerkleTree } from "./packetLaneTree.ts";
 
 export const record = (...fields: Data[]) => new Constr(0, fields);
 export const variant = (index: number, ...fields: Data[]) =>
@@ -62,6 +61,7 @@ export interface PacketLaneDeployment {
   connection: UTxO;
   client: UTxO;
   scripts: UTxO[];
+  resolveLaneTree?: (input: UTxO) => Promise<PacketLaneTree>;
   resolveScriptReferences?: (hashes: readonly string[]) => Promise<UTxO[]>;
 }
 
@@ -510,32 +510,47 @@ export async function buildTransferIntent(
 
 export async function laneTree(
   datum: Constr<Data>,
+  history?: () => Promise<PacketLaneTree>,
 ): Promise<PacketLaneTree> {
   const port = toText(String(datum.fields[0]));
   const channel = toText(String(datum.fields[1]));
   const tree = new PacketLaneTree();
+  if (
+    (datum.fields[7] as bigint[]).length ||
+    (datum.fields[8] as Map<bigint, string>).size
+  ) {
+    throw new Error(
+      "Legacy packet receipt lists require an explicit deployment migration",
+    );
+  }
   for (const [sequence, value] of datum.fields[6] as Map<bigint, string>) {
     tree.set(
       `commitments/ports/${port}/channels/${channel}/sequences/${sequence}`,
       value,
     );
   }
-  for (const sequence of datum.fields[7] as bigint[]) {
-    tree.set(
-      `receipts/ports/${port}/channels/${channel}/sequences/${sequence}`,
-      "01",
-    );
-  }
-  for (const [sequence, value] of datum.fields[8] as Map<bigint, string>) {
-    tree.set(
-      `acks/ports/${port}/channels/${channel}/sequences/${sequence}`,
-      value,
-    );
-  }
   if (await tree.getRoot() !== datum.fields[5]) {
-    throw new Error("Lane datum does not match its root");
+    if (!history) {
+      throw new Error(
+        "Packet lane history is required to reconstruct its root",
+      );
+    }
+    const reconstructed = await history();
+    if (reconstructed.getRoot() !== datum.fields[5]) {
+      throw new Error("Packet lane history root mismatch");
+    }
+    return reconstructed.clone();
   }
   return tree;
+}
+
+async function resolveLaneTree(deployment: PacketLaneDeployment, input: UTxO) {
+  return laneTree(
+    decode(input),
+    deployment.resolveLaneTree
+      ? () => deployment.resolveLaneTree!(input)
+      : undefined,
+  );
 }
 
 async function requireUnspent(lucid: LucidEvolution, inputs: UTxO[]) {
@@ -628,7 +643,12 @@ export async function buildPacketSendBatch(
           packetLaneTokenName(port, channelId, laneId, deployment.laneCount),
       );
       const datum = copy(decode(utxo));
-      lane = { input: utxo, datum, tree: await laneTree(datum), updates: [] };
+      lane = {
+        input: utxo,
+        datum,
+        tree: await resolveLaneTree(deployment, utxo),
+        updates: [],
+      };
       lanes.set(laneId, lane);
     }
     const key =
@@ -795,7 +815,7 @@ async function packetCompletionLane(
       packetLaneTokenName(port, channelId, laneId, deployment.laneCount),
   );
   const datum = copy(decode(input));
-  const tree = await laneTree(datum);
+  const tree = await resolveLaneTree(deployment, input);
   const key =
     `commitments/ports/${port}/channels/${channelId}/sequences/${sequence}`;
   const siblings = await tree.getSiblings(key);
@@ -1336,14 +1356,14 @@ export async function buildPacketReceive(
       packetLaneTokenName(port, channelId, laneId, deployment.laneCount),
   );
   const datum = copy(decode(input));
-  const tree = await laneTree(datum);
-  if ((datum.fields[7] as bigint[]).includes(sequence)) {
-    throw new Error("Packet already received");
-  }
+  const tree = await resolveLaneTree(deployment, input);
   const receiptKey =
     `receipts/ports/${port}/channels/${channelId}/sequences/${sequence}`;
   const ackKey =
     `acks/ports/${port}/channels/${channelId}/sequences/${sequence}`;
+  if (tree.get(receiptKey) || tree.get(ackKey)) {
+    throw new Error("Packet already received");
+  }
   const receiptSiblings = tree.getSiblings(receiptKey);
   tree.set(receiptKey, "01");
   const ackSiblings = tree.getSiblings(ackKey);
@@ -1357,14 +1377,6 @@ export async function buildPacketReceive(
   ];
   datum.fields[4] = (datum.fields[4] as bigint) + 1n;
   datum.fields[5] = await tree.getRoot();
-  datum.fields[7] = [...(datum.fields[7] as bigint[]), sequence].sort((a, b) =>
-    a < b ? -1 : a > b ? 1 : 0
-  );
-  const acks = datum.fields[8] as Map<bigint, string>;
-  acks.set(sequence, ack);
-  datum.fields[8] = new Map(
-    [...acks].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0),
-  );
   const maximum = datum.fields[10] as Constr<Data>;
   const compareHeight = (a: Constr<Data>, b: Constr<Data>) =>
     a.fields[0] === b.fields[0]
@@ -1536,29 +1548,26 @@ export async function buildPacketPrune(
       packetLaneTokenName(port, channelId, lane, deployment.laneCount),
   );
   const datum = copy(decode(input));
-  const tree = await laneTree(datum);
-  if (
-    !(datum.fields[7] as bigint[]).includes(sequence) ||
-    !(datum.fields[8] as Map<bigint, string>).has(sequence)
-  ) throw new Error("Packet has no retained receipt and acknowledgement");
+  const tree = await resolveLaneTree(deployment, input);
   const receiptKey =
     `receipts/ports/${port}/channels/${channelId}/sequences/${sequence}`;
   const ackKey =
     `acks/ports/${port}/channels/${channelId}/sequences/${sequence}`;
+  const acknowledgement = tree.get(ackKey);
+  if (tree.get(receiptKey) !== "01" || !acknowledgement) {
+    throw new Error("Packet has no retained receipt and acknowledgement");
+  }
   const receiptSiblings = tree.getSiblings(receiptKey);
   tree.set(receiptKey, "");
   const ackSiblings = tree.getSiblings(ackKey);
   tree.set(ackKey, "");
   datum.fields[4] = (datum.fields[4] as bigint) + 1n;
   datum.fields[5] = await tree.getRoot();
-  datum.fields[7] = (datum.fields[7] as bigint[]).filter((value) =>
-    value !== sequence
-  );
-  (datum.fields[8] as Map<bigint, string>).delete(sequence);
   datum.fields[9] = proofHeight;
   const update = record(variant(3, sequence, proofHeight), [
     receiptSiblings,
     ackSiblings,
+    [acknowledgement],
   ]);
   const operation = variant(
     7,

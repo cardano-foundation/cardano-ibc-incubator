@@ -20,6 +20,7 @@ import {
 import {
   buildPacketPrune,
   type PacketLaneDeployment,
+  PacketLaneTree,
   record,
 } from "../src/packet-lane-transactions.ts";
 import { packetLaneTokenName } from "@cardano-ibc/tx-builder/dist/packet-lanes";
@@ -44,7 +45,7 @@ const acknowledgementKey = "acks/ports/transfer/channels/channel-0/sequences/1";
 const commitmentKey = fromText(
   "commitments/ports/transfer/channels/channel-0/sequences/1",
 );
-const acknowledgement = fromText("acknowledgement commitment");
+const acknowledgement = sha(fromText("acknowledgement commitment"));
 
 // Same genuine two-level ICS-23 absence proof as the Aiken composed packet
 // pruning test. It is synthetic data, not a mocked proof-verifier result.
@@ -181,8 +182,8 @@ export async function historyPacketFixture(
     0n,
     await laneTree.getRoot(),
     new Map(),
-    [1n],
-    new Map([[1n, acknowledgement]]),
+    [],
+    new Map(),
     h(1n),
     h(1n),
     new Map(),
@@ -257,6 +258,12 @@ export async function historyPacketFixture(
     ) {
       const historical = recordToConstr(witness.record);
       const deployment: PacketLaneDeployment = {
+        resolveLaneTree: () => {
+          const tree = new PacketLaneTree();
+          tree.set(receiptKey, "01");
+          tree.set(acknowledgementKey, acknowledgement);
+          return Promise.resolve(tree);
+        },
         operations: {
           prune: { policy: prunePolicy, reference: references[1] },
         },

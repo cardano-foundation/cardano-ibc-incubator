@@ -82,7 +82,10 @@ function makeService(packetState?: any) {
     } as unknown as ConfigService,
     lucidService as unknown as LucidService,
     {} as KupoService,
-    {} as HistoryService,
+    {
+      findLatestBlock: jest.fn(async () => ({ height: 42 })),
+      rebuildPacketLaneTreeAtBlock: jest.fn(async () => ({ tree: { count: () => 1 } })),
+    } as unknown as HistoryService,
     {} as any,
       createTestTreeStore(),
   );
@@ -137,7 +140,7 @@ describe('ChannelService.getChannelHealth', () => {
     for (const lane of [0, 1]) {
       data[packetState.state.scriptHash + packetLaneTokenName('transfer', 'channel-0', lane, 2)] = {
         fields: [toHex('transfer'), toHex('channel-0'), BigInt(lane), 2n, 0n, '',
-          new Map(lane === 1 ? [[5n, 'aa']] : []), new Map(), new Map([[2n, 'bb']])],
+          new Map(lane === 1 ? [[5n, 'aa']] : []), [], new Map()],
       };
     }
     data[packetState.state.scriptHash + sendSequencerTokenName('transfer', 'channel-0')] = {
@@ -151,8 +154,8 @@ describe('ChannelService.getChannelHealth', () => {
       pending_packet_commitment_sequences: ['5'],
       flushing: { certified_lane_count: '1', remaining_lane_count: '1', awaiting_counterparty_upgrade: true },
       packet_lanes: [
-        { lane: 0, certified_empty: true, pending_packet_commitment_sequences: [] },
-        { lane: 1, certified_empty: false, pending_packet_commitment_sequences: ['5'] },
+        { lane: 0, certified_empty: true, pending_packet_commitment_sequences: [], retained_acknowledgement_count: '1' },
+        { lane: 1, certified_empty: false, pending_packet_commitment_sequences: ['5'], retained_acknowledgement_count: '1' },
       ],
     });
     lucidService.findUtxoByUnit.mockRejectedValue(new Error('endpoint unavailable'));

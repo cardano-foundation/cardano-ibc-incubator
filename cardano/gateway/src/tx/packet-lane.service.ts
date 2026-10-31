@@ -145,6 +145,11 @@ export class PacketLaneService {
       connection,
       client,
       scripts,
+      resolveLaneTree: async (input) => {
+        const tip = await this.history.findLatestBlock();
+        if (!tip) throw new Error('Packet history tip is unavailable');
+        return this.history.rebuildPacketLaneTreeAtBlock(BigInt(tip.height), input);
+      },
       resolveScriptReferences: async (hashes) => {
         const refs = hashes.map((hash) => {
           const ref = scriptReferences.get(hash);

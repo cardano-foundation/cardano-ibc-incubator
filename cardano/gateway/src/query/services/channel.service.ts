@@ -168,6 +168,8 @@ export class ChannelService {
     const sequences = new Set(channelDatumDecoded.state.packet_commitment.keys());
     let nextSequenceSend = channelDatumDecoded.state.next_sequence_send;
     if (packetState) {
+      const tip = await this.historyService.findLatestBlock();
+      if (!tip) throw new GrpcInternalException('Packet history tip is unavailable');
       const data = (datum: string) => this.lucidService.LucidImporter.Data.from(datum) as any;
       const lanes = await Promise.all(Array.from({ length: packetState.laneCount }, async (_, lane) => {
         const unit = packetState.state.scriptHash + packetLaneTokenName(portId, `channel-${normalizedChannelId}`, lane, packetState.laneCount);
@@ -179,7 +181,8 @@ export class ChannelService {
             !(fields[6] instanceof Map) || !(fields[8] instanceof Map)) {
           throw new GrpcInternalException('Malformed or mismatched packet lane in channel health');
         }
-        return { lane, commitments: fields[6] as Map<bigint, string>, acknowledgements: fields[8] as Map<bigint, string> };
+        const history = await this.historyService.rebuildPacketLaneTreeAtBlock(BigInt(tip.height), input);
+        return { lane, commitments: fields[6] as Map<bigint, string>, acknowledgements: history.tree.count('acks') };
       }));
       for (const lane of lanes) {
         const commitments = Array.from(lane.commitments.keys()).sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
@@ -187,7 +190,7 @@ export class ChannelService {
         packetLanes.push({
           lane: lane.lane,
           pending_packet_commitment_sequences: commitments.map(String),
-          retained_acknowledgement_count: lane.acknowledgements.size.toString(),
+          retained_acknowledgement_count: lane.acknowledgements.toString(),
           certified_empty: pending !== null && BigInt(lane.lane) < pending.flushed_lanes,
         });
       }

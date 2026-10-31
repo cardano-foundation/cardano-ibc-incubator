@@ -34,6 +34,7 @@ import {
   buildTransferIntentCancellation,
   encode,
   PacketLaneAccountingCapacityError,
+  PacketLaneHistory,
   record,
   selectPacketLiquidity,
   sha256,
@@ -270,6 +271,173 @@ Deno.test("native ADA send and acknowledgement omit unused references with recon
     control.fee,
     reduced.fee,
   );
+});
+
+Deno.test("forty receives on one lane retain bounded live state and rebuild delayed acknowledgement proofs", async () => {
+  const f = await packetLaneFixture(1, 1);
+  const { intents } = await f.admit(1);
+  const wallet = await f.wallet();
+  const sent = await buildPacketSendBatch(
+    wallet,
+    f.deployment,
+    intents,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await submitReconciled(
+    f,
+    wallet,
+    await signMeasured(wallet, sent.tx, "history deposit"),
+  );
+  const acknowledgement = f.proofs.get(1n)!;
+  const completed = await buildPacketAcknowledgement(
+    wallet,
+    f.deployment,
+    sent.packets[0],
+    acknowledgement.height,
+    acknowledgement.proof,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await submitReconciled(
+    f,
+    wallet,
+    await signMeasured(wallet, completed.tx, "history deposit acknowledgement"),
+  );
+  const receiver =
+    getAddressDetails(await wallet.wallet().address()).paymentCredential!.hash;
+  let earliest: UTxO | undefined;
+  let last:
+    | { packet: Constr<Data>; proof: Constr<Data>; height: Constr<Data> }
+    | undefined;
+  for (let sequence = 1n; sequence <= 40n; sequence++) {
+    const timeout = BigInt(f.emulator.now() + 3_600_000) * 1_000_000n;
+    const payload = fromText(
+      JSON.stringify({
+        denom: `transfer/channel-7/${fromText("lovelace")}`,
+        amount: "50000",
+        sender: "cosmos1sender",
+        receiver,
+        memo: "",
+      }),
+    );
+    const packet = record(
+      sequence,
+      fromText("transfer"),
+      fromText("channel-7"),
+      fromText("transfer"),
+      fromText("channel-0"),
+      payload,
+      record(0n, 0n),
+      timeout,
+    );
+    const commitment = await sha256(
+      timeout.toString(16).padStart(16, "0") + "00".repeat(16) +
+        await sha256(payload),
+    );
+    const proof = await membershipProof(
+      fromText(
+        `commitments/ports/transfer/channels/channel-7/sequences/${sequence}`,
+      ),
+      commitment,
+    );
+    const height = record(1n, 100n + sequence);
+    checkpoint(f, height, proof.root);
+    const receive = await buildPacketReceive(
+      wallet,
+      f.deployment,
+      packet,
+      height,
+      proof.proof,
+      await wallet.utxosAt(f.deployment.batchAddress),
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    await submitReconciled(
+      f,
+      wallet,
+      await signMeasured(wallet, receive.tx, `history receive ${sequence}`),
+    );
+    const unit = Object.keys(receive.input.assets).find((unit) =>
+      unit.startsWith(f.deployment.statePolicy)
+    )!;
+    const output = await wallet.utxoByUnit(unit);
+    const datum = Data.from(output.datum!) as Constr<Data>;
+    assertEquals(datum.fields.length, 12);
+    assertEquals(datum.fields[7], []);
+    assertEquals(datum.fields[8], new Map());
+    assertEquals((datum.fields[6] as Map<Data, Data>).size, 0);
+    if (!earliest) earliest = output;
+    assert(
+      output.datum!.length <= earliest.datum!.length + 16,
+      "live datum must not grow with retained receipts",
+    );
+    if (sequence === 32n) f.packetHistory.reset();
+    last = { packet, proof: proof.proof, height };
+  }
+  const newest = (await wallet.utxosAt(f.deployment.guardAddress)).find(
+    (output) => {
+      const datum = Data.from(output.datum!) as Constr<Data>;
+      return datum.fields.length === 12;
+    },
+  )!;
+  f.packetHistory.reset();
+  const tree = await f.packetHistory.resolve(f.deployment, newest);
+  assertEquals(tree.tree.size(), 80);
+  const ackKey = "acks/ports/transfer/channels/channel-0/sequences/1";
+  const ack = await sha256(fromText('{"result":"AQ=="}'));
+  assertEquals(tree.tree.generateProof(ackKey).value.toString("hex"), ack);
+  const historical = await f.packetHistory.resolve(f.deployment, earliest!);
+  assertEquals(historical.tree.size(), 2);
+  assertEquals(
+    historical.getRoot(),
+    (Data.from(earliest!.datum!) as Constr<Data>).fields[5],
+  );
+  await assertRejects(
+    () =>
+      buildPacketReceive(
+        wallet,
+        f.deployment,
+        last!.packet,
+        last!.height,
+        last!.proof,
+        [],
+        f.emulator.now(),
+        f.emulator.now() + 60_000,
+      ),
+    Error,
+    "already received",
+  );
+  await assertRejects(
+    () =>
+      buildPacketReceive(
+        wallet,
+        { ...f.deployment, resolveLaneTree: undefined },
+        last!.packet,
+        last!.height,
+        last!.proof,
+        [],
+        f.emulator.now(),
+        f.emulator.now() + 60_000,
+      ),
+    Error,
+    "history is required",
+  );
+  const unit = Object.keys(newest.assets).find((unit) =>
+    unit.startsWith(f.deployment.statePolicy)
+  )!;
+  const corrupt = new PacketLaneHistory(unit, f.deployment.batchPolicy);
+  const evidence = [...f.packetHistory.transactions.values()];
+  let rejected = false;
+  for (const tx of evidence) {
+    try {
+      corrupt.apply({ ...tx, redeemers: [] });
+    } catch {
+      rejected = true;
+      break;
+    }
+  }
+  assert(rejected, "missing historical mutations must not produce a proof");
 });
 
 Deno.test("lazy packet references use script identity and reject missing or mismatched scripts", async () => {

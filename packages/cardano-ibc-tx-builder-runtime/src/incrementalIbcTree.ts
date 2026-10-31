@@ -359,3 +359,292 @@ export class IncrementalIbcTree {
     else this.upsertNode.run(height, pathHex(index), digest);
   }
 }
+
+type VersionedNode = {
+  height: number;
+  left: string;
+  right: string;
+  entries: Array<[string, string]>;
+  count: number;
+};
+
+/** Immutable SQLite nodes let lane versions share unchanged subtrees. */
+export class IbcTreeNodeStore {
+  private readonly select: StatementSync;
+  private readonly insert: StatementSync;
+
+  constructor(readonly db: DatabaseSync) {
+    db.exec(`CREATE TABLE IF NOT EXISTS ibc_versioned_nodes (
+      hash TEXT PRIMARY KEY, height INTEGER NOT NULL,
+      left_hash TEXT NOT NULL, right_hash TEXT NOT NULL,
+      entries TEXT NOT NULL, count INTEGER NOT NULL
+    ) STRICT`);
+    this.select = db.prepare(
+      "SELECT * FROM ibc_versioned_nodes WHERE hash = ?",
+    );
+    this.insert = db.prepare(
+      "INSERT OR IGNORE INTO ibc_versioned_nodes VALUES (?, ?, ?, ?, ?, ?)",
+    );
+  }
+
+  read(digest: string, height: number): VersionedNode | undefined {
+    if (digest === EMPTY_HASH) return undefined;
+    const row = this.select.get(digest);
+    if (!row || row.height !== height) {
+      throw new Error("Missing or corrupt incremental tree node");
+    }
+    const entries = JSON.parse(row.entries as string) as Array<
+      [string, string]
+    >;
+    const node = {
+      height,
+      left: row.left_hash as string,
+      right: row.right_hash as string,
+      entries,
+      count: Number(row.count),
+    };
+    const actual = height === 0
+      ? this.bucketDigest(entries)
+      : innerHash(node.left, node.right);
+    if (
+      actual !== digest || !Number.isSafeInteger(node.count) ||
+      node.count < 1 || (height === 0 && node.count !== entries.length)
+    ) {
+      throw new Error("Corrupt incremental tree node");
+    }
+    if (height > 0) {
+      const count = (child: string) => {
+        if (child === EMPTY_HASH) return 0;
+        const row = this.select.get(child);
+        if (!row || row.height !== height - 1) {
+          throw new Error("Missing incremental tree child");
+        }
+        return Number(row.count);
+      };
+      if (node.count !== count(node.left) + count(node.right)) {
+        throw new Error("Corrupt incremental tree counts");
+      }
+    }
+    return node;
+  }
+
+  write(node: VersionedNode): string {
+    const digest = node.height === 0
+      ? this.bucketDigest(node.entries)
+      : innerHash(node.left, node.right);
+    if (digest !== EMPTY_HASH) {
+      this.insert.run(
+        digest,
+        node.height,
+        node.left,
+        node.right,
+        JSON.stringify(node.entries),
+        node.count,
+      );
+    }
+    return digest;
+  }
+
+  private bucketDigest(entries: Array<[string, string]>): string {
+    return bucketHash(
+      sortBucket(
+        entries.map(([key, value]) => ({
+          keyHash: keyDigest(key),
+          valueHash: hash(Buffer.from(normalizeValue(value), "hex")),
+        })),
+      ),
+    ).toString("hex");
+  }
+}
+
+/** The same depth-64 updates as IncrementalIbcTree, with immutable roots.
+ * clone() copies one root pointer. Each mutation stores at most 65 new nodes.
+ * An alternate path function supports a separate numeric sequence index.
+ */
+export class VersionedIbcTree {
+  constructor(
+    readonly store: IbcTreeNodeStore,
+    private root = EMPTY_HASH,
+    private readonly path: (key: string) => bigint = (key) =>
+      keyDigest(key).readBigUInt64BE(),
+  ) {}
+
+  clone(): VersionedIbcTree {
+    return new VersionedIbcTree(this.store, this.root, this.path);
+  }
+
+  getRoot(): string {
+    return this.root;
+  }
+
+  size(): number {
+    return this.store.read(this.root, DEPTH)?.count ?? 0;
+  }
+
+  get(key: string): string | undefined {
+    return this.position(key).entries.find(([candidate]) => candidate === key)
+      ?.[1];
+  }
+
+  getSiblings(key: string): string[] {
+    const { entries, siblings } = this.position(key);
+    const digest = keyDigest(key);
+    const bucket = sortBucket(
+      entries.map(([candidate, value]) => ({
+        keyHash: keyDigest(candidate),
+        valueHash: hash(Buffer.from(value, "hex")),
+      })),
+    );
+    return needsBucketWitness(bucket, digest)
+      ? [encodeBucket(bucket).toString("hex"), ...siblings]
+      : siblings;
+  }
+
+  set(key: string, valueHex: string): void {
+    const value = normalizeValue(valueHex);
+    const { entries, siblings } = this.position(key);
+    const previous = entries.find(([candidate]) => candidate === key)?.[1] ??
+      "";
+    if (previous === value) return;
+    const next = entries.filter(([candidate]) => candidate !== key);
+    if (value !== "") next.push([key, value]);
+    next.sort(([a], [b]) => Buffer.compare(keyDigest(a), keyDigest(b)));
+    let index = this.path(key);
+    let count = next.length;
+    // Publishing the pointer last makes failed updates leave this version intact.
+    let current = this.store.write({
+      height: 0,
+      left: EMPTY_HASH,
+      right: EMPTY_HASH,
+      entries: next,
+      count,
+    });
+    for (let height = 0; height < DEPTH; height++) {
+      const sibling = siblings[height];
+      count += this.store.read(sibling, height)?.count ?? 0;
+      const left = (index & 1n) === 0n ? current : sibling;
+      const right = (index & 1n) === 0n ? sibling : current;
+      current = this.store.write({
+        height: height + 1,
+        left,
+        right,
+        entries: [],
+        count,
+      });
+      index >>= 1n;
+    }
+    this.root = current;
+  }
+
+  /** Ordered subtree counts skip offsets without enumerating preceding keys. */
+  page(
+    offset: number,
+    limit: number,
+    reverse = false,
+  ): Array<[string, string]> {
+    if (
+      !Number.isSafeInteger(offset) || offset < 0 ||
+      !Number.isSafeInteger(limit) || limit < 0
+    ) throw new Error("Invalid tree page");
+    const result: Array<[string, string]> = [];
+    const walk = (digest: string, height: number) => {
+      if (result.length >= limit) return;
+      const node = this.store.read(digest, height);
+      if (!node) return;
+      if (offset >= node.count) {
+        offset -= node.count;
+        return;
+      }
+      if (height === 0) {
+        const entries = reverse ? [...node.entries].reverse() : node.entries;
+        for (const entry of entries) {
+          if (offset) offset--;
+          else if (result.length < limit) result.push(entry);
+        }
+      } else {
+        walk(reverse ? node.right : node.left, height - 1);
+        walk(reverse ? node.left : node.right, height - 1);
+      }
+    };
+    walk(this.root, DEPTH);
+    return result;
+  }
+
+  countBefore(index: bigint): number {
+    if (index <= 0n) return 0;
+    if (index > 0xffffffffffffffffn) return this.size();
+    let digest = this.root;
+    let count = 0;
+    for (let height = DEPTH; height > 0; height--) {
+      const node = this.store.read(digest, height);
+      if (!node) return count;
+      if ((index >> BigInt(height - 1)) & 1n) {
+        count += this.store.read(node.left, height - 1)?.count ?? 0;
+        digest = node.right;
+      } else digest = node.left;
+    }
+    return count;
+  }
+
+  /** Select a rank across independent numeric indices in O(lanes * depth). */
+  static selectAcross(
+    trees: readonly VersionedIbcTree[],
+    offset: number,
+    reverse = false,
+  ): bigint | undefined {
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new Error("Invalid tree rank");
+    }
+    if (offset >= trees.reduce((count, tree) => count + tree.size(), 0)) {
+      return undefined;
+    }
+    let roots = trees.map((tree) => tree.root);
+    let index = 0n;
+    for (let height = DEPTH; height > 0; height--) {
+      const nodes = trees.map((tree, i) => tree.store.read(roots[i], height));
+      const firstCount = trees.reduce(
+        (count, tree, i) =>
+          count +
+          (tree.store.read(
+            (reverse ? nodes[i]?.right : nodes[i]?.left) ?? EMPTY_HASH,
+            height - 1,
+          )?.count ?? 0),
+        0,
+      );
+      const first = offset < firstCount;
+      if (!first) offset -= firstCount;
+      const right = reverse ? first : !first;
+      index = (index << 1n) | (right ? 1n : 0n);
+      roots = nodes.map((node) =>
+        (right ? node?.right : node?.left) ?? EMPTY_HASH
+      );
+    }
+    if (
+      offset >= trees.reduce((count, tree, i) =>
+        count + (tree.store.read(roots[i], 0)?.count ?? 0), 0)
+    ) throw new Error("Corrupt tree rank counts");
+    return index;
+  }
+
+  private position(
+    key: string,
+  ): { entries: Array<[string, string]>; siblings: string[] } {
+    const index = this.path(key);
+    if (index < 0n || index > 0xffffffffffffffffn) {
+      throw new Error("Invalid tree path");
+    }
+    let digest = this.root;
+    const siblings: string[] = [];
+    for (let height = DEPTH; height > 0; height--) {
+      const node = this.store.read(digest, height);
+      const right = ((index >> BigInt(height - 1)) & 1n) !== 0n;
+      siblings.push(node ? (right ? node.left : node.right) : EMPTY_HASH);
+      digest = node ? (right ? node.right : node.left) : EMPTY_HASH;
+    }
+    const entries = this.store.read(digest, 0)?.entries ?? [];
+    if (entries.some(([candidate]) => this.path(candidate) !== index)) {
+      throw new Error("Incremental tree bucket belongs to another path");
+    }
+    return { entries, siblings: siblings.reverse() };
+  }
+}
