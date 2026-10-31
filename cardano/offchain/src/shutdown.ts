@@ -724,7 +724,7 @@ export async function buildRetirePacketLanesTx(
     .mintAssets(burns, encode(new Constr(3, [token])))
     .mintAssets(
       { [packet.batch.scriptHash + fromText("retire_channel")]: 1n },
-      encode(record(token, new Constr(9, []), new Constr(1, []))),
+      encode(record(token, new Constr(8, []), new Constr(1, []))),
     )
     .mintAssets({ [packet.operations.retire.scriptHash]: 1n }, Data.void())
     .pay.ToContract(packet.state.address, {

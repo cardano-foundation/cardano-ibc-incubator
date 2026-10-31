@@ -559,7 +559,6 @@ export const loadDeploymentPlan = async (
       "timeout",
       "reject",
       "receive",
-      "prune",
       "timeout_on_close",
       "retire",
     ]

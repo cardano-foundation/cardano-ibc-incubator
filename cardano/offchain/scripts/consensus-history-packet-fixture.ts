@@ -18,11 +18,11 @@ import {
   recordToConstr,
 } from "../src/consensus_history_commitment.ts";
 import {
-  buildPacketPrune,
+  buildPacketAcknowledgement,
   type PacketLaneDeployment,
-  PacketLaneTree,
   record,
 } from "../src/packet-lane-transactions.ts";
+import { membershipProof } from "../src/testing/channel-fixture.ts";
 import { packetLaneTokenName } from "@cardano-ibc/tx-builder/dist/packet-lanes";
 
 type Seed = (
@@ -35,34 +35,24 @@ const encode = (value: Data) => Data.to<Data>(value);
 const h = (n: bigint) => new Constr(0, [1n, n]);
 const sha = (bytes: string) =>
   createHash("sha256").update(Buffer.from(bytes, "hex")).digest("hex");
-const leafHash = (key: string, value: string, prefix: string) =>
-  sha(
-    prefix + (key.length / 2).toString(16).padStart(2, "0") + key + "20" +
-      sha(value),
-  );
-const receiptKey = "receipts/ports/transfer/channels/channel-0/sequences/1";
-const acknowledgementKey = "acks/ports/transfer/channels/channel-0/sequences/1";
-const commitmentKey = fromText(
-  "commitments/ports/transfer/channels/channel-0/sequences/1",
+const commitmentPath =
+  "commitments/ports/transfer/channels/channel-0/sequences/1";
+const timeout = 8_000_000_000_000_000_000n;
+const packet = record(
+  1n,
+  fromText("transfer"),
+  fromText("channel-0"),
+  fromText("transfer"),
+  fromText("channel-0"),
+  fromText("pending packet"),
+  record(0n, 0n),
+  timeout,
 );
-const acknowledgement = sha(fromText("acknowledgement commitment"));
-
-// Same genuine two-level ICS-23 absence proof as the Aiken composed packet
-// pruning test. It is synthetic data, not a mocked proof-verifier result.
-const leaf = (prefix: string) => new Constr(0, [1n, 0n, 1n, 1n, prefix]);
-const neighbor = new Constr(0, ["ff", "01", leaf("000202"), []]);
-const empty = new Constr(0, ["", "", new Constr(0, [0n, 0n, 0n, 0n, ""]), []]);
-const subtreeRoot = leafHash("ff", "01", "000202");
-const absenceProof = new Constr(0, [[
-  new Constr(0, [
-    new Constr(1, [new Constr(0, [commitmentKey, empty, neighbor])]),
-  ]),
-  new Constr(0, [
-    new Constr(0, [
-      new Constr(0, [fromText("ibc"), subtreeRoot, leaf("00"), []]),
-    ]),
-  ]),
-]]);
+const commitment = sha(
+  timeout.toString(16).padStart(16, "0") + "00".repeat(16) +
+    sha(String(packet.fields[5])),
+);
+const acknowledgement = sha(fromText('{"result":"AQ=="}'));
 
 export async function historyPacketFixture(
   lucid: LucidEvolution,
@@ -82,8 +72,8 @@ export async function historyPacketFixture(
     lucid,
     [],
   );
-  const [pruneScript, prunePolicy] = readValidator(
-    "packet_prune.packet_prune.mint",
+  const [acknowledgeScript, acknowledgePolicy] = readValidator(
+    "packet_acknowledge.packet_acknowledge.mint",
     lucid,
     [
       configToken,
@@ -96,6 +86,11 @@ export async function historyPacketFixture(
       proofPolicy,
     ],
   );
+  const [fundsScript, fundsPolicy] = readValidator(
+    "packet_funds.packet_funds.mint",
+    lucid,
+    [configToken, channelHash],
+  );
   const [batchScript, batchPolicy, batchAddress] = readValidator(
     "packet_lane_batch.packet_lane_batch.mint",
     lucid,
@@ -103,14 +98,13 @@ export async function historyPacketFixture(
       channelPolicy,
       record(
         channelHash,
+        acknowledgePolicy,
         channelHash,
         channelHash,
         channelHash,
         channelHash,
-        prunePolicy,
         channelHash,
-        channelHash,
-        channelHash,
+        fundsPolicy,
         channelHash,
       ),
     ],
@@ -172,8 +166,7 @@ export async function historyPacketFixture(
   );
   const laneName = packetLaneTokenName("transfer", "channel-0", 1, 16);
   const laneTree = new DeploymentIbcTree();
-  laneTree.set(receiptKey, "01");
-  laneTree.set(acknowledgementKey, acknowledgement);
+  laneTree.set(commitmentPath, commitment);
   const initialLane = record(
     fromText("transfer"),
     fromText("channel-0"),
@@ -181,12 +174,16 @@ export async function historyPacketFixture(
     16n,
     0n,
     await laneTree.getRoot(),
-    new Map(),
+    new Map([[1n, commitment]]),
     [],
     new Map(),
-    h(1n),
-    h(1n),
+    record(0n, 0n),
+    record(0n, 0n),
     new Map(),
+  );
+  const proof = await membershipProof(
+    fromText("acks/ports/transfer/channels/channel-0/sequences/1"),
+    acknowledgement,
   );
   let channel: UTxO;
   let lane: UTxO;
@@ -197,10 +194,10 @@ export async function historyPacketFixture(
     channelHash,
     connectionPolicy,
     channelPolicy,
-    root: leafHash(fromText("ibc"), subtreeRoot, "00"),
+    root: proof.root,
     seed(seed: Seed, address: string) {
-      // Only connection, channel and retained lane history are assumed. Client
-      // creation, update and pruning execute the production validators.
+      // Only connection, channel and one outstanding send are assumed. Client
+      // creation, update and acknowledgement execute the production validators.
       channel = seed(
         address,
         { [channelPolicy + channelName]: 1n },
@@ -228,44 +225,43 @@ export async function historyPacketFixture(
           ),
         ),
       );
-      references = [proofScript, pruneScript, batchScript, guardScript].map((
+      references = [
+        proofScript,
+        acknowledgeScript,
+        batchScript,
+        guardScript,
+        fundsScript,
+      ].map((
         script,
       ) => seed(address, {}, Data.void(), script));
     },
     publicLeaves(_tree: DeploymentIbcTree) {
       // Packet commitments live in the lane root, outside the HostState tree.
     },
-    async assertPruned() {
+    async assertAcknowledged() {
       const live = await lucid.utxoByUnit(statePolicy + laneName);
       assert(live.txHash !== lane.txHash);
       const state = Data.from(live.datum!) as Constr<Data>;
       assertEquals(state.fields[7], []);
       assertEquals((state.fields[8] as Map<bigint, string>).size, 0);
-      assertEquals(state.fields[9], h(2n));
-      assertEquals(state.fields[10], h(1n));
+      assertEquals(state.fields[6], new Map());
+      assertEquals(state.fields[5], "00".repeat(32));
       assertEquals(
         (await lucid.utxoByUnit(channelPolicy + channelName)).txHash,
         channel.txHash,
       );
     },
-    async prune(
+    async acknowledge(
       client: UTxO,
       host: UTxO,
-      _hostReference: UTxO,
-      _tree: DeploymentIbcTree,
       witness: ConsensusHistoryWitness,
       now: number,
     ) {
       const historical = recordToConstr(witness.record);
       const deployment: PacketLaneDeployment = {
-        resolveLaneTree: () => {
-          const tree = new PacketLaneTree();
-          tree.set(receiptKey, "01");
-          tree.set(acknowledgementKey, acknowledgement);
-          return Promise.resolve(tree);
-        },
         operations: {
-          prune: { policy: prunePolicy, reference: references[1] },
+          acknowledge: { policy: acknowledgePolicy, reference: references[1] },
+          funds: { policy: fundsPolicy, reference: references[4] },
         },
         proofVerifier: { policy: proofPolicy, reference: references[0] },
         batchPolicy,
@@ -279,12 +275,12 @@ export async function historyPacketFixture(
         client,
         scripts: [configuration, references[2], references[3]],
       };
-      const result = await buildPacketPrune(
+      const result = await buildPacketAcknowledgement(
         lucid,
         deployment,
-        1n,
+        packet,
         historical.fields[1] as Constr<Data>,
-        absenceProof,
+        proof.proof,
         now,
         now + 30_000,
       );
@@ -309,7 +305,7 @@ export async function historyPacketFixture(
         host.txHash,
       );
       return {
-        operation: "lane pruning with recovered old consensus state",
+        operation: "acknowledgement with recovered old consensus state",
         bytes,
         memory: Number(units.mem()),
         steps: Number(units.steps()),

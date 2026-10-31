@@ -215,12 +215,12 @@ export class PacketStateService {
       'channel',
     );
     const rootOperation = authorized.fields[1] as Constr<Data>;
-    const operations = rootOperation.index === 10 ? rootOperation.fields[0] as Constr<Data>[] : [rootOperation];
-    if (rootOperation.index === 10 && (operations.length !== 2 || operations.some(operation => operation.index !== 1))) {
+    const operations = rootOperation.index === 9 ? rootOperation.fields[0] as Constr<Data>[] : [rootOperation];
+    if (rootOperation.index === 9 && (operations.length !== 2 || operations.some(operation => operation.index !== 1))) {
       throw new Error('Invalid acknowledgement batch');
     }
     return operations.flatMap(operation => {
-      if (![0, 1, 2, 5, 6, 8].includes(operation.index)) return [];
+      if (![0, 1, 2, 5, 6, 7].includes(operation.index)) return [];
       const packets =
         operation.index === 0 ? (operation.fields[2] as Constr<Data>[]) : [operation.fields[0] as Constr<Data>];
       return packets.flatMap((packet, index) => {
@@ -268,7 +268,7 @@ export class PacketStateService {
           make(
             operation.index === 0
               ? 'send_packet'
-              : [2, 8].includes(operation.index)
+              : [2, 7].includes(operation.index)
                 ? 'timeout_packet'
                 : 'acknowledge_packet',
           ),

@@ -177,10 +177,7 @@ export class ApiController {
         revision_height: BigInt(dto.proof_height.revision_height),
       },
     };
-    const response =
-      request.port_id === 'transfer'
-        ? await this.packetLaneService.prune(request)
-        : await this.packetService.prunePacketHistory(validateAndFormatPrunePacketHistoryParams(request));
+    const response = await this.packetService.prunePacketHistory(validateAndFormatPrunePacketHistoryParams(request));
     return this.serializeUnsignedTxResponse(response);
   }
 

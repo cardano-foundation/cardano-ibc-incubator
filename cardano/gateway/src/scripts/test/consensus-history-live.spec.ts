@@ -1,5 +1,5 @@
 import type { HistorySource, HistoryTransaction } from '@cardano-ibc/tx-builder-runtime/consensusHistoryRecovery';
-import { checkpointBarrierSource, liveTestHeight, requireEmptyPublicTreeCache, requireOlderHeight, requirePruneChains, requireSameHistoryDeployment, runLiveHistoryTest } from './consensus-history-live';
+import { checkpointBarrierSource, liveTestHeight, requireEmptyPublicTreeCache, requireOlderHeight, requireSameHistoryDeployment, runLiveHistoryTest } from './consensus-history-live';
 
 describe('live consensus history acceptance arguments', () => {
   it('keeps exact revision and height without numeric rounding', () => {
@@ -32,11 +32,8 @@ describe('live consensus history acceptance arguments', () => {
     expect(() => requireSameHistoryDeployment(saved, token, 'client-script-b')).toThrow('another client address');
   });
 
-  it('binds prune chain arguments before submitting a transaction', () => {
-    const chain = Buffer.from('v8-classic-1').toString('hex');
-    expect(() => requirePruneChains('v8-classic-1', 'cardano-devnet', chain, 'cardano-devnet')).not.toThrow();
-    expect(() => requirePruneChains('another-cosmos-1', 'cardano-devnet', chain, 'cardano-devnet')).toThrow('source chain');
-    expect(() => requirePruneChains('v8-classic-1', 'cardano-preprod', chain, 'cardano-devnet')).toThrow('destination chain');
+  it('rejects the removed prune option before initializing Gateway', async () => {
+    await expect(runLiveHistoryTest(['--prune'])).rejects.toThrow('Unknown option');
   });
 
   it('prints help without initializing Gateway or touching a database', async () => {
@@ -56,7 +53,7 @@ describe('live consensus history acceptance arguments', () => {
     await expect(runLiveHistoryTest([...args, `--pause-after-checkpoints=${count}`])).rejects.toThrow('positive safe integer');
   });
 
-  it.each([['--resume-history-cache', '/unused-history'], ['--prune']])('requires the pause test to be a fresh audit-only run: %s', async (...flags) => {
+  it.each([['--resume-history-cache', '/unused-history']])('requires the pause test to be a fresh audit-only run: %s', async (...flags) => {
     await expect(runLiveHistoryTest([...args, '--pause-after-checkpoints', '25', ...flags])).rejects.toThrow('fresh audit-only run');
   });
 });

@@ -11,7 +11,7 @@ import { HostStateHeartbeatService } from '../host-state-heartbeat.service';
 
 describe('TxController - Packet (modern)', () => {
   let controller: TxController;
-  const packetLaneMock = { admit: jest.fn(), settle: jest.fn(), prune: jest.fn(), batch: jest.fn() };
+  const packetLaneMock = { admit: jest.fn(), settle: jest.fn(), batch: jest.fn() };
   let packetServiceMock: {
     recvPacket: jest.Mock;
     sendPacket: jest.Mock;
@@ -142,6 +142,15 @@ describe('TxController - Packet (modern)', () => {
         proofHeight: { revisionNumber: 0n, revisionHeight: 55n },
       }),
     );
+  });
+
+  it('rejects transfer pruning before delegating to the legacy channel builder', async () => {
+    await expect(controller.PrunePacketHistory({
+      signer: 'addr_test1signer', port_id: 'transfer', channel_id: 'channel-7',
+      sequence: 1n, proof_commitment_absence: new Uint8Array(),
+      proof_height: { revision_number: 0n, revision_height: 1n },
+    })).rejects.toThrow('cannot be pruned');
+    expect(packetServiceMock.prunePacketHistory).not.toHaveBeenCalled();
   });
 
   it('routes transfer packet settlement through lanes by default', async () => {

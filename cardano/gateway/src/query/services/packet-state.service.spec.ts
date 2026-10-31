@@ -82,7 +82,7 @@ describe('canonical packet query state', () => {
       return operation;
     };
     const batch = new Datum([[ack(1n), ack(2n)]]);
-    batch.index = 10;
+    batch.index = 9;
     const authorization = new Datum([new Datum([channelPolicy, 'token']), batch, null]);
     const evidence = { txBodyCborHex: '', blockNo: 1, redeemers: [{ type: 'mint', index: 0, data: authorization }] };
     const history = {

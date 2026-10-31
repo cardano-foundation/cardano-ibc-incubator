@@ -34,7 +34,6 @@ function buildHandlerJsonDeployment() {
           'timeout',
           'reject',
           'receive',
-          'prune',
           'timeout_on_close',
           'retire',
           'funds',
@@ -174,9 +173,9 @@ console.log(JSON.stringify(smokeManifest()))`,
     );
     const normalized = normalizeBridgeManifestConfig(manifest);
     expect(normalized.deployment.packetState.laneCount).toBe(16);
-    expect(normalized.deployment.packetState.operations.prune.refUtxo).toEqual({
-      txHash: manifest.packet_state.operations.prune.ref_utxo.tx_hash,
-      outputIndex: manifest.packet_state.operations.prune.ref_utxo.output_index,
+    expect(normalized.deployment.packetState.operations.timeout_on_close.refUtxo).toEqual({
+      txHash: manifest.packet_state.operations.timeout_on_close.ref_utxo.tx_hash,
+      outputIndex: manifest.packet_state.operations.timeout_on_close.ref_utxo.output_index,
     });
   });
 

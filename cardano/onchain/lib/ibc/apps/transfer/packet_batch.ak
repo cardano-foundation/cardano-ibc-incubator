@@ -28,8 +28,7 @@ use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/verify
 use ibc/core/ics_004/channel_datum
 use ibc/core/ics_004/packet_lane_datum.{
-  CommitPacket, CompletePacket, LaneUpdate, PacketLaneDatum, PrunePacket,
-  ReceivePacket,
+  CommitPacket, CompletePacket, LaneUpdate, PacketLaneDatum, ReceivePacket,
 }
 use ibc/core/ics_004/packet_lanes
 use ibc/core/ics_004/send_sequencer.{SendSequencerDatum}
@@ -100,12 +99,6 @@ pub type BatchOperation {
     proof: MerkleProof,
     lane: LaneInputUpdate,
     liquidity_refs: List<OutputReference>,
-  }
-  Prune {
-    sequence: Int,
-    proof_height: Height,
-    proof: MerkleProof,
-    lane: LaneInputUpdate,
   }
   TimeoutOnClose {
     packet: Packet,
@@ -933,86 +926,6 @@ fn validate_voucher_payment(
       },
     )
   assets.quantity_of(payment.value, voucher_policy, name) == amount
-}
-
-pub fn validate_prune(
-  transaction: Transaction,
-  policy: PolicyId,
-  channel_token: AuthToken,
-  lane_policy: PolicyId,
-  client_policy: PolicyId,
-  connection_policy: PolicyId,
-  lane_count: Int,
-  op: BatchOperation,
-  verify_policy: PolicyId,
-) -> Bool {
-  expect Prune { sequence, proof_height, proof, lane } = op
-  let channel = channel_reference(transaction, channel_token)
-  expect [connection_id] = channel.channel.connection_hops
-  let valid_to =
-    validator_utils.get_tx_valid_to(transaction.validity_range) * 1_000_000
-  let (connection, client) =
-    validator_utils.validate_referred_connection_and_client(
-      transaction.reference_inputs,
-      channel_token.name,
-      client_policy,
-      connection_policy,
-      connection_id,
-      valid_to,
-      Some(proof_height),
-      history_witness(transaction, policy),
-    )
-  expect connection.state.state == connection_state.Open
-  expect client.status == Active
-  expect Some(consensus) =
-    pairs.get_first(client.state.consensus_states, proof_height)
-  expect Some(processed_time) =
-    pairs.get_first(client.state.processed_times, proof_height)
-  expect Some(processed_height) =
-    pairs.get_first(client.state.processed_heights, proof_height)
-  let path =
-    merkle.apply_prefix(
-      connection.state.counterparty.prefix,
-      merkle.new_merkle_path(
-        [
-          packet_keys.packet_commitment_path(
-            channel.channel.counterparty.port_id,
-            channel.channel.counterparty.channel_id,
-            sequence,
-          ),
-        ],
-      ),
-    )
-  expect
-    require_proof(
-      transaction,
-      verify_policy,
-      VerifyNonMembership {
-        cs: client.state.client_state,
-        cons_state: consensus,
-        height: proof_height,
-        processed_time,
-        processed_height,
-        delay_time_period: connection.state.delay_period,
-        delay_block_period: verify.get_block_delay(connection.state),
-        proof,
-        path,
-      },
-    )
-  let input = input_at(transaction, lane.input_ref)
-  expect datum: PacketLaneDatum = validator_utils.get_inline_datum(input.output)
-  expect datum.port_id == channel.port_id
-  expect
-    datum.channel_id == channel_keys.format_channel_identifier(
-      auth.extract_token_sequence(channel.token.name),
-    )
-  expect datum.lane_count == lane_count
-  expect
-    list.map(lane.updates, fn(update) { update.mutation }) == [
-      PrunePacket { sequence, proof_height },
-    ]
-  expect authenticate_lane(transaction, lane.input_ref, lane_policy)
-  assets.tokens(transaction.mint, policy) == dict.singleton("prune", 1)
 }
 
 // The router requires this policy alongside the operation policy, so funds and

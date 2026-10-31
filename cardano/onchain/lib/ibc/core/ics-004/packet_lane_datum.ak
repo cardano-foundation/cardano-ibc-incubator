@@ -22,6 +22,8 @@ pub type PacketLaneDatum {
   /// Receipts and acknowledgements live in the authenticated tree only.
   receipts: List<Int>,
   acknowledgements: Pairs<Int, ByteArray>,
+  /// Reserved proof-height slots preserve the Go light client datum layout.
+  /// Receipt replay is prevented by permanent authenticated membership.
   minimum_receive_proof_height: Height,
   maximum_receive_proof_height: Height,
   balances: Pairs<ByteArray, Int>,
@@ -39,7 +41,6 @@ pub type LaneMutation {
     proof_height: Height,
   }
   CompletePacket { packet: Packet }
-  PrunePacket { sequence: Int, proof_height: Height }
 }
 
 pub type LaneUpdate {
@@ -86,7 +87,6 @@ pub fn mutation_sequence(mutation: LaneMutation) -> Int {
     CommitPacket { packet } -> packet.sequence
     ReceivePacket { packet, .. } -> packet.sequence
     CompletePacket { packet } -> packet.sequence
-    PrunePacket { sequence, .. } -> sequence
   }
 }
 
@@ -152,8 +152,6 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
       expect bytearray.length(acknowledgement) == 32
       expect height_mod.is_valid(proof_height)
       expect !height_mod.is_zero(proof_height)
-      expect
-        height_mod.compare(proof_height, old.minimum_receive_proof_height) != Less
       expect [receipt_siblings, acknowledgement_siblings] = witnesses
       let receipt_root =
         update_root(old.root, receipt_key, "", #"01", receipt_siblings)
@@ -166,14 +164,6 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
           acknowledgement,
           acknowledgement_siblings,
         ),
-        maximum_receive_proof_height: if height_mod.compare(
-          proof_height,
-          old.maximum_receive_proof_height,
-        ) == Greater {
-          proof_height
-        } else {
-          old.maximum_receive_proof_height
-        },
       }
     }
     CompletePacket { packet } -> {
@@ -187,32 +177,6 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
         ..old,
         root: update_root(old.root, commitment_key, commitment, "", siblings),
         commitments: pairs.delete_first(old.commitments, sequence),
-      }
-    }
-    PrunePacket { proof_height, .. } -> {
-      expect height_mod.is_valid(proof_height)
-      expect !height_mod.is_zero(proof_height)
-      expect
-        height_mod.compare(proof_height, old.minimum_receive_proof_height) != Less
-      expect
-        height_mod.compare(proof_height, old.maximum_receive_proof_height) != Less
-      // Optional authenticated cleanup retains the existing replay floor.
-      // It is no longer needed to make room for ordinary receives.
-      expect [receipt_siblings,
-        acknowledgement_siblings, [acknowledgement]] = witnesses
-      expect bytearray.length(acknowledgement) == 32
-      let receipt_root =
-        update_root(old.root, receipt_key, #"01", "", receipt_siblings)
-      PacketLaneDatum {
-        ..old,
-        root: update_root(
-          receipt_root,
-          acknowledgement_key,
-          acknowledgement,
-          "",
-          acknowledgement_siblings,
-        ),
-        minimum_receive_proof_height: proof_height,
       }
     }
   }

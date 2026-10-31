@@ -82,7 +82,6 @@ const PACKET_OPERATIONS = [
   'timeout',
   'reject',
   'receive',
-  'prune',
   'timeout_on_close',
   'retire',
   'funds',
