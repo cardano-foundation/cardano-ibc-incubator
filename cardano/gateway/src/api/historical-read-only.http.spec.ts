@@ -54,7 +54,7 @@ describe('historical read-only HTTP boundary', () => {
           QueryService,
         ].map((provide) => ({ provide, useValue: {} })),
         { provide: PacketLaneService, useValue: { admit: build } },
-        { provide: PacketService, useValue: { sendPacket: build, prunePacketHistory: build } },
+        { provide: PacketService, useValue: { prunePacketHistory: build } },
         {
           provide: CheqdIcqService,
           useValue: {

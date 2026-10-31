@@ -14,7 +14,6 @@ describe('TxController - Packet (modern)', () => {
   const packetLaneMock = { admit: jest.fn(), settle: jest.fn(), batch: jest.fn() };
   let packetServiceMock: {
     recvPacket: jest.Mock;
-    sendPacket: jest.Mock;
     acknowledgementPacket: jest.Mock;
     timeoutPacket: jest.Mock;
     timeoutOnClosePacket: jest.Mock;
@@ -29,7 +28,6 @@ describe('TxController - Packet (modern)', () => {
     // PacketService for packet flows and ChannelService for channel close init.
     packetServiceMock = {
       recvPacket: jest.fn(),
-      sendPacket: jest.fn(),
       acknowledgementPacket: jest.fn(),
       timeoutPacket: jest.fn(),
       timeoutOnClosePacket: jest.fn(),
@@ -85,6 +83,24 @@ describe('TxController - Packet (modern)', () => {
 
     expect(packetLaneMock.admit).toHaveBeenCalledWith(request);
     expect(response).toBe(expected);
+  });
+
+
+  it.each([
+    ['RecvPacket', 'destination_port', 'receive'],
+    ['Acknowledgement', 'source_port', 'acknowledge'],
+    ['Timeout', 'source_port', 'timeout'],
+    ['TimeoutOnClose', 'source_port', 'timeout'],
+  ] as const)('%s routes ICS-20 packets through packet lanes', async (method, portField, operation) => {
+    const request = { packet: { [portField]: 'transfer' } } as any;
+    const response = { unsigned_tx: Buffer.from([7]) } as any;
+    packetLaneMock.settle.mockReset().mockResolvedValue(response);
+    await expect(controller[method](request)).resolves.toBe(response);
+    expect(packetLaneMock.settle).toHaveBeenCalledWith(request, operation);
+    expect(packetServiceMock.recvPacket).not.toHaveBeenCalled();
+    expect(packetServiceMock.acknowledgementPacket).not.toHaveBeenCalled();
+    expect(packetServiceMock.timeoutPacket).not.toHaveBeenCalled();
+    expect(packetServiceMock.timeoutOnClosePacket).not.toHaveBeenCalled();
   });
 
   it('delegates Acknowledgement to PacketService', async () => {

@@ -1,9 +1,4 @@
-import { GrpcFailedPreconditionException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
-import { CHANNEL_ID_PREFIX } from 'src/constant';
-import { decodeMerkleProof } from './helper';
-import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
-import { convertString2Hex, toHex } from '@shared/helpers/hex';
-import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
+import { MsgPrunePacketHistory } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
 import {
   MsgAcknowledgement,
   MsgRecvPacket,
@@ -11,7 +6,16 @@ import {
   MsgTimeoutOnClose,
   MsgTransfer,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
-import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
+import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
+import { MAX_PACKET_ENTRIES_PER_CHANNEL } from '@cardano-ibc/tx-builder';
+import { getAddressDetails } from '@lucid-evolution/lucid';
+import { convertString2Hex, toHex } from '@shared/helpers/hex';
+import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
+import { isSupportedGatewayPortId } from '@shared/helpers/module-port';
+import { ChannelDatum } from '@shared/types/channel/channel-datum';
+import { Order } from '@shared/types/channel/order';
+import { CHANNEL_ID_PREFIX } from 'src/constant';
+import { GrpcFailedPreconditionException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import {
   AckPacketOperator,
   PrunePacketHistoryOperator,
@@ -20,14 +24,8 @@ import {
   TimeoutOnClosePacketOperator,
   TimeoutPacketOperator,
 } from '../dto';
-import { MsgPrunePacketHistory } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
-import { isSupportedGatewayPortId } from '@shared/helpers/module-port';
-import { ChannelDatum } from '@shared/types/channel/channel-datum';
-import { Order } from '@shared/types/channel/order';
-import { MAX_PACKET_ENTRIES_PER_CHANNEL } from '@cardano-ibc/tx-builder';
-import { ICS20_PACKET_CODEC, type Ics20PacketCodec } from '../../config/bridge-manifest';
-import { decodeIcs20PacketDataForCodec } from '../../shared/helpers/ics20-packet-codec';
-import { getAddressDetails } from '@lucid-evolution/lucid';
+import { decodeMerkleProof } from './helper';
+
 
 function packetCapacityExhausted(channelDatum: ChannelDatum): GrpcFailedPreconditionException {
   return new GrpcFailedPreconditionException(
@@ -228,7 +226,6 @@ function senderPaymentKeyHash(sender: string): string {
 
 export function validateAndFormatTimeoutPacketParams(
   data: MsgTimeout,
-  ics20PacketCodec: Ics20PacketCodec = ICS20_PACKET_CODEC.STRICT,
 ): {
   constructedAddress: string;
   timeoutPacketOperator: TimeoutPacketOperator;
@@ -241,17 +238,9 @@ export function validateAndFormatTimeoutPacketParams(
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
     );
-  let fungibleTokenPacketData: FungibleTokenPacketDatum;
-  try {
-    fungibleTokenPacketData = decodeIcs20PacketDataForCodec(data.packet.data, ics20PacketCodec).data;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new GrpcInvalidArgumentException(`Invalid ICS-20 packet data: ${message}`);
-  }
   const decodedProofUnreceived: MerkleProof = decodeMerkleProof(data.proof_unreceived);
   // Prepare the timeoutPacketOperator object
   const timeoutPacketOperator: TimeoutPacketOperator = {
-    fungibleTokenPacketData: fungibleTokenPacketData,
     proofUnreceived: initializeMerkleProof(decodedProofUnreceived),
     proofHeight: {
       revisionHeight: BigInt(data.proof_height?.revision_height || 0n),
@@ -277,12 +266,11 @@ export function validateAndFormatTimeoutPacketParams(
 
 export function validateAndFormatTimeoutOnClosePacketParams(
   data: MsgTimeoutOnClose,
-  ics20PacketCodec: Ics20PacketCodec = ICS20_PACKET_CODEC.STRICT,
 ): {
   constructedAddress: string;
   timeoutOnClosePacketOperator: TimeoutOnClosePacketOperator;
 } {
-  const { constructedAddress, timeoutPacketOperator } = validateAndFormatTimeoutPacketParams(data, ics20PacketCodec);
+  const { constructedAddress, timeoutPacketOperator } = validateAndFormatTimeoutPacketParams(data);
   const decodedProofClose: MerkleProof = decodeMerkleProof(data.proof_close);
 
   return {

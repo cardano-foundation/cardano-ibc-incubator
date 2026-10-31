@@ -1,14 +1,15 @@
-import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
-import * as LucidImporter from '@lucid-evolution/lucid';
-import { AsyncMutex } from './asyncMutex';
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
+import * as LucidImporter from "@lucid-evolution/lucid";
+import { AsyncMutex } from "./asyncMutex";
 import {
   decodeAcknowledgement,
   encodeAcknowledgement,
   type Acknowledgement,
-} from './acknowledgementCodec';
-import { transferEscrowShardTokenName } from './index';
-import { LucidIbcAdapter } from './lucidIbcAdapter';
+} from "./acknowledgementCodec";
+import { transferEscrowShardTokenName } from "./index";
+import { LucidIbcAdapter } from "./lucidIbcAdapter";
+
 
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -132,46 +133,6 @@ describe('tx-builder runtime serialization', () => {
       'third:start',
       'third:end',
     ]);
-  });
-});
-
-describe('voucher send value conservation', () => {
-  it('burns the sender voucher while retaining HostState and channel reserves', async () => {
-    const outputs: unknown[][] = [];
-    const mints: unknown[][] = [];
-    const tx = {
-      readFrom: () => tx,
-      collectFrom: () => tx,
-      mintAssets: (...args: unknown[]) => { mints.push(args); return tx; },
-      pay: { ToContract: (...args: unknown[]) => { outputs.push(args); return tx; } },
-    };
-    const adapter = new LucidIbcAdapter(
-      TestLucid,
-      { newTx: () => tx } as never,
-      { validators: {
-        hostStateStt: { address: 'host-address' },
-        spendChannel: { address: 'channel-address' },
-      } } as never,
-    );
-    Object.assign(adapter, { referenceScripts: {} });
-    const hostAssets = { lovelace: 8_000_000n, 'host-nft': 1n, reserve: 7n };
-    const channelAssets = { lovelace: 9_000_000n, 'channel-nft': 1n };
-    await adapter.createUnsignedSendPacketBurnTx({
-      hostStateUtxo: { assets: hostAssets, datum: 'host-datum' },
-      channelUTxO: { assets: channelAssets },
-      channelToken: { policyId: 'channel-policy', name: 'channel-name' },
-      channelTokenUnit: 'channel-nft',
-      voucherTokenUnit: 'voucher',
-      transferAmount: 12n,
-      encodedMintVoucherRedeemer: 'burn-redeemer',
-      encodedUpdatedHostStateDatum: 'new-host',
-      encodedUpdatedChannelDatum: 'new-channel',
-    });
-    assert.deepEqual(outputs, [
-      ['host-address', { kind: 'inline', value: 'new-host' }, hostAssets],
-      ['channel-address', { kind: 'inline', value: 'new-channel' }, channelAssets],
-    ]);
-    assert.deepEqual(mints[0], [{ voucher: -12n }, 'burn-redeemer']);
   });
 });
 

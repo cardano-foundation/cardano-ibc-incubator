@@ -1,9 +1,3 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { inspect } from 'util';
-import { gatewayDiagnostics } from '@shared/helpers/gateway-diagnostics';
-import { LucidService } from 'src/shared/modules/lucid/lucid.service';
-import { ConfigService } from '@nestjs/config';
-import { DenomTraceService, TraceRegistryInsertContext } from 'src/query/services/denom-trace.service';
 import {
   MsgAcknowledgement,
   MsgAcknowledgementResponse,
@@ -13,118 +7,81 @@ import {
   MsgTimeoutOnClose,
   MsgTimeoutOnCloseResponse,
   MsgTimeoutResponse,
-  MsgTransfer,
   MsgTransferResponse,
   ResponseResultType,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { gatewayDiagnostics } from '@shared/helpers/gateway-diagnostics';
+import { LucidService } from 'src/shared/modules/lucid/lucid.service';
+import { inspect } from 'util';
 
-import { Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
-import { parseChannelSequence, parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
-import { ChannelDatum } from 'src/shared/types/channel/channel-datum';
-import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
-import { Packet } from 'src/shared/types/channel/packet';
-import { SpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
-import { ACK_RESULT, CHANNEL_ID_PREFIX, LOVELACE, ORDER_MAPPING_CHANNEL } from 'src/constant';
-import { ASYNC_ICQ_HOST_PORT } from '@shared/types/apps/async-icq/async-icq';
-import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
-import { TransferIBCModuleRedeemer } from '@shared/types/apps/transfer/transfer-ibc-module-redeemer';
-import {
-  deleteKeySortMap,
-  deleteSortMap,
-  getDenomPrefix,
-  insertSortMapWithNumberKey,
-  prependToMap,
-} from '@shared/helpers/helper';
-import { RpcException } from '@nestjs/microservices';
-import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
-import { TransferEscrowDatum } from '@shared/types/apps/transfer/transfer-escrow-datum';
-import { TransferModuleDatum } from '@shared/types/apps/transfer/transfer-module-datum';
-import { mapLovelaceDenom, normalizeDenomTokenTransfer, sumLovelaceFromUtxos } from './helper/helper';
-import { convertHex2String, convertString2Hex, hashSHA256, toHex } from '../shared/helpers/hex';
-import { MintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
-import { commitPacket } from '../shared/helpers/commitment';
-import { ClientDatum } from '@shared/types/client-datum';
-import { isValidProofHeight } from './helper/height.validate';
-import { AcknowledgementResponse } from '@shared/types/channel/acknowledgement_response';
-import { HostStateDatum } from 'src/shared/types/host-state-datum';
-import {
-  validateAndFormatAcknowledgementPacketParams,
-  validateAndFormatRecvPacketParams,
-  validateAndFormatSendPacketParams,
-  validateAndFormatTimeoutPacketParams,
-  validateAndFormatTimeoutOnClosePacketParams,
-  validateRecvPacketHistoryCapacity,
-  validateSendPacketCommitmentCapacity,
-} from './helper/packet.validate';
-import { encodeVerifyProofRedeemer, VerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
-import { getBlockDelay, getHeightMapValue } from '../shared/helpers/verify';
-import { packetAcknowledgementPath, packetCommitmentPath, packetReceiptPath } from '../shared/helpers/packet-keys';
+import { MsgPrunePacketHistoryResponse } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
 import {
   Channel as CardanoChannel,
-  Order as ChannelOrder,
   State as CardanoChannelState,
+  Order as ChannelOrder,
   orderFromJSON,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
+import { Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
+import { RpcException } from '@nestjs/microservices';
+import { deleteKeySortMap, deleteSortMap, insertSortMapWithNumberKey, prependToMap } from '@shared/helpers/helper';
+import { getGatewayModuleConfigForPortId } from '@shared/helpers/module-port';
+import { ASYNC_ICQ_HOST_PORT } from '@shared/types/apps/async-icq/async-icq';
+import { AcknowledgementResponse } from '@shared/types/channel/acknowledgement_response';
+import { SpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
+import { ClientDatum } from '@shared/types/client-datum';
+import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
+import { CHANNEL_ID_PREFIX, ORDER_MAPPING_CHANNEL } from 'src/constant';
+import { parseChannelSequence, parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
+import { ChannelDatum } from 'src/shared/types/channel/channel-datum';
+import { Packet } from 'src/shared/types/channel/packet';
+import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
+import { HostStateDatum } from 'src/shared/types/host-state-datum';
+import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import {
   GrpcFailedPreconditionException,
   GrpcInternalException,
   GrpcInvalidArgumentException,
 } from '~@/exception/grpc_exceptions';
-import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
-import {
-  AckPacketOperator,
-  RecvPacketOperator,
-  PrunePacketHistoryOperator,
-  SendModulePacketOperator,
-  SendPacketOperator,
-  TimeoutPacketOperator,
-  TimeoutOnClosePacketOperator,
-} from './dto';
-import { MsgPrunePacketHistoryResponse } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
-import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import {
   UnsignedAckPacketModuleDto,
-  UnsignedAckPacketMintDto,
-  UnsignedAckPacketSucceedDto,
-  UnsignedAckPacketUnescrowDto,
-  UnsignedRecvPacketModuleDto,
-  UnsignedRecvPacketMintDto,
-  UnsignedRecvPacketUnescrowDto,
   UnsignedPrunePacketHistoryDto,
+  UnsignedRecvPacketModuleDto,
   UnsignedSendPacketModuleDto,
-  UnsignedSendPacketBurnDto,
-  UnsignedTimeoutPacketMintDto,
-  UnsignedTimeoutPacketUnescrowDto,
 } from '~@/shared/modules/lucid/dtos';
 import { acknowledgementCommitmentFromResponse } from '../shared/helpers/acknowledgement';
-import { IbcTreeStateStore, StateRootResult, StaleIbcTreeStateError } from '../shared/helpers/ibc-state-root';
-import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
-import { AsyncIcqHostService } from './async-icq-host.service';
-import { TxOperationRunnerService } from './tx-operation-runner.service';
-import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
-import { isHeightAtLeast, maximumHeight } from '../shared/helpers/packet-history-height';
 import { channelPath } from '../shared/helpers/channel';
+import { commitPacket } from '../shared/helpers/commitment';
+import { convertHex2String, convertString2Hex, hashSHA256, toHex } from '../shared/helpers/hex';
+import { IbcTreeStateStore, StaleIbcTreeStateError, StateRootResult } from '../shared/helpers/ibc-state-root';
+import { isHeightAtLeast, maximumHeight } from '../shared/helpers/packet-history-height';
+import { packetAcknowledgementPath, packetCommitmentPath, packetReceiptPath } from '../shared/helpers/packet-keys';
+import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
+import { getBlockDelay, getHeightMapValue } from '../shared/helpers/verify';
+import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { ChannelState } from '../shared/types/channel/state';
-import { getGatewayModuleConfigForPortId } from '@shared/helpers/module-port';
-import { buildVoucherCip68Metadata, encodeVoucherCip68MetadataDatum } from '../shared/helpers/cip68-voucher-metadata';
+import { encodeVerifyProofRedeemer, VerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
+import { AsyncIcqHostService } from './async-icq-host.service';
 import {
-  buildIbcDenomHashFromFullDenom,
-  buildVoucherDenomHashFromFullDenom,
-  buildVoucherReferenceTokenNameFromDenomHash,
-  buildVoucherUserTokenNameFromDenomHash,
-} from '../shared/helpers/voucher-asset';
+  AckPacketOperator,
+  PrunePacketHistoryOperator,
+  RecvPacketOperator,
+  SendModulePacketOperator,
+  TimeoutOnClosePacketOperator,
+  TimeoutPacketOperator,
+} from './dto';
+import { isValidProofHeight } from './helper/height.validate';
+import { sumLovelaceFromUtxos } from './helper/helper';
 import {
-  buildUnsignedSendPacketTx as buildUnsignedSendPacketTxWithPackage,
-  type SendPacketOperator as SharedSendPacketOperator,
-} from '@cardano-ibc/tx-builder';
-import { ICS20_PACKET_CODEC, type DeploymentConfig, type Ics20PacketCodec } from '../config/bridge-manifest';
-import { decodeIcs20PacketDataForCodec, stringifyIcs20PacketDataForCodec } from '../shared/helpers/ics20-packet-codec';
-import {
-  findTransferEscrowShard as findTransferEscrowShardWithPackage,
-  getTransferModuleRootFromAddressScan,
-  type TransferEscrowShardLookup,
-} from '@cardano-ibc/tx-builder-runtime/transferEscrowShard';
-
+  validateAndFormatAcknowledgementPacketParams,
+  validateAndFormatRecvPacketParams,
+  validateAndFormatTimeoutOnClosePacketParams,
+  validateAndFormatTimeoutPacketParams,
+  validateRecvPacketHistoryCapacity,
+  validateSendPacketCommitmentCapacity,
+} from './helper/packet.validate';
+import { TxOperationRunnerService } from './tx-operation-runner.service';
 
 function uint64ToBigEndianHex(value: bigint): string {
   const bytes = Buffer.alloc(8);
@@ -140,164 +97,22 @@ export class PacketService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
-    private denomTraceService: DenomTraceService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
     private readonly asyncIcqHostService: AsyncIcqHostService,
     private readonly ibcTreeStore: IbcTreeStateStore,
   ) {}
-
-  private getIcs20PacketCodec(): Ics20PacketCodec {
-    return this.configService.get<DeploymentConfig>('deployment')?.ics20PacketCodec ?? ICS20_PACKET_CODEC.STRICT;
-  }
-  /**
-   * @param data
-   * @returns unsigned_tx
-   * 1. check validate port transfer
-   * 2. check denom with voucher prefix
-   * - yes => recv_unescrow
-   * - no => recv_mint
-   */
-
-  private prettyPrint(obj: any, indent = 2): string {
-    const seen = new WeakSet();
-
-    function replacer(key: string, value: any): any {
-      // Handle circular references
-      if (typeof value === 'object' && value !== null) {
-        if (seen.has(value)) {
-          return '[Circular Reference]';
-        }
-        seen.add(value);
-      }
-
-      // Handle Map objects
-      if (value instanceof Map) {
-        const mapEntries: Record<string, any> = {};
-        value.forEach((v, k) => {
-          mapEntries[String(k)] = v;
-        });
-        return { __type: 'Map', entries: mapEntries };
-      }
-
-      // Handle BigInt values
-      if (typeof value === 'bigint') {
-        return { __type: 'BigInt', value: value.toString() };
-      }
-
-      // Handle other special types as needed
-      // ...
-
-      return value;
+  private requireQueryChannel(datum: ChannelDatum): void {
+    if (convertHex2String(datum.port) !== ASYNC_ICQ_HOST_PORT) {
+      throw new GrpcInvalidArgumentException('Inline query packets require the icqhost port');
     }
-
-    return JSON.stringify(obj, replacer, indent);
-  }
-
-  private async resolveTraceRegistryUpdate(
-    voucherHash: string,
-    fullDenom: string,
-    buildCandidateTx: (traceRegistryUpdate: Extract<TraceRegistryInsertContext, { kind: 'append' }>) => TxBuilder | Promise<TxBuilder>,
-    onInitialUpdate?: (traceRegistryUpdate: TraceRegistryInsertContext) => void,
-  ): Promise<TraceRegistryInsertContext> {
-    const initialUpdate = await this.denomTraceService.prepareOnChainInsert(voucherHash, fullDenom);
-    onInitialUpdate?.(initialUpdate);
-    if (initialUpdate.kind !== 'append') {
-      return initialUpdate;
-    }
-
-    const candidateTx = await buildCandidateTx(initialUpdate);
-    const shouldRollover = await this.denomTraceService.shouldRolloverForUnsignedTx(candidateTx);
-    if (!shouldRollover) {
-      return initialUpdate;
-    }
-
-    return await this.denomTraceService.prepareOnChainInsert(voucherHash, fullDenom, { forceRollover: true });
   }
 
   private logRecvPacketDebug(line: () => string): void {
     gatewayDiagnostics.record('recvPacket', line);
   }
 
-  private compareUtxoRef(a: UTxO, b: UTxO): number {
-    const txHashCompare = a.txHash.localeCompare(b.txHash);
-    if (txHashCompare !== 0) return txHashCompare;
-    return a.outputIndex - b.outputIndex;
-  }
-
   private toUtxoRef(utxo: UTxO): string {
     return `${utxo.txHash}#${utxo.outputIndex}`;
-  }
-
-  private debugLogRecvPacketPlan(
-    context: string,
-    params: {
-      spendInputs: Array<{ label: string; utxo: UTxO }>;
-      channelOutputAddress: string;
-      hostStateOutputAddress: string;
-      transferModuleInputAddress?: string;
-      transferModuleOutputAddress?: string;
-      updatedChannelDatumHex: string;
-      recvPacketPolicyId: string;
-      verifyProofPolicyId: string;
-      channelTokenUnit: string;
-      proofHeight: string;
-      packetSequence: string;
-      packetDataUtf8?: string;
-      packetDataHex?: string;
-      packetDataProfiles?: string;
-      receiverAddress?: string;
-      voucherTokenUnit?: string;
-      denomToken?: string;
-      traceRegistryKind?: string;
-    },
-  ): void {
-    if (!gatewayDiagnostics.isEnabled()) return;
-
-    const sortedSpendInputs = [...params.spendInputs].sort((a, b) => this.compareUtxoRef(a.utxo, b.utxo));
-    const renderedSpendInputs = sortedSpendInputs
-      .map((entry, index) => `Spend[${index}] ${this.toUtxoRef(entry.utxo)} (${entry.label})`)
-      .join(', ');
-
-    this.logRecvPacketDebug(() => `[DEBUG recvPacket] ${context} spend_inputs_sorted=${renderedSpendInputs}`);
-    this.logRecvPacketDebug(
-      () =>
-        `[DEBUG recvPacket] ${context} policy_ids recv_packet=${params.recvPacketPolicyId} verify_proof=${params.verifyProofPolicyId} channel_token_unit=${params.channelTokenUnit}`,
-    );
-    this.logRecvPacketDebug(
-      () => `[DEBUG recvPacket] ${context} packet sequence=${params.packetSequence} proof_height=${params.proofHeight}`,
-    );
-    this.logRecvPacketDebug(
-      () =>
-        `[DEBUG recvPacket] ${context} output_addresses channel=${params.channelOutputAddress} host_state=${params.hostStateOutputAddress}${params.receiverAddress ? ` receiver=${params.receiverAddress}` : ''}`,
-    );
-    if (params.transferModuleInputAddress || params.transferModuleOutputAddress) {
-      this.logRecvPacketDebug(
-        () =>
-          `[DEBUG recvPacket] ${context} transfer_module_addresses input=${params.transferModuleInputAddress ?? 'n/a'} output=${params.transferModuleOutputAddress ?? 'n/a'}`,
-      );
-    }
-    if (params.voucherTokenUnit) {
-      this.logRecvPacketDebug(() => `[DEBUG recvPacket] ${context} voucher_token_unit=${params.voucherTokenUnit}`);
-    }
-    if (params.denomToken) {
-      this.logRecvPacketDebug(() => `[DEBUG recvPacket] ${context} denom_token=${params.denomToken}`);
-    }
-    if (params.packetDataUtf8 !== undefined) {
-      this.logRecvPacketDebug(
-        () =>
-          `[DEBUG recvPacket] ${context} packet_data profiles=${params.packetDataProfiles ?? 'unknown'} utf8=${params.packetDataUtf8}`,
-      );
-    }
-    if (params.packetDataHex !== undefined) {
-      this.logRecvPacketDebug(() => `[DEBUG recvPacket] ${context} packet_data_hex=${params.packetDataHex}`);
-    }
-    if (params.traceRegistryKind) {
-      this.logRecvPacketDebug(() => `[DEBUG recvPacket] ${context} trace_registry_kind=${params.traceRegistryKind}`);
-    }
-    this.logRecvPacketDebug(
-      () =>
-        `[DEBUG recvPacket] ${context} updated_channel_datum len=${params.updatedChannelDatumHex.length} head=${params.updatedChannelDatumHex.substring(0, 160)}`,
-    );
   }
 
   private logRecvPacketRawConfig(context: string, tx: TxBuilder, knownRefs: Array<[string, UTxO | undefined]>): void {
@@ -710,24 +525,6 @@ export class PacketService {
     );
   }
 
-  private getTraceRegistrySpendInputs(
-    traceRegistryUpdate: TraceRegistryInsertContext | null,
-  ): Array<{ label: string; utxo: UTxO }> {
-    if (!traceRegistryUpdate || traceRegistryUpdate.kind === 'existing') {
-      return [];
-    }
-
-    if (traceRegistryUpdate.kind === 'append') {
-      return [{ label: 'trace_registry_shard', utxo: traceRegistryUpdate.traceRegistryShardUtxo }];
-    }
-
-    return [
-      { label: 'trace_registry_directory', utxo: traceRegistryUpdate.traceRegistryDirectoryUtxo },
-      { label: 'trace_registry_shard', utxo: traceRegistryUpdate.traceRegistryShardUtxo },
-      { label: 'trace_registry_mint_nonce', utxo: traceRegistryUpdate.traceRegistryMintNonceUtxo },
-    ];
-  }
-
   /**
    * Ensure the in-memory Merkle tree is aligned with on-chain state.
    *
@@ -746,22 +543,6 @@ export class PacketService {
     ) {
       throw new StaleIbcTreeStateError('HostState changed while preparing the transaction, retry with current inputs');
     }
-  }
-
-  private dedupeUtxos(utxos: UTxO[]): UTxO[] {
-    // Prefer the *last* occurrence for a given out-ref so callers can append a "canonical" UTxO
-    // (e.g., fetched via `utxosAtWithUnit`) that should be used both for `collectFrom(...)` and
-    // within the wallet UTxO set passed to `fromAddress(...)`.
-    const map = new Map<string, UTxO>();
-    const order: string[] = [];
-
-    for (const utxo of utxos) {
-      const key = `${utxo.txHash}#${utxo.outputIndex}`;
-      if (!map.has(key)) order.push(key);
-      map.set(key, utxo);
-    }
-
-    return order.map((k) => map.get(k)!).filter(Boolean);
   }
 
   private async computeTxValidityWindow(): Promise<{
@@ -1248,14 +1029,12 @@ export class PacketService {
       const {
         unsignedTx: unsignedRecvPacketTx,
         pendingTreeUpdate,
-      } = await this.buildUnsignedRecvPacketTx(recvPacketOperator, constructedAddress);
+      } = await this.buildUnsignedRecvPacketTx(recvPacketOperator);
 
       const deploymentConfig = this.configService.get('deployment');
       this.logRecvPacketRawConfig('pre_complete', unsignedRecvPacketTx, [
-        ['traceRegistryDirectory', await this.safeFindTraceRegistryDirectoryUtxo()],
         ['recvPacketRefScript', deploymentConfig.validators.spendChannel.refValidator.recv_packet?.refUtxo],
         ['verifyProofRefScript', deploymentConfig.validators.verifyProof?.refUtxo],
-        ['spendTraceRegistryRefScript', deploymentConfig.validators.spendTraceRegistry?.refUtxo],
       ]);
 
       const { currentSlot, validFromTime, validToTime: initialValidToTime } = await this.computeTxValidityWindow();
@@ -1329,88 +1108,6 @@ export class PacketService {
     }
   }
 
-  private async safeFindTraceRegistryDirectoryUtxo(): Promise<UTxO | undefined> {
-    try {
-      const deploymentConfig = this.configService.get('deployment');
-      const traceRegistry = deploymentConfig.traceRegistry;
-      if (!traceRegistry?.directory) return undefined;
-      return await this.lucidService.findUtxoByUnit(traceRegistry.directory.policyId + traceRegistry.directory.name);
-    } catch {
-      return undefined;
-    }
-  }
-  async sendPacket(data: MsgTransfer): Promise<MsgTransferResponse> {
-    // used in the funding osmosis step
-    try {
-      this.logger.log('Transfer is processing');
-      const sendPacketOperator = validateAndFormatSendPacketParams(data);
-      await this.refreshWalletContext(sendPacketOperator.signer, 'sendPacketBuilder');
-
-      const {
-        unsignedTx: unsignedSendPacketTx,
-        pendingTreeUpdate,
-        walletOverride,
-      } = await this.buildUnsignedSendPacketTx(sendPacketOperator);
-      const { currentSlot, validFromTime, validToSlot, validToTime } = await this.computeTxValidityWindow();
-      if (currentSlot > validToSlot) {
-        throw new GrpcInternalException('channel init failed: tx time invalid');
-      }
-
-      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
-        operationName: 'sendPacket',
-        unsignedTx: unsignedSendPacketTx,
-        validity: {
-          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
-        },
-        wallet: {
-          mode: 'custom_before_complete',
-          run: async () => {
-            if (!walletOverride) {
-              return;
-            }
-            // Ensure the sender's UTxOs are used right before completion to avoid wallet drift
-            // between build and complete (e.g., concurrent tx builds with different wallets).
-            const refreshedUtxos = await this.lucidService.tryFindUtxosAt(walletOverride.address, {
-              maxAttempts: 6,
-              retryDelayMs: 1000,
-            });
-            const mergedUtxos = this.dedupeUtxos([...(walletOverride.utxos ?? []), ...refreshedUtxos]);
-            const utxosToUse = mergedUtxos.length > 0 ? mergedUtxos : walletOverride.utxos;
-            this.lucidService.selectWalletFromAddress(walletOverride.address, utxosToUse);
-            this.logger.log(
-              `[walletOverride] sendPacket selecting wallet from ${walletOverride.address}, utxos=${utxosToUse.length}, refreshed=${refreshedUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(
-                utxosToUse,
-              )}`,
-            );
-          },
-        },
-        completeOptions: {
-          localUPLCEval: false,
-          setCollateral: TRANSACTION_SET_COLLATERAL,
-        },
-        pendingTreeUpdate,
-      });
-
-      this.logger.log('Returning unsigned tx for send packet');
-      const response: MsgTransferResponse = {
-        result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
-        unsigned_tx: {
-          type_url: '',
-          value: cborHexBytes,
-        },
-      };
-      return response;
-    } catch (error) {
-      console.error(error);
-      this.logger.error(`Transfer: ${error}`);
-      if (!(error instanceof RpcException)) {
-        throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
-      }
-
-      throw error;
-    }
-  }
-
   async sendAsyncIcqPacket(
     data: SendModulePacketOperator,
   ): Promise<{ packet_sequence: string; tx: MsgTransferResponse }> {
@@ -1476,7 +1173,6 @@ export class PacketService {
       this.logger.log('timeoutPacket is processing');
       const { constructedAddress, timeoutPacketOperator } = validateAndFormatTimeoutPacketParams(
         data,
-        this.getIcs20PacketCodec(),
       );
       const buildTimeoutAttempt = async () => {
         await this.refreshWalletContext(constructedAddress, 'timeoutPacketBuilder');
@@ -1533,7 +1229,6 @@ export class PacketService {
       this.logger.log('timeoutOnClosePacket is processing');
       const { constructedAddress, timeoutOnClosePacketOperator } = validateAndFormatTimeoutOnClosePacketParams(
         data,
-        this.getIcs20PacketCodec(),
       );
       const buildTimeoutOnCloseAttempt = async () => {
         await this.refreshWalletContext(constructedAddress, 'timeoutOnClosePacketBuilder');
@@ -1646,7 +1341,6 @@ export class PacketService {
   }
   async buildUnsignedRecvPacketTx(
     recvPacketOperator: RecvPacketOperator,
-    constructedAddress: string,
   ): Promise<{
     unsignedTx: TxBuilder;
     pendingTreeUpdate?: PendingTreeUpdate;
@@ -1658,6 +1352,7 @@ export class PacketService {
     const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     // Get channel datum
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+    this.requireQueryChannel(channelDatum);
     validateRecvPacketHistoryCapacity(channelDatum);
     const channelEnd = channelDatum.state.channel;
     if (channelEnd.state !== 'Open') {
@@ -1888,337 +1583,9 @@ export class PacketService {
       return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
     }
 
-    let decodedPacketData: ReturnType<typeof decodeIcs20PacketDataForCodec>;
-    try {
-      decodedPacketData = decodeIcs20PacketDataForCodec(
-        Buffer.from(recvPacketOperator.packetData, 'hex'),
-        this.getIcs20PacketCodec(),
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Error decoding ICS-20 packet data: ${message}`);
-      throw new GrpcInvalidArgumentException(`Invalid ICS-20 packet data: ${message}`);
-    }
-    const stringData = decodedPacketData.json;
-
-    if (stringData.startsWith('{') && stringData.endsWith('}')) {
-      const jsonData: unknown = decodedPacketData.data;
-
-      if (typeof jsonData === 'object' && jsonData !== null && 'denom' in jsonData && jsonData.denom !== undefined) {
-        // The shared decoder established that these are canonical ICS-20 packet bytes.
-        const fungibleTokenPacketData: FungibleTokenPacketDatum = jsonData as FungibleTokenPacketDatum;
-        const packetDataProfiles = decodedPacketData.profiles.join(',');
-        const fTokenPacketData: FungibleTokenPacketDatum = {
-          denom: convertString2Hex(fungibleTokenPacketData.denom),
-          amount: convertString2Hex(fungibleTokenPacketData.amount),
-          sender: convertString2Hex(fungibleTokenPacketData.sender),
-          receiver: convertString2Hex(fungibleTokenPacketData.receiver),
-          memo: convertString2Hex(fungibleTokenPacketData.memo),
-        };
-
-        const spendTransferModuleRedeemer: TransferIBCModuleRedeemer = {
-          Callback: [
-            {
-              OnRecvPacket: {
-                channel_id: channelId,
-                packet_data: packet.data,
-                data: {
-                  ModuleDataV1: [fTokenPacketData],
-                },
-                acknowledgement: {
-                  response: {
-                    AcknowledgementResult: {
-                      result: convertString2Hex(ACK_RESULT),
-                    },
-                  },
-                },
-              },
-            },
-          ],
-        };
-
-        const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
-          spendTransferModuleRedeemer,
-          'transferIBCModuleRedeemer',
-        );
-        const transferModuleUtxo = await this.lucidService.findUtxoByUnit(this.getTransferModuleIdentifier());
-
-        const packetSourcePort = convertHex2String(packet.source_port);
-        const packetSourceChannel = convertHex2String(packet.source_channel);
-
-        if (this._hasVoucherPrefix(fungibleTokenPacketData.denom, packetSourcePort, packetSourceChannel)) {
-          // Handle recv packet unescrow
-          const updatedChannelDatum: ChannelDatum = {
-            ...channelDatum,
-            state: {
-              ...channelDatum.state,
-              next_sequence_recv: nextSequenceRecv,
-              maximum_receive_proof_height: maximumHeight(
-                channelDatum.state.maximum_receive_proof_height,
-                recvPacketOperator.proofHeight,
-              ),
-              packet_receipt: packetReceipt,
-              packet_acknowledgement: insertSortMapWithNumberKey(
-                channelDatum.state.packet_acknowledgement,
-                packet.sequence,
-                '08F7557ED51826FE18D84512BF24EC75001EDBAF2123A477DF72A0A9F3640A7C',
-              ),
-            },
-          };
-
-          const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
-            updatedChannelDatum,
-            'channel',
-          );
-
-          const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-            await this.buildHostStateUpdateForHandlePacket(
-              channelDatum,
-              updatedChannelDatum,
-              recvPacketOperator.channelId,
-            );
-          const unescrowDenom = this._unwrapVoucherDenom(
-            fungibleTokenPacketData.denom,
-            packetSourcePort,
-            packetSourceChannel,
-          );
-          const transferAmount = BigInt(fungibleTokenPacketData.amount);
-          const requestedDenomToken = mapLovelaceDenom(unescrowDenom, 'packet_to_asset');
-          const transferEscrowShard = await this.findTransferEscrowShard(
-            channelId,
-            convertString2Hex(unescrowDenom),
-            requestedDenomToken,
-            transferAmount,
-            -transferAmount,
-          );
-          if (transferEscrowShard.kind !== 'existing') {
-            throw new GrpcInvalidArgumentException(
-              `Transfer escrow shard not found for channel ${recvPacketOperator.channelId} and denom ${unescrowDenom}`,
-            );
-          }
-          const escrowSourceAssets = transferEscrowShard.utxo.assets;
-          const denomToken = this._resolveAssetUnitFromUtxoAssets(escrowSourceAssets, requestedDenomToken);
-          const escrowedAmount = escrowSourceAssets[denomToken] ?? 0n;
-          if (escrowedAmount < transferAmount) {
-            throw new GrpcInvalidArgumentException(
-              `Insufficient escrowed amount for ${denomToken}: have ${escrowedAmount}, need ${transferAmount}`,
-            );
-          }
-          const unsignedRecvPacketUnescrowParams: UnsignedRecvPacketUnescrowDto = {
-            hostStateUtxo,
-            channelUtxo,
-            connectionUtxo,
-            clientUtxo,
-            transferEscrowUtxo: transferEscrowShard.utxo,
-            transferModuleReferenceUtxo: transferEscrowShard.transferModuleUtxo,
-
-            encodedHostStateRedeemer,
-            encodedUpdatedHostStateDatum,
-            encodedSpendChannelRedeemer,
-            encodedSpendTransferModuleRedeemer,
-            encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
-            transferEscrowShardTokenUnit: transferEscrowShard.shardTokenUnit,
-            channelTokenUnit,
-            encodedUpdatedChannelDatum,
-            transferAmount,
-            denomToken,
-            receiverAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.receiver),
-            constructedAddress,
-
-            recvPacketPolicyId,
-            channelToken,
-
-            verifyProofPolicyId,
-            encodedVerifyProofRedeemer,
-          };
-          this.debugLogRecvPacketPlan('unescrow', {
-            spendInputs: [
-              { label: 'host_state', utxo: hostStateUtxo },
-              { label: 'channel', utxo: channelUtxo },
-              ...(transferEscrowShard.utxo ? [{ label: 'transfer_escrow', utxo: transferEscrowShard.utxo }] : []),
-            ],
-            channelOutputAddress: deploymentConfig.validators.spendChannel.address,
-            hostStateOutputAddress: deploymentConfig.validators.hostStateStt.address,
-            transferModuleOutputAddress: deploymentConfig.modules.transfer.address,
-            updatedChannelDatumHex: encodedUpdatedChannelDatum,
-            recvPacketPolicyId,
-            verifyProofPolicyId,
-            channelTokenUnit,
-            proofHeight: `${recvPacketOperator.proofHeight.revisionNumber}/${recvPacketOperator.proofHeight.revisionHeight}`,
-            packetSequence: packet.sequence.toString(),
-            packetDataUtf8: stringData,
-            packetDataHex: recvPacketOperator.packetData,
-            packetDataProfiles,
-            receiverAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.receiver),
-            denomToken,
-          });
-          const unsignedTx = await this.lucidService.createUnsignedRecvPacketUnescrowTx(
-            unsignedRecvPacketUnescrowParams,
-          );
-          return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
-        } else {
-          // Handle recv packet escrow and voucher mint
-          const mintVoucherRedeemer: MintVoucherRedeemer = {
-            MintVoucher: {
-              packet_source_port: packet.source_port,
-              packet_source_channel: packet.source_channel,
-              packet_dest_port: packet.destination_port,
-              packet_dest_channel: packet.destination_channel,
-              data: fTokenPacketData,
-            },
-          };
-          const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
-            mintVoucherRedeemer,
-            'mintVoucherRedeemer',
-          );
-
-          // MintVoucher validator computes token name from destination port/channel + packet denom
-          // Use the same prefix here so voucher hash stays consistent even when channel ids differ by side
-          const destPrefix = getDenomPrefix(
-            convertHex2String(packet.destination_port),
-            convertHex2String(packet.destination_channel),
-          );
-
-          const fullDenomPath = destPrefix + fungibleTokenPacketData.denom;
-          const voucherMintDetails = this.buildVoucherMintDetails(fullDenomPath);
-
-          const updatedChannelDatum: ChannelDatum = {
-            ...channelDatum,
-            state: {
-              ...channelDatum.state,
-              next_sequence_recv: nextSequenceRecv,
-              maximum_receive_proof_height: maximumHeight(
-                channelDatum.state.maximum_receive_proof_height,
-                recvPacketOperator.proofHeight,
-              ),
-              packet_receipt: packetReceipt,
-              packet_acknowledgement: insertSortMapWithNumberKey(
-                channelDatum.state.packet_acknowledgement,
-                packet.sequence,
-                '08F7557ED51826FE18D84512BF24EC75001EDBAF2123A477DF72A0A9F3640A7C',
-              ),
-            },
-          };
-
-          const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
-            updatedChannelDatum,
-            'channel',
-          );
-
-          const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-            await this.buildHostStateUpdateForHandlePacket(
-              channelDatum,
-              updatedChannelDatum,
-              recvPacketOperator.channelId,
-            );
-
-          const receiverAddress = this._resolveVoucherReceiverAddress(fungibleTokenPacketData.receiver);
-          const buildUnsignedRecvPacketMintParams = (
-            traceRegistryUpdate: TraceRegistryInsertContext | null,
-          ): UnsignedRecvPacketMintDto => ({
-            hostStateUtxo,
-            channelUtxo,
-            connectionUtxo,
-            clientUtxo,
-            transferModuleUtxo,
-
-            encodedHostStateRedeemer,
-            encodedUpdatedHostStateDatum,
-            encodedSpendChannelRedeemer,
-            encodedSpendTransferModuleRedeemer,
-            encodedMintVoucherRedeemer,
-            encodedUpdatedChannelDatum,
-
-            channelTokenUnit,
-            voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
-            voucherReferenceTokenUnit: voucherMintDetails.voucherReferenceTokenUnit,
-            voucherMetadataAddress: voucherMintDetails.voucherMetadataAddress,
-            encodedVoucherMetadataDatum: voucherMintDetails.encodedVoucherMetadataDatum,
-            transferAmount: BigInt(fungibleTokenPacketData.amount),
-            receiverAddress,
-            constructedAddress,
-
-            recvPacketPolicyId,
-            channelToken,
-
-            verifyProofPolicyId,
-            encodedVerifyProofRedeemer,
-            traceRegistryUpdate,
-          });
-
-          // RecvPacket voucher mint path:
-          // - construct the canonical full denom visible on the destination side
-          // - derive the 28-byte voucher core plus labeled FT/reference asset names
-          // The retained voucher policy authenticates the spent RecvPacket and
-          // exact user mint; registry registration must be part of that same
-          // transaction. A reference-NFT-only prelude is not an accepted path.
-          const traceRegistryUpdate = await this.resolveTraceRegistryUpdate(
-            voucherMintDetails.voucherDenomHash,
-            fullDenomPath,
-            (candidateUpdate) =>
-              this.lucidService.createUnsignedRecvPacketMintTx(buildUnsignedRecvPacketMintParams(candidateUpdate)),
-            (initialUpdate) =>
-              this.debugLogRecvPacketPlan('mint_voucher_candidate', {
-                spendInputs: [
-                  ...this.getTraceRegistrySpendInputs(initialUpdate),
-                  { label: 'host_state', utxo: hostStateUtxo },
-                  { label: 'channel', utxo: channelUtxo },
-                ],
-                channelOutputAddress: deploymentConfig.validators.spendChannel.address,
-                hostStateOutputAddress: deploymentConfig.validators.hostStateStt.address,
-                updatedChannelDatumHex: encodedUpdatedChannelDatum,
-                recvPacketPolicyId,
-                verifyProofPolicyId,
-                channelTokenUnit,
-                proofHeight: `${recvPacketOperator.proofHeight.revisionNumber}/${recvPacketOperator.proofHeight.revisionHeight}`,
-                packetSequence: packet.sequence.toString(),
-                packetDataUtf8: stringData,
-                packetDataHex: recvPacketOperator.packetData,
-                packetDataProfiles,
-                receiverAddress,
-                voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
-                traceRegistryKind: initialUpdate.kind,
-              }),
-          );
-
-          this.debugLogRecvPacketPlan('mint_voucher', {
-            spendInputs: [
-              ...this.getTraceRegistrySpendInputs(traceRegistryUpdate),
-              { label: 'host_state', utxo: hostStateUtxo },
-              { label: 'channel', utxo: channelUtxo },
-            ],
-            channelOutputAddress: deploymentConfig.validators.spendChannel.address,
-            hostStateOutputAddress: deploymentConfig.validators.hostStateStt.address,
-            updatedChannelDatumHex: encodedUpdatedChannelDatum,
-            recvPacketPolicyId,
-            verifyProofPolicyId,
-            channelTokenUnit,
-            proofHeight: `${recvPacketOperator.proofHeight.revisionNumber}/${recvPacketOperator.proofHeight.revisionHeight}`,
-            packetSequence: packet.sequence.toString(),
-            packetDataUtf8: stringData,
-            packetDataHex: recvPacketOperator.packetData,
-            packetDataProfiles,
-            receiverAddress,
-            voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
-            traceRegistryKind: traceRegistryUpdate?.kind ?? 'none',
-          });
-          const unsignedTx = await this.lucidService.createUnsignedRecvPacketMintTx(
-            buildUnsignedRecvPacketMintParams(traceRegistryUpdate),
-          );
-          return {
-            unsignedTx,
-            pendingTreeUpdate: {
-              expectedNewRoot: newRoot,
-              commit,
-            },
-          };
-        }
-      }
-    }
-    throw new GrpcInvalidArgumentException(
-      `No application callback is available for receive packets on port ${convertHex2String(channelDatum.port)}`,
-    );
+    throw new GrpcInvalidArgumentException('Inline packet receive supports the icqhost port only');
   }
+
   async buildUnsignedTimeoutPacketTx(
     timeoutPacketOperator: TimeoutPacketOperator,
     constructedAddress: string,
@@ -2235,7 +1602,6 @@ export class PacketService {
       counterpartyUpgradeSequence: timeoutOnClosePacketOperator.counterpartyUpgradeSequence,
     });
   }
-
   private async buildUnsignedTimeoutLikePacketTx(
     timeoutPacketOperator: TimeoutPacketOperator,
     constructedAddress: string,
@@ -2248,6 +1614,7 @@ export class PacketService {
     const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     // Get channel end
     const channelDatum: ChannelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+    this.requireQueryChannel(channelDatum);
     // Get the connection token unit with connection id from channel datum
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
@@ -2329,54 +1696,24 @@ export class PacketService {
           },
         };
 
-    const transferModuleAddress = this.getTransferModuleAddress();
-    const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(this.getTransferModuleIdentifier());
-    const spendChannelAddress = this.getSpendChannelAddress();
-    const transferAmount = BigInt(timeoutPacketOperator.fungibleTokenPacketData.amount);
-    const senderPublicKeyHash = timeoutPacketOperator.fungibleTokenPacketData.sender;
-    const denom = mapLovelaceDenom(timeoutPacketOperator.fungibleTokenPacketData.denom, 'packet_to_asset');
-    const spendTransferModuleRedeemer: TransferIBCModuleRedeemer = {
-      Callback: [
-        {
-          OnTimeoutPacket: {
-            channel_id: packet.source_channel,
-            packet_data: packet.data,
-            data: {
-              ModuleDataV1: [
-                {
-                  denom: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.denom),
-                  amount: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.amount.toString()),
-                  sender: convertString2Hex(senderPublicKeyHash),
-                  receiver: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.receiver),
-                  memo: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.memo),
-                },
-              ],
-            },
-          },
-        },
-      ],
-    };
-    const encodedSpendChannelRedeemer: string = await this.lucidService.encode(
-      spendChannelRedeemer,
-      'spendChannelRedeemer',
+    const moduleConfig = getGatewayModuleConfigForPortId(
+      this.configService.getOrThrow('deployment'),
+      convertHex2String(packet.source_port),
     );
-
-    const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
-      updatedChannelDatum,
-      'channel',
-    );
-
+    if (moduleConfig.key === 'transfer') throw new GrpcInvalidArgumentException('ICS-20 timeouts use packet lanes');
+    const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
     const localChannelId = `${CHANNEL_ID_PREFIX}-${channelSequence}`;
+    const encodedSpendChannelRedeemer = await this.lucidService.encode(spendChannelRedeemer, 'spendChannelRedeemer');
+    const encodedUpdatedChannelDatum = await this.lucidService.encode(updatedChannelDatum, 'channel');
     const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
       await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, localChannelId);
-    const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
-      spendTransferModuleRedeemer,
-      'transferIBCModuleRedeemer',
-    );
-    const voucherHasPrefix = this._hasVoucherPrefix(
-      timeoutPacketOperator.fungibleTokenPacketData.denom,
-      convertHex2String(packet.source_port),
-      convertHex2String(packet.source_channel),
+    const encodedSpendModuleRedeemer = await this.lucidService.encode(
+      {
+        Callback: [
+          { OnTimeoutPacket: { channel_id: packet.source_channel, packet_data: packet.data, data: 'OtherModuleData' } },
+        ],
+      } as IBCModuleRedeemer,
+      'iBCModuleRedeemer',
     );
 
     const deploymentConfig = this.configService.get('deployment');
@@ -2482,220 +1819,26 @@ export class PacketService {
       historyWitnesses[0] ?? null,
     );
 
-    if (!voucherHasPrefix) {
-      this.logger.log(denom, 'unescrow timeout processing');
-      const requestedDenomToken = normalizeDenomTokenTransfer(denom);
-      const transferEscrowShard = await this.findTransferEscrowShard(
-        packet.source_channel,
-        convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.denom),
-        requestedDenomToken,
-        transferAmount,
-        -transferAmount,
-      );
-      if (transferEscrowShard.kind !== 'existing') {
-        throw new GrpcInvalidArgumentException(
-          `Transfer escrow shard not found for channel ${convertHex2String(packet.source_channel)} and denom ${timeoutPacketOperator.fungibleTokenPacketData.denom}`,
-        );
-      }
-      const escrowSourceAssets = transferEscrowShard.utxo.assets;
-      const denomToken = this._resolveAssetUnitFromUtxoAssets(escrowSourceAssets, requestedDenomToken);
-      const escrowedAmount = escrowSourceAssets[denomToken] ?? 0n;
-      if (escrowedAmount < transferAmount) {
-        throw new GrpcInvalidArgumentException(
-          `Insufficient escrowed amount for ${denomToken}: have ${escrowedAmount}, need ${transferAmount}`,
-        );
-      }
-      const unsignedSendPacketParams: UnsignedTimeoutPacketUnescrowDto = {
-        hostStateUtxo: hostStateUtxo,
-        channelUtxo: channelUtxo,
-        transferEscrowUtxo: transferEscrowShard.utxo,
-        transferModuleReferenceUtxo: transferEscrowShard.transferModuleUtxo,
-        connectionUtxo: connectionUtxo,
-        clientUtxo: clientUtxo,
-
-        encodedHostStateRedeemer: encodedHostStateRedeemer,
-        encodedUpdatedHostStateDatum: encodedUpdatedHostStateDatum,
-        encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
-        encodedSpendTransferModuleRedeemer: encodedSpendTransferModuleRedeemer,
-        encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
-        transferEscrowShardTokenUnit: transferEscrowShard.shardTokenUnit,
-        encodedUpdatedChannelDatum: encodedUpdatedChannelDatum,
-
-        transferAmount: transferAmount,
-        channelTokenUnit: channelTokenUnit,
-        spendChannelAddress: spendChannelAddress,
-        transferModuleAddress: transferModuleAddress,
-        denomToken,
-        senderAddress: this.lucidService.credentialToAddress(senderPublicKeyHash),
-
-        constructedAddress: constructedAddress,
-
-        timeoutPacketPolicyId,
-        channelToken,
-
-        verifyProofPolicyId,
-        encodedVerifyProofRedeemer,
-      };
-      const unsignedTx = await this.lucidService.createUnsignedTimeoutPacketUnescrowTx(unsignedSendPacketParams);
-      return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
-    }
-    this.logger.log(timeoutPacketOperator.fungibleTokenPacketData.denom, 'mint timeout processing');
-    const mintVoucherRedeemer: MintVoucherRedeemer = {
-      RefundVoucher: {
-        packet_source_port: packet.source_port,
-        packet_source_channel: packet.source_channel,
-        data: {
-          denom: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.denom),
-          amount: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.amount.toString()),
-          sender: convertString2Hex(senderPublicKeyHash),
-          receiver: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.receiver),
-          memo: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.memo),
-        },
-        acknowledgement: null,
-      },
-    };
-    const fullDenomPath = denom;
-    const voucherMintDetails = this.buildVoucherMintDetails(fullDenomPath);
-
-    const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
-      mintVoucherRedeemer,
-      'mintVoucherRedeemer',
-    );
-    const buildUnsignedTimeoutPacketMintDto = (
-      traceRegistryUpdate: TraceRegistryInsertContext | null,
-    ): UnsignedTimeoutPacketMintDto => ({
-      hostStateUtxo: hostStateUtxo,
-      channelUtxo: channelUtxo,
-      connectionUtxo: connectionUtxo,
-      clientUtxo: clientUtxo,
-      transferModuleReferenceUtxo,
-
-      encodedHostStateRedeemer: encodedHostStateRedeemer,
-      encodedUpdatedHostStateDatum: encodedUpdatedHostStateDatum,
-      encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
-      encodedSpendTransferModuleRedeemer,
-      encodedMintVoucherRedeemer: encodedMintVoucherRedeemer,
-      encodedUpdatedChannelDatum: encodedUpdatedChannelDatum,
-
-      transferAmount: transferAmount,
-      senderAddress: this.lucidService.credentialToAddress(senderPublicKeyHash),
-
-      spendChannelAddress: spendChannelAddress,
-      channelTokenUnit: channelTokenUnit,
-      voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
-      voucherReferenceTokenUnit: voucherMintDetails.voucherReferenceTokenUnit,
-      voucherMetadataAddress: voucherMintDetails.voucherMetadataAddress,
-      encodedVoucherMetadataDatum: voucherMintDetails.encodedVoucherMetadataDatum,
-      constructedAddress: constructedAddress,
-
+    const unsignedTx = await this.lucidService.createUnsignedTimeoutPacketModuleTx({
+      hostStateUtxo,
+      channelUtxo,
+      connectionUtxo,
+      clientUtxo,
+      moduleKey: moduleConfig.key,
+      moduleUtxo,
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
+      encodedSpendChannelRedeemer,
+      encodedSpendModuleRedeemer,
+      encodedUpdatedChannelDatum,
+      channelTokenUnit,
+      constructedAddress,
       timeoutPacketPolicyId,
       channelToken,
-
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,
-      traceRegistryUpdate,
     });
-    const traceRegistryUpdate = await this.resolveTraceRegistryUpdate(
-      voucherMintDetails.voucherDenomHash,
-      fullDenomPath,
-      (candidateUpdate) =>
-        this.lucidService.createUnsignedTimeoutPacketMintTx(buildUnsignedTimeoutPacketMintDto(candidateUpdate)),
-    );
-    const unsignedTx = await this.lucidService.createUnsignedTimeoutPacketMintTx(
-      buildUnsignedTimeoutPacketMintDto(traceRegistryUpdate),
-    );
-    return {
-      unsignedTx,
-      pendingTreeUpdate: {
-        expectedNewRoot: newRoot,
-        commit,
-      },
-    };
-  }
-
-  async buildUnsignedSendPacketTx(
-    sendPacketOperator: SendPacketOperator,
-  ): Promise<{
-    unsignedTx: TxBuilder;
-    pendingTreeUpdate: PendingTreeUpdate;
-    walletOverride?: { address: string; utxos: UTxO[] };
-  }> {
-    return buildUnsignedSendPacketTxWithPackage(sendPacketOperator as SharedSendPacketOperator, {
-      stringifyPacketData: (packetData) => stringifyIcs20PacketDataForCodec(packetData, this.getIcs20PacketCodec()),
-      loadContext: async (operator) => {
-        const channelSequence: string = operator.sourceChannel.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
-        const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
-        const channelTokenUnit: string = mintChannelPolicyId + channelTokenName;
-        const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
-        const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
-        validateSendPacketCommitmentCapacity(channelDatum);
-        const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
-          parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
-        );
-        const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
-        const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
-        const connectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
-          connectionUtxo.datum!,
-          'connection',
-        );
-        const clientTokenUnit = this.lucidService.getClientTokenUnit(
-          parseClientSequence(convertHex2String(connectionDatum.state.client_id)),
-        );
-        const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-        const transferModuleReferenceUtxo = await this.findTransferModuleRootByAddressScan();
-        const deploymentConfig = this.configService.get('deployment');
-
-        return {
-          channelUtxo,
-          channelDatum,
-          connectionUtxo,
-          connectionDatum,
-          clientUtxo,
-          transferModuleReferenceUtxo,
-          channelTokenUnit,
-          channelToken: {
-            policyId: mintChannelPolicyId,
-            name: channelTokenName,
-          },
-          deployment: {
-            sendPacketPolicyId: deploymentConfig.validators.spendChannel.refValidator.send_packet.scriptHash,
-            mintVoucherScriptHash: deploymentConfig.validators.mintVoucher.scriptHash,
-            transferEscrowShardPolicyId: deploymentConfig.validators.mintTransferEscrowShard.scriptHash,
-            spendChannelAddress: deploymentConfig.validators.spendChannel.address,
-            transferModuleAddress: deploymentConfig.modules.transfer.address,
-          },
-        };
-      },
-      buildHostStateUpdate: async (inputChannelDatum, outputChannelDatum, channelIdForRoot) =>
-        this.buildHostStateUpdateForHandlePacket(
-          inputChannelDatum as ChannelDatum,
-          outputChannelDatum as ChannelDatum,
-          channelIdForRoot,
-        ),
-      resolveIbcDenomHash: async (denomHash) => {
-        const match = await this.denomTraceService.findByIbcDenomHash(denomHash);
-        if (!match) {
-          return null;
-        }
-
-        return {
-          path: match.path,
-          baseDenom: match.base_denom,
-        };
-      },
-      commitPacket,
-      encode: (value, kind) => this.lucidService.encode(value, kind as any),
-      findUtxoAtWithUnit: (address, unit) => this.lucidService.findUtxoAtWithUnit(address, unit),
-      tryFindUtxosAt: (address, options) => this.lucidService.tryFindUtxosAt(address, options),
-      findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount, balanceDelta) =>
-        this.findTransferEscrowShard(channelId, packetDenom, denomToken, requiredAmount, balanceDelta),
-      createUnsignedSendPacketBurnTx: (dto) =>
-        this.lucidService.createUnsignedSendPacketBurnTx(dto as UnsignedSendPacketBurnDto),
-      createUnsignedSendPacketEscrowTx: (dto) => this.lucidService.createUnsignedSendPacketEscrowTx(dto),
-      invalidArgument: (message) => new GrpcInvalidArgumentException(message),
-      failedPrecondition: (message) => new GrpcFailedPreconditionException(message),
-      internalError: (message) => new GrpcInternalException(message),
-    });
+    return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }
 
   async buildUnsignedSendModulePacketTx(
@@ -2712,6 +1855,7 @@ export class PacketService {
     const channelTokenUnit: string = mintChannelPolicyId + channelTokenName;
     const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+    this.requireQueryChannel(channelDatum);
     validateSendPacketCommitmentCapacity(channelDatum);
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
@@ -2862,6 +2006,7 @@ export class PacketService {
     const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     // Get channel datum
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+    this.requireQueryChannel(channelDatum);
     const channelEnd = channelDatum.state.channel;
     if (channelEnd.state !== 'Open') {
       throw new Error('SendPacket to channel not in Open state');
@@ -2933,24 +2078,6 @@ export class PacketService {
     );
 
     const acknowledgementResponse: unknown = JSON.parse(convertHex2String(ackPacketOperator.acknowledgement));
-    const createTransferModuleRedeemer = (
-      channelId: string,
-      fTokenPacketData: FungibleTokenPacketDatum,
-      acknowledgementResponse: AcknowledgementResponse,
-    ) => ({
-      Callback: [
-        {
-          OnAcknowledgementPacket: {
-            channel_id: channelId,
-            packet_data: packet.data,
-            data: {
-              ModuleDataV1: [fTokenPacketData],
-            },
-            acknowledgement: { response: acknowledgementResponse },
-          },
-        },
-      ],
-    });
     const createModuleAckRedeemer = (channelId: string, acknowledgementResponse: AcknowledgementResponse) => ({
       Callback: [
         {
@@ -3071,563 +2198,6 @@ export class PacketService {
       };
     }
 
-    let fungibleTokenPacketData: FungibleTokenPacketDatum;
-    try {
-      fungibleTokenPacketData = decodeIcs20PacketDataForCodec(
-        Buffer.from(ackPacketOperator.packetData, 'hex'),
-        this.getIcs20PacketCodec(),
-      ).data;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new GrpcInvalidArgumentException(`Invalid ICS-20 packet data: ${message}`);
-    }
-    const fTokenPacketData: FungibleTokenPacketDatum = {
-      denom: convertString2Hex(fungibleTokenPacketData.denom),
-      amount: convertString2Hex(fungibleTokenPacketData.amount),
-      sender: convertString2Hex(fungibleTokenPacketData.sender),
-      receiver: convertString2Hex(fungibleTokenPacketData.receiver),
-      memo: convertString2Hex(fungibleTokenPacketData.memo),
-    };
-    const normalizedAcknowledgementResponse = this.normalizeAcknowledgementResponse(acknowledgementResponse);
-    const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
-      createTransferModuleRedeemer(channelId, fTokenPacketData, normalizedAcknowledgementResponse),
-      'transferIBCModuleRedeemer',
-    );
-    const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(
-      this.getTransferModuleIdentifier(),
-    );
-    const voucherReturn = this._hasVoucherPrefix(
-      fungibleTokenPacketData.denom,
-      convertHex2String(packet.source_port),
-      convertHex2String(packet.source_channel),
-    );
-    const acknowledgementResult = this.extractAcknowledgementResult(acknowledgementResponse);
-    if (acknowledgementResult) {
-      // build update channel datum
-      const updatedChannelDatum: ChannelDatum = {
-        ...channelDatum,
-        state: {
-          ...channelDatum.state,
-          packet_commitment: deleteKeySortMap(channelDatum.state.packet_commitment, ackPacketOperator.packetSequence),
-        },
-      };
-      const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
-        updatedChannelDatum,
-        'channel',
-      );
-      const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-        await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
-      const unsignedAckPacketSucceedParams: UnsignedAckPacketSucceedDto = {
-        hostStateUtxo,
-        channelUtxo,
-        connectionUtxo,
-        clientUtxo,
-        transferModuleReferenceUtxo,
-        encodedHostStateRedeemer,
-        encodedUpdatedHostStateDatum,
-        encodedSpendChannelRedeemer,
-        encodedSpendTransferModuleRedeemer,
-        channelTokenUnit,
-        encodedUpdatedChannelDatum,
-        constructedAddress,
-        ackPacketPolicyId,
-        channelToken,
-
-        verifyProofPolicyId,
-        encodedVerifyProofRedeemer,
-        voucherObligationDelta: voucherReturn
-          ? -BigInt(fungibleTokenPacketData.amount)
-          : undefined,
-      };
-      const unsignedTx = await this.lucidService.createUnsignedAckPacketSucceedTx(unsignedAckPacketSucceedParams);
-      return {
-        unsignedTx,
-        pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
-        walletSelection: {
-          context: 'acknowledgementPacket',
-        },
-      };
-    }
-
-    const acknowledgementError = this.extractAcknowledgementError(acknowledgementResponse);
-    if (!acknowledgementError) {
-      const acknowledgementResponseKeys =
-        acknowledgementResponse && typeof acknowledgementResponse === 'object'
-          ? Object.keys(acknowledgementResponse as Record<string, unknown>).join(',')
-          : '';
-      throw new GrpcInternalException(
-        `Acknowledgement Response invalid: unknown result (keys=${acknowledgementResponseKeys})`,
-      );
-    }
-    this.logger.log('AcknowledgementError');
-    if (
-      !this._hasVoucherPrefix(
-        fungibleTokenPacketData.denom,
-        convertHex2String(packet.source_port),
-        convertHex2String(packet.source_channel),
-      )
-    ) {
-      this.logger.log('AckPacketUnescrow');
-      const requestedDenomToken = mapLovelaceDenom(fungibleTokenPacketData.denom, 'packet_to_asset');
-      const transferAmount = BigInt(fungibleTokenPacketData.amount);
-      const transferEscrowShard = await this.findTransferEscrowShard(
-        channelId,
-        fTokenPacketData.denom,
-        requestedDenomToken,
-        transferAmount,
-        -transferAmount,
-      );
-      if (transferEscrowShard.kind !== 'existing') {
-        throw new GrpcInvalidArgumentException(
-          `Transfer escrow shard not found for channel ${ackPacketOperator.channelId} and denom ${fungibleTokenPacketData.denom}`,
-        );
-      }
-      const escrowSourceAssets = transferEscrowShard.utxo.assets;
-      const denomToken = this._resolveAssetUnitFromUtxoAssets(escrowSourceAssets, requestedDenomToken);
-      const escrowedAmount = escrowSourceAssets[denomToken] ?? 0n;
-      if (escrowedAmount < transferAmount) {
-        throw new GrpcInvalidArgumentException(
-          `Insufficient escrowed amount for ${denomToken}: have ${escrowedAmount}, need ${transferAmount}`,
-        );
-      }
-      // build update channel datum
-      const updatedChannelDatum: ChannelDatum = {
-        ...channelDatum,
-        state: {
-          ...channelDatum.state,
-          packet_commitment: deleteKeySortMap(channelDatum.state.packet_commitment, ackPacketOperator.packetSequence),
-        },
-      };
-      const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
-        updatedChannelDatum,
-        'channel',
-      );
-      const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-        await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
-      const unsignedAckPacketUnescrowParams: UnsignedAckPacketUnescrowDto = {
-        hostStateUtxo,
-        channelUtxo,
-        connectionUtxo,
-        clientUtxo,
-        transferEscrowUtxo: transferEscrowShard.utxo,
-        transferModuleReferenceUtxo: transferEscrowShard.transferModuleUtxo,
-
-        encodedHostStateRedeemer,
-        encodedUpdatedHostStateDatum,
-        encodedSpendChannelRedeemer,
-        encodedSpendTransferModuleRedeemer,
-        encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
-        transferEscrowShardTokenUnit: transferEscrowShard.shardTokenUnit,
-        channelTokenUnit,
-        encodedUpdatedChannelDatum,
-        transferAmount,
-        senderAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.sender),
-
-        denomToken,
-        constructedAddress,
-
-        ackPacketPolicyId,
-        channelToken,
-
-        verifyProofPolicyId,
-        encodedVerifyProofRedeemer,
-      };
-      const unsignedTx = await this.lucidService.createUnsignedAckPacketUnescrowTx(unsignedAckPacketUnescrowParams);
-      return {
-        unsignedTx,
-        pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
-        walletSelection: {
-          context: 'acknowledgementPacket(unescrow)',
-          excludeAssetUnit: denomToken === LOVELACE ? undefined : denomToken,
-        },
-      };
-    }
-
-    // build encode mint voucher redeemer
-    const mintVoucherRedeemer: MintVoucherRedeemer = {
-      RefundVoucher: {
-        packet_source_port: packet.source_port,
-        packet_source_channel: packet.source_channel,
-        data: fTokenPacketData,
-        acknowledgement: {
-          response: {
-            AcknowledgementError: {
-              err: convertString2Hex(acknowledgementError),
-            },
-          },
-        },
-      },
-    };
-    const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
-      mintVoucherRedeemer,
-      'mintVoucherRedeemer',
-    );
-
-    // RefundVoucher token name must hash exactly the denom carried by packet data.
-    // We do not prepend an extra source prefix here because packet data already carries
-    // the canonical trace string for this refund path.
-    const denomToHash = fungibleTokenPacketData.denom;
-    const fullDenomPath = denomToHash;
-    const voucherMintDetails = this.buildVoucherMintDetails(fullDenomPath);
-
-    // build update channel datum
-    const updatedChannelDatum: ChannelDatum = {
-      ...channelDatum,
-      state: {
-        ...channelDatum.state,
-        packet_commitment: deleteKeySortMap(channelDatum.state.packet_commitment, ackPacketOperator.packetSequence),
-      },
-    };
-    const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
-      updatedChannelDatum,
-      'channel',
-    );
-    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-      await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
-    const buildUnsignedAckPacketMintParams = (
-      traceRegistryUpdate: TraceRegistryInsertContext | null,
-    ): UnsignedAckPacketMintDto => ({
-      hostStateUtxo,
-      channelUtxo,
-      connectionUtxo,
-      clientUtxo,
-      transferModuleReferenceUtxo,
-
-      encodedHostStateRedeemer,
-      encodedUpdatedHostStateDatum,
-      encodedSpendChannelRedeemer,
-      encodedSpendTransferModuleRedeemer,
-      encodedMintVoucherRedeemer,
-      encodedUpdatedChannelDatum,
-
-      channelTokenUnit,
-      voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
-      voucherReferenceTokenUnit: voucherMintDetails.voucherReferenceTokenUnit,
-      voucherMetadataAddress: voucherMintDetails.voucherMetadataAddress,
-      encodedVoucherMetadataDatum: voucherMintDetails.encodedVoucherMetadataDatum,
-      transferAmount: BigInt(fungibleTokenPacketData.amount),
-      senderAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.sender),
-
-      constructedAddress,
-
-      ackPacketPolicyId,
-      channelToken,
-
-      verifyProofPolicyId,
-      encodedVerifyProofRedeemer,
-      traceRegistryUpdate,
-    });
-    const traceRegistryUpdate = await this.resolveTraceRegistryUpdate(
-      voucherMintDetails.voucherDenomHash,
-      fullDenomPath,
-      (candidateUpdate) =>
-        this.lucidService.createUnsignedAckPacketMintTx(buildUnsignedAckPacketMintParams(candidateUpdate)),
-    );
-
-    // handle recv packet mint
-    const unsignedTx = await this.lucidService.createUnsignedAckPacketMintTx(
-      buildUnsignedAckPacketMintParams(traceRegistryUpdate),
-    );
-    return {
-      unsignedTx,
-      pendingTreeUpdate: {
-        expectedNewRoot: newRoot,
-        commit,
-      },
-      walletSelection: {
-        context: 'acknowledgementPacket',
-      },
-    };
-  }
-  private _hasVoucherPrefix(denom: string, portId: string, channelId: string): boolean {
-    const voucherPrefix = getDenomPrefix(portId, channelId);
-    return denom.startsWith(voucherPrefix);
-  }
-  private _unwrapVoucherDenom(denom: string, portId: string, channelId: string): string {
-    const voucherPrefix = getDenomPrefix(portId, channelId);
-    if (!denom.startsWith(voucherPrefix)) {
-      return denom;
-    }
-
-    const baseDenom = denom.slice(voucherPrefix.length);
-    if (!baseDenom) {
-      throw new GrpcInvalidArgumentException('Voucher denom is missing base denom after transfer/channel prefix');
-    }
-    return baseDenom;
-  }
-  private _resolveAssetUnitFromUtxoAssets(assets: Record<string, bigint>, requestedDenomToken: string): string {
-    const normalized = requestedDenomToken.trim();
-    if (!normalized) {
-      throw new GrpcInvalidArgumentException('Denom token for transfer-module update cannot be empty');
-    }
-
-    const matchedUnit = this._tryResolveAssetUnitFromAssets(assets, normalized);
-    if (matchedUnit !== null) {
-      return matchedUnit;
-    }
-
-    throw new GrpcInvalidArgumentException(`Denom token ${normalized} not found in transfer-module UTxO assets`);
-  }
-  private _tryResolveAssetUnitFromAssets(assets: Record<string, bigint>, requestedDenomToken: string): string | null {
-    const normalized = requestedDenomToken.trim();
-    if (!normalized) {
-      return null;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(assets, normalized)) {
-      return normalized;
-    }
-
-    const normalizedLower = normalized.toLowerCase();
-    const matchedUnit = Object.keys(assets).find((unit) => unit.toLowerCase() === normalizedLower);
-    return matchedUnit ?? null;
-  }
-  private _sumAssetsFromUtxos(utxos: UTxO[]): Record<string, bigint> {
-    const summedAssets: Record<string, bigint> = {};
-    for (const utxo of utxos) {
-      for (const [assetUnit, amount] of Object.entries(utxo.assets)) {
-        summedAssets[assetUnit] = (summedAssets[assetUnit] ?? 0n) + amount;
-      }
-    }
-    return summedAssets;
-  }
-  /**
-   * Resolve the ledger asset unit to use for escrow spends from sender wallet assets.
-   *
-   * We check both input and resolved forms because callers may submit either a direct
-   * Cardano asset unit or a denomination that was normalized earlier in the send flow.
-   * This keeps lookup strict while still accepting the valid external input forms.
-   */
-  private _resolveEscrowDenomToken(inputDenom: string, resolvedDenom: string, senderWalletUtxos: UTxO[]): string {
-    const senderAssets = this._sumAssetsFromUtxos(senderWalletUtxos);
-
-    const directInputMatch = this._tryResolveAssetUnitFromAssets(senderAssets, inputDenom);
-    if (directInputMatch !== null) {
-      return directInputMatch;
-    }
-
-    const directResolvedMatch = this._tryResolveAssetUnitFromAssets(senderAssets, resolvedDenom);
-    if (directResolvedMatch !== null) {
-      return directResolvedMatch;
-    }
-
-    throw new GrpcInvalidArgumentException(
-      `Escrow asset unit not found in sender wallet UTxOs for denom ${inputDenom} (resolved as ${resolvedDenom})`,
-    );
-  }
-  /**
-   * Convert a local denom representation into packet-denom representation.
-   *
-   * Rules:
-   * - lovelace is mapped to its packet wire representation
-   * - voucher traces already prefixed for this hop are preserved
-   * - cardano token units are preserved
-   * - plain denoms are hex-encoded for packet data
-   *
-   * Guardrails:
-   * - `ibc/<hash>` must already be resolved before this stage
-   * - pre-hex input is rejected to avoid double encoding
-   */
-  private _normalizePacketDenom(denom: string, portId: string, channelId: string): string {
-    const normalizedDenom = normalizeDenomTokenTransfer(denom).trim();
-    const packetMappedDenom = mapLovelaceDenom(normalizedDenom, 'asset_to_packet');
-    if (packetMappedDenom !== normalizedDenom) {
-      return packetMappedDenom;
-    }
-
-    if (this._hasVoucherPrefix(normalizedDenom, portId, channelId)) {
-      return normalizedDenom;
-    }
-    if (normalizedDenom.startsWith('ibc/')) {
-      throw new GrpcInvalidArgumentException(
-        `IBC hash denom ${normalizedDenom} must be reverse-resolved to a full denom trace before packet normalization`,
-      );
-    }
-    if (this._isCardanoTokenUnitDenom(normalizedDenom)) {
-      return normalizedDenom;
-    }
-    if (this._isHexDenom(normalizedDenom)) {
-      // Others may wish to disable this at their own discretion but I consider this an extremely valuable fail-safe. Practically speaking this should never happen.
-      throw new GrpcInvalidArgumentException('Denom appears to be already hex-encoded; refusing to hex-encode twice');
-    }
-    return convertString2Hex(normalizedDenom);
-  }
-  private _isCardanoTokenUnitDenom(denom: string): boolean {
-    // Cardano token unit = 28-byte policy id (56 hex chars) + optional asset name (0..32 bytes => 0..64 hex chars).
-    return /^[0-9a-fA-F]{56}(?:[0-9a-fA-F]{0,64})$/.test(denom);
-  }
-  private _isHexDenom(denom: string): boolean {
-    return denom.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(denom);
-  }
-
-  private _buildVoucherTokenName(denom: string): string {
-    if (denom.startsWith('ibc/')) {
-      throw new GrpcInvalidArgumentException(
-        `IBC hash denom ${denom} must be reverse-resolved before voucher token-name hashing`,
-      );
-    }
-    if (this._isHexDenom(denom)) {
-      throw new GrpcInvalidArgumentException(
-        'Voucher denom appears to be already hex-encoded; refusing to hash a double-encoded denom',
-      );
-    }
-    return buildVoucherUserTokenNameFromDenomHash(buildVoucherDenomHashFromFullDenom(denom));
-  }
-
-  private buildVoucherMintDetails(fullDenom: string): {
-    voucherDenomHash: string;
-    voucherTokenName: string;
-    voucherTokenUnit: string;
-    voucherReferenceTokenName: string;
-    voucherReferenceTokenUnit: string;
-    voucherMetadataAddress: string;
-    encodedVoucherMetadataDatum: string;
-  } {
-    if (fullDenom.startsWith('ibc/')) {
-      throw new GrpcInvalidArgumentException(
-        `IBC hash denom ${fullDenom} must be reverse-resolved before voucher token-name hashing`,
-      );
-    }
-    if (this._isHexDenom(fullDenom)) {
-      throw new GrpcInvalidArgumentException(
-        'Voucher denom appears to be already hex-encoded; refusing to hash a double-encoded denom',
-      );
-    }
-
-    const deploymentConfig = this.configService.get('deployment');
-    const voucherPolicyId = deploymentConfig.validators.mintVoucher.scriptHash;
-    const voucherMetadataAddress = deploymentConfig.validators.voucherMetadata?.address;
-    if (!voucherMetadataAddress) {
-      throw new GrpcInternalException('Voucher metadata validator address is missing from deployment config');
-    }
-
-    const trace = splitFullDenomTrace(fullDenom);
-    const voucherDenomHash = buildVoucherDenomHashFromFullDenom(fullDenom);
-    const voucherTokenName = buildVoucherUserTokenNameFromDenomHash(voucherDenomHash);
-    const voucherReferenceTokenName = buildVoucherReferenceTokenNameFromDenomHash(voucherDenomHash);
-    const metadata = buildVoucherCip68Metadata({
-      path: trace.path,
-      baseDenom: trace.baseDenom,
-      fullDenom,
-      voucherTokenName,
-      voucherPolicyId,
-      ibcDenomHash: buildIbcDenomHashFromFullDenom(fullDenom),
-    });
-
-    return {
-      voucherDenomHash,
-      voucherTokenName,
-      voucherTokenUnit: `${voucherPolicyId}${voucherTokenName}`,
-      voucherReferenceTokenName,
-      voucherReferenceTokenUnit: `${voucherPolicyId}${voucherReferenceTokenName}`,
-      voucherMetadataAddress,
-      encodedVoucherMetadataDatum:
-        typeof (this.lucidService.LucidImporter as any)?.Data?.to === 'function'
-          ? encodeVoucherCip68MetadataDatum(metadata, this.lucidService.LucidImporter)
-          : 'encoded-voucher-metadata-datum',
-    };
-  }
-  /**
-   * Resolve `ibc/<hash>` into a full denom trace before voucher burn hashing.
-   *
-   * Burn token names are computed from the full trace string, not the short hash form.
-   * If mapping is missing we fail explicitly because a fallback would risk burning or
-   * routing the wrong asset.
-   */
-  private async _resolveVoucherDenomForBurn(denom: string): Promise<string> {
-    if (!denom.startsWith('ibc/')) {
-      return denom;
-    }
-    const denomHash = denom.slice(4).toLowerCase();
-    const match = await this.denomTraceService.findByIbcDenomHash(denomHash);
-    if (!match) {
-      throw new GrpcInvalidArgumentException(
-        `IBC denom ${denom} not found in denom traces; cannot derive voucher token name`,
-      );
-    }
-    return match.path ? `${match.path}/${match.base_denom}` : match.base_denom;
-  }
-  /**
-   * Resolve the send denom into the canonical representation used by packet construction.
-   * This currently delegates to voucher reverse lookup for `ibc/<hash>` inputs.
-   */
-  private async _resolvePacketDenomForSend(denom: string): Promise<string> {
-    return this._resolveVoucherDenomForBurn(denom);
-  }
-  private getTransferModuleAddress(): string {
-    return this.configService.get('deployment').modules.transfer.address;
-  }
-  private getMintVoucherScriptHash(): string {
-    return this.configService.get('deployment').validators.mintVoucher.scriptHash;
-  }
-
-  private _resolveVoucherReceiverAddress(receiver: string): string {
-    const trimmed = receiver.trim();
-    if (trimmed.startsWith('addr') || trimmed.startsWith('addr_test')) {
-      const credential = this.lucidService.getPaymentCredential(trimmed);
-      if (!credential || credential.type !== 'Key') {
-        // We only support key-payment credentials for voucher receivers.
-        //
-        // Rationale:
-        // - Vouchers minted to a key address are spendable with a normal wallet signature.
-        // - Hermes/Lucid can handle those UTxOs with standard coin-selection and signing.
-        //
-        // Script payment credentials are different:
-        // - Spending requires the validator script, datum, redeemer, and collateral selection.
-        // - Hermes/Lucid do not build those script-spend transactions in this flow.
-        // - So a voucher minted to a script address would be effectively stuck.
-        //
-        // If we want script receivers there would be a more complex coin selection logic, which for now will remain a TO-DO.
-        throw new GrpcInvalidArgumentException('Voucher receiver must be a key address (no script/ref-script UTxO)');
-      }
-      return trimmed;
-    }
-    // Mint vouchers directly to the key address derived from the payment credential (avoids coin-selection overrides).
-    return this.lucidService.credentialToAddress(trimmed);
-  }
-  private getSpendChannelAddress(): string {
-    return this.configService.get('deployment').validators.spendChannel.address;
-  }
-  private async findTransferModuleRootByAddressScan(): Promise<UTxO> {
-    const transferModuleAddress = this.configService.get('deployment').modules.transfer.address;
-    const utxos = await this.lucidService.findUtxoAt(transferModuleAddress);
-    return getTransferModuleRootFromAddressScan(
-      utxos,
-      this.getTransferModuleIdentifier(),
-      (message) => new GrpcFailedPreconditionException(message),
-    );
-  }
-  private async findTransferEscrowShard(
-    channelId: string,
-    packetDenom: string,
-    denomToken: string,
-    requiredAmount?: bigint,
-    balanceDelta?: bigint,
-  ): Promise<TransferEscrowShardLookup> {
-    const deployment = this.configService.get('deployment');
-    return findTransferEscrowShardWithPackage(
-      {
-        transferModuleAddress: deployment.modules.transfer.address,
-        transferModuleIdentifier: this.getTransferModuleIdentifier(),
-        shardPolicyId: deployment.validators.mintTransferEscrowShard.scriptHash,
-        findUtxosAt: (address) => this.lucidService.findUtxoAt(address),
-        encodeTransferEscrowDatum: (datum) => this.lucidService.encode(datum, 'transferEscrow'),
-        decodeTransferEscrowDatum: (datum) =>
-          this.lucidService.decodeDatum<TransferEscrowDatum>(datum, 'transferEscrow'),
-        encodeTransferModuleDatum: (datum) => this.lucidService.encode(datum, 'transferModule'),
-        decodeTransferModuleDatum: (datum) =>
-          this.lucidService.decodeDatum<TransferModuleDatum>(datum, 'transferModule'),
-        invalidArgument: (message) => new GrpcInvalidArgumentException(message),
-        failedPrecondition: (message) => new GrpcFailedPreconditionException(message),
-      },
-      channelId,
-      packetDenom,
-      denomToken,
-      requiredAmount,
-      balanceDelta,
-    );
-  }
-  private getTransferModuleIdentifier(): string {
-    return this.configService.get('deployment').modules.transfer.identifier;
+    throw new GrpcInvalidArgumentException('Inline packet acknowledgement supports the icqhost port only');
   }
 }

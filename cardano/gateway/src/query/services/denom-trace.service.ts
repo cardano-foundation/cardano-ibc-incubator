@@ -84,7 +84,7 @@ type TraceRegistryRolloverInsertContext = {
   encodedMintIdentifierRedeemer: string;
 };
 
-export type TraceRegistryInsertContext =
+type TraceRegistryInsertContext =
   | TraceRegistryExistingProofContext
   | TraceRegistryAppendInsertContext
   | TraceRegistryRolloverInsertContext;

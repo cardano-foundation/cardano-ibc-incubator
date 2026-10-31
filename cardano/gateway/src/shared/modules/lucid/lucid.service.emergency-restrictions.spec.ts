@@ -5,6 +5,7 @@ import { ICS23MerkleTree } from '../../helpers/ics23-merkle-tree';
 import { IbcTreeStateStore } from '../../helpers/ibc-state-root';
 import { LucidService } from './lucid.service';
 
+
 const hash = (value: number) => value.toString(16).padStart(2, '0').repeat(28);
 const record = (...fields: Lucid.Data[]) => new Lucid.Constr(0, fields);
 const scriptAddress = (value: number) => Lucid.credentialToAddress('Custom', { type: 'Script', hash: hash(value) });
@@ -156,7 +157,7 @@ describe('Gateway emergency restriction wiring', () => {
 
     await expect(test.service.findUtxoAtHostStateNFT()).rejects.toThrow('emergency-restricted');
     await expect(
-      test.service.createUnsignedRecvPacketTx({ hostStateUtxo: test.hostStateUtxo } as never),
+      test.service.createUnsignedRecvPacketModuleTx({ hostStateUtxo: test.hostStateUtxo } as never),
     ).rejects.toThrow('emergency-restricted');
     expect(test.findHostState.mock.calls.some(([restriction]) => restriction === 0n)).toBe(true);
     expect(clientTx.readFrom).toHaveBeenCalledWith([test.registryUtxo()]);

@@ -31,6 +31,8 @@ function harness() {
     spendChannel: utxo('spend-channel'),
     mintChannel: utxo('mint-channel'),
     spendTransferModule: utxo('spend-transfer-module'),
+    spendMockModule: utxo('spend-query-module'),
+    timeoutPacket: utxo('timeout-packet'),
     verifyProof: utxo('verify-proof'),
     receivePacket: utxo('receive-packet'),
   };
@@ -51,7 +53,7 @@ function harness() {
           spendConnection: { address: 'connection-address' },
           spendChannel: { address: 'channel-address' },
         },
-        modules: { transfer: { address: 'transfer-address' } },
+        modules: { transfer: { address: 'transfer-address' }, icq: { address: 'query-address' } },
       })),
     },
     referenceScripts: references,
@@ -160,8 +162,44 @@ describe('Lucid handshake proof authorization', () => {
     const { service, builder, references } = harness();
     const moduleUtxo = utxo('module-input', { 'module-token': 1n });
 
-    await service.createUnsignedRecvPacketTx({
-      moduleKey: 'transfer',
+    await service.createUnsignedRecvPacketModuleTx({
+      moduleKey: 'icq',
+      moduleUtxo,
+      encodedSpendModuleRedeemer: 'module-redeemer',
+      hostStateUtxo: utxo('host-input'),
+      encodedHostStateRedeemer: 'host-redeemer',
+      encodedUpdatedHostStateDatum: 'host-datum',
+      channelUtxo: utxo('channel-input'),
+      connectionUtxo: utxo('connection-input'),
+      clientUtxo: utxo('client-input'),
+      encodedSpendChannelRedeemer: 'channel-redeemer',
+      encodedUpdatedChannelDatum: 'channel-datum',
+      channelTokenUnit: 'channel-token',
+      recvPacketPolicyId: 'recv-policy',
+      channelToken: { policyId: 'channel-policy', name: 'channel-name' },
+      verifyProofPolicyId: 'verify-policy',
+      encodedVerifyProofRedeemer: 'verify-redeemer',
+    });
+
+    expect(builder.readFrom).toHaveBeenNthCalledWith(1, [
+      references.spendChannel,
+      references.spendMockModule,
+      references.receivePacket,
+      references.verifyProof,
+      references.hostStateStt,
+    ]);
+    expect(builder.collectFrom).toHaveBeenCalledWith([moduleUtxo], 'module-redeemer');
+    expect(builder.pay.ToContract).toHaveBeenCalledWith(
+      'query-address',
+      { kind: 'inline', value: 'd87980' },
+      { 'module-token': 1n },
+    );
+  });
+  it('preserves query module value and datum while authenticating a timeout', async () => {
+    const { service, builder, references } = harness();
+    const moduleUtxo = utxo('module-input', { lovelace: 7_000_000n, 'module-token': 1n });
+    await service.createUnsignedTimeoutPacketModuleTx({
+      moduleKey: 'icq',
       moduleUtxo,
       encodedSpendModuleRedeemer: 'module-redeemer',
       hostStateUtxo: utxo('host-input'),
@@ -174,24 +212,25 @@ describe('Lucid handshake proof authorization', () => {
       encodedUpdatedChannelDatum: 'channel-datum',
       channelTokenUnit: 'channel-token',
       constructedAddress: 'signer',
-      recvPacketPolicyId: 'recv-policy',
+      timeoutPacketPolicyId: 'timeout-policy',
       channelToken: { policyId: 'channel-policy', name: 'channel-name' },
       verifyProofPolicyId: 'verify-policy',
       encodedVerifyProofRedeemer: 'verify-redeemer',
     });
-
     expect(builder.readFrom).toHaveBeenNthCalledWith(1, [
       references.spendChannel,
-      references.spendTransferModule,
-      references.receivePacket,
+      references.spendMockModule,
+      references.timeoutPacket,
       references.verifyProof,
       references.hostStateStt,
     ]);
     expect(builder.collectFrom).toHaveBeenCalledWith([moduleUtxo], 'module-redeemer');
     expect(builder.pay.ToContract).toHaveBeenCalledWith(
-      'transfer-address',
-      { kind: 'inline', value: 'd87980' },
-      { 'module-token': 1n },
+      'query-address',
+      { kind: 'inline', value: moduleUtxo.datum },
+      moduleUtxo.assets,
     );
+    expect(builder.mintAssets).toHaveBeenCalledWith({ 'timeout-policy': 1n }, 'encoded-auth-token');
+    expect(builder.mintAssets).toHaveBeenCalledWith({ 'verify-policy': 1n }, 'verify-redeemer');
   });
 });

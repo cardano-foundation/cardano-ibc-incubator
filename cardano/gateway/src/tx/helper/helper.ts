@@ -1,31 +1,7 @@
 import { UTxO } from '@lucid-evolution/lucid';
 import { ClientState, ConsensusState } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
-import { LOVELACE } from '../../constant';
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
-
-export function normalizeDenomTokenTransfer(denom: string): string {
-  const normalizedDenom = denom?.trim();
-  if (!normalizedDenom) {
-    throw new GrpcInvalidArgumentException('Invalid argument: "token.denom" is required');
-  }
-  return normalizedDenom;
-}
-
-export function mapLovelaceDenom(
-  denom: string,
-  direction: 'asset_to_packet' | 'packet_to_asset',
-): string {
-  const normalizedDenom = normalizeDenomTokenTransfer(denom);
-  const lowerDenom = normalizedDenom.toLowerCase();
-  const lovelacePacketDenom = Buffer.from(LOVELACE, 'utf8').toString('hex');
-
-  if (direction === 'asset_to_packet') {
-    return lowerDenom === LOVELACE ? lovelacePacketDenom : normalizedDenom;
-  }
-
-  return lowerDenom === lovelacePacketDenom || lowerDenom === LOVELACE ? LOVELACE : normalizedDenom;
-}
 
 // Sum lovelace across wallet UTxOs so wallet-context logs can show available ADA.
 export function sumLovelaceFromUtxos(utxos: UTxO[]): bigint {

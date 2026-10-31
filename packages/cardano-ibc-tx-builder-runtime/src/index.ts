@@ -1,18 +1,26 @@
-import { checkedDeploymentMode, requireMigrationConfig, type MigrationRuntimeConfig } from './migrationRuntime';
-import type { HistoryBootstrap } from './historyBootstrap';
-import type { LucidEvolution, Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
+import { createTraceRegistryClient } from "@cardano-ibc/trace-registry";
+import { type SendPacketOperator } from "@cardano-ibc/tx-builder";
+import type {
+  LucidEvolution,
+  Network,
+  TxBuilder,
+  UTxO,
+} from "@lucid-evolution/lucid";
+import WebSocket from "ws";
+import { AsyncMutex } from "./asyncMutex";
+import { createKupoConsensusHistoryReader } from "./consensusHistoryKupo";
+import { assertExecutionBudget, parseExecutionLimit } from "./executionBudget";
+import type { HistoryBootstrap } from "./historyBootstrap";
+import { LucidIbcAdapter } from "./lucidIbcAdapter";
 import {
-  type SendPacketOperator,
-} from '@cardano-ibc/tx-builder';
-import { createTraceRegistryClient } from '@cardano-ibc/trace-registry';
-import WebSocket from 'ws';
-import { AsyncMutex } from './asyncMutex';
-import { assertExecutionBudget, parseExecutionLimit } from './executionBudget';
-import { createKupoConsensusHistoryReader } from './consensusHistoryKupo';
-import { findUtxosAtAllowEmpty, LucidIbcAdapter } from './lucidIbcAdapter';
+  checkedDeploymentMode,
+  requireMigrationConfig,
+  type MigrationRuntimeConfig,
+} from "./migrationRuntime";
+
 
 export { AsyncMutex } from './asyncMutex';
-export { transferEscrowShardTokenName } from './transferEscrowShard';
+export { transferEscrowShardTokenName } from './transferEscrowIdentity';
 
 const LOOKUP_RETRY_OPTIONS = {
   maxAttempts: 6,
@@ -1481,7 +1489,6 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
     }
     const lucidService = new LucidIbcAdapter(lucidImporter, lucid, deployment,
       createKupoConsensusHistoryReader(kupoEndpoint, { fetchImpl: config.fetchImpl, headers: kupmiosHeaders.kupoHeader, allowScriptMigration: !!deployment.migration }));
-    await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
 
     logger.log(`[context] initialized shared Cardano tx-builder runtime context in ${elapsedMs(contextStartedAt)}`);
 
@@ -1663,10 +1670,10 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
 }
 
 export type {
-  BuilderRuntimeConfig,
-  KupmiosAuthHeaders,
-  LocalSubmitSignedTransactionResponse,
-  LocalUnsignedTransferResponse,
-  SubmitSignedTransactionApiRequestBody,
-  TransferApiRequestBody,
+	BuilderRuntimeConfig,
+	KupmiosAuthHeaders,
+	LocalSubmitSignedTransactionResponse,
+	LocalUnsignedTransferResponse,
+	SubmitSignedTransactionApiRequestBody,
+	TransferApiRequestBody
 };

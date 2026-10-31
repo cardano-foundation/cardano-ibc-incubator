@@ -163,9 +163,9 @@ SQLite checkpoints are disposable caches. Keep the canonical transaction history
 available when restarting or moving a Gateway. Outstanding sends still occupy
 live commitment slots until acknowledgement or timeout processing completes.
 
-The separate legacy inline channel format used by other application ports still
-supports authenticated cleanup. It does not apply to ICS-20 lanes and the Gateway
-rejects pruning requests for the `transfer` port.
+Interchain-query packets still store receipts and acknowledgements in the channel
+datum and use a separate authenticated cleanup operation. The Gateway rejects
+pruning requests for the ICS-20 `transfer` port.
 
 Hermes uses `packet_executor_concurrency = 4` by default to execute funded batches across independent channels while each channel has at most one batch in flight. Set it to `1` for serial execution. Increasing it needs separate signer inputs for fees and collateral. Shared initialization inputs and busy wallet inputs still cause retries. The send builder still includes at most two intents in each transaction. Measure drain time on the intended network before claiming a throughput gain.
 

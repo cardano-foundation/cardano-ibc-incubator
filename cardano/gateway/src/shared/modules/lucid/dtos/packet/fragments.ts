@@ -16,39 +16,9 @@ export type WithChannelContext = {
   clientUtxo: UTxO;
 };
 
-// Legacy naming is kept where call sites still use `*UTxO` keys. This avoids
-// broad churn while still allowing new DTOs to compose from one source.
-export type WithLegacyChannelContext = {
-  channelUTxO: UTxO;
-  connectionUTxO: UTxO;
-  clientUTxO: UTxO;
-};
-
-export type WithTransferModuleReferenceUtxo = {
-  transferModuleReferenceUtxo: UTxO;
-};
-
-export type WithRequiredTransferModuleReferenceUtxo = {
-  transferModuleReferenceUtxo: UTxO;
-};
-
-export type WithTransferModuleUtxo = {
-  transferModuleUtxo: UTxO;
-};
-
-export type WithMockModuleUtxo = {
-  mockModuleUtxo: UTxO;
-};
-
 export type WithModuleContext = {
   moduleKey: GatewayModuleKey;
   moduleUtxo: UTxO;
-};
-
-export type WithTransferEscrowShard = {
-  transferEscrowUtxo?: UTxO;
-  encodedTransferEscrowDatum?: string;
-  transferEscrowShardTokenUnit?: string;
 };
 
 export type WithChannelSpend = {
@@ -57,63 +27,8 @@ export type WithChannelSpend = {
   channelTokenUnit: string;
 };
 
-export type WithTransferModuleSpend = {
-  encodedSpendTransferModuleRedeemer: string;
-};
-
-export type WithMockModuleSpend = {
-  encodedSpendMockModuleRedeemer: string;
-};
-
 export type WithModuleSpend = {
   encodedSpendModuleRedeemer: string;
-};
-
-export type WithMintVoucherRedeemer = {
-  encodedMintVoucherRedeemer: string;
-};
-
-export type WithVoucherMetadataOutput = {
-  voucherReferenceTokenUnit?: string;
-  voucherMetadataAddress?: string;
-  encodedVoucherMetadataDatum?: string;
-};
-
-export type TraceRegistryAppendUpdate = {
-  kind: "append";
-  traceRegistryDirectoryUtxo: UTxO;
-  traceRegistryShardUtxo: UTxO;
-  traceRegistryArchivedShardWitnessUtxos: UTxO[];
-  encodedTraceRegistryRedeemer: string;
-  encodedUpdatedTraceRegistryDatum: string;
-};
-
-export type TraceRegistryExistingProof = {
-  kind: "existing";
-  traceRegistryMappingWitnessUtxos: UTxO[];
-};
-
-export type TraceRegistryRolloverUpdate = {
-  kind: "rollover";
-  traceRegistryDirectoryUtxo: UTxO;
-  traceRegistryShardUtxo: UTxO;
-  traceRegistryArchivedShardWitnessUtxos: UTxO[];
-  traceRegistryMintNonceUtxo: UTxO;
-  encodedTraceRegistryDirectoryRedeemer: string;
-  encodedUpdatedTraceRegistryDirectoryDatum: string;
-  encodedTraceRegistryRedeemer: string;
-  encodedArchivedTraceRegistryDatum: string;
-  encodedNewActiveTraceRegistryDatum: string;
-  newActiveTraceRegistryShardTokenUnit: string;
-  encodedMintIdentifierRedeemer: string;
-};
-
-export type WithOptionalTraceRegistryUpdate = {
-  traceRegistryUpdate?:
-    | TraceRegistryExistingProof
-    | TraceRegistryAppendUpdate
-    | TraceRegistryRolloverUpdate
-    | null;
 };
 
 export type WithVerifyProof = {
@@ -123,10 +38,6 @@ export type WithVerifyProof = {
 
 export type WithConstructedAddress = {
   constructedAddress: string;
-};
-
-export type WithTransferAmount = {
-  transferAmount: bigint;
 };
 
 export type WithChannelToken = {
@@ -139,6 +50,4 @@ export type WithPolicyId<K extends string> = {
   [P in K]: PolicyId;
 };
 
-export type WithPacketPolicyAndChannelToken<K extends string> =
-  & WithPolicyId<K>
-  & WithChannelToken;
+export type WithPacketPolicyAndChannelToken<K extends string> = WithPolicyId<K> & WithChannelToken;

@@ -1,13 +1,12 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { Channel as CardanoChannel } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
 import { convertString2Hex } from '../../shared/helpers/hex';
-import { DenomTraceService } from '../../query/services/denom-trace.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { encodeVerifyProofRedeemer } from '../../shared/types/connection/verify-proof-redeemer';
 import { TimeoutOnClosePacketOperator, TimeoutPacketOperator } from '../dto';
 import { PacketService } from '../packet.service';
-import { Channel as CardanoChannel } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
 
 jest.mock('../../shared/types/connection/verify-proof-redeemer', () => {
   const actual = jest.requireActual('../../shared/types/connection/verify-proof-redeemer');
@@ -31,27 +30,25 @@ function createService(ordering: 'Ordered' | 'Unordered', state: 'Open' | 'Close
         },
       },
       verifyProof: { scriptHash: 'verify-policy' },
+      spendMockModule: { address: 'module-address' },
     },
     modules: {
-      transfer: {
-        address: 'addr_test1transfer',
-        identifier: 'transfer-module-token',
-      },
+      icq: { address: 'addr_test1icq', identifier: 'icq-module-token' },
     },
   };
   const channelDatum = {
-    port: convertString2Hex('transfer'),
+    port: convertString2Hex('icqhost'),
     token: { policyId: 'channel-policy', name: 'channel-name' },
     state: {
       channel: {
         state,
         ordering,
         counterparty: {
-          port_id: convertString2Hex('transfer'),
+          port_id: convertString2Hex('icqhost'),
           channel_id: convertString2Hex('channel-9'),
         },
         connection_hops: [convertString2Hex('connection-0')],
-        version: convertString2Hex('ics20-1'),
+        version: convertString2Hex('icq-1'),
         upgrade_sequence: 1n,
       },
       next_sequence_send: 3n,
@@ -78,7 +75,10 @@ function createService(ordering: 'Ordered' | 'Unordered', state: 'Open' | 'Close
   const clientDatum = {
     state: {
       clientState: {
-    upgradePath: [], latestHeight: proofHeight, proofSpecs: [] },
+        upgradePath: [],
+        latestHeight: proofHeight,
+        proofSpecs: [],
+      },
       consensusStates: new Map([
         [
           consensusHeight,
@@ -97,15 +97,11 @@ function createService(ordering: 'Ordered' | 'Unordered', state: 'Open' | 'Close
   const connectionUtxo = { txHash: 'connection', outputIndex: 0, datum: 'connection-datum', assets: {} };
   const clientUtxo = { txHash: 'client', outputIndex: 0, datum: 'client-datum', assets: {} };
   const transferModuleUtxo = { txHash: 'module', outputIndex: 0, datum: 'module-datum', assets: {} };
-  const escrowUtxo = {
-    txHash: 'escrow',
-    outputIndex: 0,
-    datum: 'escrow-datum',
-    assets: { lovelace: 100n, 'escrow-shard': 1n },
-  };
   const unsignedTx = { tag: 'unsigned-timeout' };
   const lucidService: any = {
-    resolveClientAtHeights: jest.fn().mockImplementation(async (clientUtxo: unknown) => ({ clientUtxo, clientDatum, historyWitnesses: [] })),
+    resolveClientAtHeights: jest
+      .fn()
+      .mockImplementation(async (clientUtxo: unknown) => ({ clientUtxo, clientDatum, historyWitnesses: [] })),
     getChannelTokenUnit: jest.fn().mockReturnValue(['channel-policy', 'channel-name']),
     getConnectionTokenUnit: jest.fn().mockReturnValue(['connection-policy', 'connection-name']),
     getClientTokenUnit: jest.fn().mockReturnValue('client-token'),
@@ -123,14 +119,16 @@ function createService(ordering: 'Ordered' | 'Unordered', state: 'Open' | 'Close
     }),
     encode: jest.fn().mockImplementation(async (_value: unknown, type: string) => `encoded-${type}`),
     credentialToAddress: jest.fn().mockReturnValue('addr_test1sender'),
-    createUnsignedTimeoutPacketUnescrowTx: jest.fn().mockReturnValue(unsignedTx),
+    createUnsignedTimeoutPacketModuleTx: jest.fn().mockReturnValue(unsignedTx),
     LucidImporter: {},
   };
   const service = new PacketService(
     { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } as unknown as Logger,
-    { get: jest.fn().mockImplementation((key: string) => (key === 'deployment' ? deployment : undefined)) } as unknown as ConfigService,
+    {
+      get: jest.fn().mockReturnValue(deployment),
+      getOrThrow: jest.fn().mockReturnValue(deployment),
+    } as unknown as ConfigService,
     lucidService as LucidService,
-    {} as DenomTraceService,
     {} as any,
     {} as any,
     {} as any,
@@ -142,31 +140,15 @@ function createService(ordering: 'Ordered' | 'Unordered', state: 'Open' | 'Close
     newRoot: 'new-root',
     commit: jest.fn(),
   });
-  jest.spyOn(service as any, 'findTransferEscrowShard').mockResolvedValue({
-    kind: 'existing',
-    utxo: escrowUtxo,
-    encodedDatum: 'encoded-escrow-datum',
-    shardTokenUnit: 'escrow-shard',
-    transferModuleUtxo,
-    registrySiblings: [],
-  });
-
   const operator: TimeoutPacketOperator = {
-    fungibleTokenPacketData: {
-      denom: 'lovelace',
-      amount: '7',
-      sender: 'sender-key-hash',
-      receiver: 'receiver',
-      memo: '',
-    },
     proofUnreceived,
     proofHeight,
     nextSequenceRecv: 1n,
     packet: {
       sequence: 2n,
-      source_port: convertString2Hex('transfer'),
+      source_port: convertString2Hex('icqhost'),
       source_channel: convertString2Hex('channel-0'),
-      destination_port: convertString2Hex('transfer'),
+      destination_port: convertString2Hex('icqhost'),
       destination_channel: convertString2Hex('channel-9'),
       data: '00',
       timeout_height: { revisionNumber: 0n, revisionHeight: 1000n },
@@ -194,6 +176,17 @@ describe('PacketService timeout builders', () => {
     const result = await service.buildUnsignedTimeoutPacketTx(operator, 'addr_test1relayer');
 
     expect(result.unsignedTx).toBe(unsignedTx);
+    expect(encodedValue(lucidService, 'iBCModuleRedeemer')).toEqual({
+      Callback: [
+        {
+          OnTimeoutPacket: {
+            channel_id: operator.packet.source_channel,
+            packet_data: operator.packet.data,
+            data: 'OtherModuleData',
+          },
+        },
+      ],
+    });
     const updatedDatum = encodedValue(lucidService, 'channel');
     expect(updatedDatum.state.channel.state).toBe('Close');
     expect(updatedDatum.state.packet_commitment.has(operator.packet.sequence)).toBe(false);
@@ -206,7 +199,7 @@ describe('PacketService timeout builders', () => {
       VerifyMembership: {
         value: '0000000000000001',
         path: {
-          key_path: [convertString2Hex('ibc'), convertString2Hex('nextSequenceRecv/ports/transfer/channels/channel-9')],
+          key_path: [convertString2Hex('ibc'), convertString2Hex('nextSequenceRecv/ports/icqhost/channels/channel-9')],
         },
       },
     });
@@ -238,8 +231,7 @@ describe('PacketService timeout builders', () => {
     expect(updatedDatum.state.channel).toBe(channelDatum.state.channel);
     const proofRedeemer: any = encodeProof.mock.calls[0][0];
     expect(proofRedeemer.BatchVerifyMembership).toHaveLength(1);
-    const [nextSequenceMembership, closedChannelMembership] =
-      proofRedeemer.BatchVerifyMembership[0];
+    const [nextSequenceMembership, closedChannelMembership] = proofRedeemer.BatchVerifyMembership[0];
     expect(nextSequenceMembership).toMatchObject({
       proof: proofUnreceived,
       value: '0000000000000001',
@@ -247,11 +239,11 @@ describe('PacketService timeout builders', () => {
     expect(closedChannelMembership).toMatchObject({
       proof: proofClose,
       path: {
-        key_path: [convertString2Hex('ibc'), convertString2Hex('channelEnds/ports/transfer/channels/channel-9')],
+        key_path: [convertString2Hex('ibc'), convertString2Hex('channelEnds/ports/icqhost/channels/channel-9')],
       },
     });
     expect(CardanoChannel.decode(Buffer.from(closedChannelMembership.value, 'hex')).upgrade_sequence).toBe(2n);
-    expect(lucidService.createUnsignedTimeoutPacketUnescrowTx.mock.calls[0][0]).toMatchObject({
+    expect(lucidService.createUnsignedTimeoutPacketModuleTx.mock.calls[0][0]).toMatchObject({
       timeoutPacketPolicyId: 'timeout-policy',
       encodedVerifyProofRedeemer: 'encoded-verify-proof',
     });
@@ -280,10 +272,23 @@ describe('PacketService timeout builders', () => {
         path: {
           key_path: [
             convertString2Hex('ibc'),
-            convertString2Hex('receipts/ports/transfer/channels/channel-9/sequences/2'),
+            convertString2Hex('receipts/ports/icqhost/channels/channel-9/sequences/2'),
           ],
         },
       }),
     ]);
+  });
+  it.each([
+    'buildUnsignedRecvPacketTx',
+    'buildUnsignedAcknowlegementPacketTx',
+    'buildUnsignedTimeoutPacketTx',
+  ] as const)('%s rejects an ICS-20 channel before constructing an inline transaction', async (method) => {
+    const { service, lucidService, channelDatum, operator } = createService('Unordered');
+    channelDatum.port = convertString2Hex('transfer');
+    await expect(
+      (service[method] as any)({ ...operator, channelId: 'channel-0' }, 'addr_test1relayer'),
+    ).rejects.toThrow('icqhost');
+    expect(lucidService.encode).not.toHaveBeenCalled();
+    expect(lucidService.createUnsignedTimeoutPacketModuleTx).not.toHaveBeenCalled();
   });
 });

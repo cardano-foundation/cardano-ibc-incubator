@@ -1,8 +1,34 @@
 import { Data, fromText, Kupmios, type UTxO } from "@lucid-evolution/lucid";
 import {
-  escrowDenomTokenFromPacketDenom,
   transferEscrowShardTokenName,
 } from "../../../packages/cardano-ibc-tx-builder-runtime/src/transferEscrowIdentity.ts";
+
+function escrowDenomTokenFromPacketDenom(encodedDenom: string): string {
+  if (encodedDenom.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(encodedDenom)) {
+    throw new Error(
+      "transfer escrow shard datum denom must be an even-length hexadecimal string",
+    );
+  }
+  const packetDenomBytes = Buffer.from(encodedDenom, "hex");
+  const packetDenom = packetDenomBytes.toString("utf8");
+  if (!Buffer.from(packetDenom, "utf8").equals(packetDenomBytes)) {
+    throw new Error("Transfer escrow shard datum denom is not canonical UTF-8");
+  }
+  if (packetDenom.toLowerCase() === Buffer.from("lovelace").toString("hex")) {
+    return "lovelace";
+  }
+  if (!/^(?:[0-9a-fA-F]{2})+$/.test(packetDenom)) {
+    throw new Error(
+      "Transfer escrow shard datum contains a non-hex denomination",
+    );
+  }
+  if (packetDenom.length < 56 || packetDenom.length > 120) {
+    throw new Error(
+      "Transfer escrow shard datum contains an invalid Cardano asset unit",
+    );
+  }
+  return packetDenom.toLowerCase();
+}
 
 const EscrowDatumSchema = Data.Object({
   channel_id: Data.Bytes(),
