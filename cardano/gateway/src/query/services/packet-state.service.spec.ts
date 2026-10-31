@@ -43,6 +43,13 @@ function fixture() {
     rebuildPacketLaneTreeAtBlock: jest.fn(async () => ({ tree: {
       get: (key: string) => leaves.get(key),
       getKeys: () => [...leaves.keys()],
+      count: (kind: string) => [...leaves.keys()].filter(key => key.startsWith(kind + '/')).length,
+      entriesPage: (kind: string, offset: number, limit: number, reverse: boolean) => {
+        const entries = [...leaves].filter(([key]) => key.startsWith(kind + '/'))
+          .map(([key, value]) => [BigInt(key.slice(key.lastIndexOf('/') + 1)), value.toString('hex')] as [bigint, string]);
+        entries.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+        return (reverse ? entries.reverse() : entries).slice(offset, offset + limit);
+      },
       generateNonExistenceProof: jest.fn(() => ({})),
       generateProof: jest.fn(() => ({})),
     } })),
@@ -102,7 +109,7 @@ describe('canonical packet query state', () => {
       .toEqual(['1', '2']);
   });
   it('encodes the same snapshot fixture consumed by both partner light clients', async () => {
-    const { service } = fixture();
+    const { service, history } = fixture();
     const expected = readFileSync(
       resolve(
         __dirname,
@@ -111,6 +118,7 @@ describe('canonical packet query state', () => {
       'utf8',
     ).trim();
     expect(Buffer.from(await service.snapshot(42n)).toString('hex')).toBe(expected);
+    expect(history.rebuildPacketLaneTreeAtBlock).not.toHaveBeenCalled();
   });
 
   it('proves an unchanged empty lane at the requested settled height', async () => {

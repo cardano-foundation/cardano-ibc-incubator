@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { encodeCanonical } from 'cbor';
 import type { Constr, Data } from '@lucid-evolution/lucid';
+import { PacketMerkleTree } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
 import { packetLane, packetLaneTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import type { DeploymentConfig } from '../../config/bridge-manifest';
@@ -40,7 +41,7 @@ export class PacketStateService {
     return latestPacketProofHeight(this.history, this.logger);
   }
 
-  async lane(port: string, channel: string, lane: number, height: bigint) {
+  async laneMetadata(port: string, channel: string, lane: number, height: bigint) {
     const config = this.config.getOrThrow<DeploymentConfig>('deployment').packetState;
     const name = packetLaneTokenName(port, channel, lane, config.laneCount);
     const output = await this.history.findUtxoByUnitAtOrBeforeBlockNo(config.state.scriptHash + name, height);
@@ -54,9 +55,18 @@ export class PacketStateService {
       toText(String(datum.fields[0])) !== port ||
       toText(String(datum.fields[1])) !== channel ||
       datum.fields[2] !== BigInt(lane) ||
-      datum.fields[3] !== BigInt(config.laneCount)
+      datum.fields[3] !== BigInt(config.laneCount) ||
+      typeof datum.fields[5] !== 'string' || !/^[0-9a-f]{64}$/.test(datum.fields[5]) ||
+      !(datum.fields[6] instanceof Map) || !Array.isArray(datum.fields[7]) || datum.fields[7].length !== 0 ||
+      !(datum.fields[8] instanceof Map) || datum.fields[8].size !== 0
     )
       throw new Error('Invalid historical packet lane identity');
+    return { output, datum, name };
+  }
+
+  async lane(port: string, channel: string, lane: number, height: bigint) {
+    const { output, datum, name } = await this.laneMetadata(port, channel, lane, height);
+    const config = this.config.getOrThrow<DeploymentConfig>('deployment').packetState;
     const tree = await this.history.rebuildPacketLaneTreeAtBlock(height, {
       txHash: output.txHash,
       outputIndex: output.outputIndex,
@@ -85,27 +95,66 @@ export class PacketStateService {
       ? serializeExistenceProof(lane.tree.generateProof(key))
       : serializeNonExistenceProof(lane.tree.generateNonExistenceProof(key));
     // Re-read the historical reference to detect a rollback during construction.
-    const again = await this.lane(port, channel, Number(lane.datum.fields[2]), height);
+    const again = await this.laneMetadata(port, channel, Number(lane.datum.fields[2]), height);
     if ((await this.history.findBlockByHeight(height))?.hash !== block.hash) throw new Error('Proof block rolled back');
     if (again.output.txHash !== lane.output.txHash || again.output.outputIndex !== lane.output.outputIndex)
       throw new Error('Packet state rolled back during proof construction');
     return { value, proof, proof_height: { revision_number: 0n, revision_height: height } };
   }
 
-  async entries(port: string, channel: string, kind: 'commitments' | 'acks' | 'receipts', requested?: bigint) {
+  async entries(
+    port: string, channel: string, kind: 'commitments' | 'acks' | 'receipts', requested?: bigint,
+    selection: { sequences?: readonly bigint[]; offset?: number; limit?: number; reverse?: boolean } = {},
+  ) {
     const height = await this.height(requested);
+    const block = await this.history.findBlockByHeight(height);
+    if (!block) throw new Error('Packet entries block missing');
     const count = this.config.getOrThrow<DeploymentConfig>('deployment').packetState.laneCount;
     const result = new Map<bigint, string>();
-    for (let index = 0; index < count; index++) {
-      const { tree } = await this.lane(port, channel, index, height);
-      const prefix = `${kind}/ports/${port}/channels/${channel}/sequences/`;
-      for (const key of tree.getKeys()) {
-        if (key.startsWith(prefix)) result.set(BigInt(key.slice(prefix.length)), tree.get(key)!.toString('hex'));
+    let total = 0;
+    if (selection.sequences) {
+      const groups = new Map<number, bigint[]>();
+      for (const sequence of selection.sequences) {
+        const index = packetLane(port, channel, sequence, count);
+        const sequences = groups.get(index) ?? [];
+        sequences.push(sequence);
+        groups.set(index, sequences);
+      }
+      for (const [index, sequences] of groups) {
+        const { tree } = await this.lane(port, channel, index, height);
+        for (const sequence of sequences) {
+          const value = tree.get(`${kind}/ports/${port}/channels/${channel}/sequences/${sequence}`);
+          if (value) result.set(sequence, value.toString('hex'));
+        }
+      }
+      total = result.size;
+    } else {
+      const offset = selection.offset ?? 0, limit = selection.limit ?? 100;
+      if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 4096) throw new Error('Invalid packet pagination');
+      const reverse = selection.reverse ?? false;
+      const trees = await Promise.all(Array.from({ length: count }, async (_, index) => (await this.lane(port, channel, index, height)).tree));
+      total = trees.reduce((sum, tree) => sum + tree.count(kind), 0);
+      const boundary = offset ? PacketMerkleTree.sequenceAt(trees, kind, offset, reverse) : undefined;
+      if (!offset || boundary !== undefined) {
+        const heads = trees.map(tree => {
+          const position = boundary === undefined ? 0 : reverse ? tree.count(kind) - tree.countBefore(kind, boundary + 1n) : tree.countBefore(kind, boundary);
+          return { tree, position, entry: tree.entriesPage(kind, position, 1, reverse)[0] };
+        });
+        while (result.size < limit) {
+          const next = heads.filter(head => head.entry).sort((a, b) => {
+            const order = a.entry[0] < b.entry[0] ? -1 : a.entry[0] > b.entry[0] ? 1 : 0;
+            return reverse ? -order : order;
+          })[0];
+          if (!next) break;
+          result.set(...next.entry);
+          if (result.size < limit) next.entry = next.tree.entriesPage(kind, ++next.position, 1, reverse)[0];
+        }
       }
     }
+    if ((await this.history.findBlockByHeight(height))?.hash !== block.hash) throw new Error('Packet entries block rolled back');
     return {
-      height: { revision_number: 0n, revision_height: height },
-      entries: new Map([...result].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))),
+      height: { revision_number: 0n, revision_height: height }, entries: result, total,
+      hasMore: !selection.sequences && (selection.offset ?? 0) + result.size < total,
     };
   }
 
@@ -118,16 +167,14 @@ export class PacketStateService {
     for (let index = 0; index < count; index++) {
       const { datum, tree } = await this.lane(port, channel, index, height);
       const commitments = (datum.fields[6] as Map<bigint, string>).size;
-      const receiptPrefix = `receipts/ports/${port}/channels/${channel}/sequences/`;
-      const ackPrefix = `acks/ports/${port}/channels/${channel}/sequences/`;
-      const receipts = tree.getKeys().filter(key => key.startsWith(receiptPrefix));
-      const acknowledgements = tree.getKeys().filter(key => key.startsWith(ackPrefix));
+      const receipts = tree.count('receipts');
+      const acknowledgements = tree.count('acks');
       const entries = commitments;
       lanes.push({
         lane: index,
         commitments,
-        receipts: receipts.length,
-        acknowledgements: acknowledgements.length,
+        receipts,
+        acknowledgements,
         entries,
         capacity: 64,
         // Historical receipts do not consume live datum capacity.
@@ -250,7 +297,7 @@ export class PacketStateService {
       const channelDatum = this.lucid.LucidImporter.Data.from(output.datum!) as Constr<Data>;
       const port = this.lucid.LucidImporter.toText(String(channelDatum.fields[1]));
       for (let index = 0; index < config.laneCount; index++) {
-        const lane = await this.lane(port, channel, index, height);
+        const lane = await this.laneMetadata(port, channel, index, height);
         lanes[lane.name] = {
           State: {
             Port: port,

@@ -7,6 +7,10 @@ validates and signs relayer transactions before submitting them to Ogmios.
 
 Packet deployments retain `packet-lanes-v1` and require `receipt_storage: "merkle-history-v1"` in their manifest. Receipts and acknowledgement hashes remain in the lane's Merkle tree while their datum fields stay empty. The Gateway rebuilds proofs from canonical raw transactions retained by Yaci and checks every continuation root. Keep that history available when restarting or moving the Gateway. This requires fresh Cardano scripts and deployment artifacts. Changing a manifest marker does not migrate existing contracts. The Go light-client modules and packet proof format are unchanged. Ordinary receives no longer require pruning to free lane capacity. Authenticated pruning remains optional.
 
+Packet trees adapt the existing incremental SQLite tree to share immutable nodes between lane versions. Clones copy root pointers. A changed leaf updates its 64 ancestors and a separate numeric sequence index. Historical queries preserve the latest checkpoint and concurrent requests for the same version share reconstruction. Packet lists paginate through the sequence index. Snapshot queries read canonical lane metadata without building Merkle trees.
+
+The cache defaults to in-memory SQLite. Set `PACKET_LANE_HISTORY_DB` to a file in an existing writable directory to retain nodes and checkpoints across restarts. Use a local cache file per Gateway. Saved checkpoints are checked against canonical blocks and their original lane outputs before reuse. The cache is disposable and can be rebuilt from Yaci history. Retained versions consume disk space as history grows.
+
 ## Published Container Image
 
 The shared [image workflow](../../.github/workflows/publish.yaml) publishes same-repository PR images to the configured private registry. Fork and Dependabot PRs build without publishing or registry credentials. Ordinary merges to `main` do not publish images.

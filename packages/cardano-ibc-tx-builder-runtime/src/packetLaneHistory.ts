@@ -11,27 +11,9 @@ import {
   toText,
   type UTxO,
 } from "@lucid-evolution/lucid";
-import { ICS23MerkleTree } from "./ics23MerkleTree.ts";
+import { PacketLaneTree } from "./packetLaneTree.ts";
+export { PacketLaneTree } from "./packetLaneTree.ts";
 import { packetLaneTokenName } from "@cardano-ibc/tx-builder/dist/packet-lanes";
-
-export class PacketLaneTree {
-  constructor(readonly tree = new ICS23MerkleTree()) {}
-  set(key: string, value: string) {
-    this.tree.set(key, value);
-  }
-  get(key: string) {
-    return this.tree.get(key)?.toString("hex");
-  }
-  getRoot() {
-    return this.tree.getRoot();
-  }
-  getSiblings(key: string) {
-    return this.tree.getSiblings(key).map((value) => value.toString("hex"));
-  }
-  clone() {
-    return new PacketLaneTree(this.tree.clone());
-  }
-}
 
 function packetLaneDatum(output: UTxO): Constr<Data> {
   if (!output.datum) throw new Error("Packet lane requires an inline datum");
@@ -183,18 +165,39 @@ function packetCommitment(packet: Constr<Data>): string {
  */
 export class PacketLaneHistory {
   private output?: UTxO;
-  private tree = new PacketLaneTree();
-  constructor(readonly unit: string, readonly batchPolicy: string) {}
+  constructor(
+    readonly unit: string,
+    readonly batchPolicy: string,
+    private tree = new PacketLaneTree(),
+  ) {}
 
   clone(): PacketLaneHistory {
-    const next = new PacketLaneHistory(this.unit, this.batchPolicy);
+    const next = new PacketLaneHistory(
+      this.unit,
+      this.batchPolicy,
+      this.tree.clone(),
+    );
     next.output = this.output;
-    next.tree = this.tree.clone();
     return next;
   }
 
+  static restore(
+    unit: string,
+    batchPolicy: string,
+    output: UTxO,
+    tree: PacketLaneTree,
+  ): PacketLaneHistory {
+    const datum = packetLaneDatum(output);
+    if (tree.getRoot() !== datum.fields[5] || output.assets[unit] !== 1n) {
+      throw new Error("Packet checkpoint root mismatch");
+    }
+    const restored = new PacketLaneHistory(unit, batchPolicy, tree.clone());
+    restored.output = { ...output, assets: { ...output.assets } };
+    return restored;
+  }
+
   current(): UTxO | undefined {
-    return this.output;
+    return this.output && { ...this.output, assets: { ...this.output.assets } };
   }
 
   at(target: UTxO): PacketLaneTree {
@@ -219,6 +222,22 @@ export class PacketLaneHistory {
   }
 
   apply(tx: PacketLaneHistoryTransaction): void {
+    const previous = this.tree;
+    const output = this.output;
+    const db = previous.tree.store.db;
+    db.exec("SAVEPOINT packet_history_apply");
+    try {
+      this.applyTransaction(tx);
+      db.exec("RELEASE packet_history_apply");
+    } catch (error) {
+      db.exec("ROLLBACK TO packet_history_apply; RELEASE packet_history_apply");
+      this.tree = previous;
+      this.output = output;
+      throw error;
+    }
+  }
+
+  private applyTransaction(tx: PacketLaneHistoryTransaction): void {
     const outputs = tx.outputs.filter((output) =>
       (output.assets[this.unit] ?? 0n) !== 0n
     );
@@ -327,6 +346,6 @@ export class PacketLaneHistory {
       );
     }
     this.tree = tree;
-    this.output = output;
+    this.output = { ...output, assets: { ...output.assets } };
   }
 }

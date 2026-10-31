@@ -82,7 +82,6 @@ export class PacketService {
     request: QueryPacketCommitmentsRequest | QueryPacketAcknowledgementsRequest,
     kind: 'commitments' | 'acks',
   ) {
-    const { entries, height } = await this.packetState.entries(request.port_id, request.channel_id, kind);
     const pagination = request.pagination;
     const offset = pagination?.key?.length
       ? Number(Buffer.from(pagination.key).toString('utf8'))
@@ -90,9 +89,8 @@ export class PacketService {
     const limit = Number(pagination?.limit || 100n);
     if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 4096)
       throw new GrpcInvalidArgumentException('Invalid packet pagination');
-    const all = [...entries];
-    if (pagination?.reverse) all.reverse();
-    const selected = all.slice(offset, offset + limit);
+    const { entries, height, total, hasMore } = await this.packetState.entries(request.port_id, request.channel_id, kind, undefined, { offset, limit, reverse: pagination?.reverse });
+    const selected = [...entries];
     return {
       packets: selected.map(([sequence, value]) => ({
         port_id: request.port_id,
@@ -103,8 +101,8 @@ export class PacketService {
       height,
       pagination: {
         next_key:
-          offset + selected.length < all.length ? Buffer.from(String(offset + selected.length)) : new Uint8Array(),
-        total: pagination?.count_total ? BigInt(all.length) : 0n,
+          hasMore ? Buffer.from(String(offset + selected.length)) : new Uint8Array(),
+        total: pagination?.count_total ? BigInt(total) : 0n,
       },
     };
   }
@@ -598,7 +596,7 @@ export class PacketService {
   // write logic service function queryUnreceivedPackets
   async queryUnreceivedPackets(request: QueryUnreceivedPacketsRequest): Promise<QueryUnreceivedPacketsResponse> {
     if (request.port_id === 'transfer') {
-      const { entries, height } = await this.packetState.entries(request.port_id, request.channel_id, 'receipts');
+      const { entries, height } = await this.packetState.entries(request.port_id, request.channel_id, 'receipts', undefined, { sequences: request.packet_commitment_sequences.map(BigInt) });
       return { sequences: request.packet_commitment_sequences.filter((seq) => !entries.has(BigInt(seq))), height };
     }
 
@@ -634,7 +632,7 @@ export class PacketService {
 
   async queryUnreceivedAcks(request: QueryUnreceivedAcksRequest): Promise<QueryUnreceivedAcksResponse> {
     if (request.port_id === 'transfer') {
-      const { entries, height } = await this.packetState.entries(request.port_id, request.channel_id, 'commitments');
+      const { entries, height } = await this.packetState.entries(request.port_id, request.channel_id, 'commitments', undefined, { sequences: request.packet_ack_sequences.map(BigInt) });
       return { sequences: request.packet_ack_sequences.filter((seq) => entries.has(BigInt(seq))), height };
     }
 

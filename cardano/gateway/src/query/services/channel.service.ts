@@ -182,8 +182,7 @@ export class ChannelService {
           throw new GrpcInternalException('Malformed or mismatched packet lane in channel health');
         }
         const history = await this.historyService.rebuildPacketLaneTreeAtBlock(BigInt(tip.height), input);
-        const prefix = `acks/ports/${portId}/channels/channel-${normalizedChannelId}/sequences/`;
-        return { lane, commitments: fields[6] as Map<bigint, string>, acknowledgements: history.tree.getKeys().filter(key => key.startsWith(prefix)).length };
+        return { lane, commitments: fields[6] as Map<bigint, string>, acknowledgements: history.tree.count('acks') };
       }));
       for (const lane of lanes) {
         const commitments = Array.from(lane.commitments.keys()).sort((a, b) => a < b ? -1 : a > b ? 1 : 0);

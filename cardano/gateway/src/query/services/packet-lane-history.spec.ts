@@ -39,15 +39,23 @@ function fixture() {
   let blockHash = 'canonical';
   let failSnapshot = false;
   const source = {
+    reset: jest.fn(),
     api: { block: jest.fn(async (height: number) => ({ number: height, hash: height === 11 ? blockHash : 'initial' })) },
     snapshot: jest.fn(async (_height, read) => {
       const result = await read();
       if (failSnapshot) throw new Error('history changed during snapshot');
       return result;
     }),
+    transaction: jest.fn(async (hash: string) => {
+      const tx = transactions.find(tx => tx.txHash === hash);
+      return tx && { hash, cborHex: hash, valid: true, index: 0, block: { number: tx === issuance ? 10 : 11, hash: tx === issuance ? 'initial' : blockHash } };
+    }),
+    async *transactionBlocksFor(path: string, at: number, from: number): AsyncGenerator<any[]> {
+      yield await this.transactionsFor(path, at, from);
+    },
     transactionsFor: jest.fn(async (_path, at, from) => transactions.flatMap(tx => {
       const height = tx === issuance ? 10 : 11;
-      return height >= from && height <= at ? [{ hash: tx.txHash, cborHex: tx.txHash, block: { number: height, hash: height === 11 ? blockHash : 'initial' }, index: 0 }] : [];
+      return height >= from && height <= at ? [{ hash: tx.txHash, cborHex: tx.txHash, valid: true, block: { number: height, hash: height === 11 ? blockHash : 'initial' }, index: 0 }] : [];
     })),
   };
   const create = () => {
@@ -85,7 +93,7 @@ describe('canonical packet history cache', () => {
     f.rollback();
     const replacement = await service.rebuildPacketLaneTreeAtBlock(11n, f.replacement);
     expect(replacement.get(path)).toBe('cd'.repeat(32));
-    expect(f.source.transactionsFor).toHaveBeenLastCalledWith(`assets/${unit}/transactions`, 11, 0);
+    expect(f.source.transactionsFor).toHaveBeenLastCalledWith(`assets/${unit}/transactions`, 11, 10);
   });
 
   it('does not use a future checkpoint for an older proof height', async () => {
@@ -93,6 +101,66 @@ describe('canonical packet history cache', () => {
     const service = f.create();
     await service.rebuildPacketLaneTreeAtBlock(11n, f.accepted);
     expect((await service.rebuildPacketLaneTreeAtBlock(10n, f.initial)).tree.size()).toBe(0);
+    expect((service as any).packetLaneHistory.get(unit).history.current().txHash).toBe(f.accepted.txHash);
+    expect((await service.rebuildPacketLaneTreeAtBlock(11n, f.accepted)).get(path)).toBe('ab'.repeat(32));
+    expect(f.source.transactionsFor).toHaveBeenCalledTimes(1);
+  });
+
+  it('shares concurrent reconstruction of the same lane version', async () => {
+    const f = fixture();
+    const service = f.create();
+    const trees = await Promise.all(Array.from({ length: 8 }, () => service.rebuildPacketLaneTreeAtBlock(11n, f.accepted)));
+    expect(trees.every(tree => tree.get(path) === 'ab'.repeat(32))).toBe(true);
+    expect(f.source.transactionsFor).toHaveBeenCalledTimes(1);
+    trees[0].set(path, '');
+    expect(trees[1].get(path)).toBe('ab'.repeat(32));
+  });
+
+  it('reuses stored current and historical versions after losing the in-memory head', async () => {
+    const f = fixture();
+    const service = f.create();
+    await service.rebuildPacketLaneTreeAtBlock(11n, f.accepted);
+    (service as any).packetLaneHistory.clear();
+    expect((await service.rebuildPacketLaneTreeAtBlock(10n, f.initial)).tree.size()).toBe(0);
+    expect((await service.rebuildPacketLaneTreeAtBlock(11n, f.accepted)).get(path)).toBe('ab'.repeat(32));
+    expect(f.source.transactionsFor).toHaveBeenCalledTimes(1);
+    expect(f.source.transaction).toHaveBeenCalledWith(f.accepted.txHash);
+  });
+
+  it('rejects a stored checkpoint if its transaction no longer matches its anchor', async () => {
+    const f = fixture();
+    const service = f.create();
+    await service.rebuildPacketLaneTreeAtBlock(11n, f.accepted);
+    (service as any).packetLaneHistory.clear();
+    const original = f.source.transaction.getMockImplementation()!;
+    f.source.transaction.mockImplementation(async hash => {
+      const transaction = await original(hash);
+      return transaction && { ...transaction, index: 1 };
+    });
+    await expect(service.rebuildPacketLaneTreeAtBlock(11n, f.accepted)).rejects.toThrow('transaction is unavailable or changed');
+    expect((service as any).packetLaneHistory.size).toBe(0);
+  });
+
+  it('keeps a latest checkpoint while a concurrent historical read finishes later', async () => {
+    const f = fixture();
+    const service = f.create();
+    await service.rebuildPacketLaneTreeAtBlock(11n, f.accepted);
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const original = f.source.transaction.getMockImplementation()!;
+    f.source.transaction.mockImplementation(async hash => {
+      entered();
+      await gate;
+      return original(hash);
+    });
+    const historical = service.rebuildPacketLaneTreeAtBlock(10n, f.initial);
+    await started;
+    expect((await service.rebuildPacketLaneTreeAtBlock(11n, f.accepted)).get(path)).toBe('ab'.repeat(32));
+    release();
+    await historical;
+    expect((service as any).packetLaneHistory.get(unit).history.current().txHash).toBe(f.accepted.txHash);
+    expect(f.source.transactionsFor).toHaveBeenCalledTimes(1);
   });
 
   it('refuses missing history and publishes no checkpoint after a snapshot failure', async () => {
@@ -101,6 +169,7 @@ describe('canonical packet history cache', () => {
     f.failSnapshot();
     await expect(service.rebuildPacketLaneTreeAtBlock(11n, f.accepted)).rejects.toThrow('history changed');
     expect((service as any).packetLaneHistory.size).toBe(0);
+    expect((service as any).packetLaneStore.find(unit, batchPolicy, f.accepted)).toBeUndefined();
     const missing = fixture();
     missing.omitIssuance();
     await expect(missing.create().rebuildPacketLaneTreeAtBlock(11n, missing.accepted)).rejects.toThrow('issuance');

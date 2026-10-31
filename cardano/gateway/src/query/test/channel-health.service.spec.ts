@@ -84,7 +84,7 @@ function makeService(packetState?: any) {
     {} as KupoService,
     {
       findLatestBlock: jest.fn(async () => ({ height: 42 })),
-      rebuildPacketLaneTreeAtBlock: jest.fn(async () => ({ tree: { getKeys: () => ['acks/ports/transfer/channels/channel-0/sequences/2'] } })),
+      rebuildPacketLaneTreeAtBlock: jest.fn(async () => ({ tree: { count: () => 1 } })),
     } as unknown as HistoryService,
     {} as any,
       createTestTreeStore(),
