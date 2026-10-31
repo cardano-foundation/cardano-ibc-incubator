@@ -256,7 +256,7 @@ async function authorizeOperation(
   );
   tx = tx.mintAssets(mint, authorized);
   const names = [operationNames[operation.index]];
-  if ([0, 1, 2, 5, 6, 8, 10].includes(operation.index)) {
+  if ([0, 1, 2, 5, 6, 7, 9].includes(operation.index)) {
     names.push(operation.index === 0 ? "send_funds" : "funds");
   }
   for (const name of names) {
