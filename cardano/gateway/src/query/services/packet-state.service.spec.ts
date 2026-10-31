@@ -3,11 +3,6 @@ import { resolve } from 'node:path';
 import { PacketStateService } from './packet-state.service';
 import { packetLaneTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
 
-jest.mock('@cardano-ibc/tx-builder-runtime/packetLaneTransactions', () => ({
-  laneTree: jest.fn(async () => ({
-    tree: { generateNonExistenceProof: jest.fn(() => ({})), generateProof: jest.fn(() => ({})) },
-  })),
-}));
 jest.mock('../../shared/helpers/ics23-proof-serialization', () => ({
   serializeExistenceProof: jest.fn(() => Buffer.from([1])),
   serializeNonExistenceProof: jest.fn(() => Buffer.from([2])),
@@ -43,7 +38,14 @@ function fixture() {
       ]),
     });
   }
+  const leaves = new Map<string, Buffer>();
   const history = {
+    rebuildPacketLaneTreeAtBlock: jest.fn(async () => ({ tree: {
+      get: (key: string) => leaves.get(key),
+      getKeys: () => [...leaves.keys()],
+      generateNonExistenceProof: jest.fn(() => ({})),
+      generateProof: jest.fn(() => ({})),
+    } })),
     findBlockByHeight: jest.fn(async () => ({ hash: 'aa'.repeat(32) })),
     findHostStateUtxoAtOrBeforeBlockNo: jest.fn(async () => ({
       txHash: 'bb'.repeat(32),
@@ -60,7 +62,7 @@ function fixture() {
   const config = { getOrThrow: () => ({ packetState: { state: { scriptHash: statePolicy }, laneCount: 2 } }) };
   const service = new PacketStateService(config as any, lucid as any, history as any, {} as any);
   jest.spyOn(service, 'height').mockResolvedValue(42n);
-  return { service, history, outputs };
+  return { service, history, outputs, leaves };
 }
 
 describe('canonical packet query state', () => {
@@ -117,6 +119,16 @@ describe('canonical packet query state', () => {
     expect(proof.value).toBeUndefined();
     expect(proof.proof_height.revision_height).toBe(42n);
     expect(history.findUtxoByUnitAtOrBeforeBlockNo).toHaveBeenCalledTimes(2);
+  });
+
+  it('serves retained acknowledgements from history while both live collections stay empty', async () => {
+    const { service, leaves } = fixture();
+    const key = 'acks/ports/transfer/channels/channel-0/sequences/1';
+    leaves.set(key, Buffer.from('ab'.repeat(32), 'hex'));
+    const proof = await service.proof('transfer', 'channel-0', 1n, 'acks', 42n);
+    expect(proof.value).toBe('ab'.repeat(32));
+    expect(proof.proof).toEqual(Buffer.from([1]));
+    expect((await service.entries('transfer', 'channel-0', 'acks', 42n)).entries.get(1n)).toBe('ab'.repeat(32));
   });
 
   it('rejects a block rollback even when the untouched lane reference stays the same', async () => {

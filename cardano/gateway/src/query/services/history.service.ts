@@ -2,6 +2,8 @@ import { UtxoDto } from '../dtos/utxo.dto';
 import { TxDto } from '../dtos/tx.dto';
 import type { IbcTreeHostStateRef, IbcTreeSnapshot } from '../../shared/helpers/ibc-state-root';
 import type { PoolRegistryState, PoolProductionHistory } from '@cardano-ibc/proto-types/ibc/lightclients/probabilistic/v1/probabilistic';
+import type { PacketLaneTree } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
+import type { UTxO } from '@lucid-evolution/lucid';
 
 export const HISTORY_SERVICE = Symbol('HISTORY_SERVICE');
 
@@ -69,6 +71,7 @@ export type HistoryService = {
   // Observational history also supplies the operator-trusted starting snapshot.
   findObservedPoolProductionAtBlock(block: HistoryBlock): Promise<PoolProductionHistory>;
   rebuildIbcStateTreeAtBlock(height: bigint, hostState: IbcTreeHostStateRef): Promise<IbcTreeSnapshot>;
+  rebuildPacketLaneTreeAtBlock(height: bigint, target: UTxO): Promise<PacketLaneTree>;
   findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]>;
   findUtxosByBlockNo(height: number): Promise<UtxoDto[]>;
   findUtxoByUnitAtOrBeforeBlockNo(unit: string, height: bigint): Promise<UtxoDto>;

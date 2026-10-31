@@ -18,6 +18,7 @@ import parameters from "../../scripts/fixtures/mainnet-protocol-parameters.json"
 };
 import { createCardanoScalusEvaluator } from "../scalus-evaluator.ts";
 import { readValidator } from "../utils.ts";
+import { trackPacketLaneHistory } from "./packet-lane-history.ts";
 import {
   channelActions,
   channelFixture,
@@ -80,6 +81,7 @@ export async function packetLaneFixture(
     clock,
   );
   const { emulator, seed, channelToken, packetContext: context } = fixture;
+  const packetHistory = trackPacketLaneHistory(emulator);
   Object.assign(emulator.protocolParameters, {
     maxTxSize: parameters.maxTxSize,
     maxTxExMem: BigInt(parameters.maxTxExMem),
@@ -240,6 +242,7 @@ export async function packetLaneFixture(
     connection: context.connection,
     client: context.client,
     scripts,
+    resolveLaneTree: (input) => packetHistory.resolve(deployment, input),
   };
   const proofs = new Map<
     bigint,
@@ -426,6 +429,7 @@ export async function packetLaneFixture(
   return {
     ...fixture,
     deployment,
+    packetHistory,
     wallet,
     admit,
     proofs,

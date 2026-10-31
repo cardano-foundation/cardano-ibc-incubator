@@ -18,6 +18,8 @@ pub type PacketLaneDatum {
   version: Int,
   root: ByteArray,
   commitments: Pairs<Int, ByteArray>,
+  /// Reserved empty fields preserve the Go light client's datum layout.
+  /// Receipts and acknowledgements live in the authenticated tree only.
   receipts: List<Int>,
   acknowledgements: Pairs<Int, ByteArray>,
   minimum_receive_proof_height: Height,
@@ -95,6 +97,9 @@ pub fn apply_updates(
   updates: List<LaneUpdate>,
 ) -> PacketLaneDatum {
   expect updates != []
+  // This format requires newly deployed scripts. Do not silently reinterpret
+  // a legacy lane whose explicit receipt lists still contain state.
+  expect old.receipts == [] && old.acknowledgements == []
   expect list.length(updates) <= max_entries_per_lane
   let updated = list.foldl(updates, old, apply_update)
   expect entry_count(updated) <= max_entries_per_lane
@@ -149,8 +154,6 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
       expect !height_mod.is_zero(proof_height)
       expect
         height_mod.compare(proof_height, old.minimum_receive_proof_height) != Less
-      expect !list.has(old.receipts, sequence)
-      expect !pairs.has_key(old.acknowledgements, sequence)
       expect [receipt_siblings, acknowledgement_siblings] = witnesses
       let receipt_root =
         update_root(old.root, receipt_key, "", #"01", receipt_siblings)
@@ -162,13 +165,6 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
           "",
           acknowledgement,
           acknowledgement_siblings,
-        ),
-        receipts: list.sort([sequence, ..old.receipts], int.compare),
-        acknowledgements: pairs.insert_by_ascending_key(
-          old.acknowledgements,
-          sequence,
-          acknowledgement,
-          int.compare,
         ),
         maximum_receive_proof_height: if height_mod.compare(
           proof_height,
@@ -200,10 +196,11 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
         height_mod.compare(proof_height, old.minimum_receive_proof_height) != Less
       expect
         height_mod.compare(proof_height, old.maximum_receive_proof_height) != Less
-      expect list.has(old.receipts, sequence)
-      expect Some(acknowledgement) =
-        pairs.get_first(old.acknowledgements, sequence)
-      expect [receipt_siblings, acknowledgement_siblings] = witnesses
+      // Optional authenticated cleanup retains the existing replay floor.
+      // It is no longer needed to make room for ordinary receives.
+      expect [receipt_siblings,
+        acknowledgement_siblings, [acknowledgement]] = witnesses
+      expect bytearray.length(acknowledgement) == 32
       let receipt_root =
         update_root(old.root, receipt_key, #"01", "", receipt_siblings)
       PacketLaneDatum {
@@ -215,8 +212,6 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
           "",
           acknowledgement_siblings,
         ),
-        receipts: list.filter(old.receipts, fn(value) { value != sequence }),
-        acknowledgements: pairs.delete_first(old.acknowledgements, sequence),
         minimum_receive_proof_height: proof_height,
       }
     }
