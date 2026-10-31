@@ -58,4 +58,4 @@ that with `IBC_SWAP_HOST_PORT` if needed.
 See [dapps/README.md](../../README.md) for compose variables and default local endpoint wiring.
 
 ## Note
-This project required Node >= 18
+This project requires Node.js 22.13 or newer for the shared transaction runtime's SQLite support.
