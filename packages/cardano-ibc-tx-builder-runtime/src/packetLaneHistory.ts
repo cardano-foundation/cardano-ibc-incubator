@@ -33,7 +33,7 @@ export class PacketLaneTree {
   }
 }
 
-export function packetLaneDatum(output: UTxO): Constr<Data> {
+function packetLaneDatum(output: UTxO): Constr<Data> {
   if (!output.datum) throw new Error("Packet lane requires an inline datum");
   const datum = Data.from(output.datum);
   if (
