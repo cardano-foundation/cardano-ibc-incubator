@@ -52,6 +52,21 @@ def prepare_genesis(args, peer):
         temporary.write_text(json.dumps(conway, indent=2) + "\n")
         temporary.replace(conway_path)
 
+    # DevKit enables development hard forks in its template. Protocol 11 uses
+    # Conway and must not ask the node to initialize experimental Dijkstra.
+    if fields is not None:
+        fields["ExperimentalHardForksEnabled"] = False
+        fields.pop("TestEnableDevelopmentHardForkEras", None)
+        updated = json.dumps(fields, indent=2) + "\n"
+    else:
+        updated = re.sub(r"^(ExperimentalHardForksEnabled|TestEnableDevelopmentHardForkEras):[^\n]*\n?",
+                         "", source, flags=re.MULTILINE)
+        updated = updated.rstrip() + "\nExperimentalHardForksEnabled: false\n"
+    if updated != source:
+        temporary = configuration.with_suffix(".tmp")
+        temporary.write_text(updated)
+        temporary.replace(configuration)
+
     byron_path = genesis_path("ByronGenesisFile")
     byron = json.loads(byron_path.read_text())
     if byron.get("protocolConsts", {}).get("k") == expected_security:
