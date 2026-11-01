@@ -37,7 +37,8 @@ const native_policy_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 const native_token_name = "coin"
 
-const shard_policy_id = "mock transfer escrow shard policy id"
+const shard_policy_id =
+  #"03dcc42441e396823e8d8ad155c3caf51e50e847fb04c0a977b46957"
 
 const voucher_policy_id = "mock voucher minting policy id"
 

@@ -225,7 +225,8 @@ fn check_send_packet_with_data(
       mock_data.channel_token,
     )
 
-  let transfer_escrow_shard_policy_id = "mock transfer escrow shard policy"
+  let transfer_escrow_shard_policy_id =
+    #"1fc07b7285ebac989308e56367ac72f2e1dd8087615a8417b68aefb2"
   let shard_token_name =
     transfer_escrow_shard.shard_token_name("channel-0", transfer_data.denom)
   let escrow_output =

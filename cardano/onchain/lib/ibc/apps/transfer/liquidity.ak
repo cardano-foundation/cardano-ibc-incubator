@@ -1,3 +1,4 @@
+use aiken/builtin
 use aiken/collection/list
 use cardano/address.{Address}
 use cardano/assets.{PolicyId}
@@ -6,6 +7,7 @@ use cardano/transaction.{
 }
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/packet_lanes
+use ibc/native_value
 use ibc/utils/validator_utils
 
 /// Each funded intent creates its own liquidity identity. Receiving or
@@ -49,13 +51,19 @@ pub fn valid_value(
   let token = identity(datum, liquidity_policy)
   expect datum.amount >= 0
   expect liquidity_policy != datum.asset_policy
+  let value = native_value.from_assets(output.value)
   let expected_assets =
-    assets.from_asset(token.policy_id, token.name, 1)
-      |> assets.add(datum.asset_policy, datum.asset_name, datum.amount)
+    native_value.zero(value)
+      |> native_value.add(token.policy_id, token.name, 1)
+      |> native_value.add(datum.asset_policy, datum.asset_name, datum.amount)
   and {
-    auth.contain_auth_token(output, token),
-    assets.match_assets(output.value, expected_assets),
-    assets.lovelace_of(output.value) >= assets.lovelace_of(expected_assets),
+    builtin.lookup_value(token.policy_id, token.name, value) == 1,
+    native_value.match(value, expected_assets),
+    builtin.lookup_value("", "", value) >= builtin.lookup_value(
+      "",
+      "",
+      expected_assets,
+    ),
   }
 }
 

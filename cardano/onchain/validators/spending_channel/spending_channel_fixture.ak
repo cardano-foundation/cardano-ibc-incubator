@@ -122,7 +122,8 @@ pub fn setup() -> MockData {
       connection_sequence,
     )
 
-  let connection_minting_policy_id = "mock connection_minting_policy_id"
+  let connection_minting_policy_id =
+    #"400cca5d9b7d363b0d9deefc15487c0ee2acd197955d348bf2f9f8e9"
 
   let connection_token =
     AuthToken {
@@ -340,11 +341,11 @@ pub fn setup() -> MockData {
     recv_packet_policy_id: "mock recv_packet_policy_id",
     send_packet_policy_id: "mock send_packet_policy_id",
     timeout_packet_policy_id: "mock timeout_packet_policy_id",
-    acknowledge_packet_policy_id: "mock acknowledge_packet_policy_id",
-    prune_packet_history_policy_id: "mock prune_packet_history_policy_id",
+    acknowledge_packet_policy_id: #"ddb9255933195c59d82dd2647c73d7c6c83a4457ce1396ba08b11330",
+    prune_packet_history_policy_id: #"87f71372ae41d9f22144bbb6939395180d5bde29b66af567a57fa3c9",
     chan_upgrade_policy_id: "mock chan_upgrade_policy_id",
-    chan_upgrade_handshake_policy_id: "mock chan_upgrade_handshake_policy_id",
-    chan_upgrade_finish_policy_id: "mock chan_upgrade_finish_policy_id",
+    chan_upgrade_handshake_policy_id: #"61fc64e83f07d38a9bf44b89d6948de4b8c5c69f1f529e5577a9a60a",
+    chan_upgrade_finish_policy_id: #"e549b2ffbb1cf1bbf204489a427fddafcaf78d5a3366b9abd7d04ce5",
     chan_close_init_policy_id: "fake chan close init policy id",
     chan_close_confirm_policy_id: "fake chan close init policy id",
     verify_proof_policy_id: "mock verify_proof_policy_id",

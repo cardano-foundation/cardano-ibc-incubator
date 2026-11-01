@@ -25,8 +25,8 @@ def raw_stake(first=300, second=100, mark=900):
 
 def raw_ledger(epoch, first=VRF_A, second=VRF_B):
     return {"lastEpoch": epoch, "stateBefore": {"esSnapshots": {
-        "pstakeSet": {"poolParams": {POOL_A: {"vrf": first}, POOL_B: {"vrf": second}}},
-        "pstakeMark": {"poolParams": {POOL_A: {"vrf": "ff" * 32}, POOL_B: {"vrf": "ee" * 32}}}}}}
+        "pstakeSet": {"stakePoolsSnapShot": {POOL_A: {"vrf": first}, POOL_B: {"vrf": second}}},
+        "pstakeMark": {"stakePoolsSnapShot": {POOL_A: {"vrf": "ff" * 32}, POOL_B: {"vrf": "ee" * 32}}}}}}
 
 
 def stake_row(pool_id, stake, vrf):

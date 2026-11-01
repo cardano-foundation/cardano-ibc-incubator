@@ -51,6 +51,7 @@ export function smokeManifest() {
 
 export function protocolParameters(costModels) {
   return {
+    version: { major: 11, minor: 0 },
     minFeeCoefficient: 44, minFeeConstant: { ada: { lovelace: 155381 } },
     maxTransactionSize: { bytes: 16384 }, maxValueSize: { bytes: 5000 },
     stakeCredentialDeposit: { ada: { lovelace: 2000000 } },

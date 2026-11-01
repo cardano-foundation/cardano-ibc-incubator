@@ -216,9 +216,11 @@ def run_smoke(runtime):
                 "activeSlotsCoeff": 0.25, "securityParam": 48}
     for key, value in expected.items():
         require(shelley.get(key) == value, f"Unexpected genesis {key}: {shelley.get(key)}")
-    require(shelley["protocolParams"]["protocolVersion"]["major"] == 10, "Expected protocol version 10")
-    require(len(genesis["conway"]["plutusV3CostModel"]) >= 297,
-            "Protocol version 10 requires the 297-entry PlutusV3 cost model")
+    require(shelley["protocolParams"]["protocolVersion"]["major"] == 11, "Expected protocol version 11")
+    require(len(genesis["conway"]["plutusV3CostModel"]) == 251,
+            "Conway genesis requires its fixed 251-entry PlutusV3 field")
+    expected_model = genesis["alonzo"]["extraConfig"]["costModels"]["PlutusV3"]
+    require(len(expected_model) == 350, "Protocol 11 requires the full 350-entry runtime cost model")
     require(len(shelley["staking"]["pools"]) == 5, "Expected five genesis pools")
     require(bool(shelley["initialFunds"]), "Missing deterministic funded accounts")
     live_genesis = runtime.ogmios("queryNetwork/genesisConfiguration", {"era": "shelley"})
@@ -227,6 +229,9 @@ def run_smoke(runtime):
     require(http(runtime.endpoint("DEVKIT_OGMIOS_PORT") + "/health")["currentEra"] == "conway",
             "The network has not reached Conway")
     protocol = runtime.ogmios("queryLedgerState/protocolParameters")
+    require(protocol["version"]["major"] == 11, "Running ledger must use protocol version 11")
+    require(protocol["plutusCostModels"]["plutus:v3"] == expected_model,
+            "Running ledger must use the complete pinned protocol-11 PlutusV3 cost model")
     for field, memory, cpu in (("maxExecutionUnitsPerTransaction", 16_500_000, 10_000_000_000),
                                 ("maxExecutionUnitsPerBlock", 72_000_000, 20_000_000_000)):
         require(protocol[field] == {"memory": memory, "cpu": cpu},
@@ -251,7 +256,7 @@ def run_smoke(runtime):
     for key in ("block_vrf", "issuer_vkey", "op_cert", "op_cert_sigma"):
         require(bool(block.get(key)), f"Missing Praos field in Yaci: {key}")
     require(bool(block.get("vrf_result", {}).get("proof")), "Missing VRF proof in Yaci")
-    nonce = json.loads(runtime.cli("query", "protocol-state", "--testnet-magic", "42"))["epochNonce"]
+    nonce = json.loads(runtime.cli("query", "protocol-state", "--testnet-magic", "42", "--output-json"))["epochNonce"]
     require(re.fullmatch(r"[0-9a-f]{64}", nonce), "Missing Cardano epoch nonce")
     verification = verify_producer_blocks(runtime, shelley)
     mithril = verify_mithril(runtime)

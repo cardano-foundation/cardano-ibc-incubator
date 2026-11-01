@@ -41,11 +41,11 @@ function costModel(version: "PlutusV1" | "PlutusV2" | "PlutusV3") {
   });
 }
 if (
-  p.protocolVersion?.major !== 10 || !Array.isArray(p.costModels?.PlutusV3) ||
-  p.costModels.PlutusV3.length !== 297
+  p.protocolVersion?.major !== 11 || !Array.isArray(p.costModels?.PlutusV3) ||
+  p.costModels.PlutusV3.length !== 350
 ) {
   throw new Error(
-    "This rehearsal cost profile requires actual protocol-10 Plutus V3 parameters (297 entries)",
+    "This rehearsal cost profile requires actual protocol-11 Plutus V3 parameters (350 entries)",
   );
 }
 const parameters: ProtocolParameters = {

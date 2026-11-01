@@ -31,11 +31,59 @@ def prepare_genesis(args, peer):
             raise ValueError(f"Missing native DevKit configuration field: {field}")
         return configuration.parent / match[1]
 
-    byron_path = genesis_path("ByronGenesisFile")
-    byron = json.loads(byron_path.read_text())
-    shelley = json.loads(genesis_path("ShelleyGenesisFile").read_text())
+    shelley_path = genesis_path("ShelleyGenesisFile")
+    shelley = json.loads(shelley_path.read_text())
     if shelley.get("securityParam") != expected_security:
         raise ValueError(f"Expected DevKit Shelley securityParam {expected_security}")
+    conway_path = genesis_path("ConwayGenesisFile")
+    conway = json.loads(conway_path.read_text())
+    alonzo_path = genesis_path("AlonzoGenesisFile")
+    alonzo = json.loads(alonzo_path.read_text())
+    parameters = json.loads((Path(__file__).resolve().parents[1] / "config/protocol-parameters.json").read_text())
+    expected_models = parameters["costModels"]
+    expected_v3 = expected_models["PlutusV3"]
+    if parameters["protocolVersion"]["major"] != 11 or len(expected_v3) != 350:
+        raise ValueError("Expected the pinned protocol-11 PlutusV3 cost model")
+    if shelley.get("protocolParams", {}).get("protocolVersion", {}).get("major") != 11:
+        raise ValueError("DevKit requires protocol version 11, reset the DevKit network")
+    # Conway's genesis parser fixes this field at the original 251 entries.
+    # The ledger's test-network override installs the complete current models
+    # after the era transition, as in cardano-node's workbench.
+    if (conway.get("plutusV3CostModel") != expected_v3[:251]
+            or alonzo.get("extraConfig", {}).get("costModels") != expected_models):
+        database = argument_path(args, "--database-path")
+        if database.exists() and (not database.is_dir() or any(database.iterdir())):
+            raise ValueError("Retained DevKit cost model differs from protocol 11, reset the DevKit network")
+        conway["plutusV3CostModel"] = expected_v3[:251]
+        alonzo.setdefault("extraConfig", {})["costModels"] = expected_models
+        for path, value in [(conway_path, conway), (alonzo_path, alonzo)]:
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(value, indent=2) + "\n")
+            temporary.replace(path)
+
+    # DevKit enables development hard forks in its template. Protocol 11 uses
+    # Conway and must not ask the node to initialize experimental Dijkstra.
+    if fields is not None:
+        fields["ExperimentalHardForksEnabled"] = False
+        fields.pop("TestEnableDevelopmentHardForkEras", None)
+        # Node 11 requires the dispatcher configuration. An empty map keeps
+        # its default tracing when DevKit supplies only the older log options.
+        fields.setdefault("TraceOptions", {})
+        updated = json.dumps(fields, indent=2) + "\n"
+    else:
+        updated = re.sub(r"^(ExperimentalHardForksEnabled|TestEnableDevelopmentHardForkEras):[^\n]*\n?",
+                         "", source, flags=re.MULTILINE)
+        updated = updated.rstrip() + "\n"
+        if not re.search(r"^TraceOptions:", updated, re.MULTILINE):
+            updated += "TraceOptions: {}\n"
+        updated += "ExperimentalHardForksEnabled: false\n"
+    if updated != source:
+        temporary = configuration.with_suffix(".tmp")
+        temporary.write_text(updated)
+        temporary.replace(configuration)
+
+    byron_path = genesis_path("ByronGenesisFile")
+    byron = json.loads(byron_path.read_text())
     if byron.get("protocolConsts", {}).get("k") == expected_security:
         return
     database = argument_path(args, "--database-path")

@@ -757,11 +757,11 @@ jobs:
       - name: Verify full-validator migration guard controls
         run: python3 scripts/ci/aiken-contract-migration/test-migration-guards.py --report migration-guard-controls.json
 
-      - name: Measure compiled migration steps at retained protocol-10 parameters
+      - name: Measure compiled migration steps at retained protocol-11 parameters
         run: >-
           deno run --allow-read --allow-env --allow-write
           --config cardano/offchain/deno.json scripts/ci/aiken-contract-migration/measure-migration-scaling.ts
-          cardano/offchain/src/testing/protocol-10-local-cost-profile.json
+          chains/cardano/config/protocol-parameters.json
           migration-scaling.json
 
       - name: Measure complete serialized operator recovery and authenticated cache scaling

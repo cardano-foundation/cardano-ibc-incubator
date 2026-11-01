@@ -1,4 +1,4 @@
-import { assertEquals, assertNotEquals } from "@std/assert";
+import { assertEquals } from "@std/assert";
 
 import {
   Data,
@@ -16,7 +16,7 @@ import {
   isScriptEvaluationFailure,
   ScriptEvaluationFailure,
 } from "./scalus-evaluator.ts";
-import pv10 from "./testing/protocol-10-local-cost-profile.json" with {
+import pv11 from "../../../chains/cardano/config/protocol-parameters.json" with {
   type: "json",
 };
 
@@ -91,31 +91,17 @@ Deno.test("script rejection detection does not accept unrelated errors", () => {
   );
 });
 
-Deno.test("the configured Scalus evaluator explicitly retains protocol 10", async () => {
-  const { input } = await evaluationFixture(
-    unicode,
-    extended.plutusV3CostModel,
-  );
+Deno.test("the configured Scalus evaluator uses protocol 11 costing", async () => {
+  const { input } = await evaluationFixture(unicode, pv11.costModels.PlutusV3);
   const actual = budget(await createCardanoScalusEvaluator().evaluate(input));
-  const protocol10 = budget(
-    await createCardanoScalusEvaluator(10).evaluate(input),
-  );
-  const protocol11 = budget(
-    await createCardanoScalusEvaluator(11).evaluate(input),
-  );
-  assertEquals(actual, protocol10);
-  assertEquals(protocol10, { memory: 1201n, cpu: 783040n });
-  assertEquals(protocol11, { memory: 1201n, cpu: 480070n });
-  // Negative control: the same valid transaction executes under both versions,
-  // but UTF-8 costing differs. This catches the upstream language-only default
-  // even if all ordinary scripts still pass.
-  assertNotEquals(protocol10, protocol11);
-  console.log({ protocol10, protocol11 });
+  // The protocol-11 UTF-8 costing change makes this a regression check for
+  // accidentally selecting an older protocol or the upstream default.
+  assertEquals(actual, { memory: 1201n, cpu: 480070n });
 });
 
 for (
   const [label, costs] of [
-    ["297-entry protocol-10", pv10.costModels.PlutusV3],
+    ["350-entry protocol-11", pv11.costModels.PlutusV3],
     ["350-entry extended", extended.plutusV3CostModel],
   ] as const
 ) {

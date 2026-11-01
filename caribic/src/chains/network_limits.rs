@@ -66,7 +66,7 @@ mod tests {
         assert!(fixture.contains("maxTxExMem: BigInt(localLimit(\"maxTxExUnitsMem\"))"));
         assert!(fixture.contains("maxTxExSteps: BigInt(localLimit(\"maxTxExUnitsSteps\"))"));
         // The DevKit smoke test checks its generated PlutusV3 cost model at runtime.
-        assert_eq!(parameters.get("protocolMajorVer").copied(), Some("10"));
+        assert_eq!(parameters.get("protocolMajorVer").copied(), Some("11"));
     }
 
     #[test]

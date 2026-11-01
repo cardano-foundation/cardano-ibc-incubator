@@ -176,6 +176,9 @@ export async function queryProtocolParametersCompat(
   }
 
   const result = parsedResponse.result;
+  if (result?.version?.major !== 11) {
+    throw new Error("Cardano protocol version 11 is required");
+  }
   const plutusCostModels = result?.plutusCostModels ?? {};
   const plutusV2CostModel = plutusCostModels["plutus:v2"] ?? [];
   return {

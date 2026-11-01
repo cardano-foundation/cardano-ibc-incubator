@@ -172,7 +172,7 @@ def attach_vrf_keys(snapshot, pool_params):
 
 
 def cli_query(query, magic, *args):
-    result = subprocess.run(["cardano-cli", "query", query, "--testnet-magic", str(magic), *args],
+    result = subprocess.run(["cardano-cli", "query", query, "--testnet-magic", str(magic), "--output-json", *args],
                             check=True, capture_output=True, text=True, timeout=10)
     return json.loads(result.stdout)
 
@@ -198,7 +198,7 @@ def observe(history, genesis_directory, query=cli_query):
     name = "Mark" if epoch == 0 else "Set"
     snapshot = normalize_stake(raw_snapshot["total"]["stake" + name],
                                [(pool_id, values["stake" + name]) for pool_id, values in raw_snapshot["pools"].items()])
-    snapshot = attach_vrf_keys(snapshot, ledger["stateBefore"]["esSnapshots"]["pstake" + name]["poolParams"])
+    snapshot = attach_vrf_keys(snapshot, ledger["stateBefore"]["esSnapshots"]["pstake" + name]["stakePoolsSnapShot"])
     history.record(identity, epoch, state.get("epochNonce"), snapshot)
 
 

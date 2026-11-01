@@ -51,14 +51,14 @@ bytes, 90,112 block-body bytes, 16,500,000 transaction memory units,
 keeps its existing 750-byte and 5% reserves.
 
 Local ledger limits come from `chains/cardano/devkit/node.properties`.
-`chains/cardano/config/protocol-parameters.json` is not loaded by Caribic.
+The Plutus V3 cost model comes from the pinned protocol-11 snapshot in
+`chains/cardano/config/protocol-parameters.json`.
 
-The local Cardano ledger is pinned to protocol version 10 and DevKit's
-cost models. Protocol version 10 is required by the bitwise Plutus V3 builtins
-used by the supported ICS-20 codecs. The numeric capacity is strict, but this
-does not claim byte-for-byte protocol-version 11 execution parity. Full current
-Cardano execution parity requires a coordinated cardano-node, Ogmios, Kupo,
-Aiken, and cost-model upgrade.
+The local Cardano ledger and evaluators target protocol version 11 with the
+350-entry Plutus V3 cost model. The snapshot was captured on November 1, 2026
+from the [mainnet Koios API](https://api.koios.rest/api/v1/cli_protocol_params). The profile pins cardano-node 11.1.3 and
+Ogmios 7. Native Value operations require this ledger version. Smoke checks
+verify both generated genesis and the running node's protocol parameters.
 
 Fast governance periods, deterministic clocks, local token balances, and fee
 prices remain test settings. They are not transaction or validator capacity

@@ -1,4 +1,4 @@
-import { assert, assertEquals, assertThrows } from "@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import {
   Lucid,
   SLOT_CONFIG_NETWORK,
@@ -6,7 +6,7 @@ import {
   unixTimeToSlot,
 } from "@lucid-evolution/lucid";
 import { Emulator } from "@lucid-evolution/provider";
-import protocolProfile from "./testing/protocol-10-local-cost-profile.json" with {
+import protocolProfile from "../../../chains/cardano/config/protocol-parameters.json" with {
   type: "json",
 };
 import {
@@ -24,6 +24,7 @@ Deno.test("Ogmios cost models remain arrays through real Lucid initialization", 
           jsonrpc: "2.0",
           id: null,
           result: {
+            version: { major: 11, minor: 0 },
             minFeeCoefficient: protocolProfile.txFeePerByte,
             minFeeConstant: {
               ada: { lovelace: protocolProfile.txFeeFixed },
@@ -141,5 +142,24 @@ Deno.test("Custom operational clock rejects zero lengths and unsupported histori
     }], [{ ...era, start: { slot: 1, time: { seconds: 1 } } }]]
   ) {
     assertThrows(() => customOperationalSlotConfig(1_700_000_000_000, invalid));
+  }
+});
+
+Deno.test("Ogmios rejects unsupported ledger protocol versions", async () => {
+  const fetch = globalThis.fetch;
+  try {
+    for (const major of [undefined, 10, 12]) {
+      globalThis.fetch = () =>
+        Promise.resolve(
+          new Response(JSON.stringify({ result: { version: { major } } })),
+        );
+      await assertRejects(
+        () => queryProtocolParametersCompat("http://ogmios.invalid"),
+        Error,
+        "protocol version 11 is required",
+      );
+    }
+  } finally {
+    globalThis.fetch = fetch;
   }
 });

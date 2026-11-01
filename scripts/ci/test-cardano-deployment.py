@@ -93,8 +93,8 @@ def main():
         kupo = runtime.endpoint("DEVKIT_KUPO_PORT")
         parameters = json.loads(cli("conway", "query", "protocol-parameters", "--testnet-magic", "42"))
         (runtime_root / "protocol-parameters.json").write_text(json.dumps(parameters, indent=2) + "\n")
-        if parameters["protocolVersion"]["major"] < 10:
-            raise RuntimeError("Deployment validators use Plutus V3 byte-string builtins requiring protocol version 10 or later")
+        if parameters["protocolVersion"]["major"] != 11:
+            raise RuntimeError("Deployment requires Cardano protocol version 11")
         actual_limits = {"maxTxSize": parameters["maxTxSize"], **parameters["maxTxExecutionUnits"]}
         if actual_limits != LIMITS:
             raise RuntimeError(f"Devnet limits must be production limits: {actual_limits}")

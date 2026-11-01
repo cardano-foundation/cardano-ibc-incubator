@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/yaci-devkit.yml
       - chains/cardano/devkit/**
+      - chains/cardano/config/protocol-parameters.json
       - chains/cardano/yaci/config/**
       - chains/cosmos/**
       - caribic/**

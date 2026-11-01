@@ -2,8 +2,9 @@ use aiken/collection/dict
 use aiken/collection/list
 use aiken/crypto
 use aiken/primitive/bytearray
-use cardano/assets.{AssetName, PolicyId, Value, tokens, zero}
+use cardano/assets.{AssetName, PolicyId, Value, tokens}
 use cardano/transaction.{Output}
+use ibc/native_value
 
 // Frozen public commitment primitive. Keep its fields and order unchanged.
 // Put private metadata in a separate type. See docs/cardano-commitment-codec.md.
@@ -13,7 +14,7 @@ pub type AuthToken {
 }
 
 pub fn contain_auth_token(output: Output, token: AuthToken) -> Bool {
-  assets.has_nft(output.value, token.policy_id, token.name)
+  native_value.quantity_of(output.value, token.policy_id, token.name) == 1
 }
 
 pub fn contains_only_auth_tokens(
@@ -22,13 +23,14 @@ pub fn contains_only_auth_tokens(
 ) -> Bool {
   trace @"output": output
   trace @"tokens": tokens
+  let value = native_value.from_assets(output.value)
   let expected_value =
     list.foldl(
       tokens,
-      zero,
-      fn(token, acc) { assets.add(acc, token.policy_id, token.name, 1) },
+      native_value.zero(value),
+      fn(token, acc) { native_value.add(acc, token.policy_id, token.name, 1) },
     )
-  assets.match_assets(output.value, expected_value)
+  native_value.match(value, expected_value)
 }
 
 pub fn mint_auth_token(mint: Value, token: AuthToken) -> Bool {
