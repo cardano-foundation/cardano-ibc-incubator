@@ -56,7 +56,7 @@ The Plutus V3 cost model comes from the pinned protocol-11 snapshot in
 
 The local Cardano ledger and evaluators target protocol version 11 with the
 350-entry Plutus V3 cost model. The snapshot was captured on November 1, 2026
-from the [mainnet Koios API](https://api.koios.rest/api/v1/cli_protocol_params). The profile pins cardano-node 11.0.1 and
+from the [mainnet Koios API](https://api.koios.rest/api/v1/cli_protocol_params). The profile pins cardano-node 11.1.3 and
 Ogmios 7. Native Value operations require this ledger version. Smoke checks
 verify both generated genesis and the running node's protocol parameters.
 

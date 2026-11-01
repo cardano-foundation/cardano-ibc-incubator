@@ -3,7 +3,7 @@ FROM cardanosolutions/ogmios:v7.0.0@sha256:8892ef5f77b94f1c95427cf9f2b40e6235a32
 
 # Use the same dynamically linked node as the maintained local profile. The
 # bundled static node cannot use the local clock required by pool-age policy.
-FROM ghcr.io/blinklabs-io/cardano-node:11.0.1-1@sha256:d5ede07a890e9b6a0a5182cdba9dbaf73756336762235e0934a11690beedae02 AS devkit
+FROM ghcr.io/blinklabs-io/cardano-node:11.1.3-2@sha256:dc2b885811294fc497bcd50224bdf1e51d693f6113c749a3b21be1428af79ef8 AS devkit
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libfaketime python3 \
     && rm -rf /var/lib/apt/lists/* \
