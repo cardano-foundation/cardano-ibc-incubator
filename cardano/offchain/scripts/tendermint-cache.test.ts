@@ -1,4 +1,8 @@
 import { assertEquals, assertRejects } from "@std/assert";
+import { prepareCachedUpdate } from "../src/tendermint-cache-routing.ts";
+import parameters from "./fixtures/mainnet-protocol-parameters.json" with {
+  type: "json",
+};
 import {
   cachedUpdateFixture,
   retainedLeaves,
@@ -40,6 +44,11 @@ for (
     "overlap",
     "quorum",
     "trust",
+    "unrelated-cache",
+    "client-identity",
+    "client-address",
+    "cache-identity",
+    "missing-verifier",
   ] as const
 ) {
   Deno.test(`cached update rejects ${mutation}`, async () => {
@@ -61,10 +70,84 @@ Deno.test("power-update builder falls back for reordered identities", () => {
   assertEquals(powerUpdate(retainedLeaves, next), undefined);
 });
 
-Deno.test("cache admission rejects a relayer-supplied denominator", async () => {
+for (const changedIndices of [[11, 20], [0, 14, 26], [0, 14, 26, 38]]) {
+  Deno.test(`evaluated capacity routes dispersed powers ${changedIndices.join(",")} before submission`, async () => {
+    const result = await cachedUpdateFixture("powers", "none", {
+      changedIndices,
+    });
+    assertEquals(result.path, "staged");
+    assertEquals(result.directBudget?.fits, false);
+    assertEquals(result.rejectedDirectWasSubmitted, false);
+  });
+}
+
+Deno.test("evaluated capacity includes populated history, two cache records and 24 dispersed signers", async () => {
+  const result = await cachedUpdateFixture("hit", "none", {
+    historyRecords: 100,
+    twoRecords: true,
+    signerCount: 24,
+  });
+  assertEquals(result.signatures, 24);
+  assertEquals(result.historyRecords, 100);
+  assertEquals(result.cacheRecords, 2);
+  if (result.path === "staged") {
+    assertEquals(result.rejectedDirectWasSubmitted, false);
+  }
+});
+
+for (
+  const mutation of [
+    "admission-total",
+    "admission-client",
+    "admission-shadow",
+    "admission-missing-cache",
+  ] as const
+) {
+  Deno.test(`cache admission rejects ${mutation}`, async () => {
+    await assertRejects(
+      () => cachedUpdateFixture("hit", mutation),
+      Error,
+      "cache admission:",
+    );
+  });
+}
+
+Deno.test("transaction-size failure during completion falls back before submission", async () => {
+  const result = await cachedUpdateFixture("hit", "none", {
+    directSizeFailure: true,
+  });
+  assertEquals(result.path, "staged");
+  assertEquals(result.directBudget, undefined);
+  assertEquals(result.rejectedDirectWasSubmitted, false);
+});
+
+Deno.test("dispersed powers with populated history, two records and 24 signers use a bounded staged transaction", async () => {
+  const result = await cachedUpdateFixture("powers", "none", {
+    changedIndices: [0, 14, 26, 38],
+    historyRecords: 100,
+    twoRecords: true,
+    signerCount: 24,
+  });
+  assertEquals(result.path, "staged");
+  assertEquals(result.directBudget?.withinLedger, false);
+  assertEquals(result.rejectedDirectWasSubmitted, false);
+});
+
+Deno.test("capacity routing leaves invalid-script failures visible", async () => {
+  let stagedCalled = false;
   await assertRejects(
-    () => cachedUpdateFixture("hit", "admission-total"),
+    () =>
+      prepareCachedUpdate({
+        direct: () =>
+          Promise.reject(new Error("failed script execution: signature")),
+        staged: () => {
+          stagedCalled = true;
+          return Promise.reject(new Error("unexpected staged construction"));
+        },
+        limits: parameters,
+      }),
     Error,
-    "cache admission:",
+    "failed script execution: signature",
   );
+  assertEquals(stagedCalled, false);
 });

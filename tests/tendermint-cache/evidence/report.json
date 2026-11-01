@@ -4,7 +4,14 @@
   "parameters": "cardano/offchain/scripts/fixtures/mainnet-protocol-parameters.json",
   "parametersSha256": "95bef260c463f2b8f456fa3c455ded9adb19b6c7154813ff6c6ef83ee593c6f6",
   "fixture": "cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity/normalized.json",
-  "changedSetFixture": "Synthetic trusted bootstrap with two one-unit power reductions. Target header and signatures are the retained Injective fixture. The full fallback also replaces one trusted public key. These are not live changed-set samples.",
+  "changedSetFixture": "Synthetic trusted bootstrap with one-unit power reductions at each listed position. Target header and signatures are the retained Injective fixture. The full fallback also replaces one trusted public key. These are capacity tests, not live changed-set replays.",
+  "historyFixture": "Populated cases seed an assumed previously authenticated 100-record client history after real client/cache admission. They do not replay those historical updates. Two cache records are authenticated by the real admission policy.",
+  "routing": "Evaluate the complete signed direct candidate before submission. Reserve 5% of each ledger limit. Rejected direct candidates are not submitted. Complete fees include every staged verification transaction and finalization. Registration, client creation and reference publication are separate setup costs.",
+  "ledgerLimits": {
+    "signedBytes": 16384,
+    "memory": 16500000,
+    "steps": 10000000000
+  },
   "acceptanceBudget": {
     "signedBytes": 4000,
     "referencedScriptBytes": 20000,
@@ -15,51 +22,70 @@
   "modeledBudgetFee": 999171,
   "measurements": [
     {
+      "id": "hit",
       "mode": "hit",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 5273,
+          "memory": 13397727,
+          "steps": 6476691235
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2279752,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [],
       "measured": {
         "signedBytes": 5273,
-        "referencedScriptBytes": 39699,
-        "memory": 13112602,
-        "steps": 6090401826,
-        "fee": 2221067
+        "referencedScriptBytes": 40498,
+        "memory": 13397727,
+        "steps": 6476691235,
+        "fee": 2279752
       },
+      "completeFee": 2279752,
+      "updateTransactions": 1,
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 737774,
-          "steps": 226673528
+          "memory": 747056,
+          "steps": 238287408
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 833338,
-          "steps": 253553662
+          "memory": 1061319,
+          "steps": 353590550
         },
         {
           "script": "host_state_stt",
           "tag": 0,
           "index": 2,
-          "memory": 3009751,
-          "steps": 1613898907
+          "memory": 3035173,
+          "steps": 1783242798
         },
         {
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 8531739,
-          "steps": 3996275729
+          "memory": 8554179,
+          "steps": 4101570479
         }
       ],
       "publicationBytes": [
-        16186,
-        10020,
-        4554,
-        3888,
-        4993,
-        15844
+        16145,
+        10495,
+        5959,
+        4133,
+        5629,
+        15803
       ],
       "missedBudgets": [
         "signedBytes",
@@ -71,58 +97,96 @@
       "signatures": 17,
       "targetSiblings": 5,
       "trustedSiblings": 0,
-      "admissionFee": 2127241,
-      "signedTransactionSha256": "66084fa33559a20feb2079566c56384c7abdeea61bdae646a36662e1109e8ba4"
+      "admissionFee": 2217596,
+      "signedTransactionSha256": "88b716d6efaa714e0cacc9af8fc730f0669e860dee8571c63b17ab50f10c8c3b"
     },
     {
+      "id": "powers",
       "mode": "powers",
-      "measured": {
-        "signedBytes": 6117,
-        "referencedScriptBytes": 39699,
-        "memory": 15672099,
-        "steps": 6895983996,
-        "fee": 2463968
+      "path": "staged",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 6117,
+          "memory": 15966270,
+          "steps": 7285081720
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [
+          "memory"
+        ],
+        "fits": false
       },
+      "directFee": 2523378,
+      "rejectedDirectWasSubmitted": false,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [
+        0,
+        2
+      ],
+      "measured": {
+        "signedBytes": 2460,
+        "referencedScriptBytes": 57639,
+        "memory": 10653337,
+        "steps": 4694272923,
+        "fee": 2200834
+      },
+      "completeFee": 9161475,
+      "updateTransactions": 12,
       "redeemerBudgets": [
+        {
+          "script": "session_spend",
+          "tag": 0,
+          "index": 0,
+          "memory": 1064090,
+          "steps": 310655473
+        },
         {
           "script": "spending_cached_client",
           "tag": 0,
-          "index": 0,
-          "memory": 877782,
-          "steps": 267797510
+          "index": 1,
+          "memory": 321655,
+          "steps": 103912145
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
-          "index": 1,
-          "memory": 973346,
-          "steps": 294677644
+          "index": 2,
+          "memory": 967282,
+          "steps": 337766366
         },
         {
           "script": "host_state_stt",
           "tag": 0,
-          "index": 2,
-          "memory": 3009751,
-          "steps": 1613898907
+          "index": 3,
+          "memory": 3079821,
+          "steps": 1795718226
         },
         {
-          "script": "update_cached_client",
+          "script": "session_mint",
+          "tag": 1,
+          "index": 0,
+          "memory": 1211810,
+          "steps": 382074293
+        },
+        {
+          "script": "update_staged_client",
           "tag": 3,
           "index": 0,
-          "memory": 10811220,
-          "steps": 4719609935
+          "memory": 4008679,
+          "steps": 1764146420
         }
       ],
       "publicationBytes": [
-        16186,
-        10020,
-        4554,
-        3888,
-        4993,
-        15844
+        16145,
+        10495,
+        5959,
+        4133,
+        5629,
+        15803
       ],
       "missedBudgets": [
-        "signedBytes",
         "referencedScriptBytes",
         "memory",
         "steps",
@@ -131,55 +195,687 @@
       "signatures": 17,
       "targetSiblings": 5,
       "trustedSiblings": 5,
-      "admissionFee": 2127241,
-      "signedTransactionSha256": "ba54a55e3f982725ea9d197b602d1dba5a58229785b707e6d9457827579233c0"
+      "admissionFee": 2217596,
+      "fallbackSessions": [
+        {
+          "operation": "session initialize",
+          "fee": 475177,
+          "bytes": 2199,
+          "memory": 1238451,
+          "steps": 476767863
+        },
+        {
+          "operation": "session verify trusted",
+          "fee": 755793,
+          "bytes": 3094,
+          "memory": 3581491,
+          "steps": 1174650133
+        },
+        {
+          "operation": "session verify trusted",
+          "fee": 713450,
+          "bytes": 2826,
+          "memory": 3203802,
+          "steps": 1053174174
+        },
+        {
+          "operation": "session verify target",
+          "fee": 877455,
+          "bytes": 3914,
+          "memory": 4423994,
+          "steps": 1687404089
+        },
+        {
+          "operation": "session verify target",
+          "fee": 754230,
+          "bytes": 2899,
+          "memory": 3389784,
+          "steps": 1425392428
+        },
+        {
+          "operation": "session verify target",
+          "fee": 714492,
+          "bytes": 2622,
+          "memory": 3045338,
+          "steps": 1318938565
+        },
+        {
+          "operation": "session verify target",
+          "fee": 544433,
+          "bytes": 2065,
+          "memory": 1521832,
+          "steps": 519430607
+        },
+        {
+          "operation": "session verify target",
+          "fee": 547026,
+          "bytes": 2143,
+          "memory": 1511568,
+          "steps": 516004895
+        },
+        {
+          "operation": "session verify target",
+          "fee": 546023,
+          "bytes": 2066,
+          "memory": 1540384,
+          "steps": 526020529
+        },
+        {
+          "operation": "session verify target",
+          "fee": 545774,
+          "bytes": 2105,
+          "memory": 1516700,
+          "steps": 517717751
+        },
+        {
+          "operation": "session verify target",
+          "fee": 486788,
+          "bytes": 1741,
+          "memory": 993539,
+          "steps": 340427149
+        }
+      ],
+      "signedTransactionSha256": "f2df5d6e1f33e74ee3dbd18de1ed42da14cf547c15e5d92ed268d3ffc7c194fb"
     },
     {
-      "mode": "adjacent",
-      "measured": {
-        "signedBytes": 5273,
-        "referencedScriptBytes": 39699,
-        "memory": 13102950,
-        "steps": 6084481620,
-        "fee": 2220083
+      "id": "dispersed-two",
+      "mode": "powers",
+      "path": "staged",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 6383,
+          "memory": 16645363,
+          "steps": 7499286707
+        },
+        "withinLedger": false,
+        "headroomPercent": 5,
+        "exceeded": [
+          "memory"
+        ],
+        "fits": false
       },
+      "directFee": 2589710,
+      "rejectedDirectWasSubmitted": false,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [
+        11,
+        20
+      ],
+      "measured": {
+        "signedBytes": 2460,
+        "referencedScriptBytes": 57639,
+        "memory": 10653337,
+        "steps": 4694272923,
+        "fee": 2200834
+      },
+      "completeFee": 9161475,
+      "updateTransactions": 12,
+      "redeemerBudgets": [
+        {
+          "script": "session_spend",
+          "tag": 0,
+          "index": 0,
+          "memory": 1064090,
+          "steps": 310655473
+        },
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 1,
+          "memory": 321655,
+          "steps": 103912145
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 2,
+          "memory": 967282,
+          "steps": 337766366
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 3,
+          "memory": 3079821,
+          "steps": 1795718226
+        },
+        {
+          "script": "session_mint",
+          "tag": 1,
+          "index": 0,
+          "memory": 1211810,
+          "steps": 382074293
+        },
+        {
+          "script": "update_staged_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 4008679,
+          "steps": 1764146420
+        }
+      ],
+      "publicationBytes": [
+        16145,
+        10495,
+        5959,
+        4133,
+        5629,
+        15803
+      ],
+      "missedBudgets": [
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 17,
+      "targetSiblings": 5,
+      "trustedSiblings": 5,
+      "admissionFee": 2217596,
+      "fallbackSessions": [
+        {
+          "operation": "session initialize",
+          "fee": 475177,
+          "bytes": 2199,
+          "memory": 1238451,
+          "steps": 476767863
+        },
+        {
+          "operation": "session verify trusted",
+          "fee": 755793,
+          "bytes": 3094,
+          "memory": 3581491,
+          "steps": 1174650133
+        },
+        {
+          "operation": "session verify trusted",
+          "fee": 713450,
+          "bytes": 2826,
+          "memory": 3203802,
+          "steps": 1053174174
+        },
+        {
+          "operation": "session verify target",
+          "fee": 877455,
+          "bytes": 3914,
+          "memory": 4423994,
+          "steps": 1687404089
+        },
+        {
+          "operation": "session verify target",
+          "fee": 754230,
+          "bytes": 2899,
+          "memory": 3389784,
+          "steps": 1425392428
+        },
+        {
+          "operation": "session verify target",
+          "fee": 714492,
+          "bytes": 2622,
+          "memory": 3045338,
+          "steps": 1318938565
+        },
+        {
+          "operation": "session verify target",
+          "fee": 544433,
+          "bytes": 2065,
+          "memory": 1521832,
+          "steps": 519430607
+        },
+        {
+          "operation": "session verify target",
+          "fee": 547026,
+          "bytes": 2143,
+          "memory": 1511568,
+          "steps": 516004895
+        },
+        {
+          "operation": "session verify target",
+          "fee": 546023,
+          "bytes": 2066,
+          "memory": 1540384,
+          "steps": 526020529
+        },
+        {
+          "operation": "session verify target",
+          "fee": 545774,
+          "bytes": 2105,
+          "memory": 1516700,
+          "steps": 517717751
+        },
+        {
+          "operation": "session verify target",
+          "fee": 486788,
+          "bytes": 1741,
+          "memory": 993539,
+          "steps": 340427149
+        }
+      ],
+      "signedTransactionSha256": "d60e27c8ac7318d2cd9f22a02125d96f0756216b9edf0ef59a5e4cf0c7a2c0a1"
+    },
+    {
+      "id": "dispersed-three",
+      "mode": "powers",
+      "path": "staged",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 6448,
+          "memory": 17115715,
+          "steps": 7649596040
+        },
+        "withinLedger": false,
+        "headroomPercent": 5,
+        "exceeded": [
+          "memory"
+        ],
+        "fits": false
+      },
+      "directFee": 2630546,
+      "rejectedDirectWasSubmitted": false,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [
+        0,
+        14,
+        26
+      ],
+      "measured": {
+        "signedBytes": 2460,
+        "referencedScriptBytes": 57639,
+        "memory": 10653337,
+        "steps": 4694272923,
+        "fee": 2200834
+      },
+      "completeFee": 9161475,
+      "updateTransactions": 12,
+      "redeemerBudgets": [
+        {
+          "script": "session_spend",
+          "tag": 0,
+          "index": 0,
+          "memory": 1064090,
+          "steps": 310655473
+        },
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 1,
+          "memory": 321655,
+          "steps": 103912145
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 2,
+          "memory": 967282,
+          "steps": 337766366
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 3,
+          "memory": 3079821,
+          "steps": 1795718226
+        },
+        {
+          "script": "session_mint",
+          "tag": 1,
+          "index": 0,
+          "memory": 1211810,
+          "steps": 382074293
+        },
+        {
+          "script": "update_staged_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 4008679,
+          "steps": 1764146420
+        }
+      ],
+      "publicationBytes": [
+        16145,
+        10495,
+        5959,
+        4133,
+        5629,
+        15803
+      ],
+      "missedBudgets": [
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 17,
+      "targetSiblings": 5,
+      "trustedSiblings": 5,
+      "admissionFee": 2217596,
+      "fallbackSessions": [
+        {
+          "operation": "session initialize",
+          "fee": 475177,
+          "bytes": 2199,
+          "memory": 1238451,
+          "steps": 476767863
+        },
+        {
+          "operation": "session verify trusted",
+          "fee": 755793,
+          "bytes": 3094,
+          "memory": 3581491,
+          "steps": 1174650133
+        },
+        {
+          "operation": "session verify trusted",
+          "fee": 713450,
+          "bytes": 2826,
+          "memory": 3203802,
+          "steps": 1053174174
+        },
+        {
+          "operation": "session verify target",
+          "fee": 877455,
+          "bytes": 3914,
+          "memory": 4423994,
+          "steps": 1687404089
+        },
+        {
+          "operation": "session verify target",
+          "fee": 754230,
+          "bytes": 2899,
+          "memory": 3389784,
+          "steps": 1425392428
+        },
+        {
+          "operation": "session verify target",
+          "fee": 714492,
+          "bytes": 2622,
+          "memory": 3045338,
+          "steps": 1318938565
+        },
+        {
+          "operation": "session verify target",
+          "fee": 544433,
+          "bytes": 2065,
+          "memory": 1521832,
+          "steps": 519430607
+        },
+        {
+          "operation": "session verify target",
+          "fee": 547026,
+          "bytes": 2143,
+          "memory": 1511568,
+          "steps": 516004895
+        },
+        {
+          "operation": "session verify target",
+          "fee": 546023,
+          "bytes": 2066,
+          "memory": 1540384,
+          "steps": 526020529
+        },
+        {
+          "operation": "session verify target",
+          "fee": 545774,
+          "bytes": 2105,
+          "memory": 1516700,
+          "steps": 517717751
+        },
+        {
+          "operation": "session verify target",
+          "fee": 486788,
+          "bytes": 1741,
+          "memory": 993539,
+          "steps": 340427149
+        }
+      ],
+      "signedTransactionSha256": "eb106253ca670b69169eeb8e505a6866254d123f40b69af30f4fdca6bfec9f09"
+    },
+    {
+      "id": "dispersed-four",
+      "mode": "powers",
+      "path": "staged",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 6663,
+          "memory": 17951348,
+          "steps": 7915023235
+        },
+        "withinLedger": false,
+        "headroomPercent": 5,
+        "exceeded": [
+          "memory"
+        ],
+        "fits": false
+      },
+      "directFee": 2707359,
+      "rejectedDirectWasSubmitted": false,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [
+        0,
+        14,
+        26,
+        38
+      ],
+      "measured": {
+        "signedBytes": 2460,
+        "referencedScriptBytes": 57639,
+        "memory": 10653337,
+        "steps": 4694272923,
+        "fee": 2200834
+      },
+      "completeFee": 9161475,
+      "updateTransactions": 12,
+      "redeemerBudgets": [
+        {
+          "script": "session_spend",
+          "tag": 0,
+          "index": 0,
+          "memory": 1064090,
+          "steps": 310655473
+        },
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 1,
+          "memory": 321655,
+          "steps": 103912145
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 2,
+          "memory": 967282,
+          "steps": 337766366
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 3,
+          "memory": 3079821,
+          "steps": 1795718226
+        },
+        {
+          "script": "session_mint",
+          "tag": 1,
+          "index": 0,
+          "memory": 1211810,
+          "steps": 382074293
+        },
+        {
+          "script": "update_staged_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 4008679,
+          "steps": 1764146420
+        }
+      ],
+      "publicationBytes": [
+        16145,
+        10495,
+        5959,
+        4133,
+        5629,
+        15803
+      ],
+      "missedBudgets": [
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 17,
+      "targetSiblings": 5,
+      "trustedSiblings": 5,
+      "admissionFee": 2217596,
+      "fallbackSessions": [
+        {
+          "operation": "session initialize",
+          "fee": 475177,
+          "bytes": 2199,
+          "memory": 1238451,
+          "steps": 476767863
+        },
+        {
+          "operation": "session verify trusted",
+          "fee": 755793,
+          "bytes": 3094,
+          "memory": 3581491,
+          "steps": 1174650133
+        },
+        {
+          "operation": "session verify trusted",
+          "fee": 713450,
+          "bytes": 2826,
+          "memory": 3203802,
+          "steps": 1053174174
+        },
+        {
+          "operation": "session verify target",
+          "fee": 877455,
+          "bytes": 3914,
+          "memory": 4423994,
+          "steps": 1687404089
+        },
+        {
+          "operation": "session verify target",
+          "fee": 754230,
+          "bytes": 2899,
+          "memory": 3389784,
+          "steps": 1425392428
+        },
+        {
+          "operation": "session verify target",
+          "fee": 714492,
+          "bytes": 2622,
+          "memory": 3045338,
+          "steps": 1318938565
+        },
+        {
+          "operation": "session verify target",
+          "fee": 544433,
+          "bytes": 2065,
+          "memory": 1521832,
+          "steps": 519430607
+        },
+        {
+          "operation": "session verify target",
+          "fee": 547026,
+          "bytes": 2143,
+          "memory": 1511568,
+          "steps": 516004895
+        },
+        {
+          "operation": "session verify target",
+          "fee": 546023,
+          "bytes": 2066,
+          "memory": 1540384,
+          "steps": 526020529
+        },
+        {
+          "operation": "session verify target",
+          "fee": 545774,
+          "bytes": 2105,
+          "memory": 1516700,
+          "steps": 517717751
+        },
+        {
+          "operation": "session verify target",
+          "fee": 486788,
+          "bytes": 1741,
+          "memory": 993539,
+          "steps": 340427149
+        }
+      ],
+      "signedTransactionSha256": "f56f9ca11586ed9108ac4cf1ced52f5bb95faf64677e7228890b5366f43dddfe"
+    },
+    {
+      "id": "signers-24",
+      "mode": "hit",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 6321,
+          "memory": 15360794,
+          "steps": 7468016083
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2510607,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [],
+      "measured": {
+        "signedBytes": 6321,
+        "referencedScriptBytes": 40498,
+        "memory": 15360794,
+        "steps": 7468016083,
+        "fee": 2510607
+      },
+      "completeFee": 2510607,
+      "updateTransactions": 1,
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 737774,
-          "steps": 226673528
+          "memory": 887100,
+          "steps": 281232452
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 833338,
-          "steps": 253553662
+          "memory": 1201363,
+          "steps": 396535594
         },
         {
           "script": "host_state_stt",
           "tag": 0,
           "index": 2,
-          "memory": 3009751,
-          "steps": 1613898907
+          "memory": 3035173,
+          "steps": 1783242798
         },
         {
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 8522087,
-          "steps": 3990355523
+          "memory": 10237158,
+          "steps": 5007005239
         }
       ],
       "publicationBytes": [
-        16186,
-        10020,
-        4554,
-        3888,
-        4993,
-        15844
+        16145,
+        10495,
+        5959,
+        4133,
+        5629,
+        15803
       ],
       "missedBudgets": [
         "signedBytes",
@@ -188,49 +884,155 @@
         "steps",
         "fee"
       ],
-      "signatures": 17,
-      "targetSiblings": 5,
+      "signatures": 24,
+      "targetSiblings": 6,
       "trustedSiblings": 0,
-      "admissionFee": 2126717,
-      "signedTransactionSha256": "e0b88e428559cfad35ee9a654d30bc1d908358992c0ef4c2326cd6265f95cae3"
+      "admissionFee": 2217596,
+      "signedTransactionSha256": "86609df2e0032c899d20e13052698826e57d89241e8bffb8ae3e87c904ca5d82"
     },
     {
-      "mode": "full",
-      "measured": {
-        "signedBytes": 2460,
-        "referencedScriptBytes": 56856,
-        "memory": 10476096,
-        "steps": 4366912110,
-        "fee": 2150092
+      "id": "populated-hit",
+      "mode": "hit",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 6525,
+          "memory": 15403936,
+          "steps": 7464381361
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
       },
+      "directFee": 2521811,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [],
+      "measured": {
+        "signedBytes": 6525,
+        "referencedScriptBytes": 40498,
+        "memory": 15403936,
+        "steps": 7464381361,
+        "fee": 2521811
+      },
+      "completeFee": 2521811,
+      "updateTransactions": 1,
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 314726,
-          "steps": 99675164
+          "memory": 887100,
+          "steps": 281232452
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 865286,
-          "steps": 279806338
+          "memory": 1210409,
+          "steps": 399343909
         },
         {
           "script": "host_state_stt",
           "tag": 0,
           "index": 2,
-          "memory": 3013251,
-          "steps": 1614898542
+          "memory": 3035173,
+          "steps": 1783242798
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 10271254,
+          "steps": 5000562202
+        }
+      ],
+      "publicationBytes": [
+        16145,
+        10495,
+        5959,
+        4133,
+        5629,
+        15803
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 24,
+      "targetSiblings": 6,
+      "trustedSiblings": 0,
+      "admissionFee": 2232010,
+      "signedTransactionSha256": "c57b1adbd890ea8f6075703458c38f9b9d108c2fcd12a962b4e2535073ce919b"
+    },
+    {
+      "id": "populated-powers",
+      "mode": "powers",
+      "path": "staged",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 7872,
+          "memory": 19936465,
+          "steps": 8895574324
+        },
+        "withinLedger": false,
+        "headroomPercent": 5,
+        "exceeded": [
+          "memory"
+        ],
+        "fits": false
+      },
+      "directFee": 2945794,
+      "rejectedDirectWasSubmitted": false,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [
+        0,
+        14,
+        26,
+        38
+      ],
+      "measured": {
+        "signedBytes": 2625,
+        "referencedScriptBytes": 57639,
+        "memory": 10633053,
+        "steps": 4674404572,
+        "fee": 2205491
+      },
+      "completeFee": 9166132,
+      "updateTransactions": 12,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 317761,
+          "steps": 101334668
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 966545,
+          "steps": 334757197
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 3038673,
+          "steps": 1784242433
         },
         {
           "script": "session_spend",
           "tag": 0,
           "index": 3,
-          "memory": 1070494,
-          "steps": 315178934
+          "memory": 1072342,
+          "steps": 315873146
         },
         {
           "script": "session_mint",
@@ -243,17 +1045,258 @@
           "script": "update_staged_client",
           "tag": 3,
           "index": 0,
-          "memory": 3990239,
-          "steps": 1667734565
+          "memory": 4015632,
+          "steps": 1748578561
         }
       ],
       "publicationBytes": [
-        16186,
-        10020,
-        4554,
-        3888,
-        4993,
-        15844
+        16145,
+        10495,
+        5959,
+        4133,
+        5629,
+        15803
+      ],
+      "missedBudgets": [
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 24,
+      "targetSiblings": 6,
+      "trustedSiblings": 5,
+      "admissionFee": 2232010,
+      "fallbackSessions": [
+        {
+          "operation": "session initialize",
+          "fee": 475177,
+          "bytes": 2199,
+          "memory": 1238451,
+          "steps": 476767863
+        },
+        {
+          "operation": "session verify trusted",
+          "fee": 755793,
+          "bytes": 3094,
+          "memory": 3581491,
+          "steps": 1174650133
+        },
+        {
+          "operation": "session verify trusted",
+          "fee": 713450,
+          "bytes": 2826,
+          "memory": 3203802,
+          "steps": 1053174174
+        },
+        {
+          "operation": "session verify target",
+          "fee": 877455,
+          "bytes": 3914,
+          "memory": 4423994,
+          "steps": 1687404089
+        },
+        {
+          "operation": "session verify target",
+          "fee": 754230,
+          "bytes": 2899,
+          "memory": 3389784,
+          "steps": 1425392428
+        },
+        {
+          "operation": "session verify target",
+          "fee": 714492,
+          "bytes": 2622,
+          "memory": 3045338,
+          "steps": 1318938565
+        },
+        {
+          "operation": "session verify target",
+          "fee": 544433,
+          "bytes": 2065,
+          "memory": 1521832,
+          "steps": 519430607
+        },
+        {
+          "operation": "session verify target",
+          "fee": 547026,
+          "bytes": 2143,
+          "memory": 1511568,
+          "steps": 516004895
+        },
+        {
+          "operation": "session verify target",
+          "fee": 546023,
+          "bytes": 2066,
+          "memory": 1540384,
+          "steps": 526020529
+        },
+        {
+          "operation": "session verify target",
+          "fee": 545774,
+          "bytes": 2105,
+          "memory": 1516700,
+          "steps": 517717751
+        },
+        {
+          "operation": "session verify target",
+          "fee": 486788,
+          "bytes": 1741,
+          "memory": 993539,
+          "steps": 340427149
+        }
+      ],
+      "signedTransactionSha256": "ed3ef9ae4c25d95a57198abdf3b0ef1b863dff7ddab588cecbe2eaf3fd63eaf9"
+    },
+    {
+      "id": "adjacent",
+      "mode": "adjacent",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 5273,
+          "memory": 13386260,
+          "steps": 6466772383
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2278375,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [],
+      "measured": {
+        "signedBytes": 5273,
+        "referencedScriptBytes": 40498,
+        "memory": 13386260,
+        "steps": 6466772383,
+        "fee": 2278375
+      },
+      "completeFee": 2278375,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 747056,
+          "steps": 238287408
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 1061319,
+          "steps": 353590550
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 3035173,
+          "steps": 1783242798
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 8542712,
+          "steps": 4091651627
+        }
+      ],
+      "publicationBytes": [
+        16145,
+        10495,
+        5959,
+        4133,
+        5629,
+        15803
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 17,
+      "targetSiblings": 5,
+      "trustedSiblings": 0,
+      "admissionFee": 2217072,
+      "signedTransactionSha256": "71462d0bf4e7296400293bd649b0dbf375c7742647ccf82730b6e1f3ec9b61e5"
+    },
+    {
+      "id": "full",
+      "mode": "full",
+      "path": "staged",
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [
+        0,
+        2
+      ],
+      "measured": {
+        "signedBytes": 2460,
+        "referencedScriptBytes": 57639,
+        "memory": 10619049,
+        "steps": 4687826646,
+        "fee": 2198391
+      },
+      "completeFee": 9159242,
+      "updateTransactions": 12,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 317761,
+          "steps": 101334668
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 959958,
+          "steps": 332674131
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 3038673,
+          "steps": 1784242433
+        },
+        {
+          "script": "session_spend",
+          "tag": 0,
+          "index": 3,
+          "memory": 1072342,
+          "steps": 315873146
+        },
+        {
+          "script": "session_mint",
+          "tag": 1,
+          "index": 0,
+          "memory": 1222100,
+          "steps": 389618567
+        },
+        {
+          "script": "update_staged_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 4008215,
+          "steps": 1764083701
+        }
+      ],
+      "publicationBytes": [
+        16145,
+        10495,
+        5959,
+        4133,
+        5629,
+        15803
       ],
       "missedBudgets": [
         "referencedScriptBytes",
@@ -264,7 +1307,7 @@
       "signatures": 17,
       "targetSiblings": 5,
       "trustedSiblings": 5,
-      "admissionFee": 2127241,
+      "admissionFee": 2217596,
       "fallbackSessions": [
         {
           "operation": "session initialize",
@@ -344,7 +1387,7 @@
           "steps": 340427149
         }
       ],
-      "signedTransactionSha256": "5602fc1e8926332c35c70a0afe78a470a3e018185909f47fb6da7245f83e781e"
+      "signedTransactionSha256": "fa5675163346908a716c449ba13c2b2663fa0da7ff419badcb1e5c1e990ac545"
     }
   ]
 }

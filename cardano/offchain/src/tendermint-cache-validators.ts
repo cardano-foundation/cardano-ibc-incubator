@@ -13,27 +13,27 @@ export function loadCachedTendermintValidators(
     hostPolicy,
     recoveryHash,
   );
-  const cacheSpend = readValidator(
-    "spending_validator_cache.spend_validator_cache.spend",
-    lucid,
-    [staged.sessionMint.policyId],
-    Data.Tuple([Data.Bytes()]) as unknown as [string],
-  );
-  const cacheMint = readValidator(
-    "minting_validator_cache.mint_validator_cache.mint",
-    lucid,
-    [cacheSpend[1]],
-    Data.Tuple([Data.Bytes()]) as unknown as [string],
-  );
   const update = readValidator(
     "update_cached_client.update_cached_client.withdraw",
     lucid,
-    [hostPolicy, cacheMint[1], recoveryHash],
+    [hostPolicy, recoveryHash],
+    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
+  );
+  const cacheSpend = readValidator(
+    "spending_validator_cache.spend_validator_cache.spend",
+    lucid,
+    [staged.sessionMint.policyId, update[1], staged.updateClient.scriptHash],
     Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
       string,
       string,
       string,
     ],
+  );
+  const cacheMint = readValidator(
+    "minting_validator_cache.mint_validator_cache.mint",
+    lucid,
+    [hostPolicy, cacheSpend[1]],
+    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
   );
   const clientSpend = readValidator(
     "spending_cached_client.spend_cached_client.spend",
@@ -42,8 +42,19 @@ export function loadCachedTendermintValidators(
       hostPolicy,
       staged.updateClient.scriptHash,
       update[1],
+      cacheMint[1],
       new Constr(1, [recoveryHash]),
     ],
   );
-  return { staged, cacheSpend, cacheMint, update, clientSpend };
+  const clientMint = readValidator(
+    "minting_cached_client.mint_cached_client.mint",
+    lucid,
+    [clientSpend[1], hostPolicy, cacheMint[1]],
+    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
+      string,
+      string,
+      string,
+    ],
+  );
+  return { staged, cacheSpend, cacheMint, update, clientSpend, clientMint };
 }

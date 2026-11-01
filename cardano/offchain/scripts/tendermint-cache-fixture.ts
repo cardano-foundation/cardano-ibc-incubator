@@ -8,6 +8,7 @@ import {
   getAddressDetails,
   Lucid,
   type Script,
+  type TxSigned,
   type UTxO,
   utxoToCore,
   validatorToRewardAddress,
@@ -15,6 +16,10 @@ import {
 import { Emulator, generateEmulatorAccount } from "@lucid-evolution/provider";
 import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";
+import {
+  evaluatedUpdateBudget,
+  prepareCachedUpdate,
+} from "../src/tendermint-cache-routing.ts";
 import { submitHistorySession } from "./consensus-history-staged-fixture.ts";
 import { DeploymentIbcTree } from "../src/deployment.ts";
 import { generateTokenName, readValidator } from "../src/utils.ts";
@@ -74,12 +79,30 @@ export type CacheMutation =
   | "cache-token"
   | "quorum"
   | "trust"
-  | "admission-total";
+  | "admission-total"
+  | "unrelated-cache"
+  | "client-identity"
+  | "client-address"
+  | "cache-identity"
+  | "missing-verifier"
+  | "admission-client"
+  | "admission-shadow"
+  | "admission-missing-cache";
+
+export interface CacheFixtureOptions {
+  changedIndices?: number[];
+  signerCount?: number;
+  historyRecords?: number;
+  twoRecords?: boolean;
+  routing?: "auto" | "direct";
+  directSizeFailure?: boolean;
+}
 
 /** Real cache admission and a complete signed update under retained parameters. */
 export async function cachedUpdateFixture(
   mode: "hit" | "powers" | "full" | "adjacent" = "hit",
   mutation: CacheMutation = "none",
+  options: CacheFixtureOptions = {},
 ) {
   const scenario = mode === "adjacent"
     ? fixture.scenarios.adjacent_mixed
@@ -108,12 +131,7 @@ export async function cachedUpdateFixture(
     "00".repeat(28),
   );
   const [clientScript, clientHash, clientAddress] = scripts.clientSpend;
-  const [clientMint, clientPolicy] = readValidator(
-    "minting_client_stt.mint_client_stt.mint",
-    lucid,
-    [clientHash, hostPolicy],
-    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
-  );
+  const [clientMint, clientPolicy] = scripts.clientMint;
   const [hostScript, , hostAddress] = readValidator(
     "host_state_stt.host_state_stt.spend",
     lucid,
@@ -123,7 +141,13 @@ export async function cachedUpdateFixture(
     ) as unknown as string[],
   );
   const rewardAddress = validatorToRewardAddress("Preprod", scripts.update[0]);
-  const register = await lucid.newTx().register.Stake(rewardAddress).complete();
+  const register = await lucid.newTx().register.Stake(rewardAddress).register
+    .Stake(
+      validatorToRewardAddress(
+        "Preprod",
+        scripts.staged.updateClient.validator,
+      ),
+    ).complete();
   await (await register.sign.withWallet().complete()).submit();
   emulator.awaitBlock();
   const clientName = await generateTokenName(
@@ -140,11 +164,19 @@ export async function cachedUpdateFixture(
   const cacheUnit = scripts.cacheMint[1] + cacheName;
   const oldLeaves = retainedLeaves.map((leaf) => ({ ...leaf }));
   if (changed) {
-    oldLeaves[0].power -= 1n;
-    oldLeaves[2].power -= 1n;
+    for (const index of options.changedIndices ?? [0, 2]) {
+      oldLeaves[index].power -= 1n;
+    }
   }
   if (mode === "full") oldLeaves[0].pubkey = "ff".repeat(32);
   const initialRecord = cacheRecord(oldLeaves);
+  const additionalSet: CacheLeaf[] = options.twoRecords
+    ? [{ index: 0, pubkey: "ab".repeat(32), power: 1n }]
+    : [];
+  const initialRecords = [
+    initialRecord,
+    ...(additionalSet.length ? [cacheRecord(additionalSet)] : []),
+  ];
   // The changed-set case uses a synthetic trusted bootstrap with the retained
   // public keys and two one-unit power changes. Target signatures are real.
   const trustedRoot = !changed ? h.validators_hash : initialRecord.root;
@@ -305,12 +337,29 @@ export async function cachedUpdateFixture(
   };
   const plutusAddress = c([c([clientHash], 1), c([], 1)]);
   const cacheDatum = c([cacheToken, clientToken, plutusAddress, [
-    cacheRecordData(initialRecord),
+    ...initialRecords.map(cacheRecordData),
   ]]);
   if (mutation === "admission-total") {
     (cacheDatum.fields[3] as Constr<Data>[])[0].fields[2] = 1n;
   }
-  const admission = await lucid.newTx().readFrom(references.slice(0, 3))
+  const shadow = mutation === "admission-shadow"
+    ? readValidator("minting_mock_token.mint_mock_token.mint", lucid)
+    : undefined;
+  const admissionSubject = shadow ? c([shadow[1], clientName]) : clientToken;
+  const admissionName = createHash("sha3-256").update(
+    Buffer.from(publicBytes(admissionSubject), "hex"),
+  ).digest("hex");
+  const admittedCacheToken = c([scripts.cacheMint[1], admissionName]);
+  const admittedAddress = mutation === "admission-client"
+    ? scripts.cacheSpend[2]
+    : clientAddress;
+  const admittedHash = mutation === "admission-client"
+    ? scripts.cacheSpend[1]
+    : clientHash;
+  cacheDatum.fields[0] = admittedCacheToken;
+  cacheDatum.fields[1] = admissionSubject;
+  cacheDatum.fields[2] = c([c([admittedHash], 1), c([], 1)]);
+  const admissionBuilder = lucid.newTx().readFrom(references.slice(0, 3))
     .collectFrom(
       [host],
       Data.to(
@@ -325,25 +374,41 @@ export async function cachedUpdateFixture(
       ),
     )
     .mintAssets({ [clientUnit]: 1n }, Data.void())
-    .mintAssets(
-      { [cacheUnit]: 1n },
-      encode(c([clientToken, oldLeaves.map(cacheLeafData)])),
-    )
-    .pay.ToContract(clientAddress, {
+    .pay.ToContract(admittedAddress, {
       kind: "inline",
       value: encode(clientDatum),
-    }, { [clientUnit]: 1n, lovelace: 30_000_000n })
-    .pay.ToContract(scripts.cacheSpend[2], {
-      kind: "inline",
-      value: encode(cacheDatum),
-    }, { [cacheUnit]: 1n, lovelace: 5_000_000n })
-    .pay.ToContract(hostAddress, {
-      kind: "inline",
-      value: Data.to(hostDatum, HostStateDatum, { canonical: true }),
-    }, host.assets)
-    .validFrom(emulator.now()).validTo(emulator.now() + 30_000).complete({
-      localUPLCEval: true,
-    })
+    }, { [clientUnit]: 1n, lovelace: 30_000_000n });
+  if (mutation !== "admission-missing-cache") {
+    admissionBuilder.mintAssets(
+      { [scripts.cacheMint[1] + admissionName]: 1n },
+      encode(
+        c([
+          admissionSubject,
+          oldLeaves.map(cacheLeafData),
+          additionalSet.map(cacheLeafData),
+        ]),
+      ),
+    )
+      .pay.ToContract(scripts.cacheSpend[2], {
+        kind: "inline",
+        value: encode(cacheDatum),
+      }, { [scripts.cacheMint[1] + admissionName]: 1n, lovelace: 5_000_000n });
+  }
+  if (shadow) {
+    admissionBuilder.attach.MintingPolicy(shadow[0]).mintAssets({
+      [shadow[1] + clientName]: 1n,
+    }, Data.void())
+      .pay.ToContract(scripts.cacheSpend[2], {
+        kind: "inline",
+        value: Data.void(),
+      }, { [shadow[1] + clientName]: 1n, lovelace: 5_000_000n });
+  }
+  admissionBuilder.pay.ToContract(hostAddress, {
+    kind: "inline",
+    value: Data.to(hostDatum, HostStateDatum, { canonical: true }),
+  }, host.assets)
+    .validFrom(emulator.now()).validTo(emulator.now() + 30_000);
+  const admission = await admissionBuilder.complete({ localUPLCEval: true })
     .catch((error) => {
       throw new Error(`cache admission: ${error}`, { cause: error });
     });
@@ -353,6 +418,29 @@ export async function cachedUpdateFixture(
   const client = await lucid.utxoByUnit(clientUnit);
   const cache = await lucid.utxoByUnit(cacheUnit);
   host = await lucid.utxoByUnit(hostPolicy + hostName);
+  const historicalSnapshot: [string, string][] = [];
+  for (let index = 1; index <= (options.historyRecords ?? 0); index++) {
+    const record = recordFromConstr(
+      c([
+        clientToken,
+        height((trustedHeight.fields[1] as bigint) - BigInt(index)),
+        trustedConsensus,
+        processingTime,
+        processingTime / 4_000_000_000n,
+      ]),
+    );
+    const key = consensusHistoryKey(record.clientToken, record.height);
+    const value = encodeConsensusHistoryRecord(record);
+    historicalSnapshot.push([key, value]);
+    history.set(key, value);
+  }
+  if (historicalSnapshot.length) {
+    // Assumed authenticated pre-existing history for capacity tests.
+    clientDatum.fields[2] = await history.getRoot();
+    client.datum = encode(clientDatum);
+    emulator.ledger[client.txHash + client.outputIndex].utxo.datum =
+      client.datum;
+  }
   const voting = (leaf: CacheLeaf) => ({
     pubkey: leaf.pubkey,
     votingPower: leaf.power,
@@ -366,7 +454,18 @@ export async function cachedUpdateFixture(
     trustLevel: { numerator: 1n, denominator: 3n },
     requireSingleSetTrust: !changed && mode !== "adjacent",
   });
-  const indices = [...selection.signatures].sort((a, b) => a - b);
+  const selectedIndices = new Set(selection.signatures);
+  for (
+    let index = retainedLeaves.length - 1;
+    selectedIndices.size < (options.signerCount ?? selectedIndices.size) &&
+    index >= 0;
+    index--
+  ) {
+    if (Number(raw.commit.signatures[index].block_id_flag) === 2) {
+      selectedIndices.add(index);
+    }
+  }
+  const indices = [...selectedIndices].sort((a, b) => a - b);
   if (mutation === "quorum") indices.pop();
   const target = indices.map((index) => retainedLeaves[index]);
   const trustedIndices = !changed
@@ -426,7 +525,8 @@ export async function cachedUpdateFixture(
     ? [powerUpdate(oldLeaves, retainedLeaves)!]
     : [c([retainedLeaves.map(cacheLeafData)])];
   let session: Awaited<ReturnType<typeof submitHistorySession>> | undefined;
-  if (mode === "full") {
+  async function initializeStage() {
+    if (session) return;
     const validator = (leaf: CacheLeaf) =>
       c([
         createHash("sha256").update(Buffer.from(leaf.pubkey, "hex")).digest(
@@ -481,165 +581,245 @@ export async function cachedUpdateFixture(
       ]),
       owner: signer,
     });
-    const stagedReward = validatorToRewardAddress(
-      "Preprod",
-      scripts.staged.updateClient.validator,
+  }
+  let nextClientDatum!: Constr<Data>;
+  let nextCacheDatum!: Constr<Data>;
+  async function buildCandidate(staged: boolean): Promise<TxSigned> {
+    if (staged) await initializeStage();
+    const currentTime = emulator.now();
+    const tree = new DeploymentIbcTree();
+    tree.set(clientPath, publicBytes(clientState));
+    tree.set(
+      consensusPath(trustedHeight.fields[1] as bigint),
+      publicBytes(trustedConsensus),
     );
-    const registered = await lucid.newTx().register.Stake(stagedReward)
-      .complete();
-    await (await registered.sign.withWallet().complete()).submit();
-    emulator.awaitBlock();
-  }
-  const currentTime = emulator.now();
-  const validTo = BigInt(currentTime + 30_000) * 1_000_000n;
-  const nextHeight = height(BigInt(h.height));
-  const nextState = c([
-    ...clientState.fields.slice(0, 6),
-    nextHeight,
-    proofSpecs,
-    [],
-  ]);
-  const nextConsensus = c([
-    BigInt(h.time),
-    h.next_validators_hash,
-    c([h.app_hash]),
-  ]);
-  const archived = c([
-    clientToken,
-    trustedHeight,
-    trustedConsensus,
-    processingTime,
-    processingTime / 4_000_000_000n,
-  ]);
-  const archivedRecord = recordFromConstr(archived);
-  const archivedKey = consensusHistoryKey(
-    archivedRecord.clientToken,
-    archivedRecord.height,
-  );
-  const historySiblings = await history.getSiblings(archivedKey);
-  history.set(archivedKey, encodeConsensusHistoryRecord(archivedRecord));
-  const nextClient = c([
-    c([
-      nextState,
-      new Map([[nextHeight, nextConsensus]]),
-      new Map([[nextHeight, validTo + (mutation === "processing" ? 1n : 0n)]]),
-      new Map([[nextHeight, validTo / 4_000_000_000n]]),
-    ]),
-    clientToken,
-    mutation === "history" ? "ff".repeat(32) : await history.getRoot(),
-  ]);
-  const clientSiblings = await tree.getSiblings(clientPath);
-  tree.set(clientPath, publicBytes(nextState));
-  const consensusSiblings = await tree.getSiblings(
-    consensusPath(BigInt(h.height)),
-  );
-  tree.set(consensusPath(BigInt(h.height)), publicBytes(nextConsensus));
-  const nextHost: HostStateDatum = {
-    ...hostDatum,
-    state: {
-      ...hostDatum.state,
-      version: hostDatum.state.version + 1n,
-      ibc_state_root: await tree.getRoot(),
-    },
-  };
-  const targetRecord = cacheRecord(retainedLeaves);
-  const nextRecords = !changed
-    ? [initialRecord]
-    : rotateCache([initialRecord], targetRecord);
-  const nextCache = c([
-    ...cacheDatum.fields.slice(0, 3),
-    nextRecords.map(cacheRecordData),
-  ]);
-  if (mutation === "cache-output") {
-    (nextCache.fields[3] as Constr<Data>[])[0].fields[2] = 1n;
-  }
-  if (mutation === "total") {
-    // Corrupt authenticated fixture state solely to isolate denominator checks.
-    // A legitimate admission cannot create this datum.
-    const forged = Data.from(cache.datum!) as Constr<Data>;
-    (forged.fields[3] as Constr<Data>[])[0].fields[2] =
-      targetRecord.totalPower * 2n;
-    cache.datum = encode(forged);
-    emulator.ledger[cache.txHash + cache.outputIndex].utxo.datum = cache.datum;
-  }
-  if (mutation === "signature") signatures[0].fields[3] = "00".repeat(64);
-  const targetData = target.map(cacheLeafData);
-  if (mutation === "position") {
-    targetData[1].fields[0] = targetData[0].fields[0];
-  }
-  const update = c([
-    mutation === "cache-token" ? c([dummy, cacheName]) : cacheToken,
-    signedHeader,
-    trustedHeight,
-    targetData,
-    targetSiblings,
-    mutation === "overlap" ? [] : trusted.map(cacheLeafData),
-    mutation === "overlap" ? [] : trustedSiblings,
-    sets,
-    compactStateSiblings(historySiblings),
-  ]);
-  const updateReference = mode === "full"
-    ? seed(
-      account.address,
-      {},
-      Data.void(),
-      scripts.staged.updateClient.validator,
-    )
-    : references[5];
-  const builder = lucid.newTx().readFrom([
-    references[0],
-    references[3],
-    references[4],
-    updateReference,
-  ])
-    .collectFrom(
-      [host],
-      Data.to(
-        {
-          UpdateClient: {
-            client_state_siblings: compactStateSiblings(clientSiblings),
-            consensus_state_siblings: compactStateSiblings(consensusSiblings),
+    const history = new DeploymentIbcTree();
+    for (const [key, value] of historicalSnapshot) history.set(key, value);
+    const validTo = BigInt(currentTime + 30_000) * 1_000_000n;
+    const nextHeight = height(BigInt(h.height));
+    const nextState = c([
+      ...clientState.fields.slice(0, 6),
+      nextHeight,
+      proofSpecs,
+      [],
+    ]);
+    const nextConsensus = c([
+      BigInt(h.time),
+      h.next_validators_hash,
+      c([h.app_hash]),
+    ]);
+    const archived = c([
+      clientToken,
+      trustedHeight,
+      trustedConsensus,
+      processingTime,
+      processingTime / 4_000_000_000n,
+    ]);
+    const archivedRecord = recordFromConstr(archived);
+    const archivedKey = consensusHistoryKey(
+      archivedRecord.clientToken,
+      archivedRecord.height,
+    );
+    const historySiblings = await history.getSiblings(archivedKey);
+    history.set(archivedKey, encodeConsensusHistoryRecord(archivedRecord));
+    const nextClient = c([
+      c([
+        nextState,
+        new Map([[nextHeight, nextConsensus]]),
+        new Map([[
+          nextHeight,
+          validTo + (mutation === "processing" ? 1n : 0n),
+        ]]),
+        new Map([[nextHeight, validTo / 4_000_000_000n]]),
+      ]),
+      clientToken,
+      mutation === "history" ? "ff".repeat(32) : await history.getRoot(),
+    ]);
+    const clientSiblings = await tree.getSiblings(clientPath);
+    tree.set(clientPath, publicBytes(nextState));
+    const consensusSiblings = await tree.getSiblings(
+      consensusPath(BigInt(h.height)),
+    );
+    tree.set(consensusPath(BigInt(h.height)), publicBytes(nextConsensus));
+    const nextHost: HostStateDatum = {
+      ...hostDatum,
+      state: {
+        ...hostDatum.state,
+        version: hostDatum.state.version + 1n,
+        ibc_state_root: await tree.getRoot(),
+      },
+    };
+    const targetRecord = cacheRecord(retainedLeaves);
+    const nextRecords = !changed
+      ? initialRecords
+      : rotateCache(initialRecords, targetRecord);
+    const nextCache = c([
+      ...cacheDatum.fields.slice(0, 3),
+      nextRecords.map(cacheRecordData),
+    ]);
+    if (mutation === "cache-output") {
+      (nextCache.fields[3] as Constr<Data>[])[0].fields[2] = 1n;
+    }
+    if (mutation === "client-identity") nextCache.fields[1] = c([dummy, "99"]);
+    if (mutation === "client-address") {
+      nextCache.fields[2] = c([c([dummy], 1), c([], 1)]);
+    }
+    if (mutation === "cache-identity") {
+      nextCache.fields[0] = c([scripts.cacheMint[1], "99".repeat(32)]);
+    }
+    if (mutation === "total") {
+      // Corrupt authenticated fixture state solely to isolate denominator checks.
+      // A legitimate admission cannot create this datum.
+      const forged = Data.from(cache.datum!) as Constr<Data>;
+      (forged.fields[3] as Constr<Data>[])[0].fields[2] =
+        targetRecord.totalPower * 2n;
+      cache.datum = encode(forged);
+      emulator.ledger[cache.txHash + cache.outputIndex].utxo.datum =
+        cache.datum;
+    }
+    if (mutation === "signature") signatures[0].fields[3] = "00".repeat(64);
+    const targetData = target.map(cacheLeafData);
+    if (mutation === "position") {
+      targetData[1].fields[0] = targetData[0].fields[0];
+    }
+    let suppliedCacheToken = cacheToken;
+    if (mutation === "unrelated-cache") {
+      const unrelatedClient = c([clientPolicy, "99"]);
+      const unrelatedName = createHash("sha3-256").update(
+        Buffer.from(publicBytes(unrelatedClient), "hex"),
+      ).digest("hex");
+      suppliedCacheToken = c([scripts.cacheMint[1], unrelatedName]);
+      const forged = Data.from(cache.datum!) as Constr<Data>;
+      forged.fields[0] = suppliedCacheToken;
+      // Model the claimed identity after an unauthorized historical handoff.
+      forged.fields[1] = clientToken;
+      (forged.fields[3] as Constr<Data>[])[0].fields[2] = 1n;
+      delete cache.assets[cacheUnit];
+      cache.assets[scripts.cacheMint[1] + unrelatedName] = 1n;
+      cache.datum = encode(forged);
+      emulator.ledger[cache.txHash + cache.outputIndex].utxo = cache;
+      nextCache.fields[0] = suppliedCacheToken;
+    }
+    const update = c([
+      mutation === "cache-token" ? c([dummy, cacheName]) : suppliedCacheToken,
+      signedHeader,
+      trustedHeight,
+      targetData,
+      targetSiblings,
+      mutation === "overlap" ? [] : trusted.map(cacheLeafData),
+      mutation === "overlap" ? [] : trustedSiblings,
+      sets,
+      compactStateSiblings(historySiblings),
+    ]);
+    const updateReference = session
+      ? seed(
+        account.address,
+        {},
+        Data.void(),
+        scripts.staged.updateClient.validator,
+      )
+      : references[5];
+    const builder = lucid.newTx().readFrom([
+      references[0],
+      references[3],
+      references[4],
+      updateReference,
+    ])
+      .collectFrom(
+        [host],
+        Data.to(
+          {
+            UpdateClient: {
+              client_state_siblings: compactStateSiblings(clientSiblings),
+              consensus_state_siblings: compactStateSiblings(consensusSiblings),
+            },
           },
-        },
-        HostStateRedeemer,
-        { canonical: true },
-      ),
-    )
-    .collectFrom(
-      [client],
-      session
-        ? encode(c([session.token, [], compactStateSiblings(historySiblings)]))
-        : encode(c([update], 6)),
-    )
-    .collectFrom([cache], Data.void())
-    .withdraw(
-      session
-        ? validatorToRewardAddress(
-          "Preprod",
-          scripts.staged.updateClient.validator,
-        )
-        : rewardAddress,
-      0n,
-      session ? encode(c([clientToken], 4)) : encode(clientToken),
-    )
-    .pay.ToContract(clientAddress, {
-      kind: "inline",
-      value: encode(nextClient),
-    }, client.assets)
-    .pay.ToContract(scripts.cacheSpend[2], {
-      kind: "inline",
-      value: encode(nextCache),
-    }, cache.assets)
-    .pay.ToContract(hostAddress, {
-      kind: "inline",
-      value: Data.to(nextHost, HostStateDatum, { canonical: true }),
-    }, host.assets)
-    .validFrom(currentTime).validTo(currentTime + 30_000);
-  const completed = await (session ? session.finalize(builder) : builder)
-    .complete({ localUPLCEval: true }).catch((error) => {
-      throw new Error(`cached update: ${error}`, { cause: error });
-    });
-  const signed = await completed.sign.withWallet().complete();
+          HostStateRedeemer,
+          { canonical: true },
+        ),
+      )
+      .collectFrom(
+        [client],
+        session
+          ? encode(
+            c([session.token, [], compactStateSiblings(historySiblings)]),
+          )
+          : encode(c([update], 6)),
+      )
+      .collectFrom([cache], Data.void());
+    if (mutation !== "missing-verifier") {
+      builder.withdraw(
+        session
+          ? validatorToRewardAddress(
+            "Preprod",
+            scripts.staged.updateClient.validator,
+          )
+          : rewardAddress,
+        0n,
+        session ? encode(c([clientToken], 4)) : encode(clientToken),
+      );
+    }
+    builder
+      .pay.ToContract(clientAddress, {
+        kind: "inline",
+        value: encode(nextClient),
+      }, client.assets)
+      .pay.ToContract(scripts.cacheSpend[2], {
+        kind: "inline",
+        value: encode(nextCache),
+      }, cache.assets)
+      .pay.ToContract(hostAddress, {
+        kind: "inline",
+        value: Data.to(nextHost, HostStateDatum, { canonical: true }),
+      }, host.assets)
+      .validFrom(currentTime).validTo(currentTime + 30_000);
+    const completed = await (session ? session.finalize(builder) : builder)
+      .complete({ localUPLCEval: true }).catch((error) => {
+        throw new Error(`cached update: ${error}`, { cause: error });
+      });
+    const signed = await completed.sign.withWallet().complete();
+    nextClientDatum = nextClient;
+    nextCacheDatum = nextCache;
+    return signed;
+  }
+  const submittedTransactions = new Set<string>();
+  const originalSubmit = emulator.submitTx.bind(emulator);
+  emulator.submitTx = (cbor) => {
+    submittedTransactions.add(cbor);
+    return originalSubmit(cbor);
+  };
+  let rejectedDirectCbor: string | undefined;
+  let directFee: number | undefined;
+  const prepared = mode === "full"
+    ? undefined
+    : mutation === "none" && options.routing !== "direct"
+    ? await prepareCachedUpdate({
+      direct: async () => {
+        if (options.directSizeFailure) {
+          throw new Error(
+            "Max transaction size of 16384 exceeded. Found: 16400",
+          );
+        }
+        const signed = await buildCandidate(false);
+        directFee = Number(signed.toTransaction().body().fee());
+        rejectedDirectCbor = signed.toCBOR();
+        return signed;
+      },
+      staged: () => buildCandidate(true),
+      limits: parameters,
+      headroomPercent: 5,
+    })
+    : undefined;
+  const signed = prepared?.transaction ?? await buildCandidate(mode === "full");
+  const budget = evaluatedUpdateBudget(
+    signed,
+    parameters,
+    mutation === "none" ? 5 : 0,
+  );
+  assert(
+    budget.fits,
+    `Candidate exceeds complete-transaction budgets: ${JSON.stringify(budget)}`,
+  );
   const units = CML.compute_total_ex_units(
     signed.toTransaction().witness_set().redeemers()!,
   );
@@ -654,10 +834,22 @@ export async function cachedUpdateFixture(
   }
   assertEquals(await signed.submit(), signed.toHash());
   emulator.awaitBlock();
-  assertEquals((await lucid.utxoByUnit(clientUnit)).datum, encode(nextClient));
-  assertEquals((await lucid.utxoByUnit(cacheUnit)).datum, encode(nextCache));
+  assertEquals(
+    (await lucid.utxoByUnit(clientUnit)).datum,
+    encode(nextClientDatum),
+  );
+  assertEquals(
+    (await lucid.utxoByUnit(cacheUnit)).datum,
+    encode(nextCacheDatum),
+  );
   if (!session) assertEquals(signed.toTransaction().body().mint(), undefined);
   assertEquals((await lucid.utxosAt(scripts.cacheSpend[2])).length, 1);
+  if (prepared?.path === "staged") {
+    assert(
+      !submittedTransactions.has(rejectedDirectCbor!),
+      "Rejected direct candidate must never be submitted",
+    );
+  }
   const redeemerBudgets = [];
   const redeemers = signed.toTransaction().witness_set().redeemers()!
     .to_flat_format();
@@ -708,10 +900,29 @@ export async function cachedUpdateFixture(
   assert(measured.steps <= parameters.maxTxExSteps);
   return {
     mode,
+    path: session ? "staged" as const : "direct" as const,
+    directBudget: prepared?.directBudget,
+    directFee,
+    directFailure: prepared && "directFailure" in prepared
+      ? prepared.directFailure
+      : undefined,
+    rejectedDirectWasSubmitted: prepared?.path === "staged"
+      ? submittedTransactions.has(rejectedDirectCbor!)
+      : undefined,
+    historyRecords: historicalSnapshot.length,
+    cacheRecords: initialRecords.length,
+    changedIndices: changed ? options.changedIndices ?? [0, 2] : [],
     measured,
+    completeFee: measured.fee +
+      (session?.measurements.reduce((sum, tx) => sum + tx.fee, 0) ?? 0),
+    updateTransactions: 1 + (session?.measurements.length ?? 0),
     redeemerBudgets,
     publicationBytes,
-    missedBudgets: missedCacheBudgets(measured),
+    missedBudgets: missedCacheBudgets({
+      ...measured,
+      fee: measured.fee +
+        (session?.measurements.reduce((sum, tx) => sum + tx.fee, 0) ?? 0),
+    }),
     signatures: target.length,
     targetSiblings: targetSiblings.length,
     trustedSiblings: trustedSiblings.length,

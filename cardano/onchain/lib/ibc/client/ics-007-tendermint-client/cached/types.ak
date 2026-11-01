@@ -47,7 +47,11 @@ pub type CacheDatum {
 }
 
 pub type MintCache {
-  InitializeCache { client_token: AuthToken, leaves: List<Leaf> }
+  InitializeCache {
+    client_token: AuthToken,
+    leaves: List<Leaf>,
+    additional_set: List<Leaf>,
+  }
   RetireCache { client_token: AuthToken }
 }
 

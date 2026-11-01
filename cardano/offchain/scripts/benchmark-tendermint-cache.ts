@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import { cachedUpdateFixture } from "./tendermint-cache-fixture.ts";
+import {
+  cachedUpdateFixture,
+  type CacheFixtureOptions,
+} from "./tendermint-cache-fixture.ts";
 import { CACHED_UPDATE_BUDGET } from "../src/tendermint-cache.ts";
 import parameters from "./fixtures/mainnet-protocol-parameters.json" with {
   type: "json",
@@ -11,9 +14,55 @@ const directory = new URL(
   import.meta.url,
 );
 const measurements = [];
-for (const mode of ["hit", "powers", "adjacent", "full"] as const) {
-  const { signedCbor, ...result } = await cachedUpdateFixture(mode);
+const cases: {
+  id: string;
+  mode: "hit" | "powers" | "adjacent" | "full";
+  options?: CacheFixtureOptions;
+}[] = [
+  { id: "hit", mode: "hit" },
+  { id: "powers", mode: "powers" },
+  {
+    id: "dispersed-two",
+    mode: "powers",
+    options: { changedIndices: [11, 20] },
+  },
+  {
+    id: "dispersed-three",
+    mode: "powers",
+    options: { changedIndices: [0, 14, 26] },
+  },
+  {
+    id: "dispersed-four",
+    mode: "powers",
+    options: { changedIndices: [0, 14, 26, 38] },
+  },
+  { id: "signers-24", mode: "hit", options: { signerCount: 24 } },
+  {
+    id: "populated-hit",
+    mode: "hit",
+    options: { historyRecords: 100, twoRecords: true, signerCount: 24 },
+  },
+  {
+    id: "populated-powers",
+    mode: "powers",
+    options: {
+      changedIndices: [0, 14, 26, 38],
+      historyRecords: 100,
+      twoRecords: true,
+      signerCount: 24,
+    },
+  },
+  { id: "adjacent", mode: "adjacent" },
+  { id: "full", mode: "full" },
+];
+for (const { id, mode, options } of cases) {
+  const { signedCbor, ...result } = await cachedUpdateFixture(
+    mode,
+    "none",
+    options,
+  );
   measurements.push({
+    id,
     ...result,
     signedTransactionSha256: createHash("sha256").update(signedCbor, "hex")
       .digest("hex"),
@@ -21,7 +70,7 @@ for (const mode of ["hit", "powers", "adjacent", "full"] as const) {
   if (write) {
     await Deno.mkdir(directory, { recursive: true });
     await Deno.writeTextFile(
-      new URL(`${mode}.cbor.hex`, directory),
+      new URL(`${id}.cbor.hex`, directory),
       signedCbor + "\n",
     );
   }
@@ -39,7 +88,16 @@ const report = {
   fixture:
     "cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity/normalized.json",
   changedSetFixture:
-    "Synthetic trusted bootstrap with two one-unit power reductions. Target header and signatures are the retained Injective fixture. The full fallback also replaces one trusted public key. These are not live changed-set samples.",
+    "Synthetic trusted bootstrap with one-unit power reductions at each listed position. Target header and signatures are the retained Injective fixture. The full fallback also replaces one trusted public key. These are capacity tests, not live changed-set replays.",
+  historyFixture:
+    "Populated cases seed an assumed previously authenticated 100-record client history after real client/cache admission. They do not replay those historical updates. Two cache records are authenticated by the real admission policy.",
+  routing:
+    "Evaluate the complete signed direct candidate before submission. Reserve 5% of each ledger limit. Rejected direct candidates are not submitted. Complete fees include every staged verification transaction and finalization. Registration, client creation and reference publication are separate setup costs.",
+  ledgerLimits: {
+    signedBytes: parameters.maxTxSize,
+    memory: parameters.maxTxExMem,
+    steps: parameters.maxTxExSteps,
+  },
   acceptanceBudget: CACHED_UPDATE_BUDGET,
   modeledBudgetFee: parameters.minFeeA * CACHED_UPDATE_BUDGET.signedBytes +
     parameters.minFeeB +

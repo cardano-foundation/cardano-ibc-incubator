@@ -108,7 +108,9 @@ export function validatorMultiproof(
   return siblings;
 }
 
-/** Returns undefined for membership changes, reordering or a large delta. */
+/** Constructs a witness, not a capacity guarantee. Evaluate the complete
+ * transaction with prepareCachedUpdate before selecting the direct path.
+ * Returns undefined for membership changes, reordering or a large delta. */
 export function powerUpdate(
   old: CacheLeaf[],
   next: CacheLeaf[],

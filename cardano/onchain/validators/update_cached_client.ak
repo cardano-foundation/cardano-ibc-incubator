@@ -6,6 +6,7 @@ use cardano/assets.{PolicyId}
 use cardano/certificate.{Certificate}
 use cardano/transaction.{Spend, Transaction}
 use ibc/auth.{AuthToken}
+use ibc/client/ics_007_tendermint_client/cached/identity
 use ibc/client/ics_007_tendermint_client/cached/types.{
   CacheDatum, CachedClientRedeemer, CachedUpdate,
 }
@@ -20,7 +21,6 @@ use ibc/utils/validator_utils
 
 validator update_cached_client(
   host_policy: PolicyId,
-  cache_policy: PolicyId,
   administrative_script: ByteArray,
 ) {
   withdraw(subject: AuthToken, credential: Credential, tx: Transaction) {
@@ -36,7 +36,10 @@ validator update_cached_client(
     expect Some(raw_spend) =
       pairs.get_first(tx.redeemers, Spend(client.output_reference))
     expect CachedUpdate { update }: CachedClientRedeemer = raw_spend
-    expect update.cache_token.policy_id == cache_policy
+    // The spending client pins the cache policy. Both scripts independently
+    // bind its name to the actual subject, never to claims inside a cache.
+    let cache_policy = update.cache_token.policy_id
+    expect update.cache_token.name == identity.token_name(subject)
     expect [cache_input] =
       list.filter(
         tx.inputs,
