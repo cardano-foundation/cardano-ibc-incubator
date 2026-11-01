@@ -219,26 +219,43 @@ Deno.test("the plan carries nonce changes through the full applied dependency gr
   );
 });
 
-Deno.test("every reference in both production deployment modes satisfies the publication guard", async () => {
-  for (const benchmarkVoucherEnabled of [false, true]) {
-    const plan = await loadDeploymentPlan(lucidLoader, {
-      ...inputs,
-      benchmarkVoucherEnabled,
-    });
-    const report = buildReferenceValidatorSizeReport(
-      plan.referenceValidators.map(({ script }) => script),
-      16_384,
-    );
-    const intrinsicallyOversized = report.filter(({ intrinsicallyOversized }) =>
-      intrinsicallyOversized
-    ).map((
-      entry,
-    ) => ({ title: plan.referenceValidators[entry.index].title, ...entry }));
-    assertEquals(
-      intrinsicallyOversized,
-      [],
-      `benchmarkVoucherEnabled=${benchmarkVoucherEnabled}`,
-    );
+Deno.test("every reference in legacy and upgradeable deployment modes satisfies the publication guard", async () => {
+  for (const upgradeable of [false, true]) {
+    for (const benchmarkVoucherEnabled of [false, true]) {
+      const plan = await loadDeploymentPlan(lucidLoader, {
+        ...inputs,
+        benchmarkVoucherEnabled,
+        migration: upgradeable
+          ? {
+            registryNonce: {
+              transaction_id: "55".repeat(32),
+              output_index: 3n,
+            },
+            governance: {
+              signers: ["66".repeat(28)],
+              quorum: 1n,
+              delay_ms: 86_400_000n,
+            },
+            emergency: { signers: ["77".repeat(28)], quorum: 1n },
+          }
+          : undefined,
+      });
+      const report = buildReferenceValidatorSizeReport(
+        plan.referenceValidators.map(({ script }) => script),
+        16_384,
+      );
+      const intrinsicallyOversized = report.filter((
+        { intrinsicallyOversized },
+      ) => intrinsicallyOversized).map((entry) => ({
+        title: plan.referenceValidators[entry.index].title,
+        ...entry,
+      }));
+      assertEquals(
+        intrinsicallyOversized,
+        [],
+        `upgradeable=${upgradeable}, benchmarkVoucherEnabled=${benchmarkVoucherEnabled}`,
+      );
+    }
   }
 });
 

@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / 'cardano/onchain'
 CASES = [
     ('merkle-update-sibling-size', 'lib/ibc/core/ics-025-handler-interface/ibc_state_commitment.ak',
-     '    [sibling, ..rest] -> {\n      expect bytearray.length(sibling) == hash_size_bytes\n      let sibling_on_left = builtin.read_bit(path, depth)\n',
+     '    [sibling, ..rest] -> {\n      let sibling = checked_sibling(sibling)\n      let sibling_on_left = builtin.read_bit(path, depth)\n',
      'migration_budget_update_accepts_exact_witness', 'migration_budget_update_rejects_wrong_sibling_size',
      'lib/ibc/migration/budget_equivalence.test.ak',
      '    [sibling, ..rest] -> {\n      let sibling_on_left = builtin.read_bit(path, depth)\n'),

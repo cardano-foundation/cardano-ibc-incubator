@@ -1,4 +1,8 @@
 import { assertRejects } from "@std/assert";
+import { loadCachedTendermintValidators } from "../tendermint-cache-validators.ts";
+import { cacheRecord, cacheRecordData } from "../tendermint-cache.ts";
+import { serialisePlutusData } from "../plutus_serialise.ts";
+import { createHash } from "node:crypto";
 import { createCardanoScalusEvaluator } from "../scalus-evaluator.ts";
 import { scanDeploymentState } from "../shutdown.ts";
 import {
@@ -37,7 +41,7 @@ const EMPTY_ROOT = "00".repeat(32);
 /** Assumed shutdown snapshot for isolated cleanup-policy tests, not a deployment history. */
 export async function shutdownFixture(
   escrowAmount = 0n,
-  clientMode: "legacy" | "staged" = "staged",
+  clientMode: "legacy" | "staged" | "cached" = "staged",
   shape = { history: 1, settledPackets: 0, extraLovelace: 0n },
 ) {
   const seedPhrase = "abandon ".repeat(11) + "about";
@@ -143,7 +147,52 @@ export async function shutdownFixture(
     type: "PlutusV3",
     script: updateClient.script,
   });
-  const spendClient = clientMode === "staged"
+  const cachedScripts = clientMode === "cached"
+    ? loadCachedTendermintValidators(
+      lucid,
+      hostPolicy,
+      recoverClient.scriptHash,
+    )
+    : undefined;
+  const described = (tuple: [Script, string, string], title: string) => ({
+    title,
+    script: tuple[0].script,
+    scriptHash: tuple[1],
+    address: tuple[2],
+    refUtxo: reference(tuple[0]),
+  });
+  const cached = cachedScripts
+    ? {
+      cacheSpend: described(
+        cachedScripts.cacheSpend,
+        "spending_validator_cache.spend_validator_cache.spend",
+      ),
+      cacheMint: described(
+        cachedScripts.cacheMint,
+        "minting_validator_cache.mint_validator_cache.mint",
+      ),
+    }
+    : undefined;
+  const cachedWithdrawalValidators = cachedScripts
+    ? Object.fromEntries(
+      cachedScripts.withdrawalScripts.map((entry, index) => [
+        ["update", "updateCore", "generalUpdateCore", "stagedUpdate"][index],
+        entry.scriptHash === updateClient.scriptHash ? updateClient : {
+          title: entry.title,
+          script: entry.validator.script,
+          scriptHash: entry.scriptHash,
+          address: entry.address,
+          refUtxo: reference(entry.validator),
+        },
+      ]),
+    )
+    : undefined;
+  const spendClient = cachedScripts
+    ? described(
+      cachedScripts.clientSpend,
+      "spending_cached_client.spend_cached_client.spend",
+    )
+    : clientMode === "staged"
     ? validator("spending_multitx_client.spend_multitx_client.spend", [
       hostPolicy,
       updateClient.scriptHash,
@@ -152,10 +201,15 @@ export async function shutdownFixture(
     : validator("spending_client.spend_client.spend", [hostPolicy, {
       Script: [recoverClient.scriptHash],
     }]);
-  const mintClientStt = validator("minting_client_stt.mint_client_stt.mint", [
-    spendClient.scriptHash,
-    hostPolicy,
-  ]);
+  const mintClientStt = cachedScripts
+    ? described(
+      cachedScripts.clientMint,
+      "minting_cached_client.mint_cached_client.mint",
+    )
+    : validator("minting_client_stt.mint_client_stt.mint", [
+      spendClient.scriptHash,
+      hostPolicy,
+    ]);
   const spendConnection = validator(
     "spending_connection.spend_connection.spend",
     [mintClientStt.scriptHash, hash("55"), hostPolicy],
@@ -307,6 +361,18 @@ export async function shutdownFixture(
     [hostPolicy + fromText("ibc_host_state")]: 1n,
   }, Data.to(hostDatum, HostStateDatum));
   const deployment = {
+    ...(cached && cachedWithdrawalValidators
+      ? {
+        cachedTendermint: {
+          format: "authenticated-validator-cache-v1",
+          validators: {
+            ...cachedWithdrawalValidators,
+            cacheSpend: cached.cacheSpend,
+            cacheMint: cached.cacheMint,
+          },
+        },
+      }
+      : {}),
     validators: {
       updateClient,
       recoverClient,
@@ -413,7 +479,7 @@ export async function shutdownFixture(
     processedTimes.delete(height);
     processedHeights.delete(height);
   }
-  seed(
+  const client = seed(
     spendClient.address,
     stateValue(mintClientStt.scriptHash, "11"),
     encode(record(
@@ -422,6 +488,27 @@ export async function shutdownFixture(
       await history.getRoot(),
     )),
   );
+  const clientToken = token(mintClientStt.scriptHash, "11");
+  const cacheName = createHash("sha3-256").update(
+    Buffer.from(serialisePlutusData(encode(clientToken)), "hex"),
+  ).digest("hex");
+  const cacheUnit = cached
+    ? cached.cacheMint.scriptHash + cacheName
+    : undefined;
+  const cache = cached
+    ? seed(
+      cached.cacheSpend.address,
+      { lovelace: 5_000_000n, [cacheUnit!]: 1n },
+      encode(record(
+        token(cached.cacheMint.scriptHash, cacheName),
+        clientToken,
+        record(new Constr(1, [spendClient.scriptHash]), new Constr(1, [])),
+        [cacheRecordData(
+          cacheRecord([{ index: 0, pubkey: "ab".repeat(32), power: 1n }]),
+        )],
+      )),
+    )
+    : undefined;
   seed(
     spendConnection.address,
     stateValue(mintConnectionStt.scriptHash, "12"),
@@ -496,11 +583,18 @@ export async function shutdownFixture(
     emulator.awaitBlock();
     return completed.toTransaction().body();
   }
-  await submit(
-    lucid.newTx().register.Stake(recoverClient.address).register.Stake(
-      updateClient.address,
+  let registration = lucid.newTx();
+  const stakingAddresses = new Set([
+    recoverClient.address,
+    updateClient.address,
+    ...Object.values(cachedWithdrawalValidators ?? {}).map((entry) =>
+      entry.address
     ),
-  );
+  ]);
+  for (const address of stakingAddresses) {
+    registration = registration.register.Stake(address);
+  }
+  await submit(registration);
   const packetReferences = [
     seed(
       referenceAccount.address,
@@ -518,6 +612,11 @@ export async function shutdownFixture(
     }, encode(record(0n))),
   ];
   return {
+    cached,
+    cache,
+    cacheUnit,
+    client,
+    clientToken,
     packetReferences,
     lucid,
     emulator,
