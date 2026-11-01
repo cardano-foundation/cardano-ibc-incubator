@@ -13,6 +13,7 @@ use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   HostStateRedeemer, UpdateClient,
 }
+use ibc/native_value
 use ibc/utils/validator_utils
 
 fn carries_token(input: Input, token: auth.AuthToken) -> Bool {
@@ -68,22 +69,22 @@ fn require_host_state_update(
     list.filter(
       inputs,
       fn(input) {
-        assets.has_nft(
+        native_value.quantity_of(
           input.output.value,
           host_state_nft_policy_id,
           host_state_token_name,
-        )
+        ) == 1
       },
     )
   expect [host_output] =
     list.filter(
       outputs,
       fn(output) {
-        assets.has_nft(
+        native_value.quantity_of(
           output.value,
           host_state_nft_policy_id,
           host_state_token_name,
-        )
+        ) == 1
       },
     )
   expect Some(raw_redeemer) =
