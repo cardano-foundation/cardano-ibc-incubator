@@ -66,11 +66,17 @@ def prepare_genesis(args, peer):
     if fields is not None:
         fields["ExperimentalHardForksEnabled"] = False
         fields.pop("TestEnableDevelopmentHardForkEras", None)
+        # Node 11 requires the dispatcher configuration. An empty map keeps
+        # its default tracing when DevKit supplies only the older log options.
+        fields.setdefault("TraceOptions", {})
         updated = json.dumps(fields, indent=2) + "\n"
     else:
         updated = re.sub(r"^(ExperimentalHardForksEnabled|TestEnableDevelopmentHardForkEras):[^\n]*\n?",
                          "", source, flags=re.MULTILINE)
-        updated = updated.rstrip() + "\nExperimentalHardForksEnabled: false\n"
+        updated = updated.rstrip() + "\n"
+        if not re.search(r"^TraceOptions:", updated, re.MULTILINE):
+            updated += "TraceOptions: {}\n"
+        updated += "ExperimentalHardForksEnabled: false\n"
     if updated != source:
         temporary = configuration.with_suffix(".tmp")
         temporary.write_text(updated)
