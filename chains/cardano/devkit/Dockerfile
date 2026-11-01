@@ -48,6 +48,7 @@ WORKDIR /app
 COPY devkit/entrypoint.sh /profile/entrypoint.sh
 COPY devkit/nonce.py /profile/nonce.py
 COPY devkit/cardano_node.py /profile/cardano_node.py
+COPY devkit/cardano_cli.py /profile/cardano_cli.py
 COPY devkit/cardano_submit_api.py /profile/cardano_submit_api.py
 COPY devkit/bootstrap.py /profile/bootstrap.py
 RUN chmod +x /profile/cardano_node.py /profile/cardano_submit_api.py
