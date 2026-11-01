@@ -90,6 +90,35 @@ class NodeTopologyTests(unittest.TestCase):
 
 
 class GenesisTests(unittest.TestCase):
+    def test_protocol_11_disables_experimental_hard_forks_in_json_and_yaml(self):
+        for use_json in [True, False]:
+            with self.subTest(use_json=use_json), tempfile.TemporaryDirectory() as folder:
+                args = native_files(folder)
+                configuration = Path(args[2])
+                if use_json:
+                    configuration.write_text(json.dumps({
+                        "ByronGenesisFile": "./genesis/byron-genesis.json",
+                        "ShelleyGenesisFile": "./genesis/shelley-genesis.json",
+                        "ConwayGenesisFile": "./genesis/conway-genesis.json",
+                        "ExperimentalHardForksEnabled": True,
+                        "TestEnableDevelopmentHardForkEras": True,
+                    }))
+                else:
+                    configuration.write_text(configuration.read_text() +
+                                             "ExperimentalHardForksEnabled: true\n"
+                                             "TestEnableDevelopmentHardForkEras: true\n")
+                prepare_genesis(args, peer=False)
+                original = configuration.read_bytes()
+                if use_json:
+                    actual = json.loads(original)
+                    self.assertFalse(actual["ExperimentalHardForksEnabled"])
+                    self.assertNotIn("TestEnableDevelopmentHardForkEras", actual)
+                else:
+                    self.assertIn("ExperimentalHardForksEnabled: false", original.decode())
+                    self.assertNotIn("TestEnableDevelopmentHardForkEras", original.decode())
+                prepare_genesis(args, peer=True)
+                self.assertEqual(configuration.read_bytes(), original)
+
     def test_protocol_11_cost_model_is_installed_only_before_the_first_block(self):
         with tempfile.TemporaryDirectory() as folder:
             args = native_files(folder)
