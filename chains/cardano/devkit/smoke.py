@@ -256,7 +256,7 @@ def run_smoke(runtime):
     for key in ("block_vrf", "issuer_vkey", "op_cert", "op_cert_sigma"):
         require(bool(block.get(key)), f"Missing Praos field in Yaci: {key}")
     require(bool(block.get("vrf_result", {}).get("proof")), "Missing VRF proof in Yaci")
-    nonce = json.loads(runtime.cli("query", "protocol-state", "--testnet-magic", "42"))["epochNonce"]
+    nonce = json.loads(runtime.cli("query", "protocol-state", "--testnet-magic", "42", "--output-json"))["epochNonce"]
     require(re.fullmatch(r"[0-9a-f]{64}", nonce), "Missing Cardano epoch nonce")
     verification = verify_producer_blocks(runtime, shelley)
     mithril = verify_mithril(runtime)
