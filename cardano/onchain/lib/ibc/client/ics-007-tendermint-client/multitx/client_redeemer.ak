@@ -1,4 +1,5 @@
 use ibc/auth.{AuthToken}
+use ibc/client/ics_007_tendermint_client/cached/types.{Update}
 use ibc/client/ics_007_tendermint_client/consensus_history.{Witness}
 
 /// Redeemer for the multi-transaction Tendermint client deployment.
@@ -26,4 +27,6 @@ pub type SpendMultitxClientRedeemer {
   /// Deployment shutdown only; authorization and refunds are enforced by the state-token policy.
   ReclaimClient
   UpgradeClient
+  /// Opt-in cached deployment only. Existing staged deployments reject it.
+  CachedUpdate { update: Update }
 }

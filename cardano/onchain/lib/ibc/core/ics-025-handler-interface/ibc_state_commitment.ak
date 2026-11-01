@@ -168,7 +168,7 @@ fn compute_root_go(
       current
     }
     [sibling, ..rest] -> {
-      expect bytearray.length(sibling) == hash_size_bytes
+      let sibling = checked_sibling(sibling)
       let next =
         if builtin.read_bit(path, depth) {
           inner_hash_validated(sibling, current)
@@ -227,13 +227,24 @@ pub fn apply_update(
 fn witnessed_position(key_hash, expected_leaf, siblings) {
   when siblings is {
     [first, ..rest] ->
-      if bytearray.length(first) == hash_size_bytes {
+      if bytearray.length(first) == 0 || bytearray.length(first) == hash_size_bytes {
         (expected_leaf, #"", siblings)
       } else {
         let entries = checked_bucket(first, key_hash, expected_leaf)
         (bucket_hash(entries), entries, rest)
       }
     [] -> fail
+  }
+}
+
+// Empty bytes encode a default sibling without repeating its 32 zero bytes.
+// The path still has exactly 64 positions. Full paths remain accepted.
+fn checked_sibling(sibling: ByteArray) -> ByteArray {
+  if sibling == #"" {
+    empty_hash
+  } else {
+    expect bytearray.length(sibling) == hash_size_bytes
+    sibling
   }
 }
 
@@ -333,7 +344,7 @@ fn updated_roots(
       (old, new)
     }
     [sibling, ..rest] -> {
-      expect bytearray.length(sibling) == hash_size_bytes
+      let sibling = checked_sibling(sibling)
       let sibling_on_left = builtin.read_bit(path, depth)
       let next_old =
         if sibling_on_left {

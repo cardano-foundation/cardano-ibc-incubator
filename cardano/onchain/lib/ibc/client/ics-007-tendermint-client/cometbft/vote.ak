@@ -1,4 +1,5 @@
 use aiken/collection/list
+use aiken/primitive/bytearray
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{BlockID}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit_sig.{CommitSig}
@@ -7,7 +8,9 @@ use ibc/client/ics_007_tendermint_client/cometbft/constants.{precommit_type}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/canonical_pb.{
   CanonicalVote as CanonicalVoteProto,
 }
+use ibc/client/ics_007_tendermint_client/cometbft/protos/timestamp_pb
 use ibc/client/ics_007_tendermint_client/cometbft/types.{SignedMsgType}
+use ibc/utils/bytes
 use ibc/utils/time.{Time}
 
 pub type Vote {
@@ -94,4 +97,57 @@ pub fn vote_sign_bytes_for_commit_sig(
       chain_id,
     },
   )
+}
+
+/// Every committing signer shares these protobuf fields. Prepare them once,
+/// then insert each signer's independently signed timestamp between them.
+pub fn commit_sign_parts(
+  commit: Commit,
+  chain_id: ByteArray,
+) -> (ByteArray, ByteArray) {
+  let prefix =
+    (0, #"")
+      |> bytes.add_and_concat(
+          bytes.encode_int(precommit_type, bytes.field_1_varint),
+        )
+      |> bytes.add_and_concat(
+          bytes.encode_int_little_endian(
+            commit.height,
+            bytes.field_2_fixed64,
+            9,
+          ),
+        )
+      |> bytes.add_and_concat(
+          bytes.encode_int_little_endian(commit.round, bytes.field_3_fixed64, 9),
+        )
+      |> bytes.add_and_concat(
+          bytes.nest_record(
+            canonical_pb.marshal_for_block_id(
+              canonical.canonicalize_block_id(commit.block_id),
+            ),
+            bytes.field_4_length_delimited,
+          ),
+        )
+  (
+    prefix.2nd,
+    bytes.encode_bytearray(chain_id, bytes.field_6_length_delimited).2nd,
+  )
+}
+
+pub fn commit_sign_bytes(
+  prefix: ByteArray,
+  suffix: ByteArray,
+  timestamp: Int,
+) -> ByteArray {
+  expect Some(ts) = timestamp_pb.timestamp_proto(timestamp)
+  let encoded_time =
+    bytes.nest_record(
+      timestamp_pb.marshal_for_timestamp(ts),
+      bytes.field_5_length_delimited,
+    ).2nd
+  let encoded =
+    prefix
+      |> bytearray.concat(encoded_time)
+      |> bytearray.concat(suffix)
+  bytes.encode_varint(bytearray.length(encoded)) |> bytearray.concat(encoded)
 }

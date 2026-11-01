@@ -702,6 +702,11 @@ jobs:
         working-directory: cardano/offchain
         run: deno task test:consensus-history
 
+      - name: Test authenticated Tendermint caches and complete updates
+        if: ${{ matrix.suite == 'consensus-history' }}
+        working-directory: cardano/offchain
+        run: deno task test:tendermint-cache
+
       - name: Test consensus history indexing and recovery
         if: ${{ matrix.suite == 'consensus-history' }}
         working-directory: cardano/offchain
