@@ -1,10 +1,7 @@
 use aiken/builtin
-use aiken/collection/list
 use aiken/primitive/bytearray
 use ibc/client/ics_007_tendermint_client/cached/proof
-use ibc/client/ics_007_tendermint_client/cached/types.{
-  FromTarget, Leaf, Prior, Record, TrustedLeaf, max_validators,
-}
+use ibc/client/ics_007_tendermint_client/cached/types.{Record, max_validators}
 
 // Native vectors keep all raw key32||powerBE8 metadata first, followed by
 // all leaf hashes. The total width remains72bytes per authenticated target.
@@ -23,40 +20,6 @@ pub fn power_at_validated(vector: ByteArray, index: Int) -> Int {
   )
 }
 
-pub fn key_at(vector: ByteArray, index: Int) -> ByteArray {
-  expect index >= 0 && index < bytearray.length(vector) / stride
-  key_at_validated(vector, index)
-}
-
-pub fn power_at(vector: ByteArray, index: Int) -> Int {
-  expect index >= 0 && index < bytearray.length(vector) / stride
-  power_at_validated(vector, index)
-}
-
-fn columns(
-  scratch: ByteArray,
-  offset: Int,
-  metadata: ByteArray,
-  hashes: ByteArray,
-) -> ByteArray {
-  if offset == bytearray.length(scratch) {
-    builtin.append_bytearray(metadata, hashes)
-  } else {
-    columns(
-      scratch,
-      offset + stride,
-      builtin.append_bytearray(
-        metadata,
-        builtin.slice_bytearray(offset, 40, scratch),
-      ),
-      builtin.append_bytearray(
-        hashes,
-        builtin.slice_bytearray(offset + 40, 32, scratch),
-      ),
-    )
-  }
-}
-
 fn has_key(vector: ByteArray, key: ByteArray, width: Int, offset: Int) -> Bool {
   if offset == bytearray.length(vector) {
     False
@@ -64,124 +27,6 @@ fn has_key(vector: ByteArray, key: ByteArray, width: Int, offset: Int) -> Bool {
     True
   } else {
     has_key(vector, key, width, offset + width)
-  }
-}
-
-fn target_vector(
-  leaves: List<Leaf>,
-  index: Int,
-  previous_key: ByteArray,
-  previous_power: Int,
-  total: Int,
-  vector: ByteArray,
-  check_keys: Bool,
-) -> (Record, ByteArray) {
-  when leaves is {
-    [] -> {
-      expect proof.valid_power(total)
-      (
-        Record {
-          root: proof.packed_root(index, vector, stride, 40),
-          count: index,
-          total_power: total,
-        },
-        columns(vector, 0, #"", #""),
-      )
-    }
-    [leaf, ..rest] -> {
-      expect leaf.index == index
-      expect !check_keys || !has_key(vector, leaf.pubkey, stride, 0)
-      let hash = proof.leaf_hash(leaf.pubkey, leaf.power)
-      expect
-        previous_power == 0 || proof.ordered(
-          previous_key,
-          previous_power,
-          leaf.pubkey,
-          leaf.power,
-        )
-      let row =
-        builtin.append_bytearray(
-          leaf.pubkey,
-          builtin.append_bytearray(
-            builtin.integer_to_bytearray(True, 8, leaf.power),
-            hash,
-          ),
-        )
-      target_vector(
-        rest,
-        index + 1,
-        leaf.pubkey,
-        leaf.power,
-        total + leaf.power,
-        builtin.append_bytearray(vector, row),
-        check_keys,
-      )
-    }
-  }
-}
-
-/// Establish the complete new set. Native metadata stays in one packed vector
-/// for constant-time old-set references and signature membership checks.
-pub fn target(leaves: List<Leaf>) -> (Record, ByteArray) {
-  let count = list.length(leaves)
-  expect count > 0 && count <= max_validators
-  target_vector(leaves, 0, #"", 0, 0, #"", True)
-}
-
-fn ordered_keys(
-  order: List<Int>,
-  vector: ByteArray,
-  count: Int,
-  previous: ByteArray,
-) -> Bool {
-  when order is {
-    [] -> True
-    [index, ..rest] -> {
-      expect index >= 0 && index < count
-      let key = key_at(vector, index)
-      expect builtin.less_than_bytearray(previous, key)
-      ordered_keys(rest, vector, count, key)
-    }
-  }
-}
-
-/// The index witness lists every target key in strict raw-byte order. Its
-/// length, bounds and strict ordering prove a permutation with no repeated
-/// indices or keys. Validator power/address ordering is checked independently.
-pub fn target_ordered(
-  leaves: List<Leaf>,
-  order: List<Int>,
-) -> (Record, ByteArray) {
-  let count = list.length(leaves)
-  expect count > 0 && count <= max_validators
-  expect list.length(order) == count
-  let (record, vector) = target_vector(leaves, 0, #"", 0, 0, #"", False)
-  // Empty bytes sort before every valid 32-byte key, including the zero key.
-  expect ordered_keys(order, vector, count, #"")
-  (record, vector)
-}
-
-fn signer_mask(
-  target: List<Leaf>,
-  signers: List<Leaf>,
-  mask: ByteArray,
-) -> ByteArray {
-  when signers is {
-    [] -> mask
-    [signer, ..remaining] -> {
-      expect [leaf, ..rest] = target
-      expect signer.index >= leaf.index
-      if signer.index == leaf.index {
-        expect signer.pubkey == leaf.pubkey && signer.power == leaf.power
-        signer_mask(
-          rest,
-          remaining,
-          builtin.write_bits(mask, [leaf.index], True),
-        )
-      } else {
-        signer_mask(rest, signers, mask)
-      }
-    }
   }
 }
 
@@ -337,91 +182,5 @@ pub fn trusted_packed(
     0,
     0,
     #"",
-  )
-}
-
-fn pack_references(
-  references: List<TrustedLeaf>,
-  packed: ByteArray,
-) -> ByteArray {
-  when references is {
-    [] -> packed
-    [reference, ..rest] -> {
-      let row =
-        when reference is {
-          FromTarget { target_index, old_power } -> {
-            expect
-              target_index >= 0 && target_index < max_validators && proof.valid_power(
-                old_power,
-              )
-            builtin.cons_bytearray(
-              0,
-              builtin.cons_bytearray(
-                target_index,
-                builtin.integer_to_bytearray(True, 8, old_power),
-              ),
-            )
-          }
-          Prior { pubkey, power } -> {
-            expect bytearray.length(pubkey) == 32 && proof.valid_power(power)
-            builtin.cons_bytearray(
-              1,
-              builtin.append_bytearray(
-                pubkey,
-                builtin.integer_to_bytearray(True, 8, power),
-              ),
-            )
-          }
-        }
-      pack_references(rest, builtin.append_bytearray(packed, row))
-    }
-  }
-}
-
-/// Compatibility wrapper for callers that already have typed references.
-pub fn trusted_mask_count(
-  target_count: Int,
-  vector: ByteArray,
-  references: List<TrustedLeaf>,
-  verified_mask: ByteArray,
-) -> (Record, Int) {
-  let count = list.length(references)
-  expect count > 0 && count <= max_validators
-  trusted_packed(
-    target_count,
-    vector,
-    pack_references(references, #""),
-    verified_mask,
-  )
-}
-
-pub fn trusted_mask(
-  target_leaves: List<Leaf>,
-  vector: ByteArray,
-  references: List<TrustedLeaf>,
-  verified_mask: ByteArray,
-) -> (Record, Int) {
-  trusted_mask_count(
-    list.length(target_leaves),
-    vector,
-    references,
-    verified_mask,
-  )
-}
-
-/// Test/API wrapper. The contract builds the mask during signature checks and
-/// uses trusted_packed directly, without materializing old validator records.
-pub fn trusted(
-  target_leaves: List<Leaf>,
-  vector: ByteArray,
-  references: List<TrustedLeaf>,
-  verified_signers: List<Leaf>,
-) -> (Record, Int) {
-  let empty = builtin.integer_to_bytearray(True, 32, 0)
-  trusted_mask(
-    target_leaves,
-    vector,
-    references,
-    signer_mask(target_leaves, verified_signers, empty),
   )
 }

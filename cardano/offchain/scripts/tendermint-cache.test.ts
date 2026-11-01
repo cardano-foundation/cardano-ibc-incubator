@@ -11,7 +11,6 @@ import {
 } from "./tendermint-cache-fixture.ts";
 import {
   cacheRecord,
-  powerUpdate,
   sharedPowerUpdate,
   validatorMultiproof,
 } from "../src/tendermint-cache.ts";
@@ -109,10 +108,9 @@ for (
   });
 }
 
-Deno.test("power-update builder falls back for reordered identities", () => {
+Deno.test("shared power-update builder defers changed identities to general verification", () => {
   const next = retainedLeaves.map((leaf) => ({ ...leaf }));
   next[0].pubkey = "ff".repeat(32);
-  assertEquals(powerUpdate(retainedLeaves, next), undefined);
   assertEquals(sharedPowerUpdate(retainedLeaves, next, [0]), undefined);
 });
 

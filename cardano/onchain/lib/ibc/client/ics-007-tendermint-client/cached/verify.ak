@@ -65,7 +65,8 @@ fn checked_signature(
   }
 }
 
-fn power_signatures(
+/// The caller authenticates these leaves before verifying their selected signatures.
+pub fn power_signatures(
   leaves: List<PowerChange>,
   positions: List<Int>,
   sigs: List<CommitSig>,
@@ -109,7 +110,8 @@ fn power_signatures(
   }
 }
 
-fn full_signatures(
+/// Positions are bounded here before accessing the authenticated packed vector.
+pub fn full_signatures(
   vector: ByteArray,
   count: Int,
   positions: List<Int>,

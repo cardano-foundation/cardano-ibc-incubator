@@ -29,13 +29,6 @@ pub type PowerChange {
   new_power: Int,
 }
 
-/// A complete trusted set can reference an authenticated target key by index.
-/// Keys absent from the target are supplied explicitly.
-pub type TrustedLeaf {
-  FromTarget { target_index: Int, old_power: Int }
-  Prior { pubkey: ByteArray, power: Int }
-}
-
 pub type SetUpdate {
   /// Full target rows contain key32 || unsigned powerBE8. Old references are
   /// tag00 || target-index1 || powerBE8 or tag01 || prior-key32 || powerBE8.

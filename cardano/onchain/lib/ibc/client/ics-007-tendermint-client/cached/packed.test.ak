@@ -1,8 +1,8 @@
 use aiken/builtin
 use aiken/collection/list
 use aiken/primitive/bytearray
-use ibc/client/ics_007_tendermint_client/cached/general
 use ibc/client/ics_007_tendermint_client/cached/packed
+use ibc/client/ics_007_tendermint_client/cached/proof
 use ibc/client/ics_007_tendermint_client/cached/types.{Leaf}
 
 fn leaves(index: Int) -> List<Leaf> {
@@ -34,20 +34,11 @@ fn raw(index: Int) -> ByteArray {
   }
 }
 
-test diagnostic_old_target() {
-  let (record, vector) = general.target_ordered(leaves(0), list.range(0, 44))
-  record.count == 45 && bytearray.length(vector) == 3240
-}
-
-test diagnostic_packed_target() {
-  let (record, vector) = packed.target(raw(0), list.range(0, 44))
-  record.count == 45 && bytearray.length(vector) == 3240
-}
-
-test packed_matches_old() {
+test packed_target_matches_full_admission_and_preserves_metadata() {
   let (actual, vector) = packed.target(raw(0), list.range(0, 44))
-  let (expected, _) = general.target_ordered(leaves(0), list.range(0, 44))
-  actual == expected && bytearray.take(vector, 1800) == raw(0)
+  actual == proof.full(leaves(0)) && actual.count == 45 && bytearray.length(
+    vector,
+  ) == 3240 && bytearray.take(vector, 1800) == raw(0)
 }
 
 fn row(key: Int, power: Int) -> ByteArray {
@@ -66,10 +57,12 @@ test packed_single_leaf_matches_all_power_encoding_boundaries() {
     ],
     fn(power) {
       let key = builtin.integer_to_bytearray(True, 32, 0)
-      packed.target(row(0, power), [0]) == general.target_ordered(
-        [Leaf { index: 0, pubkey: key, power }],
-        [0],
-      )
+      let (record, vector) = packed.target(row(0, power), [0])
+      record == proof.full([Leaf { index: 0, pubkey: key, power }]) && builtin.slice_bytearray(
+        0,
+        40,
+        vector,
+      ) == row(0, power)
     },
   )
 }

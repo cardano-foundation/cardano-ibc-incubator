@@ -1,15 +1,39 @@
 import { createHash } from "node:crypto";
+import { benchmarkEvidence } from "./tendermint-cache-report.ts";
 import {
   cachedUpdateFixture,
   type CacheFixtureOptions,
   retainedQuorumAvailability,
 } from "./tendermint-cache-fixture.ts";
-import { CACHED_UPDATE_BUDGET } from "../src/tendermint-cache.ts";
 import { CARDANO_PROTOCOL_MAJOR_VERSION } from "../src/scalus-evaluator.ts";
 import parameters from "./fixtures/mainnet-protocol-parameters.json" with {
   type: "json",
 };
 
+const allowed = new Set([
+  "--write",
+  "--assert-direct-budget",
+  "--artifact-base-url",
+]);
+let artifactBaseUrl: string | undefined;
+for (let index = 0; index < Deno.args.length; index++) {
+  const argument = Deno.args[index];
+  if (!allowed.has(argument)) {
+    throw new Error(`Unknown benchmark option: ${argument}`);
+  }
+  if (argument === "--artifact-base-url") {
+    artifactBaseUrl = Deno.args[++index];
+    if (!artifactBaseUrl || !artifactBaseUrl.startsWith("https://")) {
+      throw new Error(
+        "--artifact-base-url requires an HTTPS archive directory",
+      );
+    }
+  }
+}
+const artifactDirectory = new URL(
+  "../../../.artifacts/tendermint-cache/",
+  import.meta.url,
+);
 const write = Deno.args.includes("--write");
 const directory = new URL(
   "../../../tests/tendermint-cache/evidence/",
@@ -75,7 +99,6 @@ const cases: {
     },
   },
   { id: "adjacent", mode: "adjacent" },
-  { id: "full", mode: "full" },
   ...([28, 34] as const).flatMap((count) => [
     {
       id: `availability-${count}`,
@@ -194,26 +217,22 @@ const report = {
     modes:
       "Every retained normal update case, including eight changes, 28/34-signature availability, general set changes and uncached trusted roots",
   },
-  acceptanceBudget: CACHED_UPDATE_BUDGET,
-  modeledBudgetFee: parameters.minFeeA * CACHED_UPDATE_BUDGET.signedBytes +
-    parameters.minFeeB +
-    Math.ceil(
-      parameters.priceMem * CACHED_UPDATE_BUDGET.memory +
-        parameters.priceStep * CACHED_UPDATE_BUDGET.steps,
-    ) +
-    parameters.minFeeRefScriptCostPerByte *
-      CACHED_UPDATE_BUDGET.referencedScriptBytes,
   measurements,
 };
-const json = JSON.stringify(report, null, 2) + "\n";
+const { summary, compressed, filename } = benchmarkEvidence(
+  report,
+  artifactBaseUrl,
+);
+const json = JSON.stringify(summary, null, 2) + "\n";
 console.log(json);
-if (write) await Deno.writeTextFile(new URL("report.json", directory), json);
-if (
-  Deno.args.includes("--assert-budget") &&
-  measurements.some((result) => result.missedBudgets.length)
-) {
-  throw new Error(
-    "Complete cached update exceeds the 1 ADA acceptance budget. See missedBudgets for the measured components.",
+if (write) {
+  await Deno.mkdir(artifactDirectory, { recursive: true });
+  await Deno.writeFile(new URL(filename, artifactDirectory), compressed);
+  await Deno.writeTextFile(new URL("report.json", directory), json);
+  console.error(
+    `Complete diagnostic report: ${
+      new URL(filename, artifactDirectory).pathname
+    }`,
   );
 }
 

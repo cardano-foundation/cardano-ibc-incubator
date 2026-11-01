@@ -1,17 +1,14 @@
 use aiken/collection/list
 use ibc/client/ics_007_tendermint_client/cached/proof
+use ibc/client/ics_007_tendermint_client/cached/test_support.{
+  a, b, c, d, e, f, g,
+}
 use ibc/client/ics_007_tendermint_client/cached/types.{
   Leaf, PowerChange, Record,
 }
 use ibc/client/ics_007_tendermint_client/cached/verify
 use ibc/client/ics_007_tendermint_client/cometbft/crypto/merkle/hash
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
-
-const a = #"1111111111111111111111111111111111111111111111111111111111111111"
-
-const b = #"2222222222222222222222222222222222222222222222222222222222222222"
-
-const c = #"3333333333333333333333333333333333333333333333333333333333333333"
 
 fn leaves() -> List<Leaf> {
   [
@@ -191,7 +188,7 @@ test cached_leaf_encoding_matches_simple_validator_at_varint_boundaries() {
 
 test shared_proof_authenticates_roots_total_and_old_signer_power() {
   let (next, overlap) =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       shared_changes(),
       [],
@@ -208,7 +205,7 @@ test shared_proof_authenticates_roots_total_and_old_signer_power() {
 
 test shared_proof_reuses_an_omitted_subtree_without_requiring_it_to_sign() {
   let (next, overlap) =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       changes(),
       [proof.leaf_hash(c, 25)],
@@ -219,7 +216,7 @@ test shared_proof_reuses_an_omitted_subtree_without_requiring_it_to_sign() {
 
 test shared_proof_authenticates_a_changed_non_signer() {
   let (next, overlap) =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       [
         PowerChange { index: 0, pubkey: a, old_power: 100, new_power: 100 },
@@ -235,7 +232,7 @@ test shared_proof_authenticates_a_changed_non_signer() {
 test shared_proof_single_leaf_uses_old_power_for_overlap() {
   let old = proof.full([Leaf { index: 0, pubkey: a, power: 100 }])
   let (next, overlap) =
-    proof.shared_powers(
+    test_support.shared_transition(
       old,
       [PowerChange { index: 0, pubkey: a, old_power: 100, new_power: 101 }],
       [],
@@ -246,7 +243,7 @@ test shared_proof_single_leaf_uses_old_power_for_overlap() {
 
 test shared_proof_rejects_an_unproved_signer() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       changes(),
       [proof.leaf_hash(c, 25)],
@@ -256,7 +253,7 @@ test shared_proof_rejects_an_unproved_signer() fail {
 
 test shared_proof_rejects_signer_key_substitution() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       shared_changes(),
       [],
@@ -264,19 +261,21 @@ test shared_proof_rejects_signer_key_substitution() fail {
     )
 }
 
-test shared_proof_rejects_signer_power_substitution() fail {
-  expect _ =
-    proof.shared_powers(
-      proof.full(leaves()),
-      shared_changes(),
-      [],
-      [Leaf { index: 0, pubkey: a, power: 100 }],
-    )
+test shared_proof_derives_signed_power_from_authenticated_changes() {
+  verify.power_signatures(
+    shared_changes(),
+    [0],
+    [test_support.signature(a)],
+    #"",
+    #"",
+    0,
+    0,
+  ) == (101, 100)
 }
 
 test shared_proof_rejects_duplicate_signers() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       shared_changes(),
       [],
@@ -289,7 +288,7 @@ test shared_proof_rejects_duplicate_signers() fail {
 
 test shared_proof_rejects_reordered_signers() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       shared_changes(),
       [],
@@ -302,7 +301,7 @@ test shared_proof_rejects_reordered_signers() fail {
 
 test shared_proof_rejects_a_signer_outside_the_tree() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       shared_changes(),
       [],
@@ -312,7 +311,7 @@ test shared_proof_rejects_a_signer_outside_the_tree() fail {
 
 test shared_proof_rejects_a_negative_signer_position() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       shared_changes(),
       [],
@@ -322,7 +321,7 @@ test shared_proof_rejects_a_negative_signer_position() fail {
 
 test shared_proof_rejects_forged_old_power() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       [
         PowerChange { index: 0, pubkey: a, old_power: 99, new_power: 101 },
@@ -335,7 +334,7 @@ test shared_proof_rejects_forged_old_power() fail {
 
 test shared_proof_rejects_missing_changed_neighbor() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       list.take(changes(), 1),
       [proof.leaf_hash(b, 50), proof.leaf_hash(c, 25)],
@@ -345,7 +344,7 @@ test shared_proof_rejects_missing_changed_neighbor() fail {
 
 test shared_proof_rejects_new_ordering_violation() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       [
         PowerChange { index: 0, pubkey: a, old_power: 100, new_power: 49 },
@@ -358,7 +357,7 @@ test shared_proof_rejects_new_ordering_violation() fail {
 
 test shared_proof_rejects_duplicate_disclosed_positions() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       [
         PowerChange { index: 0, pubkey: a, old_power: 100, new_power: 101 },
@@ -371,7 +370,7 @@ test shared_proof_rejects_duplicate_disclosed_positions() fail {
 
 test shared_proof_rejects_an_unused_disclosed_leaf() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       list.concat(
         shared_changes(),
@@ -384,7 +383,7 @@ test shared_proof_rejects_an_unused_disclosed_leaf() fail {
 
 test shared_proof_rejects_an_unused_hash() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       shared_changes(),
       [proof.leaf_hash(c, 25)],
@@ -394,7 +393,7 @@ test shared_proof_rejects_an_unused_hash() fail {
 
 test shared_proof_rejects_a_missing_hash() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       changes(),
       [],
@@ -404,7 +403,7 @@ test shared_proof_rejects_a_missing_hash() fail {
 
 test shared_proof_rejects_a_short_hash() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       changes(),
       [#"01"],
@@ -414,7 +413,7 @@ test shared_proof_rejects_a_short_hash() fail {
 
 test shared_proof_rejects_removed_voting_power() fail {
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       proof.full(leaves()),
       [
         PowerChange { index: 0, pubkey: a, old_power: 100, new_power: 100 },
@@ -436,7 +435,7 @@ test shared_proof_rejects_total_voting_power_overflow() fail {
       ],
     )
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       old,
       [
         PowerChange {
@@ -462,7 +461,7 @@ test shared_proof_preserves_unchanged_tied_ordering() {
       ],
     )
   let (next, overlap) =
-    proof.shared_powers(
+    test_support.shared_transition(
       old,
       [
         PowerChange { index: 0, pubkey: a, old_power: 50, new_power: 50 },
@@ -490,7 +489,7 @@ test shared_proof_rejects_changed_to_reverse_address_tie() fail {
       ],
     )
   expect _ =
-    proof.shared_powers(
+    test_support.shared_transition(
       old,
       [
         PowerChange { index: 0, pubkey: b, old_power: 100, new_power: 50 },
@@ -506,26 +505,10 @@ fn seven_leaves() -> List<Leaf> {
     Leaf { index: 0, pubkey: a, power: 700 },
     Leaf { index: 1, pubkey: b, power: 600 },
     Leaf { index: 2, pubkey: c, power: 500 },
-    Leaf {
-      index: 3,
-      pubkey: #"4444444444444444444444444444444444444444444444444444444444444444",
-      power: 400,
-    },
-    Leaf {
-      index: 4,
-      pubkey: #"5555555555555555555555555555555555555555555555555555555555555555",
-      power: 300,
-    },
-    Leaf {
-      index: 5,
-      pubkey: #"6666666666666666666666666666666666666666666666666666666666666666",
-      power: 200,
-    },
-    Leaf {
-      index: 6,
-      pubkey: #"7777777777777777777777777777777777777777777777777777777777777777",
-      power: 100,
-    },
+    Leaf { index: 3, pubkey: d, power: 400 },
+    Leaf { index: 4, pubkey: e, power: 300 },
+    Leaf { index: 5, pubkey: f, power: 200 },
+    Leaf { index: 6, pubkey: g, power: 100 },
   ]
 }
 
@@ -614,7 +597,8 @@ test shared_proof_matches_explicit_roots_with_changes_in_both_branches() {
         }
       },
     )
-  let (next, overlap) = proof.shared_powers(old, changes, [], [third, last])
+  let (next, overlap) =
+    test_support.shared_transition(old, changes, [], [third, last])
   next == Record { root: seven_root(expected), count: 7, total_power: 2802 } && overlap == 600
 }
 
@@ -660,6 +644,7 @@ test shared_proof_threads_partial_frontier_without_hiding_changed_neighbor() {
         }
       },
     )
-  let (next, overlap) = proof.shared_powers(old, disclosed, frontier, [l3, l6])
+  let (next, overlap) =
+    test_support.shared_transition(old, disclosed, frontier, [l3, l6])
   next == Record { root: seven_root(expected), count: 7, total_power: 2801 } && overlap == 500
 }

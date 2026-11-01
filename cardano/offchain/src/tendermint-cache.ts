@@ -108,17 +108,6 @@ export function validatorMultiproof(
   return siblings;
 }
 
-/** Constructs a witness, not a capacity guarantee. Evaluate the complete
- * transaction with prepareCachedUpdate before selecting the direct path.
- * Returns undefined for membership changes, reordering or a large delta. */
-export function powerUpdate(
-  old: CacheLeaf[],
-  next: CacheLeaf[],
-  maxChanges = 8,
-): Constr<Data> | undefined {
-  return powerChangeWitness(old, next, [], maxChanges);
-}
-
 /** One frontier authenticates the changed powers, their ordering neighbors and
  * every target signer against both roots. The verifier can then derive trusted
  * overlap from these authenticated old powers without another membership proof.
@@ -136,15 +125,6 @@ export function sharedPowerUpdate(
       i > 0 && signerIndices[i - 1] >= index
     )
   ) throw new Error("Signer positions must be sorted and unique");
-  return powerChangeWitness(old, next, signerIndices, maxChanges);
-}
-
-function powerChangeWitness(
-  old: CacheLeaf[],
-  next: CacheLeaf[],
-  signerIndices: number[],
-  maxChanges: number,
-): Constr<Data> | undefined {
   const oldRecord = cacheRecord(old);
   cacheRecord(next);
   if (
@@ -238,22 +218,4 @@ export function compactStateSiblings(siblings: string[]): string[] {
     ...bucket,
     ...path.map((hash) => hash === "00".repeat(32) ? "" : hash),
   ];
-}
-
-/** The explicit fee experiment remains separate from ledger validity. */
-export const CACHED_UPDATE_BUDGET = {
-  signedBytes: 4_000,
-  referencedScriptBytes: 20_000,
-  memory: 4_000_000,
-  steps: 1_900_000_000,
-  fee: 1_000_000,
-};
-
-export function missedCacheBudgets(
-  measured: typeof CACHED_UPDATE_BUDGET,
-): string[] {
-  return Object.keys(CACHED_UPDATE_BUDGET).filter((key) => {
-    const component = key as keyof typeof CACHED_UPDATE_BUDGET;
-    return measured[component] > CACHED_UPDATE_BUDGET[component];
-  });
 }

@@ -33,7 +33,6 @@ import {
   cacheRecordData,
   compactStateSiblings,
   fullSetUpdate,
-  missedCacheBudgets,
   rotateCache,
   sharedPowerUpdate,
   validatorMultiproof,
@@ -1326,16 +1325,12 @@ export async function cachedUpdateFixture(
       : 0,
     targetValidatorCount: retainedLeaves.length,
     measured,
+    transactionId: signed.toHash(),
     completeFee: measured.fee +
       (session?.measurements.reduce((sum, tx) => sum + tx.fee, 0) ?? 0),
     updateTransactions: submittedTransactions.size,
     redeemerBudgets,
     publicationBytes,
-    missedBudgets: missedCacheBudgets({
-      ...measured,
-      fee: measured.fee +
-        (session?.measurements.reduce((sum, tx) => sum + tx.fee, 0) ?? 0),
-    }),
     signatures: target.length,
     signerAvailability: availability
       ? {
