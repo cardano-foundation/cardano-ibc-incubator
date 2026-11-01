@@ -172,7 +172,7 @@ def attach_vrf_keys(snapshot, pool_params):
 
 
 def cli_query(query, magic, *args):
-    result = subprocess.run(["cardano-cli", "query", query, "--testnet-magic", str(magic), *args],
+    result = subprocess.run(["cardano-cli", "query", query, "--testnet-magic", str(magic), "--output-json", *args],
                             check=True, capture_output=True, text=True, timeout=10)
     return json.loads(result.stdout)
 
