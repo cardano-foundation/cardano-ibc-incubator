@@ -1,3 +1,4 @@
+import { applyPlutusParameters } from "./plutus-parameters.ts";
 import blueprint from "../../onchain/plutus.json" with { type: "json" };
 import { crypto } from "@std/crypto";
 import { blake2b } from "@noble/hashes/blake2b";
@@ -9,7 +10,6 @@ import {
 import { queryOgmiosJsonRpc } from "./external_cardano.ts";
 import {
   Address,
-  applyParamsToScript,
   CML,
   coreToUtxo,
   Data,
@@ -253,7 +253,7 @@ export const readValidator = <T extends unknown[] = Data[]>(
   } else {
     validator = {
       type: "PlutusV3",
-      script: applyParamsToScript(rawValidator.compiledCode, params, type),
+      script: applyPlutusParameters(rawValidator.compiledCode, params, type),
     };
   }
 

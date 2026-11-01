@@ -16,7 +16,8 @@
     "npm:@lucid-evolution/lucid@0.6.5": "0.6.5_effect@3.22.2_fast-check@3.23.2_@harmoniclabs+cbor@1.6.6",
     "npm:@lucid-evolution/provider@0.2.4": "0.2.4_effect@3.22.2_@harmoniclabs+cbor@1.6.6",
     "npm:@lucid-evolution/scalus-uplc@0.1.4": "0.1.4",
-    "npm:@lucid-evolution/utils@0.1.74": "0.1.74_effect@3.22.2_@harmoniclabs+cbor@1.6.6_@harmoniclabs+plutus-data@1.2.6__@harmoniclabs+bytestring@1.0.0__@harmoniclabs+cbor@1.6.6",
+    "npm:@lucid-evolution/uplc@0.5.3": "0.5.3",
+    "npm:@lucid-evolution/utils@0.1.74": "0.1.74_effect@3.22.2_@harmoniclabs+cbor@1.6.6_@harmoniclabs+plutus-data@1.2.6",
     "npm:@noble/hashes@1.8.0": "1.8.0",
     "npm:@types/node@*": "24.2.0",
     "npm:cbor-x@1.6.0": "1.6.0",
@@ -260,7 +261,7 @@
     "@harmoniclabs/uint8array-utils@1.0.4": {
       "integrity": "sha512-Z454prSbX4geXGHyjjcn9vm6u9NsD3VJykv8f8yE1VjIXSPitaLPEnm8u2+B+GMp1chYlLilOq+kW4OvJ6y28A=="
     },
-    "@harmoniclabs/uplc@1.4.1_@harmoniclabs+bytestring@1.0.0_@harmoniclabs+cbor@1.6.6_@harmoniclabs+crypto@0.3.1_@harmoniclabs+pair@1.0.0_@harmoniclabs+plutus-data@1.2.6__@harmoniclabs+bytestring@1.0.0__@harmoniclabs+cbor@1.6.6": {
+    "@harmoniclabs/uplc@1.4.1_@harmoniclabs+bytestring@1.0.0_@harmoniclabs+cbor@1.6.6_@harmoniclabs+crypto@0.3.1_@harmoniclabs+pair@1.0.0_@harmoniclabs+plutus-data@1.2.6": {
       "integrity": "sha512-sELKStjxPBPBxBMylU4oBSUe0/8eJe2HqRblNSwrMu8Fso4YpSPDqHZ33iDZ8QAadVUsT5r2EQKX0TLrj7qXvQ==",
       "dependencies": [
         "@harmoniclabs/bigint-utils",
@@ -316,7 +317,7 @@
         "@lucid-evolution/provider",
         "@lucid-evolution/sign_data",
         "@lucid-evolution/tx-graph",
-        "@lucid-evolution/uplc",
+        "@lucid-evolution/uplc@0.2.23",
         "@lucid-evolution/utils",
         "@lucid-evolution/wallet",
         "effect"
@@ -381,7 +382,10 @@
     "@lucid-evolution/uplc@0.2.23": {
       "integrity": "sha512-D0Qk+FnfePqqnT68IPRVy+2v1FahfkCVlgj31uoQ9aGPrwphKlvgp04UEl/lBNuzJw0avYNM8knO4hptMSFP8Q=="
     },
-    "@lucid-evolution/utils@0.1.74_effect@3.22.2_@harmoniclabs+cbor@1.6.6_@harmoniclabs+plutus-data@1.2.6__@harmoniclabs+bytestring@1.0.0__@harmoniclabs+cbor@1.6.6": {
+    "@lucid-evolution/uplc@0.5.3": {
+      "integrity": "sha512-MUAw40aNUTaMJJH6jvl6gmKfuZSFDgcdn2HPv7QJL8okm4tQttRw43UvnPW7cXS4igyZrxJCx7eYjeDsUorOBg=="
+    },
+    "@lucid-evolution/utils@0.1.74_effect@3.22.2_@harmoniclabs+cbor@1.6.6_@harmoniclabs+plutus-data@1.2.6": {
       "integrity": "sha512-bS5WwnfUciDbpOymRCohG1jUBanMz/SU5HBdnLsA2w4wB+pg73UYwF1leSf129zUGQX8xWARfNqvsUuR6+IZuA==",
       "dependencies": [
         "@anastasia-labs/cardano-multiplatform-lib-browser",
@@ -394,7 +398,7 @@
         "@lucid-evolution/core-utils",
         "@lucid-evolution/crc8",
         "@lucid-evolution/plutus",
-        "@lucid-evolution/uplc",
+        "@lucid-evolution/uplc@0.2.23",
         "bip39",
         "cbor-x",
         "effect"
@@ -1103,6 +1107,7 @@
       "npm:@lucid-evolution/lucid@0.6.5",
       "npm:@lucid-evolution/provider@0.2.4",
       "npm:@lucid-evolution/scalus-uplc@0.1.4",
+      "npm:@lucid-evolution/uplc@0.5.3",
       "npm:@lucid-evolution/utils@0.1.74",
       "npm:@noble/hashes@1.8.0",
       "npm:fast-check@3.23.2",

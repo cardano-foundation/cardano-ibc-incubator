@@ -67,7 +67,8 @@ fn setup() -> MockData {
       policy_id: "mock port minting policy id",
       name: "mock transfer port token name",
     }
-  let transfer_escrow_shard_policy_id = "mock transfer escrow shard policy id"
+  let transfer_escrow_shard_policy_id =
+    #"03dcc42441e396823e8d8ad155c3caf51e50e847fb04c0a977b46957"
   let channel_id = "channel-0"
   let denom = "6c6f76656c616365"
   let shard_token_name =
