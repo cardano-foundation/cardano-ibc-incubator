@@ -216,9 +216,9 @@ def run_smoke(runtime):
                 "activeSlotsCoeff": 0.25, "securityParam": 48}
     for key, value in expected.items():
         require(shelley.get(key) == value, f"Unexpected genesis {key}: {shelley.get(key)}")
-    require(shelley["protocolParams"]["protocolVersion"]["major"] == 10, "Expected protocol version 10")
-    require(len(genesis["conway"]["plutusV3CostModel"]) >= 297,
-            "Protocol version 10 requires the 297-entry PlutusV3 cost model")
+    require(shelley["protocolParams"]["protocolVersion"]["major"] == 11, "Expected protocol version 11")
+    require(len(genesis["conway"]["plutusV3CostModel"]) == 350,
+            "Protocol version 11 requires the 350-entry PlutusV3 cost model")
     require(len(shelley["staking"]["pools"]) == 5, "Expected five genesis pools")
     require(bool(shelley["initialFunds"]), "Missing deterministic funded accounts")
     live_genesis = runtime.ogmios("queryNetwork/genesisConfiguration", {"era": "shelley"})
@@ -227,6 +227,9 @@ def run_smoke(runtime):
     require(http(runtime.endpoint("DEVKIT_OGMIOS_PORT") + "/health")["currentEra"] == "conway",
             "The network has not reached Conway")
     protocol = runtime.ogmios("queryLedgerState/protocolParameters")
+    require(protocol["version"]["major"] == 11, "Running ledger must use protocol version 11")
+    require(len(protocol["plutusCostModels"]["plutus:v3"]) == 350,
+            "Running ledger must use the protocol-11 PlutusV3 cost model")
     for field, memory, cpu in (("maxExecutionUnitsPerTransaction", 16_500_000, 10_000_000_000),
                                 ("maxExecutionUnitsPerBlock", 72_000_000, 20_000_000_000)):
         require(protocol[field] == {"memory": memory, "cpu": cpu},

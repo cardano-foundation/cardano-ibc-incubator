@@ -15,11 +15,14 @@ def native_files(folder, k=48):
         "protocolConsts": {"k": k, "protocolMagic": 42}, "startTime": 1767139200,
         "bootStakeholders": {"native-key": 1},
     }))
-    (root / "genesis/shelley-genesis.json").write_text(json.dumps({"securityParam": 48}))
+    (root / "genesis/shelley-genesis.json").write_text(json.dumps({"securityParam": 48, "protocolParams": {"protocolVersion": {"major": 11, "minor": 0}}}))
+    model = json.loads((Path(__file__).resolve().parents[1] / "config/protocol-parameters.json").read_text())["costModels"]["PlutusV3"]
+    (root / "genesis/conway-genesis.json").write_text(json.dumps({"plutusV3CostModel": model}))
     (root / "genesis-seeded").touch()
     configuration = root / "configuration.yaml"
     configuration.write_text("ByronGenesisFile: ./genesis/byron-genesis.json\n"
-                             "ShelleyGenesisFile: ./genesis/shelley-genesis.json\n")
+                             "ShelleyGenesisFile: ./genesis/shelley-genesis.json\n"
+                             "ConwayGenesisFile: ./genesis/conway-genesis.json\n")
     return ["run", "--config", str(configuration), "--database-path", str(root / "db")]
 
 
@@ -87,12 +90,44 @@ class NodeTopologyTests(unittest.TestCase):
 
 
 class GenesisTests(unittest.TestCase):
+    def test_protocol_11_cost_model_is_installed_only_before_the_first_block(self):
+        with tempfile.TemporaryDirectory() as folder:
+            args = native_files(folder)
+            conway = Path(folder) / "genesis/conway-genesis.json"
+            conway.write_text(json.dumps({"plutusV3CostModel": [1] * 297}))
+            prepare_genesis(args, peer=False)
+            model = json.loads(conway.read_text())["plutusV3CostModel"]
+            self.assertEqual(len(model), 350)
+            (Path(folder) / "db").mkdir()
+            (Path(folder) / "db/block").touch()
+            original = conway.read_bytes()
+            prepare_genesis(args, peer=False)
+            self.assertEqual(conway.read_bytes(), original)
+            conway.write_text(json.dumps({"plutusV3CostModel": [1] * 297}))
+            original = conway.read_bytes()
+            with self.assertRaisesRegex(ValueError, "Retained DevKit cost model"):
+                prepare_genesis(args, peer=False)
+            self.assertEqual(conway.read_bytes(), original)
+
+    def test_old_ledger_protocol_is_rejected_without_changing_genesis(self):
+        with tempfile.TemporaryDirectory() as folder:
+            args = native_files(folder)
+            shelley = Path(folder) / "genesis/shelley-genesis.json"
+            value = json.loads(shelley.read_text())
+            value["protocolParams"]["protocolVersion"]["major"] = 10
+            shelley.write_text(json.dumps(value))
+            original = shelley.read_bytes()
+            with self.assertRaisesRegex(ValueError, "requires protocol version 11"):
+                prepare_genesis(args, peer=False)
+            self.assertEqual(shelley.read_bytes(), original)
+
     def test_native_json_configuration_resolves_genesis_paths(self):
         with tempfile.TemporaryDirectory() as folder:
             args = native_files(folder, k=10)
             Path(args[2]).write_text(json.dumps({
                 "ByronGenesisFile": "./genesis/byron-genesis.json",
                 "ShelleyGenesisFile": "./genesis/shelley-genesis.json",
+                "ConwayGenesisFile": "./genesis/conway-genesis.json",
             }))
             prepare_genesis(args, peer=False)
             byron = json.loads((Path(folder) / "genesis/byron-genesis.json").read_text())
@@ -150,7 +185,7 @@ class GenesisTests(unittest.TestCase):
     def test_fresh_pool_aging_profile_pins_both_eras_to_2160(self):
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, {"DEVKIT_SECURITY_PARAM": "2160"}):
             args = native_files(folder, k=10)
-            (Path(folder) / "genesis/shelley-genesis.json").write_text('{"securityParam": 2160}')
+            (Path(folder) / "genesis/shelley-genesis.json").write_text(json.dumps({"securityParam": 2160, "protocolParams": {"protocolVersion": {"major": 11, "minor": 0}}}))
             prepare_genesis(args, peer=False)
             byron = json.loads((Path(folder) / "genesis/byron-genesis.json").read_text())
             self.assertEqual(byron["protocolConsts"]["k"], 2160)
