@@ -31,11 +31,29 @@ def prepare_genesis(args, peer):
             raise ValueError(f"Missing native DevKit configuration field: {field}")
         return configuration.parent / match[1]
 
-    byron_path = genesis_path("ByronGenesisFile")
-    byron = json.loads(byron_path.read_text())
-    shelley = json.loads(genesis_path("ShelleyGenesisFile").read_text())
+    shelley_path = genesis_path("ShelleyGenesisFile")
+    shelley = json.loads(shelley_path.read_text())
     if shelley.get("securityParam") != expected_security:
         raise ValueError(f"Expected DevKit Shelley securityParam {expected_security}")
+    conway_path = genesis_path("ConwayGenesisFile")
+    conway = json.loads(conway_path.read_text())
+    parameters = json.loads((Path(__file__).resolve().parents[1] / "config/protocol-parameters.json").read_text())
+    expected_model = parameters["costModels"]["PlutusV3"]
+    if parameters["protocolVersion"]["major"] != 11 or len(expected_model) != 350:
+        raise ValueError("Expected the pinned protocol-11 PlutusV3 cost model")
+    if shelley.get("protocolParams", {}).get("protocolVersion", {}).get("major") != 11:
+        raise ValueError("DevKit requires protocol version 11, reset the DevKit network")
+    if conway.get("plutusV3CostModel") != expected_model:
+        database = argument_path(args, "--database-path")
+        if database.exists() and (not database.is_dir() or any(database.iterdir())):
+            raise ValueError("Retained DevKit cost model differs from protocol 11, reset the DevKit network")
+        conway["plutusV3CostModel"] = expected_model
+        temporary = conway_path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(conway, indent=2) + "\n")
+        temporary.replace(conway_path)
+
+    byron_path = genesis_path("ByronGenesisFile")
+    byron = json.loads(byron_path.read_text())
     if byron.get("protocolConsts", {}).get("k") == expected_security:
         return
     database = argument_path(args, "--database-path")

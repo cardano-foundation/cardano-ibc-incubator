@@ -37,6 +37,7 @@ describe('Lucid provider evaluation diagnostics', () => {
       new Response(
         JSON.stringify({
           result: {
+            version: { major: 11, minor: 0 },
             utxoCostPerByte: 4310,
             plutusCostModels: { 'plutus:v1': [1], 'plutus:v2': [2] },
             scriptExecutionPrices: { memory: '1/100', cpu: '1/1000' },
@@ -66,6 +67,7 @@ describe('Lucid provider evaluation diagnostics', () => {
       Kupmios: jest.fn(() => ({})), Lucid: construct, SLOT_CONFIG_NETWORK: slotConfig,
     }));
     jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ result: {
+      version: { major: 11, minor: 0 },
       utxoCostPerByte: 4310, plutusCostModels: { 'plutus:v3': [1] },
       scriptExecutionPrices: { memory: '1/100', cpu: '1/1000' },
     } })));

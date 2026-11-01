@@ -259,6 +259,9 @@ export function mapOgmiosProtocolParameters(result: any): any {
     throw new Error('Ogmios protocol parameters response is missing result');
   }
 
+  if (result.version?.major !== 11) {
+    throw new Error('Cardano protocol version 11 is required');
+  }
   const coinsPerUtxoByte = result.utxoCostPerByte ?? result.minUtxoDepositCoefficient;
   if (coinsPerUtxoByte === undefined || coinsPerUtxoByte === null) {
     throw new Error('Ogmios protocol parameters response is missing utxoCostPerByte/minUtxoDepositCoefficient');
@@ -1017,7 +1020,7 @@ export const LucidClient = {
       presetProtocolParameters: protocolParameters,
       // Lucid Evolution's maintainer advised us to move to Scalus while reviewing our evaluator update.
       // https://github.com/Anastasia-Labs/lucid-evolution/pull/734
-      evaluator: createScalusEvaluator({ protocolMajorVersion: 10 }),
+      evaluator: createScalusEvaluator({ protocolMajorVersion: 11 }),
       slotConfig,
     } as any);
     console.log('[startup] Lucid constructed successfully');

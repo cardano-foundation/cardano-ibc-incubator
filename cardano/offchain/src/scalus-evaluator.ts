@@ -1,6 +1,6 @@
 import { createScalusEvaluator } from "@lucid-evolution/scalus-uplc";
 
-export const CARDANO_PROTOCOL_MAJOR_VERSION = 10;
+export const CARDANO_PROTOCOL_MAJOR_VERSION = 11;
 
 export class ScriptEvaluationFailure extends Error {
   override name = "ScriptEvaluationFailure";
@@ -34,10 +34,12 @@ export function isScriptEvaluationFailure(error: unknown): boolean {
 export function customEmulatorSlotConfig(emulator: { now(): number }) {
   return { zeroTime: emulator.now(), zeroSlot: 0, slotLength: 1000 };
 }
-export function createCardanoScalusEvaluator(
-  protocolMajorVersion = CARDANO_PROTOCOL_MAJOR_VERSION,
-): ReturnType<typeof createScalusEvaluator> {
-  const evaluator = createScalusEvaluator({ protocolMajorVersion });
+export function createCardanoScalusEvaluator(): ReturnType<
+  typeof createScalusEvaluator
+> {
+  const evaluator = createScalusEvaluator({
+    protocolMajorVersion: CARDANO_PROTOCOL_MAJOR_VERSION,
+  });
   return {
     ...evaluator,
     evaluate: async (input) => {

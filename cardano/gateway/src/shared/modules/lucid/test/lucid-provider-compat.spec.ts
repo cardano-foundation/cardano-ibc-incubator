@@ -9,6 +9,7 @@ import { Lucid } from '@lucid-evolution/lucid';
 
 function protocolParameters(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
+    version: { major: 11, minor: 0 },
     minFeeCoefficient: 44,
     minFeeConstant: { ada: { lovelace: 155381 } },
     maxTransactionSize: { bytes: 16384 },
@@ -33,6 +34,11 @@ function protocolParameters(overrides: Record<string, unknown> = {}): Record<str
 }
 
 describe('Ogmios protocol parameter compatibility', () => {
+  it.each([undefined, 10, 12])('rejects unsupported protocol version %s', (major) => {
+    expect(() => mapOgmiosProtocolParameters(protocolParameters({ version: { major } })))
+      .toThrow('Cardano protocol version 11 is required');
+  });
+
   afterEach(() => {
     jest.useRealTimers();
     jest.restoreAllMocks();

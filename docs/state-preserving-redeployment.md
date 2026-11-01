@@ -62,7 +62,7 @@ That run also resumed an interrupted handover and recovered after a real migrati
 
 Later contract optimizations at `e46111cfe` passed 1,576 Aiken smoke tests, a 261-test broader selection with 27 properties at 1,000 iterations, and 12 guard-removal controls. Compiled tests exercised authorization, containment and restoration, ordinary UTxO turnover, conservation attacks, partial migration and repeated successors. Separate economic models and generated populations broadened coverage, but seeded state and model histories are not two-chain settlement evidence. Its [fresh CI](https://github.com/cardano-foundation/cardano-ibc-incubator/actions/runs/35342732725) failed during population, so current contract artifacts still lack that complete network acceptance.
 
-The evaluator replacement at `0cf9919df` first validated the updated Aiken evaluator against the existing migration measurements. The Gateway and off-chain tools now use the Scalus evaluator provided by Lucid Evolution instead of retaining that vendored build. Regression coverage still verifies the extended cost table and explicit protocol-10 selection. This build has no fresh populated two-chain acceptance or protocol-11 bridge qualification.
+The evaluator replacement at `0cf9919df` first validated the updated Aiken evaluator against the existing migration measurements. The Gateway and off-chain tools now use the Scalus evaluator provided by Lucid Evolution instead of retaining that vendored build. Regression coverage now verifies the protocol-11 cost table and explicit protocol-11 selection. A fresh populated two-chain acceptance is still required before production qualification.
 
 ## Scale, reproduction and release limits
 
