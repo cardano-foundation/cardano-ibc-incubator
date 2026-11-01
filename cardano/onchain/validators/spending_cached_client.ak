@@ -1,10 +1,14 @@
+use aiken/builtin
 use cardano/address.{Credential, Script}
 use cardano/assets.{PolicyId}
 use cardano/transaction.{OutputReference, Transaction}
 use ibc/auth
+use ibc/client/ics_007_tendermint_client/cached/types.{
+  CachedClientRedeemer, CachedUpdate,
+}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/multitx/client_redeemer.{
-  CachedUpdate, SpendMultitxClientRedeemer,
+  SpendMultitxClientRedeemer,
 }
 use ibc/implementation/spending_multitx_client
 use ibc/utils/forwarding
@@ -18,29 +22,29 @@ validator spend_cached_client(
 ) {
   spend(
     datum: Option<ClientDatum>,
-    redeemer: SpendMultitxClientRedeemer,
+    raw: Data,
     own_ref: OutputReference,
     tx: Transaction,
   ) {
-    when redeemer is {
-      CachedUpdate { .. } -> {
-        expect Some(datum) = datum
-        expect Some(input) = transaction.find_input(tx.inputs, own_ref)
-        expect auth.contain_auth_token(input.output, datum.token)
-        let subject: Data = datum.token
-        forwarding.require_zero(Script(cached_script), subject, tx)
-      }
-      _ ->
-        spending_multitx_client.validate_guard(
-          True,
-          host_policy,
-          staged_script,
-          recovery,
-          datum,
-          redeemer,
-          own_ref,
-          tx,
-        )
+    if builtin.un_constr_data(raw).1st == 6 {
+      expect CachedUpdate { .. }: CachedClientRedeemer = raw
+      expect Some(datum) = datum
+      expect Some(input) = transaction.find_input(tx.inputs, own_ref)
+      expect auth.contain_auth_token(input.output, datum.token)
+      let subject: Data = datum.token
+      forwarding.require_zero(Script(cached_script), subject, tx)
+    } else {
+      expect redeemer: SpendMultitxClientRedeemer = raw
+      spending_multitx_client.validate_guard(
+        True,
+        host_policy,
+        staged_script,
+        recovery,
+        datum,
+        redeemer,
+        own_ref,
+        tx,
+      )
     }
   }
 

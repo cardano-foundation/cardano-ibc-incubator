@@ -65,3 +65,16 @@ pub type Update {
   sets: List<SetUpdate>,
   history_siblings: List<ByteArray>,
 }
+
+/// Keep the new witness out of administrative and staged redeemer decoders.
+/// The first six tags are reserved for the existing staged ABI. Only tag six
+/// is decoded as this type. Other tags go to the existing staged decoder.
+pub type CachedClientRedeemer {
+  ReservedFinalizeUpdate
+  ReservedDirectUpdate
+  ReservedRecoverClient
+  ReservedFinalizeMisbehaviour
+  ReservedReclaimClient
+  ReservedUpgradeClient
+  CachedUpdate { update: Update }
+}

@@ -6,15 +6,14 @@ use cardano/assets.{PolicyId}
 use cardano/certificate.{Certificate}
 use cardano/transaction.{Spend, Transaction}
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/cached/types.{CacheDatum}
+use ibc/client/ics_007_tendermint_client/cached/types.{
+  CacheDatum, CachedClientRedeemer, CachedUpdate,
+}
 use ibc/client/ics_007_tendermint_client/cached/verify
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set
 use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/header.{Header}
-use ibc/client/ics_007_tendermint_client/multitx/client_redeemer.{
-  CachedUpdate, SpendMultitxClientRedeemer,
-}
 use ibc/utils/forwarding
 use ibc/utils/tx_time.{TxTime}
 use ibc/utils/validator_utils
@@ -36,7 +35,7 @@ validator update_cached_client(
     expect datum.token == subject
     expect Some(raw_spend) =
       pairs.get_first(tx.redeemers, Spend(client.output_reference))
-    expect CachedUpdate { update }: SpendMultitxClientRedeemer = raw_spend
+    expect CachedUpdate { update }: CachedClientRedeemer = raw_spend
     expect update.cache_token.policy_id == cache_policy
     expect [cache_input] =
       list.filter(

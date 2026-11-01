@@ -18,25 +18,25 @@
       "mode": "hit",
       "measured": {
         "signedBytes": 5273,
-        "referencedScriptBytes": 39916,
-        "memory": 13116568,
-        "steps": 6074833136,
-        "fee": 2224079
+        "referencedScriptBytes": 39699,
+        "memory": 13112602,
+        "steps": 6090401826,
+        "fee": 2221067
       },
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 743594,
-          "steps": 228038492
+          "memory": 737774,
+          "steps": 226673528
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 839954,
-          "steps": 255280356
+          "memory": 833338,
+          "steps": 253553662
         },
         {
           "script": "host_state_stt",
@@ -49,16 +49,16 @@
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 8523269,
-          "steps": 3977615381
+          "memory": 8531739,
+          "steps": 3996275729
         }
       ],
       "publicationBytes": [
         16186,
         10020,
         4554,
-        3870,
-        5228,
+        3888,
+        4993,
         15844
       ],
       "missedBudgets": [
@@ -72,31 +72,31 @@
       "targetSiblings": 5,
       "trustedSiblings": 0,
       "admissionFee": 2127241,
-      "signedTransactionSha256": "d726bbeae1c10598a122f45807924fe65c0733951924e5aa947cf25e59d81b74"
+      "signedTransactionSha256": "66084fa33559a20feb2079566c56384c7abdeea61bdae646a36662e1109e8ba4"
     },
     {
       "mode": "powers",
       "measured": {
         "signedBytes": 6117,
-        "referencedScriptBytes": 39916,
-        "memory": 15676065,
-        "steps": 6880415306,
-        "fee": 2466980
+        "referencedScriptBytes": 39699,
+        "memory": 15672099,
+        "steps": 6895983996,
+        "fee": 2463968
       },
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 883602,
-          "steps": 269162474
+          "memory": 877782,
+          "steps": 267797510
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 979962,
-          "steps": 296404338
+          "memory": 973346,
+          "steps": 294677644
         },
         {
           "script": "host_state_stt",
@@ -109,16 +109,16 @@
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 10802750,
-          "steps": 4700949587
+          "memory": 10811220,
+          "steps": 4719609935
         }
       ],
       "publicationBytes": [
         16186,
         10020,
         4554,
-        3870,
-        5228,
+        3888,
+        4993,
         15844
       ],
       "missedBudgets": [
@@ -132,31 +132,31 @@
       "targetSiblings": 5,
       "trustedSiblings": 5,
       "admissionFee": 2127241,
-      "signedTransactionSha256": "aea7305d4e3a63b79d109a70b7126c48a794e9c30276aa8b27f270d271fe5c42"
+      "signedTransactionSha256": "ba54a55e3f982725ea9d197b602d1dba5a58229785b707e6d9457827579233c0"
     },
     {
       "mode": "adjacent",
       "measured": {
         "signedBytes": 5273,
-        "referencedScriptBytes": 39916,
-        "memory": 13110546,
-        "steps": 6076910222,
-        "fee": 2223881
+        "referencedScriptBytes": 39699,
+        "memory": 13102950,
+        "steps": 6084481620,
+        "fee": 2220083
       },
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 743594,
-          "steps": 228038492
+          "memory": 737774,
+          "steps": 226673528
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 839954,
-          "steps": 255280356
+          "memory": 833338,
+          "steps": 253553662
         },
         {
           "script": "host_state_stt",
@@ -169,16 +169,16 @@
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 8517247,
-          "steps": 3979692467
+          "memory": 8522087,
+          "steps": 3990355523
         }
       ],
       "publicationBytes": [
         16186,
         10020,
         4554,
-        3870,
-        5228,
+        3888,
+        4993,
         15844
       ],
       "missedBudgets": [
@@ -192,31 +192,31 @@
       "targetSiblings": 5,
       "trustedSiblings": 0,
       "admissionFee": 2126717,
-      "signedTransactionSha256": "06d1e71ecff7d6fa51bc21b3e6975af64866929ad768cc2497a4451c213d1f0f"
+      "signedTransactionSha256": "e0b88e428559cfad35ee9a654d30bc1d908358992c0ef4c2326cd6265f95cae3"
     },
     {
       "mode": "full",
       "measured": {
         "signedBytes": 2460,
-        "referencedScriptBytes": 57856,
-        "memory": 10468540,
-        "steps": 4348091218,
-        "fee": 2169899
+        "referencedScriptBytes": 56856,
+        "memory": 10476096,
+        "steps": 4366912110,
+        "fee": 2150092
       },
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 313534,
-          "steps": 99149836
+          "memory": 314726,
+          "steps": 99675164
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 865992,
-          "steps": 279947122
+          "memory": 865286,
+          "steps": 279806338
         },
         {
           "script": "host_state_stt",
@@ -243,16 +243,16 @@
           "script": "update_staged_client",
           "tag": 3,
           "index": 0,
-          "memory": 3983169,
-          "steps": 1649298217
+          "memory": 3990239,
+          "steps": 1667734565
         }
       ],
       "publicationBytes": [
         16186,
         10020,
         4554,
-        3870,
-        5228,
+        3888,
+        4993,
         15844
       ],
       "missedBudgets": [
@@ -344,7 +344,7 @@
           "steps": 340427149
         }
       ],
-      "signedTransactionSha256": "976c869d19c3132e2a7f6c1b57051c1d7d6737485e9c3f3c9f5d42bdd2fc6a80"
+      "signedTransactionSha256": "5602fc1e8926332c35c70a0afe78a470a3e018185909f47fb6da7245f83e781e"
     }
   ]
 }

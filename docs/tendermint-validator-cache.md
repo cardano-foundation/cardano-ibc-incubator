@@ -12,15 +12,15 @@ The ordinary path verifies the header and writes the client, cache and HostState
 
 This is an opt-in prototype through `loadCachedTendermintValidators`. The normal Gateway deployment and routing are unchanged. A deployment using this loader must register its client spending validator and mint the cache during client creation. Existing deployed clients are not migrated. The signed fixture demonstrates creation, reference-script publication, direct updates and staged cache refresh.
 
-The [retained report](../tests/tendermint-cache/evidence/report.json) measures complete signed transactions with Scalus at protocol version 10 and the repository's retained mainnet parameters. Every script referenced by a direct update is first published in a real signed transaction. The cache-hit update costs about 2.22 ADA. The two-power-change update costs about 2.47 ADA. Both fit the retained ledger limits. The changed-set case uses a synthetic trusted bootstrap with two one-unit power reductions and the retained real Injective target header and signatures. The staged fallback also replaces one trusted public key. These are not live changed-set samples.
+The [retained report](../tests/tendermint-cache/evidence/report.json) measures complete signed transactions with Scalus at protocol version 10 and the repository's retained mainnet parameters. Every script referenced by a direct update is first published in a real signed transaction. The cache-hit update costs about 2.22 ADA. The two-power-change update costs about 2.46 ADA. Both fit the retained ledger limits. The changed-set case uses a synthetic trusted bootstrap with two one-unit power reductions and the retained real Injective target header and signatures. The staged fallback also replaces one trusted public key. These are not live changed-set samples.
 
 | Component | Acceptance budget | Cache hit | Two changed powers |
 | --- | ---: | ---: | ---: |
 | Signed bytes | 4,000 | 5,273 | 6,117 |
-| Referenced script bytes | 20,000 | 39,916 | 39,916 |
-| Execution memory | 4,000,000 | 13,116,568 | 15,676,065 |
-| Execution CPU | 1,900,000,000 | 6,074,833,136 | 6,880,415,306 |
-| Complete fee in ADA | 1.000000 | 2.224079 | 2.466980 |
+| Referenced script bytes | 20,000 | 39,699 | 39,699 |
+| Execution memory | 4,000,000 | 13,112,602 | 15,672,099 |
+| Execution CPU | 1,900,000,000 | 6,090,401,826 | 6,895,983,996 |
+| Complete fee in ADA | 1.000000 | 2.221067 | 2.463968 |
 
 The 1 ADA target is not met. Its stated component budget calculates to 0.999171 ADA. Script references and execution remain over budget after compacting the witnesses. The report includes costs per redeemer so the remaining work can be attributed to the header/history verifier and HostState transition. The staged row reports finalization separately from its verification transactions. Client creation, stake registration and reference publication are bootstrap costs outside the ordinary-update fee. This is an emulator measurement rather than an accepted mainnet transaction. Costs can vary slightly with transaction input ordering.
 
