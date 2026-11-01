@@ -16,13 +16,16 @@ def native_files(folder, k=48):
         "bootStakeholders": {"native-key": 1},
     }))
     (root / "genesis/shelley-genesis.json").write_text(json.dumps({"securityParam": 48, "protocolParams": {"protocolVersion": {"major": 11, "minor": 0}}}))
-    model = json.loads((Path(__file__).resolve().parents[1] / "config/protocol-parameters.json").read_text())["costModels"]["PlutusV3"]
-    (root / "genesis/conway-genesis.json").write_text(json.dumps({"plutusV3CostModel": model}))
+    models = json.loads((Path(__file__).resolve().parents[1] / "config/protocol-parameters.json").read_text())["costModels"]
+    model = models["PlutusV3"]
+    (root / "genesis/conway-genesis.json").write_text(json.dumps({"plutusV3CostModel": model[:251]}))
+    (root / "genesis/alonzo-genesis.json").write_text(json.dumps({"extraConfig": {"costModels": models}}))
     (root / "genesis-seeded").touch()
     configuration = root / "configuration.yaml"
     configuration.write_text("ByronGenesisFile: ./genesis/byron-genesis.json\n"
                              "ShelleyGenesisFile: ./genesis/shelley-genesis.json\n"
-                             "ConwayGenesisFile: ./genesis/conway-genesis.json\n")
+                             "ConwayGenesisFile: ./genesis/conway-genesis.json\n"
+                             "AlonzoGenesisFile: ./genesis/alonzo-genesis.json\n")
     return ["run", "--config", str(configuration), "--database-path", str(root / "db")]
 
 
@@ -100,6 +103,7 @@ class GenesisTests(unittest.TestCase):
                         "ByronGenesisFile": "./genesis/byron-genesis.json",
                         "ShelleyGenesisFile": "./genesis/shelley-genesis.json",
                         "ConwayGenesisFile": "./genesis/conway-genesis.json",
+                        "AlonzoGenesisFile": "./genesis/alonzo-genesis.json",
                         "ExperimentalHardForksEnabled": True,
                         "TestEnableDevelopmentHardForkEras": True,
                     }))
@@ -126,7 +130,10 @@ class GenesisTests(unittest.TestCase):
             conway.write_text(json.dumps({"plutusV3CostModel": [1] * 297}))
             prepare_genesis(args, peer=False)
             model = json.loads(conway.read_text())["plutusV3CostModel"]
-            self.assertEqual(len(model), 350)
+            self.assertEqual(len(model), 251)
+            alonzo = Path(folder) / "genesis/alonzo-genesis.json"
+            overrides = json.loads(alonzo.read_text())["extraConfig"]["costModels"]
+            self.assertEqual(len(overrides["PlutusV3"]), 350)
             (Path(folder) / "db").mkdir()
             (Path(folder) / "db/block").touch()
             original = conway.read_bytes()
@@ -137,6 +144,14 @@ class GenesisTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Retained DevKit cost model"):
                 prepare_genesis(args, peer=False)
             self.assertEqual(conway.read_bytes(), original)
+            conway.write_text(json.dumps({"plutusV3CostModel": model}))
+            value = json.loads(alonzo.read_text())
+            value["extraConfig"]["costModels"]["PlutusV3"] = [1] * 350
+            alonzo.write_text(json.dumps(value))
+            original = alonzo.read_bytes()
+            with self.assertRaisesRegex(ValueError, "Retained DevKit cost model"):
+                prepare_genesis(args, peer=False)
+            self.assertEqual(alonzo.read_bytes(), original)
 
     def test_old_ledger_protocol_is_rejected_without_changing_genesis(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -157,6 +172,7 @@ class GenesisTests(unittest.TestCase):
                 "ByronGenesisFile": "./genesis/byron-genesis.json",
                 "ShelleyGenesisFile": "./genesis/shelley-genesis.json",
                 "ConwayGenesisFile": "./genesis/conway-genesis.json",
+                        "AlonzoGenesisFile": "./genesis/alonzo-genesis.json",
             }))
             prepare_genesis(args, peer=False)
             byron = json.loads((Path(folder) / "genesis/byron-genesis.json").read_text())

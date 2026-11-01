@@ -37,20 +37,29 @@ def prepare_genesis(args, peer):
         raise ValueError(f"Expected DevKit Shelley securityParam {expected_security}")
     conway_path = genesis_path("ConwayGenesisFile")
     conway = json.loads(conway_path.read_text())
+    alonzo_path = genesis_path("AlonzoGenesisFile")
+    alonzo = json.loads(alonzo_path.read_text())
     parameters = json.loads((Path(__file__).resolve().parents[1] / "config/protocol-parameters.json").read_text())
-    expected_model = parameters["costModels"]["PlutusV3"]
-    if parameters["protocolVersion"]["major"] != 11 or len(expected_model) != 350:
+    expected_models = parameters["costModels"]
+    expected_v3 = expected_models["PlutusV3"]
+    if parameters["protocolVersion"]["major"] != 11 or len(expected_v3) != 350:
         raise ValueError("Expected the pinned protocol-11 PlutusV3 cost model")
     if shelley.get("protocolParams", {}).get("protocolVersion", {}).get("major") != 11:
         raise ValueError("DevKit requires protocol version 11, reset the DevKit network")
-    if conway.get("plutusV3CostModel") != expected_model:
+    # Conway's genesis parser fixes this field at the original 251 entries.
+    # The ledger's test-network override installs the complete current models
+    # after the era transition, as in cardano-node's workbench.
+    if (conway.get("plutusV3CostModel") != expected_v3[:251]
+            or alonzo.get("extraConfig", {}).get("costModels") != expected_models):
         database = argument_path(args, "--database-path")
         if database.exists() and (not database.is_dir() or any(database.iterdir())):
             raise ValueError("Retained DevKit cost model differs from protocol 11, reset the DevKit network")
-        conway["plutusV3CostModel"] = expected_model
-        temporary = conway_path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(conway, indent=2) + "\n")
-        temporary.replace(conway_path)
+        conway["plutusV3CostModel"] = expected_v3[:251]
+        alonzo.setdefault("extraConfig", {})["costModels"] = expected_models
+        for path, value in [(conway_path, conway), (alonzo_path, alonzo)]:
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(value, indent=2) + "\n")
+            temporary.replace(path)
 
     # DevKit enables development hard forks in its template. Protocol 11 uses
     # Conway and must not ask the node to initialize experimental Dijkstra.
