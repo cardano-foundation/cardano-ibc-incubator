@@ -18,6 +18,7 @@ const cases: {
   id: string;
   mode: "hit" | "powers" | "adjacent" | "full";
   options?: CacheFixtureOptions;
+  requireDirect?: boolean;
 }[] = [
   { id: "hit", mode: "hit" },
   { id: "powers", mode: "powers" },
@@ -43,6 +44,16 @@ const cases: {
     options: { historyRecords: 100, twoRecords: true, signerCount: 24 },
   },
   {
+    id: "populated-three",
+    mode: "powers",
+    options: {
+      changedIndices: [0, 14, 26],
+      historyRecords: 100,
+      twoRecords: true,
+      signerCount: 24,
+    },
+  },
+  {
     id: "populated-powers",
     mode: "powers",
     options: {
@@ -52,10 +63,21 @@ const cases: {
       signerCount: 24,
     },
   },
+  {
+    id: "dispersed-eight",
+    mode: "powers",
+    requireDirect: false,
+    options: {
+      changedIndices: [0, 6, 12, 18, 24, 30, 36, 42],
+      historyRecords: 100,
+      twoRecords: true,
+      signerCount: 24,
+    },
+  },
   { id: "adjacent", mode: "adjacent" },
   { id: "full", mode: "full" },
 ];
-for (const { id, mode, options } of cases) {
+for (const { id, mode, options, requireDirect = mode !== "full" } of cases) {
   const { signedCbor, ...result } = await cachedUpdateFixture(
     mode,
     "none",
@@ -63,6 +85,7 @@ for (const { id, mode, options } of cases) {
   );
   measurements.push({
     id,
+    requireDirect,
     ...result,
     signedTransactionSha256: createHash("sha256").update(signedCbor, "hex")
       .digest("hex"),
@@ -98,6 +121,13 @@ const report = {
     memory: parameters.maxTxExMem,
     steps: parameters.maxTxExSteps,
   },
+  directAcceptance: {
+    completeFeeBelow: 3_000_000,
+    transactions: 1,
+    headroomPercent: 5,
+    modes:
+      "Cache hits and retained two-, three- and four-power-change cases, including populated history and 24 signers",
+  },
   acceptanceBudget: CACHED_UPDATE_BUDGET,
   modeledBudgetFee: parameters.minFeeA * CACHED_UPDATE_BUDGET.signedBytes +
     parameters.minFeeB +
@@ -121,4 +151,21 @@ if (
   throw new Error(
     "Complete cached update exceeds the 1 ADA acceptance budget. See missedBudgets for the measured components.",
   );
+}
+
+if (Deno.args.includes("--assert-direct-budget")) {
+  const failed = measurements.filter((result) =>
+    result.requireDirect && (
+      result.path !== "direct" || result.updateTransactions !== 1 ||
+      result.completeFee >= 3_000_000 || result.directBudget?.fits !== true ||
+      result.directBudget.headroomPercent !== 5
+    )
+  );
+  if (failed.length) {
+    throw new Error(
+      `Direct update acceptance failed: ${
+        failed.map((result) => result.id).join(", ")
+      }. Every required case must submit one transaction below 3 ADA with the existing 5% reserve.`,
+    );
+  }
 }

@@ -6,9 +6,7 @@ use cardano/assets
 use cardano/transaction.{OutputReference, Spend, Transaction}
 use ibc/auth
 use ibc/client/ics_007_tendermint_client/cached/identity
-use ibc/client/ics_007_tendermint_client/cached/types.{
-  CacheDatum, CachedClientRedeemer, CachedUpdate, Record,
-}
+use ibc/client/ics_007_tendermint_client/cached/types.{CacheDatum, Record}
 use ibc/client/ics_007_tendermint_client/cached/verify
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
   CheckStagedClientHistory,
@@ -71,9 +69,9 @@ validator spend_validator_cache(
       expect Some(raw) =
         pairs.get_first(tx.redeemers, Spend(client.output_reference))
       if builtin.un_constr_data(raw).1st == 6 {
-        expect CachedUpdate { update }: CachedClientRedeemer = raw
+        let cache_token = identity.update_cache_token(raw)
         let expected: Data = datum.client_token
-        update.cache_token == datum.token && forwarding.require_zero(
+        cache_token == datum.token && forwarding.require_zero(
           Script(cached_script),
           expected,
           tx,

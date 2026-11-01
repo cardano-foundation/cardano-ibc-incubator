@@ -33,8 +33,8 @@ import {
   cacheRecordData,
   compactStateSiblings,
   missedCacheBudgets,
-  powerUpdate,
   rotateCache,
+  sharedPowerUpdate,
   validatorMultiproof,
 } from "../src/tendermint-cache.ts";
 import { selectTendermintQuorumWitnesses } from "../../gateway/src/tx/tendermint-quorum-witnesses.ts";
@@ -71,6 +71,7 @@ export type CacheMutation =
   | "none"
   | "total"
   | "signature"
+  | "malformed-header"
   | "position"
   | "overlap"
   | "history"
@@ -87,7 +88,18 @@ export type CacheMutation =
   | "missing-verifier"
   | "admission-client"
   | "admission-shadow"
-  | "admission-missing-cache";
+  | "admission-missing-cache"
+  | "shared-old-power"
+  | "shared-new-power"
+  | "shared-key"
+  | "shared-position"
+  | "shared-missing-signer"
+  | "shared-missing-neighbor"
+  | "shared-extra-hash"
+  | "shared-missing-hash"
+  | "shared-trusted-witness"
+  | "shared-target-witness"
+  | "shared-old-root";
 
 export interface CacheFixtureOptions {
   changedIndices?: number[];
@@ -178,7 +190,7 @@ export async function cachedUpdateFixture(
     ...(additionalSet.length ? [cacheRecord(additionalSet)] : []),
   ];
   // The changed-set case uses a synthetic trusted bootstrap with the retained
-  // public keys and two one-unit power changes. Target signatures are real.
+  // public keys and the requested one-unit power changes. Signatures are real.
   const trustedRoot = !changed ? h.validators_hash : initialRecord.root;
   const height = (n: bigint) => c([1n, n]);
   const trustedHeight = height(
@@ -473,7 +485,7 @@ export async function cachedUpdateFixture(
   const indices = [...selectedIndices].sort((a, b) => a - b);
   if (mutation === "quorum") indices.pop();
   const target = indices.map((index) => retainedLeaves[index]);
-  const trustedIndices = !changed
+  const trustedIndices = !changed || mode === "powers"
     ? []
     : [...selection.memberships].map((index) =>
       oldLeaves.findIndex((leaf) =>
@@ -520,14 +532,16 @@ export async function cachedUpdateFixture(
       signatures,
     ]),
   ]);
-  const targetSiblings = validatorMultiproof(retainedLeaves, indices);
+  const targetSiblings = mode === "powers"
+    ? []
+    : validatorMultiproof(retainedLeaves, indices);
   const trustedSiblings = trusted.length
     ? validatorMultiproof(oldLeaves, trustedIndices)
     : [];
   const sets = !changed
     ? []
     : mode === "powers"
-    ? [powerUpdate(oldLeaves, retainedLeaves)!]
+    ? [sharedPowerUpdate(oldLeaves, retainedLeaves, indices)!]
     : [c([retainedLeaves.map(cacheLeafData)])];
   let session: Awaited<ReturnType<typeof submitHistorySession>> | undefined;
   async function initializeStage() {
@@ -687,6 +701,82 @@ export async function cachedUpdateFixture(
     if (mutation === "position") {
       targetData[1].fields[0] = targetData[0].fields[0];
     }
+    const setData = sets.map((set) => Data.from(encode(set)) as Constr<Data>);
+    let suppliedTargetSiblings = targetSiblings;
+    let suppliedTrusted = trusted.map(cacheLeafData);
+    let suppliedTrustedSiblings = trustedSiblings;
+    if (mode === "powers") {
+      const sharedLeaves = setData[0].fields[1] as Constr<Data>[];
+      const signer = sharedLeaves.find((leaf) =>
+        leaf.fields[0] === targetData[0].fields[0]
+      )!;
+      if (mutation === "overlap" || mutation === "shared-old-power") {
+        signer.fields[2] = (signer.fields[2] as bigint) - 1n;
+      }
+      if (mutation === "shared-new-power") {
+        signer.fields[3] = (signer.fields[3] as bigint) + 1n;
+      }
+      if (mutation === "shared-key") signer.fields[1] = "ff".repeat(32);
+      if (mutation === "shared-position") {
+        sharedLeaves[1].fields[0] = sharedLeaves[0].fields[0];
+      }
+      if (
+        mutation === "shared-missing-signer" ||
+        mutation === "shared-missing-neighbor"
+      ) {
+        const omitted = mutation === "shared-missing-signer"
+          ? Number(targetData.at(-1)!.fields[0])
+          : (options.changedIndices ?? [0, 2]).at(-1)! + 1;
+        const remaining = sharedLeaves.filter((leaf) =>
+          Number(leaf.fields[0]) !== omitted
+        );
+        // Rebuild a valid frontier without this leaf so rejection must enforce
+        // signer coverage or the ordering boundary, rather than root mismatch.
+        setData[0].fields[1] = remaining;
+        setData[0].fields[2] = validatorMultiproof(
+          oldLeaves,
+          remaining.map((leaf) => Number(leaf.fields[0])),
+        );
+      }
+      if (mutation === "shared-extra-hash") {
+        (setData[0].fields[2] as string[]).push("11".repeat(32));
+      }
+      if (mutation === "shared-missing-hash") {
+        (setData[0].fields[2] as string[]).pop();
+      }
+      if (mutation === "shared-trusted-witness") {
+        suppliedTrusted = [cacheLeafData(oldLeaves[indices[0]])];
+        suppliedTrustedSiblings = validatorMultiproof(oldLeaves, [indices[0]]);
+      }
+      if (mutation === "shared-target-witness") {
+        suppliedTargetSiblings = validatorMultiproof(retainedLeaves, indices);
+      }
+      if (mutation === "shared-old-root") {
+        assert(initialRecords.length === 2);
+        const otherOldLeaves = retainedLeaves.map((leaf) => ({ ...leaf }));
+        otherOldLeaves[0].power -= 2n;
+        const otherRecord = cacheRecord(otherOldLeaves);
+        assert(otherRecord.root !== initialRecord.root);
+        // Assumed authenticated two-record pre-state for this security test.
+        // This replaces the setup mint's second record rather than replaying
+        // earlier cache transitions. Both denominators and roots are computed
+        // from complete canonical sets. The replacement proof is fully valid
+        // for that second root, but it is not the client's trusted root.
+        const assumedCache = Data.from(cache.datum!) as Constr<Data>;
+        assumedCache.fields[3] = [
+          cacheRecordData(initialRecord),
+          cacheRecordData(otherRecord),
+        ];
+        cache.datum = encode(assumedCache);
+        emulator.ledger[cache.txHash + cache.outputIndex].utxo.datum =
+          cache.datum;
+        setData[0] = sharedPowerUpdate(
+          otherOldLeaves,
+          retainedLeaves,
+          indices,
+        )!;
+      }
+    }
     let suppliedCacheToken = cacheToken;
     if (mutation === "unrelated-cache") {
       const unrelatedClient = c([clientPolicy, "99"]);
@@ -707,13 +797,13 @@ export async function cachedUpdateFixture(
     }
     const update = c([
       mutation === "cache-token" ? c([dummy, cacheName]) : suppliedCacheToken,
-      signedHeader,
+      mutation === "malformed-header" ? c([]) : signedHeader,
       trustedHeight,
       targetData,
-      targetSiblings,
-      mutation === "overlap" ? [] : trusted.map(cacheLeafData),
-      mutation === "overlap" ? [] : trustedSiblings,
-      sets,
+      suppliedTargetSiblings,
+      suppliedTrusted,
+      suppliedTrustedSiblings,
+      setData,
       compactStateSiblings(historySiblings),
     ]);
     const updateReference = session
@@ -849,6 +939,11 @@ export async function cachedUpdateFixture(
   );
   if (!session) assertEquals(signed.toTransaction().body().mint(), undefined);
   assertEquals((await lucid.utxosAt(scripts.cacheSpend[2])).length, 1);
+  assertEquals(
+    submittedTransactions.size,
+    1 + (session?.measurements.length ?? 0),
+    "Every submitted update transaction must be included in the complete fee",
+  );
   if (prepared?.path === "staged") {
     assert(
       !submittedTransactions.has(rejectedDirectCbor!),
@@ -920,7 +1015,7 @@ export async function cachedUpdateFixture(
     measured,
     completeFee: measured.fee +
       (session?.measurements.reduce((sum, tx) => sum + tx.fee, 0) ?? 0),
-    updateTransactions: 1 + (session?.measurements.length ?? 0),
+    updateTransactions: submittedTransactions.size,
     redeemerBudgets,
     publicationBytes,
     missedBudgets: missedCacheBudgets({
@@ -931,6 +1026,10 @@ export async function cachedUpdateFixture(
     signatures: target.length,
     targetSiblings: targetSiblings.length,
     trustedSiblings: trustedSiblings.length,
+    sharedLeaves: mode === "powers" ? (sets[0].fields[1] as Data[]).length : 0,
+    sharedSiblings: mode === "powers"
+      ? (sets[0].fields[2] as Data[]).length
+      : 0,
     admissionFee: Number(signedAdmission.toTransaction().body().fee()),
     admissionBudget,
     signedCbor: signed.toCBOR(),

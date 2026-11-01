@@ -116,6 +116,35 @@ export function powerUpdate(
   next: CacheLeaf[],
   maxChanges = 8,
 ): Constr<Data> | undefined {
+  return powerChangeWitness(old, next, [], maxChanges);
+}
+
+/** One frontier authenticates the changed powers, their ordering neighbors and
+ * every target signer against both roots. The verifier can then derive trusted
+ * overlap from these authenticated old powers without another membership proof.
+ * Complete transaction evaluation still determines whether this path fits. */
+export function sharedPowerUpdate(
+  old: CacheLeaf[],
+  next: CacheLeaf[],
+  signerIndices: number[],
+  maxChanges = 8,
+): Constr<Data> | undefined {
+  if (
+    !signerIndices.length ||
+    signerIndices.some((index, i) =>
+      !Number.isInteger(index) || index < 0 || index >= old.length ||
+      i > 0 && signerIndices[i - 1] >= index
+    )
+  ) throw new Error("Signer positions must be sorted and unique");
+  return powerChangeWitness(old, next, signerIndices, maxChanges);
+}
+
+function powerChangeWitness(
+  old: CacheLeaf[],
+  next: CacheLeaf[],
+  signerIndices: number[],
+  maxChanges: number,
+): Constr<Data> | undefined {
   const oldRecord = cacheRecord(old);
   cacheRecord(next);
   if (
@@ -126,11 +155,12 @@ export function powerUpdate(
     leaf,
   ) => leaf.index);
   if (!changed.length || changed.length > maxChanges) return undefined;
-  const covered = new Set(
-    changed.flatMap((index) => [index - 1, index, index + 1]).filter((index) =>
-      index >= 0 && index < old.length
-    ),
-  );
+  const covered = new Set([
+    ...signerIndices,
+    ...changed.flatMap((index) => [index - 1, index, index + 1]).filter((
+      index,
+    ) => index >= 0 && index < old.length),
+  ]);
   const indices = [...covered].sort((a, b) => a - b);
   return new Constr(1, [
     oldRecord.root,

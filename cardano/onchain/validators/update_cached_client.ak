@@ -80,8 +80,7 @@ validator update_cached_client(
         valid_from: validator_utils.get_tx_valid_from(tx.validity_range) * 1_000_000,
         valid_to: valid_to * 1_000_000,
       }
-    let records = verify.apply_sets(cache.records, update.sets)
-    let next_records = verify.header(datum, time, records, update)
+    let next_records = verify.header(datum, time, cache.records, update)
     let header =
       Header {
         signed_header: update.signed_header,

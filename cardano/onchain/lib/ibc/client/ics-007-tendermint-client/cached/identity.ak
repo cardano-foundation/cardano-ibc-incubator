@@ -1,3 +1,4 @@
+use aiken/builtin
 use aiken/cbor
 use aiken/collection/list
 use aiken/collection/pairs
@@ -23,6 +24,16 @@ pub fn token_name(subject: AuthToken) -> ByteArray {
       AuthToken { policy_id: subject.policy_id, name: subject.name },
     ),
   )
+}
+
+/// Spending guards need only this identity. The pinned withdrawal validator
+/// independently decodes and verifies every remaining update field.
+pub fn update_cache_token(raw: Data) -> AuthToken {
+  expect Pair(6, [payload]) = builtin.un_constr_data(raw)
+  expect Pair(0, [token,
+    _, _, _, _, _, _, _, _]) = builtin.un_constr_data(payload)
+  expect token: AuthToken = token
+  token
 }
 
 pub fn preserves(before: CacheDatum, after: CacheDatum) -> Bool {

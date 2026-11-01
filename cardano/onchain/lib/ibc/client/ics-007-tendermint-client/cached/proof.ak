@@ -5,8 +5,8 @@ use ibc/client/ics_007_tendermint_client/cached/types.{
   Leaf, PowerChange, Record, max_validators,
 }
 use ibc/client/ics_007_tendermint_client/cometbft/crypto/merkle/hash
-use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
 use ibc/client/ics_007_tendermint_client/multitx/types.{max_total_voting_power} as session_types
+use ibc/utils/bytes
 
 pub fn valid_power(power: Int) -> Bool {
   power > 0 && power <= max_total_voting_power
@@ -16,17 +16,18 @@ pub fn address(pubkey: ByteArray) -> ByteArray {
   builtin.sha2_256(pubkey) |> bytearray.take(20)
 }
 
-pub fn leaf_hash(pubkey: ByteArray, power: Int) -> ByteArray {
+/// Positive Ed25519 SimpleValidator encoding. The key length and protobuf
+/// field tags are fixed. Only the voting-power varint changes between roots.
+pub fn leaf_bytes(pubkey: ByteArray, power: Int) -> ByteArray {
   expect bytearray.length(pubkey) == 32 && valid_power(power)
-  tm_validator.bytes(
-    Validator {
-      address: #"",
-      pubkey,
-      voting_power: power,
-      proposer_priority: 0,
-    },
+  builtin.append_bytearray(
+    builtin.append_bytearray(#"0a220a20", pubkey),
+    builtin.cons_bytearray(16, bytes.encode_varint(power)),
   )
-    |> hash.leaf_hash_opt_sha2_256()
+}
+
+pub fn leaf_hash(pubkey: ByteArray, power: Int) -> ByteArray {
+  leaf_bytes(pubkey, power) |> hash.leaf_hash_opt_sha2_256()
 }
 
 pub fn ordered(
@@ -138,24 +139,28 @@ fn walk_changes(
     expect [leaf, ..rest] = leaves
     expect leaf.index >= start
     if count == 1 {
-      (
-        leaf_hash(leaf.pubkey, leaf.old_power),
-        leaf_hash(leaf.pubkey, leaf.new_power),
-        rest,
-        siblings,
-      )
+      let old_hash = leaf_hash(leaf.pubkey, leaf.old_power)
+      let new_hash =
+        if leaf.old_power == leaf.new_power {
+          old_hash
+        } else {
+          leaf_hash(leaf.pubkey, leaf.new_power)
+        }
+      (old_hash, new_hash, rest, siblings)
     } else {
       let pivot = split(count, 1)
       let (old_left, new_left, after_left, remaining) =
         walk_changes(start, pivot, leaves, siblings)
       let (old_right, new_right, after_right, tail) =
         walk_changes(start + pivot, count - pivot, after_left, remaining)
-      (
-        hash.inner_hash_opt_sha2_256(old_left, old_right),
-        hash.inner_hash_opt_sha2_256(new_left, new_right),
-        after_right,
-        tail,
-      )
+      let old_hash = hash.inner_hash_opt_sha2_256(old_left, old_right)
+      let new_hash =
+        if old_left == new_left && old_right == new_right {
+          old_hash
+        } else {
+          hash.inner_hash_opt_sha2_256(new_left, new_right)
+        }
+      (old_hash, new_hash, after_right, tail)
     }
   } else {
     expect [sibling, ..rest] = siblings
@@ -181,7 +186,8 @@ fn boundaries(
           Some(prev) -> and {
               prev.index < leaf.index,
               if prev.index + 1 == leaf.index {
-                ordered(
+                // The old root already authenticates unchanged ordering.
+                !changed && prev.old_power == prev.new_power || ordered(
                   prev.pubkey,
                   prev.new_power,
                   leaf.pubkey,
@@ -220,4 +226,46 @@ pub fn powers(
     )
   expect valid_power(total_power)
   Record { root: new_root, count: old.count, total_power }
+}
+
+/// Merge the selected signers against leaves authenticated by the one tree
+/// traversal. Consuming a matched leaf prevents duplicate or reordered signers.
+fn signed_old_power(leaves: List<PowerChange>, signers: List<Leaf>) -> Int {
+  when signers is {
+    [] -> 0
+    [signer, ..remaining_signers] -> {
+      expect [leaf, ..rest] = leaves
+      expect signer.index >= leaf.index
+      if signer.index == leaf.index {
+        expect signer.pubkey == leaf.pubkey && signer.power == leaf.new_power
+        leaf.old_power + signed_old_power(rest, remaining_signers)
+      } else {
+        signed_old_power(rest, signers)
+      }
+    }
+  }
+}
+
+/// Authenticate a fixed-position power transition and signer membership with
+/// one proof frontier. Old signer power is meaningful only for this old root.
+pub fn shared_powers(
+  old: Record,
+  leaves: List<PowerChange>,
+  siblings: List<ByteArray>,
+  signers: List<Leaf>,
+) -> (Record, Int) {
+  expect old.count > 0 && old.count <= max_validators
+  expect leaves != [] && boundaries(leaves, None, old.count)
+  let (old_root, new_root, remaining, tail) =
+    walk_changes(0, old.count, leaves, siblings)
+  expect old_root == old.root && remaining == [] && tail == []
+  let old_signed_power = signed_old_power(leaves, signers)
+  let total_power =
+    list.foldl(
+      leaves,
+      old.total_power,
+      fn(leaf, total) { total + leaf.new_power - leaf.old_power },
+    )
+  expect valid_power(total_power)
+  (Record { root: new_root, count: old.count, total_power }, old_signed_power)
 }

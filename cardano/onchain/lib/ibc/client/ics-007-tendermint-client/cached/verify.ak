@@ -3,7 +3,7 @@ use aiken/collection/list
 use aiken/primitive/bytearray
 use ibc/client/ics_007_tendermint_client/cached/proof
 use ibc/client/ics_007_tendermint_client/cached/types.{
-  Full, Leaf, Powers, Record, SetUpdate, Update, max_records, max_signers,
+  Leaf, Powers, Record, Update, max_records, max_signers,
 }
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/client_state
@@ -23,25 +23,6 @@ pub fn find(records: List<Record>, root: ByteArray) -> Record {
 pub fn rotate(records: List<Record>, record: Record) -> List<Record> {
   [record, ..list.filter(records, fn(old) { old.root != record.root })]
     |> list.take(max_records)
-}
-
-pub fn apply_sets(records: List<Record>, sets: List<SetUpdate>) -> List<Record> {
-  expect list.length(sets) <= max_records
-  list.foldl(
-    sets,
-    records,
-    fn(update, current) {
-      let record =
-        when update is {
-          // Full reconstruction stays in cache creation and staged verification.
-          // Keeping it out of this script also keeps its reference publishable.
-          Full { .. } -> fail
-          Powers { old_root, leaves, siblings } ->
-            proof.powers(find(current, old_root), leaves, siblings)
-        }
-      rotate(current, record)
-    },
-  )
 }
 
 fn signatures(
@@ -86,7 +67,6 @@ pub fn header(
     client_state.status(cs, time.valid_to, client.state.consensus_states) == Active
   let signed = update.signed_header
   let tm = signed.header
-  let target = find(records, tm.validators_hash)
   expect list.length(update.target) <= max_signers
   expect tm_header.validate_basic(tm)
   expect tm.chain_id == cs.chain_id
@@ -100,8 +80,28 @@ pub fn header(
   expect tm.time > consensus.timestamp
   expect tm.time < time.valid_from + cs.max_clock_drift
   expect consensus.timestamp + cs.trusting_period > time.valid_to
-  expect
-    proof.root(target.count, update.target, update.target_siblings) == target.root
+  let (target, authenticated_overlap) =
+    when update.sets is {
+      [] -> {
+        let target = find(records, tm.validators_hash)
+        expect
+          proof.root(target.count, update.target, update.target_siblings) == target.root
+        (target, 0)
+      }
+      [Powers { old_root, leaves, siblings }] -> {
+        // This single transition must start at the actual trusted checkpoint.
+        // No independently supplied target/trusted proof can replace its leaves.
+        expect old_root == consensus.next_validators_hash
+        expect
+          update.target_siblings == [] && update.trusted == [] && update.trusted_siblings == []
+        let old = find(records, old_root)
+        let (target, overlap) =
+          proof.shared_powers(old, leaves, siblings, update.target)
+        expect target.root == tm.validators_hash
+        (target, overlap)
+      }
+      _ -> fail
+    }
   let (prefix, suffix) = vote.commit_sign_parts(signed.commit, cs.chain_id)
   let signed_power =
     signatures(update.target, signed.commit.signatures, prefix, suffix)
@@ -115,18 +115,25 @@ pub fn header(
       signed_power * cs.trust_level.denominator > target.total_power * cs.trust_level.numerator
   } else {
     let trusted = find(records, consensus.next_validators_hash)
-    expect list.length(update.trusted) <= max_signers
-    expect
-      proof.root(trusted.count, update.trusted, update.trusted_siblings) == trusted.root
-    expect
-      list.all(
-        update.trusted,
-        fn(leaf) {
-          list.any(update.target, fn(signer) { signer.pubkey == leaf.pubkey })
-        },
-      )
     let overlap =
-      list.foldl(update.trusted, 0, fn(leaf, total) { total + leaf.power })
+      if update.sets == [] {
+        expect list.length(update.trusted) <= max_signers
+        expect
+          proof.root(trusted.count, update.trusted, update.trusted_siblings) == trusted.root
+        expect
+          list.all(
+            update.trusted,
+            fn(leaf) {
+              list.any(
+                update.target,
+                fn(signer) { signer.pubkey == leaf.pubkey },
+              )
+            },
+          )
+        list.foldl(update.trusted, 0, fn(leaf, total) { total + leaf.power })
+      } else {
+        authenticated_overlap
+      }
     expect
       overlap * cs.trust_level.denominator > trusted.total_power * cs.trust_level.numerator
   }

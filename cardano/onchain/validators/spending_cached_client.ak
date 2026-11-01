@@ -5,9 +5,6 @@ use cardano/assets.{PolicyId}
 use cardano/transaction.{OutputReference, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/cached/identity
-use ibc/client/ics_007_tendermint_client/cached/types.{
-  CachedClientRedeemer, CachedUpdate,
-}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/multitx/client_redeemer.{
   ReclaimClient, SpendMultitxClientRedeemer,
@@ -30,12 +27,12 @@ validator spend_cached_client(
     tx: Transaction,
   ) {
     if builtin.un_constr_data(raw).1st == 6 {
-      expect CachedUpdate { update }: CachedClientRedeemer = raw
+      let cache_token = identity.update_cache_token(raw)
       expect Some(datum) = datum
       expect Some(input) = transaction.find_input(tx.inputs, own_ref)
       expect auth.contain_auth_token(input.output, datum.token)
       expect
-        update.cache_token == AuthToken {
+        cache_token == AuthToken {
           policy_id: cache_policy,
           name: identity.token_name(datum.token),
         }

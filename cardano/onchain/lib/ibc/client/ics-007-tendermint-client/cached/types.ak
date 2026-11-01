@@ -56,8 +56,10 @@ pub type MintCache {
 }
 
 /// Target leaves and signatures are in the same strictly increasing order.
-/// Trusted leaves may use different positions and powers but must match a
-/// verified target public key. Each set has one shared RFC-6962 multiproof.
+/// A Powers transition discloses their union with changed leaves and boundary
+/// neighbors. It authenticates both roots and old signer powers together, so
+/// target_siblings, trusted and trusted_siblings must then be empty.
+/// With no transition, cached roots use the separate membership witnesses.
 pub type Update {
   cache_token: AuthToken,
   signed_header: SignedHeader,
