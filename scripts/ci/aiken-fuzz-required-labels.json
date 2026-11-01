@@ -60,7 +60,9 @@
     "fuzz.unit.client.update.valid_adjacent",
     "fuzz.unit.client.update.valid_non_adjacent",
     "fuzz.unit.host.bind_port.invalid_capacity",
-    "fuzz.unit.host.bind_port.invalid_identifier"
+    "fuzz.unit.host.bind_port.invalid_identifier",
+    "fuzz.unit.native_value.encoding_and_quantities",
+    "fuzz.unit.native_value.exact_assets"
   ],
   "minIterations": 100,
   "distributions": {

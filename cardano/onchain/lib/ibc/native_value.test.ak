@@ -26,6 +26,7 @@ fn value(quantities: List<Int>) -> assets.Value {
 test native_value_preserves_encoding_and_quantities(
   quantities via fuzz.list_between(fuzz.int_between(-1000000, 1000000), 0, 16),
 ) {
+  fuzz.label(@"fuzz.unit.native_value.encoding_and_quantities")
   let original = value(quantities)
   let native = native_value.from_assets(original)
   let raw: Data = assets.to_dict(original)
@@ -52,6 +53,7 @@ test native_value_preserves_encoding_and_quantities(
 test native_value_exact_assets_match_the_existing_rule(
   quantities via fuzz.list_between(fuzz.int_between(-1000000, 1000000), 0, 16),
 ) {
+  fuzz.label(@"fuzz.unit.native_value.exact_assets")
   let original = value(quantities)
   let different_ada = assets.add(original, "", "", 1_000_000)
   let extra_asset = assets.add(original, policy, #"ff", 1)
