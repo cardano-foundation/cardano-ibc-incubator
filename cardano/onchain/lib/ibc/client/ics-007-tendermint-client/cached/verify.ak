@@ -129,7 +129,12 @@ fn full_signatures(
       expect index > previous && index >= 0 && index < count
       expect [sig, ..remaining] = sigs
       expect
-        checked_signature(general.key_at_validated(vector, index), sig, prefix, suffix)
+        checked_signature(
+          general.key_at_validated(vector, index),
+          sig,
+          prefix,
+          suffix,
+        )
       full_signatures(
         vector,
         count,

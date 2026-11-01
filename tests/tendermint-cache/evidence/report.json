@@ -1,10 +1,11 @@
 {
   "compiler": "Aiken v1.1.24, silent traces",
-  "evaluator": "Scalus, Cardano protocol major version 10",
+  "blueprintSha256": "bef5267dde93ea115e21778bef801ad0c3ca31d23eefb1cdec15e3c1468ba6eb",
+  "evaluator": "Scalus, Cardano protocol major version 11",
   "parameters": "cardano/offchain/scripts/fixtures/mainnet-protocol-parameters.json",
   "parametersSha256": "95bef260c463f2b8f456fa3c455ded9adb19b6c7154813ff6c6ef83ee593c6f6",
   "fixture": "cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity/normalized.json",
-  "changedSetFixture": "Synthetic trusted bootstrap with one-unit power reductions at each listed position. Target header and signatures are the retained Injective fixture. The full fallback also replaces one trusted public key. These are capacity tests, not live changed-set replays.",
+  "changedSetFixture": "Synthetic trusted bootstraps with one-unit power reductions or the listed key replacement, addition, removal or reordering. The target header and all selected signatures are the retained Injective fixture. These are capacity tests, not live changed-set replays.",
   "historyFixture": "Populated cases seed an assumed previously authenticated 100-record client history after real client/cache admission. They do not replay those historical updates. Two cache records are authenticated by the real admission policy.",
   "routing": "Evaluate the complete signed direct candidate before submission. Reserve 5% of each ledger limit. Rejected direct candidates are not submitted. Complete fees include every staged verification transaction and finalization. Registration, client creation and reference publication are separate setup costs.",
   "ledgerLimits": {
@@ -16,7 +17,7 @@
     "completeFeeBelow": 3000000,
     "transactions": 1,
     "headroomPercent": 5,
-    "modes": "Cache hits and retained two-, three- and four-power-change cases, including populated history and 24 signers"
+    "modes": "Every retained normal update case, including eight changes, 28/34-signature availability, general set changes and uncached trusted roots"
   },
   "acceptanceBudget": {
     "signedBytes": 4000,
@@ -29,70 +30,84 @@
   "measurements": [
     {
       "id": "hit",
-      "requireDirect": true,
       "mode": "hit",
       "path": "direct",
       "directBudget": {
         "measured": {
-          "signedBytes": 5273,
-          "memory": 11188694,
-          "steps": 5807600860
+          "signedBytes": 5415,
+          "memory": 10235145,
+          "steps": 5573416577
         },
         "withinLedger": true,
         "headroomPercent": 5,
         "exceeded": [],
         "fits": true
       },
-      "directFee": 2079407,
+      "directFee": 2024497,
       "historyRecords": 0,
       "cacheRecords": 1,
       "changedIndices": [],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
       "measured": {
-        "signedBytes": 5273,
-        "referencedScriptBytes": 39129,
-        "memory": 11188694,
-        "steps": 5807600860,
-        "fee": 2079407
+        "signedBytes": 5415,
+        "referencedScriptBytes": 39726,
+        "memory": 10235145,
+        "steps": 5573416577,
+        "fee": 2024497
       },
-      "completeFee": 2079407,
+      "completeFee": 2024497,
       "updateTransactions": 1,
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 122438,
-          "steps": 57010514
+          "memory": 112913,
+          "steps": 58130687
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 435839,
-          "steps": 172076103
+          "memory": 358767,
+          "steps": 160058899
         },
         {
           "script": "host_state_stt",
           "tag": 0,
           "index": 2,
-          "memory": 3034249,
-          "steps": 1782895692
+          "memory": 2999807,
+          "steps": 1775738556
         },
         {
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 7596168,
-          "steps": 3795618551
+          "memory": 178637,
+          "steps": 85237682
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 6585021,
+          "steps": 3494250753
         }
       ],
       "publicationBytes": [
-        16145,
-        10495,
-        5266,
-        3126,
-        5018,
-        16052
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
       ],
       "missedBudgets": [
         "signedBytes",
@@ -106,89 +121,103 @@
       "trustedSiblings": 0,
       "sharedLeaves": 0,
       "sharedSiblings": 0,
-      "admissionFee": 2007523,
+      "admissionFee": 1952017,
       "admissionBudget": {
         "measured": {
           "signedBytes": 8087,
-          "memory": 12038516,
-          "steps": 4443405022
+          "memory": 11658110,
+          "steps": 4321511345
         },
         "withinLedger": true,
         "headroomPercent": 0,
         "exceeded": [],
         "fits": true
       },
-      "signedTransactionSha256": "417bdf84f90504d85d19d7eef4cce92384281cf46a4f2ff9e10b3a43f41c590c"
+      "signedTransactionSha256": "b09f83f1ba29dfbe86525f03132e2d448b0feeb3cb882f83e8792b59b10e6a3b"
     },
     {
       "id": "powers",
-      "requireDirect": true,
       "mode": "powers",
       "path": "direct",
       "directBudget": {
         "measured": {
-          "signedBytes": 6191,
-          "memory": 12717666,
-          "steps": 6325665623
+          "signedBytes": 5616,
+          "memory": 11303226,
+          "steps": 5936402755
         },
         "withinLedger": true,
         "headroomPercent": 5,
         "exceeded": [],
         "fits": true
       },
-      "directFee": 2245373,
+      "directFee": 2121140,
       "historyRecords": 0,
       "cacheRecords": 1,
       "changedIndices": [
         0,
         2
       ],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
       "measured": {
-        "signedBytes": 6191,
-        "referencedScriptBytes": 39129,
-        "memory": 12717666,
-        "steps": 6325665623,
-        "fee": 2245373
+        "signedBytes": 5616,
+        "referencedScriptBytes": 39726,
+        "memory": 11303226,
+        "steps": 5936402755,
+        "fee": 2121140
       },
-      "completeFee": 2245373,
+      "completeFee": 2121140,
       "updateTransactions": 1,
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 122438,
-          "steps": 57010514
+          "memory": 112913,
+          "steps": 58130687
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 444885,
-          "steps": 174884418
+          "memory": 367813,
+          "steps": 162867214
         },
         {
           "script": "host_state_stt",
           "tag": 0,
           "index": 2,
-          "memory": 3034249,
-          "steps": 1782895692
+          "memory": 2999807,
+          "steps": 1775738556
         },
         {
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 9116094,
-          "steps": 4310874999
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 7640303,
+          "steps": 3853002665
         }
       ],
       "publicationBytes": [
-        16145,
-        10495,
-        5266,
-        3126,
-        5018,
-        16052
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
       ],
       "missedBudgets": [
         "signedBytes",
@@ -202,89 +231,103 @@
       "trustedSiblings": 0,
       "sharedLeaves": 18,
       "sharedSiblings": 4,
-      "admissionFee": 2007523,
+      "admissionFee": 1952017,
       "admissionBudget": {
         "measured": {
           "signedBytes": 8087,
-          "memory": 12038516,
-          "steps": 4443405022
+          "memory": 11658110,
+          "steps": 4321511345
         },
         "withinLedger": true,
         "headroomPercent": 0,
         "exceeded": [],
         "fits": true
       },
-      "signedTransactionSha256": "88a50a0332c411909f79503b83604cb26abd038300c8392545ca23e00eb892a5"
+      "signedTransactionSha256": "7890d2daee71a96422b32b0cb5dbb8d0b3b21c7db19ba8599aadfbd2c7901b2a"
     },
     {
       "id": "dispersed-two",
-      "requireDirect": true,
       "mode": "powers",
       "path": "direct",
       "directBudget": {
         "measured": {
-          "signedBytes": 6321,
-          "memory": 12943657,
-          "steps": 6398832702
+          "signedBytes": 5746,
+          "memory": 11496085,
+          "steps": 5998773592
         },
         "withinLedger": true,
         "headroomPercent": 5,
         "exceeded": [],
         "fits": true
       },
-      "directFee": 2269408,
+      "directFee": 2142485,
       "historyRecords": 0,
       "cacheRecords": 1,
       "changedIndices": [
         11,
         20
       ],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
       "measured": {
-        "signedBytes": 6321,
-        "referencedScriptBytes": 39129,
-        "memory": 12943657,
-        "steps": 6398832702,
-        "fee": 2269408
+        "signedBytes": 5746,
+        "referencedScriptBytes": 39726,
+        "memory": 11496085,
+        "steps": 5998773592,
+        "fee": 2142485
       },
-      "completeFee": 2269408,
+      "completeFee": 2142485,
       "updateTransactions": 1,
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 122438,
-          "steps": 57010514
+          "memory": 112913,
+          "steps": 58130687
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 444885,
-          "steps": 174884418
+          "memory": 367813,
+          "steps": 162867214
         },
         {
           "script": "host_state_stt",
           "tag": 0,
           "index": 2,
-          "memory": 3034249,
-          "steps": 1782895692
+          "memory": 2999807,
+          "steps": 1775738556
         },
         {
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 9342085,
-          "steps": 4384042078
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 7833162,
+          "steps": 3915373502
         }
       ],
       "publicationBytes": [
-        16145,
-        10495,
-        5266,
-        3126,
-        5018,
-        16052
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
       ],
       "missedBudgets": [
         "signedBytes",
@@ -298,37 +341,36 @@
       "trustedSiblings": 0,
       "sharedLeaves": 20,
       "sharedSiblings": 5,
-      "admissionFee": 2007523,
+      "admissionFee": 1952017,
       "admissionBudget": {
         "measured": {
           "signedBytes": 8087,
-          "memory": 12038516,
-          "steps": 4443405022
+          "memory": 11658110,
+          "steps": 4321511345
         },
         "withinLedger": true,
         "headroomPercent": 0,
         "exceeded": [],
         "fits": true
       },
-      "signedTransactionSha256": "8e235a3e55f0587935e476e709f9877de1cd09c829ffc4718085b4b74194ec35"
+      "signedTransactionSha256": "ac9e5d90fd194f6720d1f4250b9da3c8b920cfdd12e29cef6934c0f98692aafc"
     },
     {
       "id": "dispersed-three",
-      "requireDirect": true,
       "mode": "powers",
       "path": "direct",
       "directBudget": {
         "measured": {
-          "signedBytes": 6358,
-          "memory": 13025335,
-          "steps": 6426077827
+          "signedBytes": 5783,
+          "memory": 11567975,
+          "steps": 6022647773
         },
         "withinLedger": true,
         "headroomPercent": 5,
         "exceeded": [],
         "fits": true
       },
-      "directFee": 2277714,
+      "directFee": 2149983,
       "historyRecords": 0,
       "cacheRecords": 1,
       "changedIndices": [
@@ -336,52 +378,67 @@
         14,
         26
       ],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
       "measured": {
-        "signedBytes": 6358,
-        "referencedScriptBytes": 39129,
-        "memory": 13025335,
-        "steps": 6426077827,
-        "fee": 2277714
+        "signedBytes": 5783,
+        "referencedScriptBytes": 39726,
+        "memory": 11567975,
+        "steps": 6022647773,
+        "fee": 2149983
       },
-      "completeFee": 2277714,
+      "completeFee": 2149983,
       "updateTransactions": 1,
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 122438,
-          "steps": 57010514
+          "memory": 112913,
+          "steps": 58130687
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 444885,
-          "steps": 174884418
+          "memory": 367813,
+          "steps": 162867214
         },
         {
           "script": "host_state_stt",
           "tag": 0,
           "index": 2,
-          "memory": 3034249,
-          "steps": 1782895692
+          "memory": 2999807,
+          "steps": 1775738556
         },
         {
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 9423763,
-          "steps": 4411287203
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 7905052,
+          "steps": 3939247683
         }
       ],
       "publicationBytes": [
-        16145,
-        10495,
-        5266,
-        3126,
-        5018,
-        16052
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
       ],
       "missedBudgets": [
         "signedBytes",
@@ -395,37 +452,36 @@
       "trustedSiblings": 0,
       "sharedLeaves": 20,
       "sharedSiblings": 6,
-      "admissionFee": 2007523,
+      "admissionFee": 1952017,
       "admissionBudget": {
         "measured": {
           "signedBytes": 8087,
-          "memory": 12038516,
-          "steps": 4443405022
+          "memory": 11658110,
+          "steps": 4321511345
         },
         "withinLedger": true,
         "headroomPercent": 0,
         "exceeded": [],
         "fits": true
       },
-      "signedTransactionSha256": "c2eb2869ab2a887f77c3aa3cff7492c124ffa6e1076a4e1e0ebc1e50d266359c"
+      "signedTransactionSha256": "b102be2b342f88ea83b2d952affce33b9b6b90686a346e823450b659537ea423"
     },
     {
       "id": "dispersed-four",
-      "requireDirect": true,
       "mode": "powers",
       "path": "direct",
       "directBudget": {
         "measured": {
-          "signedBytes": 6573,
-          "memory": 13457475,
-          "steps": 6566841943
+          "signedBytes": 5998,
+          "memory": 11943987,
+          "steps": 6144559748
         },
         "withinLedger": true,
         "headroomPercent": 5,
         "exceeded": [],
         "fits": true
       },
-      "directFee": 2322257,
+      "directFee": 2189928,
       "historyRecords": 0,
       "cacheRecords": 1,
       "changedIndices": [
@@ -434,52 +490,67 @@
         26,
         38
       ],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
       "measured": {
-        "signedBytes": 6573,
-        "referencedScriptBytes": 39129,
-        "memory": 13457475,
-        "steps": 6566841943,
-        "fee": 2322257
+        "signedBytes": 5998,
+        "referencedScriptBytes": 39726,
+        "memory": 11943987,
+        "steps": 6144559748,
+        "fee": 2189928
       },
-      "completeFee": 2322257,
+      "completeFee": 2189928,
       "updateTransactions": 1,
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 122438,
-          "steps": 57010514
+          "memory": 112913,
+          "steps": 58130687
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 444885,
-          "steps": 174884418
+          "memory": 367813,
+          "steps": 162867214
         },
         {
           "script": "host_state_stt",
           "tag": 0,
           "index": 2,
-          "memory": 3034249,
-          "steps": 1782895692
+          "memory": 2999807,
+          "steps": 1775738556
         },
         {
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 9855903,
-          "steps": 4552051319
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 8281064,
+          "steps": 4061159658
         }
       ],
       "publicationBytes": [
-        16145,
-        10495,
-        5266,
-        3126,
-        5018,
-        16052
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
       ],
       "missedBudgets": [
         "signedBytes",
@@ -493,86 +564,100 @@
       "trustedSiblings": 0,
       "sharedLeaves": 23,
       "sharedSiblings": 8,
-      "admissionFee": 2007523,
+      "admissionFee": 1952017,
       "admissionBudget": {
         "measured": {
           "signedBytes": 8087,
-          "memory": 12038516,
-          "steps": 4443405022
+          "memory": 11658110,
+          "steps": 4321511345
         },
         "withinLedger": true,
         "headroomPercent": 0,
         "exceeded": [],
         "fits": true
       },
-      "signedTransactionSha256": "db0fbc2253ac2b5c367b1e2463c61d75440600d6dfd4b26e7e7f06c583a657e6"
+      "signedTransactionSha256": "b220e25700325faaa17b11f1700d5c124f896daf4e2ca3b44f9b71d13d0a65f0"
     },
     {
       "id": "signers-24",
-      "requireDirect": true,
       "mode": "hit",
       "path": "direct",
       "directBudget": {
         "measured": {
-          "signedBytes": 6321,
-          "memory": 12484433,
-          "steps": 6594265815
+          "signedBytes": 6459,
+          "memory": 11163756,
+          "steps": 6241499760
         },
         "withinLedger": true,
         "headroomPercent": 5,
         "exceeded": [],
         "fits": true
       },
-      "directFee": 2257002,
+      "directFee": 2172182,
       "historyRecords": 0,
       "cacheRecords": 1,
       "changedIndices": [],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
       "measured": {
-        "signedBytes": 6321,
-        "referencedScriptBytes": 39129,
-        "memory": 12484433,
-        "steps": 6594265815,
-        "fee": 2257002
+        "signedBytes": 6459,
+        "referencedScriptBytes": 39726,
+        "memory": 11163756,
+        "steps": 6241499760,
+        "fee": 2172182
       },
-      "completeFee": 2257002,
+      "completeFee": 2172182,
       "updateTransactions": 1,
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 122438,
-          "steps": 57010514
+          "memory": 112913,
+          "steps": 58130687
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 435839,
-          "steps": 172076103
+          "memory": 358767,
+          "steps": 160058899
         },
         {
           "script": "host_state_stt",
           "tag": 0,
           "index": 2,
-          "memory": 3034249,
-          "steps": 1782895692
+          "memory": 2999807,
+          "steps": 1775738556
         },
         {
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 8891907,
-          "steps": 4582283506
+          "memory": 178637,
+          "steps": 85237682
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 7513632,
+          "steps": 4162333936
         }
       ],
       "publicationBytes": [
-        16145,
-        10495,
-        5266,
-        3126,
-        5018,
-        16052
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
       ],
       "missedBudgets": [
         "signedBytes",
@@ -586,86 +671,100 @@
       "trustedSiblings": 0,
       "sharedLeaves": 0,
       "sharedSiblings": 0,
-      "admissionFee": 2007523,
+      "admissionFee": 1952017,
       "admissionBudget": {
         "measured": {
           "signedBytes": 8087,
-          "memory": 12038516,
-          "steps": 4443405022
+          "memory": 11658110,
+          "steps": 4321511345
         },
         "withinLedger": true,
         "headroomPercent": 0,
         "exceeded": [],
         "fits": true
       },
-      "signedTransactionSha256": "0cd50ab3f735006504fd8f1ff46e532b36a1674d590ad4961218621e012438c6"
+      "signedTransactionSha256": "ede1b4a9a186be252dba3603fdc32651c9ca419cd7f657b2f8e9a909df9075ca"
     },
     {
       "id": "populated-hit",
-      "requireDirect": true,
       "mode": "hit",
       "path": "direct",
       "directBudget": {
         "measured": {
-          "signedBytes": 6624,
-          "memory": 12527093,
-          "steps": 6575599351
+          "signedBytes": 6663,
+          "memory": 11204871,
+          "steps": 6235844119
         },
         "withinLedger": true,
         "headroomPercent": 5,
         "exceeded": [],
         "fits": true
       },
-      "directFee": 2271449,
+      "directFee": 2183123,
       "historyRecords": 100,
       "cacheRecords": 2,
       "changedIndices": [],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
       "measured": {
-        "signedBytes": 6624,
-        "referencedScriptBytes": 39129,
-        "memory": 12527093,
-        "steps": 6575599351,
-        "fee": 2271449
+        "signedBytes": 6663,
+        "referencedScriptBytes": 39726,
+        "memory": 11204871,
+        "steps": 6235844119,
+        "fee": 2183123
       },
-      "completeFee": 2271449,
+      "completeFee": 2183123,
       "updateTransactions": 1,
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 122438,
-          "steps": 57010514
+          "memory": 112913,
+          "steps": 58130687
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 444885,
-          "steps": 174884418
+          "memory": 367813,
+          "steps": 162867214
         },
         {
           "script": "host_state_stt",
           "tag": 0,
           "index": 2,
-          "memory": 3034249,
-          "steps": 1782895692
+          "memory": 2999807,
+          "steps": 1775738556
         },
         {
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 8925521,
-          "steps": 4560808727
+          "memory": 178637,
+          "steps": 85237682
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 7545701,
+          "steps": 4153869980
         }
       ],
       "publicationBytes": [
-        16145,
-        10495,
-        5266,
-        3126,
-        5018,
-        16052
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
       ],
       "missedBudgets": [
         "signedBytes",
@@ -679,37 +778,36 @@
       "trustedSiblings": 0,
       "sharedLeaves": 0,
       "sharedSiblings": 0,
-      "admissionFee": 2017754,
+      "admissionFee": 1962051,
       "admissionBudget": {
         "measured": {
           "signedBytes": 8165,
-          "memory": 12120413,
-          "steps": 4472164490
+          "memory": 11737787,
+          "steps": 4349305626
         },
         "withinLedger": true,
         "headroomPercent": 0,
         "exceeded": [],
         "fits": true
       },
-      "signedTransactionSha256": "7a0ebbd2ee254633f5a6a052dd1f30fb817d2e7f01ac5320192aacbc9fe32137"
+      "signedTransactionSha256": "556bff670826455f3aac2c23f0bed250e3c5825313df035d055fb202a523486f"
     },
     {
       "id": "populated-three",
-      "requireDirect": true,
       "mode": "powers",
       "path": "direct",
       "directBudget": {
         "measured": {
-          "signedBytes": 8010,
-          "memory": 14890621,
-          "steps": 7371900894
+          "signedBytes": 7046,
+          "memory": 12883687,
+          "steps": 6801329393
         },
         "withinLedger": true,
         "headroomPercent": 5,
         "exceeded": [],
         "fits": true
       },
-      "directFee": 2526222,
+      "directFee": 2337614,
       "historyRecords": 100,
       "cacheRecords": 2,
       "changedIndices": [
@@ -717,52 +815,67 @@
         14,
         26
       ],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
       "measured": {
-        "signedBytes": 8010,
-        "referencedScriptBytes": 39129,
-        "memory": 14890621,
-        "steps": 7371900894,
-        "fee": 2526222
+        "signedBytes": 7046,
+        "referencedScriptBytes": 39726,
+        "memory": 12883687,
+        "steps": 6801329393,
+        "fee": 2337614
       },
-      "completeFee": 2526222,
+      "completeFee": 2337614,
       "updateTransactions": 1,
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 122438,
-          "steps": 57010514
+          "memory": 112913,
+          "steps": 58130687
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 444885,
-          "steps": 174884418
+          "memory": 367813,
+          "steps": 162867214
         },
         {
           "script": "host_state_stt",
           "tag": 0,
           "index": 2,
-          "memory": 3034249,
-          "steps": 1782895692
+          "memory": 2999807,
+          "steps": 1775738556
         },
         {
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 11289049,
-          "steps": 5357110270
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 9220764,
+          "steps": 4717929303
         }
       ],
       "publicationBytes": [
-        16145,
-        10495,
-        5266,
-        3126,
-        5018,
-        16052
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
       ],
       "missedBudgets": [
         "signedBytes",
@@ -776,37 +889,36 @@
       "trustedSiblings": 0,
       "sharedLeaves": 27,
       "sharedSiblings": 7,
-      "admissionFee": 2017754,
+      "admissionFee": 1962051,
       "admissionBudget": {
         "measured": {
           "signedBytes": 8165,
-          "memory": 12120413,
-          "steps": 4472164490
+          "memory": 11737787,
+          "steps": 4349305626
         },
         "withinLedger": true,
         "headroomPercent": 0,
         "exceeded": [],
         "fits": true
       },
-      "signedTransactionSha256": "e59c3dfd724c0a0720dd9a5c3b9b0a9f2fe36d8e4466155f0918826932d2e5d6"
+      "signedTransactionSha256": "1feaf79c9260a9d55a6751bc8b6c7daea27b5566fed923d9a810af7074c19947"
     },
     {
       "id": "populated-powers",
-      "requireDirect": true,
       "mode": "powers",
       "path": "direct",
       "directBudget": {
         "measured": {
-          "signedBytes": 8059,
-          "memory": 15041963,
-          "steps": 7422956493
+          "signedBytes": 7095,
+          "memory": 13021821,
+          "steps": 6847700037
         },
         "withinLedger": true,
         "headroomPercent": 5,
         "exceeded": [],
         "fits": true
       },
-      "directFee": 2540792,
+      "directFee": 2351084,
       "historyRecords": 100,
       "cacheRecords": 2,
       "changedIndices": [
@@ -815,52 +927,67 @@
         26,
         38
       ],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
       "measured": {
-        "signedBytes": 8059,
-        "referencedScriptBytes": 39129,
-        "memory": 15041963,
-        "steps": 7422956493,
-        "fee": 2540792
+        "signedBytes": 7095,
+        "referencedScriptBytes": 39726,
+        "memory": 13021821,
+        "steps": 6847700037,
+        "fee": 2351084
       },
-      "completeFee": 2540792,
+      "completeFee": 2351084,
       "updateTransactions": 1,
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 122438,
-          "steps": 57010514
+          "memory": 112913,
+          "steps": 58130687
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 444885,
-          "steps": 174884418
+          "memory": 367813,
+          "steps": 162867214
         },
         {
           "script": "host_state_stt",
           "tag": 0,
           "index": 2,
-          "memory": 3034249,
-          "steps": 1782895692
+          "memory": 2999807,
+          "steps": 1775738556
         },
         {
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 11440391,
-          "steps": 5408165869
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 9358898,
+          "steps": 4764299947
         }
       ],
       "publicationBytes": [
-        16145,
-        10495,
-        5266,
-        3126,
-        5018,
-        16052
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
       ],
       "missedBudgets": [
         "signedBytes",
@@ -874,40 +1001,36 @@
       "trustedSiblings": 0,
       "sharedLeaves": 28,
       "sharedSiblings": 7,
-      "admissionFee": 2017754,
+      "admissionFee": 1962051,
       "admissionBudget": {
         "measured": {
           "signedBytes": 8165,
-          "memory": 12120413,
-          "steps": 4472164490
+          "memory": 11737787,
+          "steps": 4349305626
         },
         "withinLedger": true,
         "headroomPercent": 0,
         "exceeded": [],
         "fits": true
       },
-      "signedTransactionSha256": "3d499bac4969e8adaefbd60ba4a94efb6c77b735984da0d993905d862cd2b963"
+      "signedTransactionSha256": "fd6d8c594a18fcc953ed5b257fedbfa9f0ede1b6bcd7cc04d1e74b4dac2d1ce2"
     },
     {
       "id": "dispersed-eight",
-      "requireDirect": false,
       "mode": "powers",
-      "path": "staged",
+      "path": "direct",
       "directBudget": {
         "measured": {
-          "signedBytes": 8399,
-          "memory": 15974974,
-          "steps": 7733324685
+          "signedBytes": 7435,
+          "memory": 13862376,
+          "steps": 7125273544
         },
         "withinLedger": true,
         "headroomPercent": 5,
-        "exceeded": [
-          "memory"
-        ],
-        "fits": false
+        "exceeded": [],
+        "fits": true
       },
-      "directFee": 2631964,
-      "rejectedDirectWasSubmitted": false,
+      "directFee": 2434557,
       "historyRecords": 100,
       "cacheRecords": 2,
       "changedIndices": [
@@ -920,68 +1043,70 @@
         36,
         42
       ],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
       "measured": {
-        "signedBytes": 2724,
-        "referencedScriptBytes": 56021,
-        "memory": 10653898,
-        "steps": 4648853216,
-        "fee": 2174259
+        "signedBytes": 7435,
+        "referencedScriptBytes": 39726,
+        "memory": 13862376,
+        "steps": 7125273544,
+        "fee": 2434557
       },
-      "completeFee": 9134900,
-      "updateTransactions": 12,
+      "completeFee": 2434557,
+      "updateTransactions": 1,
       "redeemerBudgets": [
-        {
-          "script": "session_spend",
-          "tag": 0,
-          "index": 0,
-          "memory": 1061780,
-          "steps": 309787708
-        },
         {
           "script": "spending_cached_client",
           "tag": 0,
-          "index": 1,
-          "memory": 321555,
-          "steps": 103896145
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
-          "index": 2,
-          "memory": 973069,
-          "steps": 339721432
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
         },
         {
           "script": "host_state_stt",
           "tag": 0,
-          "index": 3,
-          "memory": 3078897,
-          "steps": 1795371120
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
         },
         {
-          "script": "session_mint",
-          "tag": 1,
-          "index": 0,
-          "memory": 1211348,
-          "steps": 381900740
-        },
-        {
-          "script": "update_staged_client",
+          "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 4007249,
-          "steps": 1718176071
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 10199453,
+          "steps": 5041873454
         }
       ],
       "publicationBytes": [
-        16145,
-        10495,
-        5266,
-        3126,
-        5018,
-        16052
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
       ],
       "missedBudgets": [
+        "signedBytes",
         "referencedScriptBytes",
         "memory",
         "steps",
@@ -992,165 +1117,100 @@
       "trustedSiblings": 0,
       "sharedLeaves": 35,
       "sharedSiblings": 7,
-      "admissionFee": 2017754,
+      "admissionFee": 1962051,
       "admissionBudget": {
         "measured": {
           "signedBytes": 8165,
-          "memory": 12120413,
-          "steps": 4472164490
+          "memory": 11737787,
+          "steps": 4349305626
         },
         "withinLedger": true,
         "headroomPercent": 0,
         "exceeded": [],
         "fits": true
       },
-      "fallbackSessions": [
-        {
-          "operation": "session initialize",
-          "fee": 475177,
-          "bytes": 2199,
-          "memory": 1238451,
-          "steps": 476767863
-        },
-        {
-          "operation": "session verify trusted",
-          "fee": 755793,
-          "bytes": 3094,
-          "memory": 3581491,
-          "steps": 1174650133
-        },
-        {
-          "operation": "session verify trusted",
-          "fee": 713450,
-          "bytes": 2826,
-          "memory": 3203802,
-          "steps": 1053174174
-        },
-        {
-          "operation": "session verify target",
-          "fee": 877455,
-          "bytes": 3914,
-          "memory": 4423994,
-          "steps": 1687404089
-        },
-        {
-          "operation": "session verify target",
-          "fee": 754230,
-          "bytes": 2899,
-          "memory": 3389784,
-          "steps": 1425392428
-        },
-        {
-          "operation": "session verify target",
-          "fee": 714492,
-          "bytes": 2622,
-          "memory": 3045338,
-          "steps": 1318938565
-        },
-        {
-          "operation": "session verify target",
-          "fee": 544433,
-          "bytes": 2065,
-          "memory": 1521832,
-          "steps": 519430607
-        },
-        {
-          "operation": "session verify target",
-          "fee": 547026,
-          "bytes": 2143,
-          "memory": 1511568,
-          "steps": 516004895
-        },
-        {
-          "operation": "session verify target",
-          "fee": 546023,
-          "bytes": 2066,
-          "memory": 1540384,
-          "steps": 526020529
-        },
-        {
-          "operation": "session verify target",
-          "fee": 545774,
-          "bytes": 2105,
-          "memory": 1516700,
-          "steps": 517717751
-        },
-        {
-          "operation": "session verify target",
-          "fee": 486788,
-          "bytes": 1741,
-          "memory": 993539,
-          "steps": 340427149
-        }
-      ],
-      "signedTransactionSha256": "969f46764e8c51bed9ba2c645f797b78f0040c41d8d184ad1a29f422e0d3b2da"
+      "signedTransactionSha256": "c1619493c3d647f73b3f30267dc44fa5878fa19e4af2a71231326bd150944cd4"
     },
     {
       "id": "adjacent",
-      "requireDirect": true,
       "mode": "adjacent",
       "path": "direct",
       "directBudget": {
         "measured": {
-          "signedBytes": 5273,
-          "memory": 11179042,
-          "steps": 5801680654
+          "signedBytes": 5415,
+          "memory": 10224283,
+          "steps": 5564830607
         },
         "withinLedger": true,
         "headroomPercent": 5,
         "exceeded": [],
         "fits": true
       },
-      "directFee": 2078423,
+      "directFee": 2023251,
       "historyRecords": 0,
       "cacheRecords": 1,
       "changedIndices": [],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
       "measured": {
-        "signedBytes": 5273,
-        "referencedScriptBytes": 39129,
-        "memory": 11179042,
-        "steps": 5801680654,
-        "fee": 2078423
+        "signedBytes": 5415,
+        "referencedScriptBytes": 39726,
+        "memory": 10224283,
+        "steps": 5564830607,
+        "fee": 2023251
       },
-      "completeFee": 2078423,
+      "completeFee": 2023251,
       "updateTransactions": 1,
       "redeemerBudgets": [
         {
           "script": "spending_cached_client",
           "tag": 0,
           "index": 0,
-          "memory": 122438,
-          "steps": 57010514
+          "memory": 112913,
+          "steps": 58130687
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
           "index": 1,
-          "memory": 435839,
-          "steps": 172076103
+          "memory": 358767,
+          "steps": 160058899
         },
         {
           "script": "host_state_stt",
           "tag": 0,
           "index": 2,
-          "memory": 3034249,
-          "steps": 1782895692
+          "memory": 2999807,
+          "steps": 1775738556
         },
         {
           "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 7586516,
-          "steps": 3789698345
+          "memory": 178637,
+          "steps": 85237682
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 6574159,
+          "steps": 3485664783
         }
       ],
       "publicationBytes": [
-        16145,
-        10495,
-        5266,
-        3126,
-        5018,
-        16052
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
       ],
       "missedBudgets": [
         "signedBytes",
@@ -1164,195 +1224,3846 @@
       "trustedSiblings": 0,
       "sharedLeaves": 0,
       "sharedSiblings": 0,
-      "admissionFee": 2006999,
+      "admissionFee": 1951493,
       "admissionBudget": {
         "measured": {
           "signedBytes": 8087,
-          "memory": 12036096,
-          "steps": 4438073494
+          "memory": 11655690,
+          "steps": 4316179817
         },
         "withinLedger": true,
         "headroomPercent": 0,
         "exceeded": [],
         "fits": true
       },
-      "signedTransactionSha256": "9a9ea775d93e5fb32279e14d35789f97a9d3a6877ae6900f45059bce86b4f1e6"
+      "signedTransactionSha256": "b4063287dbb9dcc1f939fe3bc2932893b5368536b7eb96c3cc2efd7013a17400"
     },
     {
       "id": "full",
-      "requireDirect": false,
       "mode": "full",
-      "path": "staged",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 7010,
+          "memory": 13566792,
+          "steps": 6657342223
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2354516,
       "historyRecords": 0,
       "cacheRecords": 1,
-      "changedIndices": [
-        0,
-        2
-      ],
+      "changedIndices": [],
+      "generalChange": "replace",
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 45,
+      "fullTargetBytes": 1800,
+      "fullTrustedBytes": 481,
+      "targetValidatorCount": 45,
       "measured": {
-        "signedBytes": 2460,
-        "referencedScriptBytes": 56021,
-        "memory": 10639776,
-        "steps": 4677211032,
-        "fee": 2163872
+        "signedBytes": 7010,
+        "referencedScriptBytes": 39140,
+        "memory": 13566792,
+        "steps": 6657342223,
+        "fee": 2354516
       },
-      "completeFee": 9124723,
-      "updateTransactions": 12,
+      "completeFee": 2354516,
+      "updateTransactions": 1,
       "redeemerBudgets": [
-        {
-          "script": "session_spend",
-          "tag": 0,
-          "index": 0,
-          "memory": 1061780,
-          "steps": 309787708
-        },
         {
           "script": "spending_cached_client",
           "tag": 0,
-          "index": 1,
-          "memory": 321555,
-          "steps": 103896145
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
-          "index": 2,
-          "memory": 966482,
-          "steps": 337638366
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
         },
         {
           "script": "host_state_stt",
           "tag": 0,
-          "index": 3,
-          "memory": 3078897,
-          "steps": 1795371120
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
         },
         {
-          "script": "session_mint",
-          "tag": 1,
-          "index": 0,
-          "memory": 1211348,
-          "steps": 381900740
-        },
-        {
-          "script": "update_staged_client",
+          "script": "update_cached_client",
           "tag": 3,
           "index": 0,
-          "memory": 3999714,
-          "steps": 1748616953
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_general_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 9903869,
+          "steps": 4573942133
         }
       ],
       "publicationBytes": [
-        16145,
-        10495,
-        5266,
-        3126,
-        5018,
-        16052
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
       ],
       "missedBudgets": [
+        "signedBytes",
         "referencedScriptBytes",
         "memory",
         "steps",
         "fee"
       ],
       "signatures": 17,
-      "targetSiblings": 5,
-      "trustedSiblings": 5,
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
       "sharedLeaves": 0,
       "sharedSiblings": 0,
-      "admissionFee": 2007523,
+      "admissionFee": 1952017,
       "admissionBudget": {
         "measured": {
           "signedBytes": 8087,
-          "memory": 12038516,
-          "steps": 4443405022
+          "memory": 11658110,
+          "steps": 4321511345
         },
         "withinLedger": true,
         "headroomPercent": 0,
         "exceeded": [],
         "fits": true
       },
-      "fallbackSessions": [
+      "signedTransactionSha256": "9f5498f46bce49e23ee2d606087283e9ce44cce3d5e1f5e638714fd2ff588fbc"
+    },
+    {
+      "id": "availability-28",
+      "mode": "hit",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 6968,
+          "memory": 11588243,
+          "steps": 6590451540
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2244231,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 6968,
+        "referencedScriptBytes": 39726,
+        "memory": 11588243,
+        "steps": 6590451540,
+        "fee": 2244231
+      },
+      "completeFee": 2244231,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
         {
-          "operation": "session initialize",
-          "fee": 475177,
-          "bytes": 2199,
-          "memory": 1238451,
-          "steps": 476767863
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
         },
         {
-          "operation": "session verify trusted",
-          "fee": 755793,
-          "bytes": 3094,
-          "memory": 3581491,
-          "steps": 1174650133
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 358767,
+          "steps": 160058899
         },
         {
-          "operation": "session verify trusted",
-          "fee": 713450,
-          "bytes": 2826,
-          "memory": 3203802,
-          "steps": 1053174174
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
         },
         {
-          "operation": "session verify target",
-          "fee": 838920,
-          "bytes": 3637,
-          "memory": 4094389,
-          "steps": 1585765845
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 178637,
+          "steps": 85237682
         },
         {
-          "operation": "session verify target",
-          "fee": 792975,
-          "bytes": 3176,
-          "memory": 3721801,
-          "steps": 1528021920
-        },
-        {
-          "operation": "session verify target",
-          "fee": 714492,
-          "bytes": 2622,
-          "memory": 3045338,
-          "steps": 1318938565
-        },
-        {
-          "operation": "session verify target",
-          "fee": 544433,
-          "bytes": 2065,
-          "memory": 1521832,
-          "steps": 519430607
-        },
-        {
-          "operation": "session verify target",
-          "fee": 547026,
-          "bytes": 2143,
-          "memory": 1511568,
-          "steps": 516004895
-        },
-        {
-          "operation": "session verify target",
-          "fee": 546023,
-          "bytes": 2066,
-          "memory": 1540384,
-          "steps": 526020529
-        },
-        {
-          "operation": "session verify target",
-          "fee": 545774,
-          "bytes": 2105,
-          "memory": 1516700,
-          "steps": 517717751
-        },
-        {
-          "operation": "session verify target",
-          "fee": 486788,
-          "bytes": 1741,
-          "memory": 993539,
-          "steps": 340427149
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 7938119,
+          "steps": 4511285716
         }
       ],
-      "signedTransactionSha256": "cb75db97d7472259d0a8c619154e0116e36d3e686b1180d0248fa9121131a26a"
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 28,
+      "signerAvailability": {
+        "availableIndices": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31
+        ],
+        "requiredQuorumSignatures": 28,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "39223364",
+        "selectedTargetPowerWithoutLast": "38697256"
+      },
+      "targetSiblings": 4,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1952017,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8087,
+          "memory": 11658110,
+          "steps": 4321511345
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "9c67f7cf147c94b108a57c6d2e46960eccbb4bfc2822dae0bb7536a98f129853"
+    },
+    {
+      "id": "availability-powers-28",
+      "mode": "powers",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 7306,
+          "memory": 13357267,
+          "steps": 7190991417
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2404474,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [
+        0,
+        2
+      ],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 7306,
+        "referencedScriptBytes": 39726,
+        "memory": 13357267,
+        "steps": 7190991417,
+        "fee": 2404474
+      },
+      "completeFee": 2404474,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 9694344,
+          "steps": 5107591327
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 28,
+      "signerAvailability": {
+        "availableIndices": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31
+        ],
+        "requiredQuorumSignatures": 28,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "39223364",
+        "selectedTargetPowerWithoutLast": "38697256"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 31,
+      "sharedSiblings": 2,
+      "admissionFee": 1952017,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8087,
+          "memory": 11658110,
+          "steps": 4321511345
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "1ea4234a1728eddf8b7dc6a58d96d7d9a715f259facbdb9353375a6777722ff6"
+    },
+    {
+      "id": "availability-populated-28",
+      "mode": "powers",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 7672,
+          "memory": 13722167,
+          "steps": 7290426915
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2448802,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [
+        0,
+        14,
+        26,
+        38
+      ],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 7672,
+        "referencedScriptBytes": 39726,
+        "memory": 13722167,
+        "steps": 7290426915,
+        "fee": 2448802
+      },
+      "completeFee": 2448802,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 10059244,
+          "steps": 5207026825
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 28,
+      "signerAvailability": {
+        "availableIndices": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31
+        ],
+        "requiredQuorumSignatures": 28,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "39223364",
+        "selectedTargetPowerWithoutLast": "38697256"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 33,
+      "sharedSiblings": 5,
+      "admissionFee": 1962051,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8165,
+          "memory": 11737787,
+          "steps": 4349305626
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "8b0b4fc76b8bc08442e0c49b0ef97a678741750056f3a520cf338f92e2b976ac"
+    },
+    {
+      "id": "availability-eight-28",
+      "mode": "powers",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 7901,
+          "memory": 14280288,
+          "steps": 7475933894
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2504457,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [
+        0,
+        6,
+        12,
+        18,
+        24,
+        30,
+        36,
+        42
+      ],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 7901,
+        "referencedScriptBytes": 39726,
+        "memory": 14280288,
+        "steps": 7475933894,
+        "fee": 2504457
+      },
+      "completeFee": 2504457,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 10617365,
+          "steps": 5392533804
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 28,
+      "signerAvailability": {
+        "availableIndices": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31
+        ],
+        "requiredQuorumSignatures": 28,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "39223364",
+        "selectedTargetPowerWithoutLast": "38697256"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 37,
+      "sharedSiblings": 6,
+      "admissionFee": 1962051,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8165,
+          "memory": 11737787,
+          "steps": 4349305626
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "0d039d73f9a9f84ff44401ca57a255abebfd785d0a369b0315a99a4623130514"
+    },
+    {
+      "id": "availability-34",
+      "mode": "hit",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 7833,
+          "memory": 12345077,
+          "steps": 7150387562
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2366331,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 7833,
+        "referencedScriptBytes": 39726,
+        "memory": 12345077,
+        "steps": 7150387562,
+        "fee": 2366331
+      },
+      "completeFee": 2366331,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 358767,
+          "steps": 160058899
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 178637,
+          "steps": 85237682
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 8694953,
+          "steps": 5071221738
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 34,
+      "signerAvailability": {
+        "availableIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38
+        ],
+        "requiredQuorumSignatures": 34,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "38923889",
+        "selectedTargetPowerWithoutLast": "38524071"
+      },
+      "targetSiblings": 4,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1952017,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8087,
+          "memory": 11658110,
+          "steps": 4321511345
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "02292134f01dbadfff933c0388016428dc535a44fc1780014dc234e6b5344a47"
+    },
+    {
+      "id": "availability-powers-34",
+      "mode": "powers",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 8296,
+          "memory": 14537321,
+          "steps": 7892165588
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2566678,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [
+        0,
+        2
+      ],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 8296,
+        "referencedScriptBytes": 39726,
+        "memory": 14537321,
+        "steps": 7892165588,
+        "fee": 2566678
+      },
+      "completeFee": 2566678,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 10874398,
+          "steps": 5808765498
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 34,
+      "signerAvailability": {
+        "availableIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38
+        ],
+        "requiredQuorumSignatures": 34,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "38923889",
+        "selectedTargetPowerWithoutLast": "38524071"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 38,
+      "sharedSiblings": 3,
+      "admissionFee": 1952017,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8087,
+          "memory": 11658110,
+          "steps": 4321511345
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "892f05007ed70838c613e53c18554393f886c94aef4fa29b5e94351be56b1170"
+    },
+    {
+      "id": "availability-populated-34",
+      "mode": "powers",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 8414,
+          "memory": 14530811,
+          "steps": 7874135400
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2570194,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [
+        0,
+        14,
+        26,
+        38
+      ],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 8414,
+        "referencedScriptBytes": 39726,
+        "memory": 14530811,
+        "steps": 7874135400,
+        "fee": 2570194
+      },
+      "completeFee": 2570194,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 10867888,
+          "steps": 5790735310
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 34,
+      "signerAvailability": {
+        "availableIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38
+        ],
+        "requiredQuorumSignatures": 34,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "38923889",
+        "selectedTargetPowerWithoutLast": "38524071"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 37,
+      "sharedSiblings": 3,
+      "admissionFee": 1962051,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8165,
+          "memory": 11737787,
+          "steps": 4349305626
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "183341a8f9fbfbf3868b61f3ef2f9ec38cb92d6951a3bc2467d5eecfc72f907c"
+    },
+    {
+      "id": "availability-eight-34",
+      "mode": "powers",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 8594,
+          "memory": 14996639,
+          "steps": 8029516849
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2616196,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [
+        0,
+        6,
+        12,
+        18,
+        24,
+        30,
+        36,
+        42
+      ],
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 0,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 8594,
+        "referencedScriptBytes": 39726,
+        "memory": 14996639,
+        "steps": 8029516849,
+        "fee": 2616196
+      },
+      "completeFee": 2616196,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 11333716,
+          "steps": 5946116759
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 34,
+      "signerAvailability": {
+        "availableIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38
+        ],
+        "requiredQuorumSignatures": 34,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "38923889",
+        "selectedTargetPowerWithoutLast": "38524071"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 40,
+      "sharedSiblings": 4,
+      "admissionFee": 1962051,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8165,
+          "memory": 11737787,
+          "steps": 4349305626
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "16322a540a272a6f1623be77e51387284d5aef4154825444d5db94d184eaa387"
+    },
+    {
+      "id": "general-replace",
+      "mode": "full",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 7010,
+          "memory": 13566792,
+          "steps": 6657342223
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2354516,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [],
+      "generalChange": "replace",
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 45,
+      "fullTargetBytes": 1800,
+      "fullTrustedBytes": 481,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 7010,
+        "referencedScriptBytes": 39140,
+        "memory": 13566792,
+        "steps": 6657342223,
+        "fee": 2354516
+      },
+      "completeFee": 2354516,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_general_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 9903869,
+          "steps": 4573942133
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 17,
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1952017,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8087,
+          "memory": 11658110,
+          "steps": 4321511345
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "d0d59469114fb75e8845020b76408d8406ab723c8e27139d114e49454b179ddb"
+    },
+    {
+      "id": "general-replace-34-cached",
+      "mode": "full",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 8909,
+          "memory": 15011783,
+          "steps": 8014647333
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2619309,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [],
+      "generalChange": "replace",
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 45,
+      "fullTargetBytes": 1800,
+      "fullTrustedBytes": 481,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 8909,
+        "referencedScriptBytes": 39140,
+        "memory": 15011783,
+        "steps": 8014647333,
+        "fee": 2619309
+      },
+      "completeFee": 2619309,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_general_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 11348860,
+          "steps": 5931247243
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 34,
+      "signerAvailability": {
+        "availableIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38
+        ],
+        "requiredQuorumSignatures": 34,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "38923889",
+        "selectedTargetPowerWithoutLast": "38524071"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1962051,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8165,
+          "memory": 11737787,
+          "steps": 4349305626
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "dd1ee3c0707b5d93454705804d94ed0da5961dd77fdfc5f6501d797226003750"
+    },
+    {
+      "id": "general-replace-34-miss",
+      "mode": "full",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 8909,
+          "memory": 15012215,
+          "steps": 8014783695
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2619344,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [],
+      "generalChange": "replace",
+      "oldValidatorCount": 45,
+      "trustedCacheHit": false,
+      "fullTrustedReferences": 45,
+      "fullTargetBytes": 1800,
+      "fullTrustedBytes": 481,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 8909,
+        "referencedScriptBytes": 39140,
+        "memory": 15012215,
+        "steps": 8014783695,
+        "fee": 2619344
+      },
+      "completeFee": 2619344,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_general_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 11349292,
+          "steps": 5931383605
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 34,
+      "signerAvailability": {
+        "availableIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38
+        ],
+        "requiredQuorumSignatures": 34,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "38923889",
+        "selectedTargetPowerWithoutLast": "38524071"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1348132,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 6242,
+          "memory": 5096808,
+          "steps": 2322647807
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "c25a4b5681cebe0f01a7987256fbae4683a0c3724115acb833dab660d0c34dfb"
+    },
+    {
+      "id": "general-add",
+      "mode": "full",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 6967,
+          "memory": 13331103,
+          "steps": 6594575852
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2334499,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [],
+      "generalChange": "add",
+      "oldValidatorCount": 44,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 44,
+      "fullTargetBytes": 1800,
+      "fullTrustedBytes": 440,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 6967,
+        "referencedScriptBytes": 39140,
+        "memory": 13331103,
+        "steps": 6594575852,
+        "fee": 2334499
+      },
+      "completeFee": 2334499,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_general_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 9668180,
+          "steps": 4511175762
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 17,
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1932358,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8043,
+          "memory": 11434725,
+          "steps": 4254468920
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "7892cb70e70d8e1de6f8ef2b0989e849482afceae6414770a3c2848f78d67b54"
+    },
+    {
+      "id": "general-add-34-cached",
+      "mode": "full",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 8866,
+          "memory": 14776094,
+          "steps": 7951880962
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2599293,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [],
+      "generalChange": "add",
+      "oldValidatorCount": 44,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 44,
+      "fullTargetBytes": 1800,
+      "fullTrustedBytes": 440,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 8866,
+        "referencedScriptBytes": 39140,
+        "memory": 14776094,
+        "steps": 7951880962,
+        "fee": 2599293
+      },
+      "completeFee": 2599293,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_general_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 11113171,
+          "steps": 5868480872
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 34,
+      "signerAvailability": {
+        "availableIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38
+        ],
+        "requiredQuorumSignatures": 34,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "38923889",
+        "selectedTargetPowerWithoutLast": "38524071"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1942392,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8121,
+          "memory": 11514402,
+          "steps": 4282263201
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "3c19bc0e6faf899a18ac4f70c69d08a3a6c6d91190becf369c5fa51d7d85ae4c"
+    },
+    {
+      "id": "general-add-34-miss",
+      "mode": "full",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 8866,
+          "memory": 14776526,
+          "steps": 7952017324
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2599327,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [],
+      "generalChange": "add",
+      "oldValidatorCount": 44,
+      "trustedCacheHit": false,
+      "fullTrustedReferences": 44,
+      "fullTargetBytes": 1800,
+      "fullTrustedBytes": 440,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 8866,
+        "referencedScriptBytes": 39140,
+        "memory": 14776526,
+        "steps": 7952017324,
+        "fee": 2599327
+      },
+      "completeFee": 2599327,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_general_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 11113603,
+          "steps": 5868617234
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 34,
+      "signerAvailability": {
+        "availableIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38
+        ],
+        "requiredQuorumSignatures": 34,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "38923889",
+        "selectedTargetPowerWithoutLast": "38524071"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1348132,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 6242,
+          "memory": 5096808,
+          "steps": 2322647807
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "0d6b5c741e84125987d1964c4828eb58e54e5ade189d8ce5bebdc0b01777623d"
+    },
+    {
+      "id": "general-remove",
+      "mode": "full",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 7020,
+          "memory": 13598433,
+          "steps": 6667953262
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2357547,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [],
+      "generalChange": "remove",
+      "oldValidatorCount": 46,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 46,
+      "fullTargetBytes": 1800,
+      "fullTrustedBytes": 491,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 7020,
+        "referencedScriptBytes": 39140,
+        "memory": 13598433,
+        "steps": 6667953262,
+        "fee": 2357547
+      },
+      "completeFee": 2357547,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_general_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 9935510,
+          "steps": 4584553172
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 17,
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1970546,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8127,
+          "memory": 11869688,
+          "steps": 4384765321
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "771199e091d53c39fa1b92fa949b18a8a1445263a2400dc9cef684e031f71db4"
+    },
+    {
+      "id": "general-remove-34-cached",
+      "mode": "full",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 8919,
+          "memory": 15043424,
+          "steps": 8025258372
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2622340,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [],
+      "generalChange": "remove",
+      "oldValidatorCount": 46,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 46,
+      "fullTargetBytes": 1800,
+      "fullTrustedBytes": 491,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 8919,
+        "referencedScriptBytes": 39140,
+        "memory": 15043424,
+        "steps": 8025258372,
+        "fee": 2622340
+      },
+      "completeFee": 2622340,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_general_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 11380501,
+          "steps": 5941858282
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 34,
+      "signerAvailability": {
+        "availableIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38
+        ],
+        "requiredQuorumSignatures": 34,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "38923889",
+        "selectedTargetPowerWithoutLast": "38524071"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1980579,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8205,
+          "memory": 11949365,
+          "steps": 4412559602
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "4118235ce10094bd3b83821d87063e8d85f5daea8f08db08d9204a129d20d073"
+    },
+    {
+      "id": "general-remove-34-miss",
+      "mode": "full",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 8919,
+          "memory": 15043856,
+          "steps": 8025394734
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2622375,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [],
+      "generalChange": "remove",
+      "oldValidatorCount": 46,
+      "trustedCacheHit": false,
+      "fullTrustedReferences": 46,
+      "fullTargetBytes": 1800,
+      "fullTrustedBytes": 491,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 8919,
+        "referencedScriptBytes": 39140,
+        "memory": 15043856,
+        "steps": 8025394734,
+        "fee": 2622375
+      },
+      "completeFee": 2622375,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_general_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 11380933,
+          "steps": 5941994644
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 34,
+      "signerAvailability": {
+        "availableIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38
+        ],
+        "requiredQuorumSignatures": 34,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "38923889",
+        "selectedTargetPowerWithoutLast": "38524071"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1348132,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 6242,
+          "memory": 5096808,
+          "steps": 2322647807
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "179193f0656d4747dfb79289c16595598f3865ab8c49fac7836f3c03cc95447a"
+    },
+    {
+      "id": "general-reorder",
+      "mode": "full",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 6978,
+          "memory": 13393235,
+          "steps": 6614801711
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2340026,
+      "historyRecords": 0,
+      "cacheRecords": 1,
+      "changedIndices": [],
+      "generalChange": "reorder",
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 45,
+      "fullTargetBytes": 1800,
+      "fullTrustedBytes": 450,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 6978,
+        "referencedScriptBytes": 39140,
+        "memory": 13393235,
+        "steps": 6614801711,
+        "fee": 2340026
+      },
+      "completeFee": 2340026,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_general_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 9730312,
+          "steps": 4531401621
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 17,
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1952287,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8087,
+          "memory": 11661419,
+          "steps": 4322598935
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "b52c5563b61acb54d2c771531aca18d029f3f18922e7b6cdddfd4669ee513ac5"
+    },
+    {
+      "id": "general-reorder-34-cached",
+      "mode": "full",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 8877,
+          "memory": 14838226,
+          "steps": 7972106821
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2604820,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [],
+      "generalChange": "reorder",
+      "oldValidatorCount": 45,
+      "trustedCacheHit": true,
+      "fullTrustedReferences": 45,
+      "fullTargetBytes": 1800,
+      "fullTrustedBytes": 450,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 8877,
+        "referencedScriptBytes": 39140,
+        "memory": 14838226,
+        "steps": 7972106821,
+        "fee": 2604820
+      },
+      "completeFee": 2604820,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_general_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 11175303,
+          "steps": 5888706731
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 34,
+      "signerAvailability": {
+        "availableIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38
+        ],
+        "requiredQuorumSignatures": 34,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "38923889",
+        "selectedTargetPowerWithoutLast": "38524071"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1962320,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8165,
+          "memory": 11741096,
+          "steps": 4350393216
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "bfe23f0a1eb35f89cb6bc8d9a645124a0dc41793d77dd2b5686f7f389a3e17ec"
+    },
+    {
+      "id": "general-reorder-34-miss",
+      "mode": "full",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 8877,
+          "memory": 14838658,
+          "steps": 7972243183
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2604855,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [],
+      "generalChange": "reorder",
+      "oldValidatorCount": 45,
+      "trustedCacheHit": false,
+      "fullTrustedReferences": 45,
+      "fullTargetBytes": 1800,
+      "fullTrustedBytes": 450,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 8877,
+        "referencedScriptBytes": 39140,
+        "memory": 14838658,
+        "steps": 7972243183,
+        "fee": 2604855
+      },
+      "completeFee": 2604855,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_general_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 11175735,
+          "steps": 5888843093
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 34,
+      "signerAvailability": {
+        "availableIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38
+        ],
+        "requiredQuorumSignatures": 34,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "38923889",
+        "selectedTargetPowerWithoutLast": "38524071"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1348132,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 6242,
+          "memory": 5096808,
+          "steps": 2322647807
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "5a2df297f06f183da103d89598a2e900b0858ffc6f425945133a2dac4c081154"
+    },
+    {
+      "id": "general-unchanged-34-miss",
+      "mode": "full",
+      "path": "direct",
+      "directBudget": {
+        "measured": {
+          "signedBytes": 8405,
+          "memory": 12810915,
+          "steps": 7297519792
+        },
+        "withinLedger": true,
+        "headroomPercent": 5,
+        "exceeded": [],
+        "fits": true
+      },
+      "directFee": 2418438,
+      "historyRecords": 100,
+      "cacheRecords": 2,
+      "changedIndices": [],
+      "generalChange": "unchanged",
+      "oldValidatorCount": 45,
+      "trustedCacheHit": false,
+      "fullTrustedReferences": 0,
+      "fullTargetBytes": 1800,
+      "fullTrustedBytes": 0,
+      "targetValidatorCount": 45,
+      "measured": {
+        "signedBytes": 8405,
+        "referencedScriptBytes": 39140,
+        "memory": 12810915,
+        "steps": 7297519792,
+        "fee": 2418438
+      },
+      "completeFee": 2418438,
+      "updateTransactions": 1,
+      "redeemerBudgets": [
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 0,
+          "memory": 112913,
+          "steps": 58130687
+        },
+        {
+          "script": "spending_validator_cache",
+          "tag": 0,
+          "index": 1,
+          "memory": 367813,
+          "steps": 162867214
+        },
+        {
+          "script": "host_state_stt",
+          "tag": 0,
+          "index": 2,
+          "memory": 2999807,
+          "steps": 1775738556
+        },
+        {
+          "script": "update_cached_client",
+          "tag": 3,
+          "index": 0,
+          "memory": 182390,
+          "steps": 86663633
+        },
+        {
+          "script": "verify_general_cached_client",
+          "tag": 3,
+          "index": 1,
+          "memory": 9147992,
+          "steps": 5214119702
+        }
+      ],
+      "publicationBytes": [
+        15882,
+        10182,
+        4466,
+        3129,
+        5020,
+        1392,
+        15818,
+        15232
+      ],
+      "missedBudgets": [
+        "signedBytes",
+        "referencedScriptBytes",
+        "memory",
+        "steps",
+        "fee"
+      ],
+      "signatures": 34,
+      "signerAvailability": {
+        "availableIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
+        ],
+        "selectedIndices": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34,
+          35,
+          36,
+          37,
+          38
+        ],
+        "requiredQuorumSignatures": 34,
+        "addedSignatures": 0,
+        "targetTotalPower": "58207795",
+        "selectedTargetPower": "38923889",
+        "selectedTargetPowerWithoutLast": "38524071"
+      },
+      "targetSiblings": 0,
+      "trustedSiblings": 0,
+      "sharedLeaves": 0,
+      "sharedSiblings": 0,
+      "admissionFee": 1348132,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 6242,
+          "memory": 5096808,
+          "steps": 2322647807
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "6da77311a3617d493561f887c170bebe656ff7ef170e840555156e25cf7a8dcb"
     }
   ]
 }

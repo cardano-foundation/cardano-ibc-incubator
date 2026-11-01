@@ -5,6 +5,7 @@ import {
   retainedQuorumAvailability,
 } from "./tendermint-cache-fixture.ts";
 import { CACHED_UPDATE_BUDGET } from "../src/tendermint-cache.ts";
+import { CARDANO_PROTOCOL_MAJOR_VERSION } from "../src/scalus-evaluator.ts";
 import parameters from "./fixtures/mainnet-protocol-parameters.json" with {
   type: "json",
 };
@@ -96,6 +97,16 @@ const cases: {
         twoRecords: true,
       },
     },
+    {
+      id: `availability-eight-${count}`,
+      mode: "powers" as const,
+      options: {
+        availableSignerIndices: retainedQuorumAvailability[count],
+        changedIndices: [0, 6, 12, 18, 24, 30, 36, 42],
+        historyRecords: 100,
+        twoRecords: true,
+      },
+    },
   ]),
   ...(["replace", "add", "remove", "reorder"] as const).flatMap((
     generalChange,
@@ -154,7 +165,8 @@ const report = {
   blueprintSha256: createHash("sha256").update(
     await Deno.readFile(new URL("../../onchain/plutus.json", import.meta.url)),
   ).digest("hex"),
-  evaluator: "Scalus, Cardano protocol major version 10",
+  evaluator:
+    `Scalus, Cardano protocol major version ${CARDANO_PROTOCOL_MAJOR_VERSION}`,
   parameters:
     "cardano/offchain/scripts/fixtures/mainnet-protocol-parameters.json",
   parametersSha256: createHash("sha256").update(

@@ -203,15 +203,27 @@ Deno.test("shared proof submits eight dispersed changes with populated history a
 });
 
 for (const count of [28, 34] as const) {
-  for (const workload of ["hit", "powers", "populated-powers"] as const) {
+  for (
+    const workload of [
+      "hit",
+      "powers",
+      "populated-powers",
+      "eight-powers",
+    ] as const
+  ) {
     Deno.test(`availability-constrained ${count}-signer ${workload} quorum submits once below 3 ADA with reserve`, async () => {
-      const populated = workload === "populated-powers";
+      const populated = workload === "populated-powers" ||
+        workload === "eight-powers";
       const result = await cachedUpdateFixture(
         workload === "hit" ? "hit" : "powers",
         "none",
         {
           availableSignerIndices: retainedQuorumAvailability[count],
-          changedIndices: populated ? [0, 14, 26, 38] : undefined,
+          changedIndices: workload === "eight-powers"
+            ? [0, 6, 12, 18, 24, 30, 36, 42]
+            : populated
+            ? [0, 14, 26, 38]
+            : undefined,
           historyRecords: populated ? 100 : undefined,
           twoRecords: populated,
         },
