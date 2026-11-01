@@ -18,18 +18,18 @@ A direct update verifies the header and writes the client, cache and HostState i
 
 This is an opt-in prototype through `loadCachedTendermintValidators`. It returns the paired client minting policy as well as the spending and cache scripts. The normal Gateway deployment and routing are unchanged. Existing deployed clients are not migrated. The signed fixture demonstrates client/cache creation, script publication, budget selection, direct updates, staged cache refresh and paired retirement.
 
-The [retained report](../tests/tendermint-cache/evidence/report.json) measures complete signed transactions with Scalus at protocol version 10 and the repository's retained mainnet parameters. The hard limits are 16,384 signed bytes, 16.5 million memory units and 10 billion CPU units. Every reference script used by a direct update is first published in a signed transaction. The table distinguishes the evaluated direct candidate from the selected path. An oversized candidate is never submitted.
+The [retained report](../tests/tendermint-cache/evidence/report.json) measures complete signed transactions with Scalus at protocol version 10 and the repository's retained mainnet parameters. The hard limits are 16,384 signed bytes, 16.5 million memory units and 10 billion CPU units. Every reference script used by a direct update is first published in a signed transaction. Initial client/cache creation is checked against the hard limits before submission too. Its resource figures are retained as `admissionBudget`. The table distinguishes the evaluated direct candidate from the selected path. An oversized candidate is never submitted.
 
 | Case | Direct candidate memory | Within hard limits | Selected path | Complete update fee in ADA |
 | --- | ---: | --- | --- | ---: |
 | Cache hit, 17 signers | 13,397,727 | Yes | Direct | 2.279752 |
-| Changed powers at 0, 2 | 15,966,270 | Yes | Staged for headroom | 9.161475 |
-| Changed powers at 11, 20 | 16,645,363 | No | Staged | 9.161475 |
-| Changed powers at 0, 14, 26 | 17,115,715 | No | Staged | 9.161475 |
+| Changed powers at 0, 2 | 15,966,270 | Yes | Staged for headroom | 9.159032 |
+| Changed powers at 11, 20 | 16,645,363 | No | Staged | 9.159032 |
+| Changed powers at 0, 14, 26 | 17,115,715 | No | Staged | 9.159032 |
 | Changed powers at 0, 14, 26, 38 | 17,951,348 | No | Staged | 9.161475 |
 | Cache hit, 24 signers | 15,360,794 | Yes | Direct | 2.510607 |
 | 100 history records, two cache records, 24 signers | 15,403,936 | Yes | Direct | 2.521811 |
-| Same populated case with four dispersed power changes | 19,936,465 | No | Staged | 9.166132 |
+| Same populated case with four dispersed power changes | 19,936,465 | No | Staged | 9.168575 |
 
 The staged fees include all eleven session transactions and finalization. Finalization alone is about 2.20 ADA. The two-change direct candidate calculates to about 2.52 ADA but is rejected by the reserve check. It is not the price of the selected update. A cache hit improves on the retained 4.811116 ADA staged comparison in PR #951. These measurements do not establish a cheaper ordinary changed-set workload.
 

@@ -413,6 +413,11 @@ export async function cachedUpdateFixture(
       throw new Error(`cache admission: ${error}`, { cause: error });
     });
   const signedAdmission = await admission.sign.withWallet().complete();
+  const admissionBudget = evaluatedUpdateBudget(signedAdmission, parameters, 0);
+  assert(
+    admissionBudget.withinLedger,
+    `Cache admission exceeds ledger limits: ${JSON.stringify(admissionBudget)}`,
+  );
   assertEquals(await signedAdmission.submit(), signedAdmission.toHash());
   emulator.awaitBlock();
   const client = await lucid.utxoByUnit(clientUnit);
@@ -927,6 +932,7 @@ export async function cachedUpdateFixture(
     targetSiblings: targetSiblings.length,
     trustedSiblings: trustedSiblings.length,
     admissionFee: Number(signedAdmission.toTransaction().body().fee()),
+    admissionBudget,
     signedCbor: signed.toCBOR(),
     fallbackSessions: session?.measurements,
   };

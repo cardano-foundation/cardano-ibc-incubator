@@ -98,7 +98,18 @@
       "targetSiblings": 5,
       "trustedSiblings": 0,
       "admissionFee": 2217596,
-      "signedTransactionSha256": "88b716d6efaa714e0cacc9af8fc730f0669e860dee8571c63b17ab50f10c8c3b"
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8087,
+          "memory": 14509458,
+          "steps": 5206579259
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "a47ccfa0f06b74be102dacda876dad0f5bbbbeda8f4489dd4ef3a79dc04d985a"
     },
     {
       "id": "powers",
@@ -128,54 +139,54 @@
       "measured": {
         "signedBytes": 2460,
         "referencedScriptBytes": 57639,
-        "memory": 10653337,
-        "steps": 4694272923,
-        "fee": 2200834
+        "memory": 10619049,
+        "steps": 4687826646,
+        "fee": 2198391
       },
-      "completeFee": 9161475,
+      "completeFee": 9159032,
       "updateTransactions": 12,
       "redeemerBudgets": [
         {
-          "script": "session_spend",
-          "tag": 0,
-          "index": 0,
-          "memory": 1064090,
-          "steps": 310655473
-        },
-        {
           "script": "spending_cached_client",
           "tag": 0,
-          "index": 1,
-          "memory": 321655,
-          "steps": 103912145
+          "index": 0,
+          "memory": 317761,
+          "steps": 101334668
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
-          "index": 2,
-          "memory": 967282,
-          "steps": 337766366
+          "index": 1,
+          "memory": 959958,
+          "steps": 332674131
         },
         {
           "script": "host_state_stt",
           "tag": 0,
+          "index": 2,
+          "memory": 3038673,
+          "steps": 1784242433
+        },
+        {
+          "script": "session_spend",
+          "tag": 0,
           "index": 3,
-          "memory": 3079821,
-          "steps": 1795718226
+          "memory": 1072342,
+          "steps": 315873146
         },
         {
           "script": "session_mint",
           "tag": 1,
           "index": 0,
-          "memory": 1211810,
-          "steps": 382074293
+          "memory": 1222100,
+          "steps": 389618567
         },
         {
           "script": "update_staged_client",
           "tag": 3,
           "index": 0,
-          "memory": 4008679,
-          "steps": 1764146420
+          "memory": 4008215,
+          "steps": 1764083701
         }
       ],
       "publicationBytes": [
@@ -196,6 +207,17 @@
       "targetSiblings": 5,
       "trustedSiblings": 5,
       "admissionFee": 2217596,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8087,
+          "memory": 14509458,
+          "steps": 5206579259
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
       "fallbackSessions": [
         {
           "operation": "session initialize",
@@ -275,7 +297,7 @@
           "steps": 340427149
         }
       ],
-      "signedTransactionSha256": "f2df5d6e1f33e74ee3dbd18de1ed42da14cf547c15e5d92ed268d3ffc7c194fb"
+      "signedTransactionSha256": "f7049d56669bd9e9fe078b73ef8ba008aee9eabbdbe0d17ee8d980cd03291b17"
     },
     {
       "id": "dispersed-two",
@@ -305,54 +327,54 @@
       "measured": {
         "signedBytes": 2460,
         "referencedScriptBytes": 57639,
-        "memory": 10653337,
-        "steps": 4694272923,
-        "fee": 2200834
+        "memory": 10619049,
+        "steps": 4687826646,
+        "fee": 2198391
       },
-      "completeFee": 9161475,
+      "completeFee": 9159032,
       "updateTransactions": 12,
       "redeemerBudgets": [
         {
-          "script": "session_spend",
-          "tag": 0,
-          "index": 0,
-          "memory": 1064090,
-          "steps": 310655473
-        },
-        {
           "script": "spending_cached_client",
           "tag": 0,
-          "index": 1,
-          "memory": 321655,
-          "steps": 103912145
+          "index": 0,
+          "memory": 317761,
+          "steps": 101334668
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
-          "index": 2,
-          "memory": 967282,
-          "steps": 337766366
+          "index": 1,
+          "memory": 959958,
+          "steps": 332674131
         },
         {
           "script": "host_state_stt",
           "tag": 0,
+          "index": 2,
+          "memory": 3038673,
+          "steps": 1784242433
+        },
+        {
+          "script": "session_spend",
+          "tag": 0,
           "index": 3,
-          "memory": 3079821,
-          "steps": 1795718226
+          "memory": 1072342,
+          "steps": 315873146
         },
         {
           "script": "session_mint",
           "tag": 1,
           "index": 0,
-          "memory": 1211810,
-          "steps": 382074293
+          "memory": 1222100,
+          "steps": 389618567
         },
         {
           "script": "update_staged_client",
           "tag": 3,
           "index": 0,
-          "memory": 4008679,
-          "steps": 1764146420
+          "memory": 4008215,
+          "steps": 1764083701
         }
       ],
       "publicationBytes": [
@@ -373,6 +395,17 @@
       "targetSiblings": 5,
       "trustedSiblings": 5,
       "admissionFee": 2217596,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8087,
+          "memory": 14509458,
+          "steps": 5206579259
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
       "fallbackSessions": [
         {
           "operation": "session initialize",
@@ -452,7 +485,7 @@
           "steps": 340427149
         }
       ],
-      "signedTransactionSha256": "d60e27c8ac7318d2cd9f22a02125d96f0756216b9edf0ef59a5e4cf0c7a2c0a1"
+      "signedTransactionSha256": "ea25b0fb3de2821d35d2c52de15efa31daa83c3476f78a2e2450275e90a17f36"
     },
     {
       "id": "dispersed-three",
@@ -483,54 +516,54 @@
       "measured": {
         "signedBytes": 2460,
         "referencedScriptBytes": 57639,
-        "memory": 10653337,
-        "steps": 4694272923,
-        "fee": 2200834
+        "memory": 10619049,
+        "steps": 4687826646,
+        "fee": 2198391
       },
-      "completeFee": 9161475,
+      "completeFee": 9159032,
       "updateTransactions": 12,
       "redeemerBudgets": [
         {
-          "script": "session_spend",
-          "tag": 0,
-          "index": 0,
-          "memory": 1064090,
-          "steps": 310655473
-        },
-        {
           "script": "spending_cached_client",
           "tag": 0,
-          "index": 1,
-          "memory": 321655,
-          "steps": 103912145
+          "index": 0,
+          "memory": 317761,
+          "steps": 101334668
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
-          "index": 2,
-          "memory": 967282,
-          "steps": 337766366
+          "index": 1,
+          "memory": 959958,
+          "steps": 332674131
         },
         {
           "script": "host_state_stt",
           "tag": 0,
+          "index": 2,
+          "memory": 3038673,
+          "steps": 1784242433
+        },
+        {
+          "script": "session_spend",
+          "tag": 0,
           "index": 3,
-          "memory": 3079821,
-          "steps": 1795718226
+          "memory": 1072342,
+          "steps": 315873146
         },
         {
           "script": "session_mint",
           "tag": 1,
           "index": 0,
-          "memory": 1211810,
-          "steps": 382074293
+          "memory": 1222100,
+          "steps": 389618567
         },
         {
           "script": "update_staged_client",
           "tag": 3,
           "index": 0,
-          "memory": 4008679,
-          "steps": 1764146420
+          "memory": 4008215,
+          "steps": 1764083701
         }
       ],
       "publicationBytes": [
@@ -551,6 +584,17 @@
       "targetSiblings": 5,
       "trustedSiblings": 5,
       "admissionFee": 2217596,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8087,
+          "memory": 14509458,
+          "steps": 5206579259
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
       "fallbackSessions": [
         {
           "operation": "session initialize",
@@ -630,7 +674,7 @@
           "steps": 340427149
         }
       ],
-      "signedTransactionSha256": "eb106253ca670b69169eeb8e505a6866254d123f40b69af30f4fdca6bfec9f09"
+      "signedTransactionSha256": "d2b97bc4888ad2ebf5c7ca5f20f1f09f4f89250760a33e921bcf800096bbf5e0"
     },
     {
       "id": "dispersed-four",
@@ -730,6 +774,17 @@
       "targetSiblings": 5,
       "trustedSiblings": 5,
       "admissionFee": 2217596,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8087,
+          "memory": 14509458,
+          "steps": 5206579259
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
       "fallbackSessions": [
         {
           "operation": "session initialize",
@@ -809,7 +864,7 @@
           "steps": 340427149
         }
       ],
-      "signedTransactionSha256": "f56f9ca11586ed9108ac4cf1ced52f5bb95faf64677e7228890b5366f43dddfe"
+      "signedTransactionSha256": "bc339e1c7796f540e76f4923e71e00efb5b3384fe83ef8870fb9efd98d485a11"
     },
     {
       "id": "signers-24",
@@ -888,7 +943,18 @@
       "targetSiblings": 6,
       "trustedSiblings": 0,
       "admissionFee": 2217596,
-      "signedTransactionSha256": "86609df2e0032c899d20e13052698826e57d89241e8bffb8ae3e87c904ca5d82"
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8087,
+          "memory": 14509458,
+          "steps": 5206579259
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "2149337cba022afc7af0e680a06a916d6d8964757b1e6517f04ed442a1435898"
     },
     {
       "id": "populated-hit",
@@ -967,7 +1033,18 @@
       "targetSiblings": 6,
       "trustedSiblings": 0,
       "admissionFee": 2232010,
-      "signedTransactionSha256": "c57b1adbd890ea8f6075703458c38f9b9d108c2fcd12a962b4e2535073ce919b"
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8165,
+          "memory": 14643571,
+          "steps": 5251567164
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "accdd76eef3432f5fdabad6d1cbd094baa27b93743e85e1b481eff83387827a0"
     },
     {
       "id": "populated-powers",
@@ -999,54 +1076,54 @@
       "measured": {
         "signedBytes": 2625,
         "referencedScriptBytes": 57639,
-        "memory": 10633053,
-        "steps": 4674404572,
-        "fee": 2205491
+        "memory": 10667341,
+        "steps": 4680850849,
+        "fee": 2207934
       },
-      "completeFee": 9166132,
+      "completeFee": 9168575,
       "updateTransactions": 12,
       "redeemerBudgets": [
         {
-          "script": "spending_cached_client",
+          "script": "session_spend",
           "tag": 0,
           "index": 0,
-          "memory": 317761,
-          "steps": 101334668
+          "memory": 1064090,
+          "steps": 310655473
+        },
+        {
+          "script": "spending_cached_client",
+          "tag": 0,
+          "index": 1,
+          "memory": 321655,
+          "steps": 103912145
         },
         {
           "script": "spending_validator_cache",
           "tag": 0,
-          "index": 1,
-          "memory": 966545,
-          "steps": 334757197
+          "index": 2,
+          "memory": 973869,
+          "steps": 339849432
         },
         {
           "script": "host_state_stt",
           "tag": 0,
-          "index": 2,
-          "memory": 3038673,
-          "steps": 1784242433
-        },
-        {
-          "script": "session_spend",
-          "tag": 0,
           "index": 3,
-          "memory": 1072342,
-          "steps": 315873146
+          "memory": 3079821,
+          "steps": 1795718226
         },
         {
           "script": "session_mint",
           "tag": 1,
           "index": 0,
-          "memory": 1222100,
-          "steps": 389618567
+          "memory": 1211810,
+          "steps": 382074293
         },
         {
           "script": "update_staged_client",
           "tag": 3,
           "index": 0,
-          "memory": 4015632,
-          "steps": 1748578561
+          "memory": 4016096,
+          "steps": 1748641280
         }
       ],
       "publicationBytes": [
@@ -1067,6 +1144,17 @@
       "targetSiblings": 6,
       "trustedSiblings": 5,
       "admissionFee": 2232010,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8165,
+          "memory": 14643571,
+          "steps": 5251567164
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
       "fallbackSessions": [
         {
           "operation": "session initialize",
@@ -1146,7 +1234,7 @@
           "steps": 340427149
         }
       ],
-      "signedTransactionSha256": "ed3ef9ae4c25d95a57198abdf3b0ef1b863dff7ddab588cecbe2eaf3fd63eaf9"
+      "signedTransactionSha256": "704e58accfe906de15d6eefd498a7bdef76caecdfc4c1a634e5a28ffa6bd3a2c"
     },
     {
       "id": "adjacent",
@@ -1225,7 +1313,18 @@
       "targetSiblings": 5,
       "trustedSiblings": 0,
       "admissionFee": 2217072,
-      "signedTransactionSha256": "71462d0bf4e7296400293bd649b0dbf375c7742647ccf82730b6e1f3ec9b61e5"
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8087,
+          "memory": 14507038,
+          "steps": 5201247731
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
+      "signedTransactionSha256": "f9bc6f6a2a4f544066732c63406fc8e3c6c03d93c8f961c15bec00a2b437a357"
     },
     {
       "id": "full",
@@ -1308,6 +1407,17 @@
       "targetSiblings": 5,
       "trustedSiblings": 5,
       "admissionFee": 2217596,
+      "admissionBudget": {
+        "measured": {
+          "signedBytes": 8087,
+          "memory": 14509458,
+          "steps": 5206579259
+        },
+        "withinLedger": true,
+        "headroomPercent": 0,
+        "exceeded": [],
+        "fits": true
+      },
       "fallbackSessions": [
         {
           "operation": "session initialize",
@@ -1387,7 +1497,7 @@
           "steps": 340427149
         }
       ],
-      "signedTransactionSha256": "fa5675163346908a716c449ba13c2b2663fa0da7ff419badcb1e5c1e990ac545"
+      "signedTransactionSha256": "1be0e12a2805aea7fa2613393545af40c97953db3a4fad740f440e9684e52bb4"
     }
   ]
 }
