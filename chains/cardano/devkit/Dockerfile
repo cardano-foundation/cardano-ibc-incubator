@@ -16,6 +16,7 @@ COPY --from=devkit-tools /app/kupo /app/kupo
 COPY --from=ogmios-tools /bin/ogmios /app/ogmios/bin/ogmios
 RUN /app/ogmios/bin/ogmios --version
 RUN ln -sf /profile/cardano_node.py /app/cardano-bin/cardano-node \
+    && ln -sf /profile/cardano_submit_api.py /app/cardano-bin/cardano-submit-api \
     && ln -sf /usr/local/bin/cardano-cli /app/cardano-bin/cardano-cli.bin
 COPY devkit/cardano-cli.sh /app/cardano-bin/cardano-cli
 RUN chmod +x /app/cardano-bin/cardano-cli
@@ -26,8 +27,9 @@ WORKDIR /app
 COPY devkit/entrypoint.sh /profile/entrypoint.sh
 COPY devkit/nonce.py /profile/nonce.py
 COPY devkit/cardano_node.py /profile/cardano_node.py
+COPY devkit/cardano_submit_api.py /profile/cardano_submit_api.py
 COPY devkit/bootstrap.py /profile/bootstrap.py
-RUN chmod +x /profile/cardano_node.py
+RUN chmod +x /profile/cardano_node.py /profile/cardano_submit_api.py
 COPY devkit/node.properties /app/config/node.properties
 COPY config/protocol-parameters.json /config/protocol-parameters.json
 
