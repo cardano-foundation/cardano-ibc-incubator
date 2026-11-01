@@ -173,6 +173,42 @@ function powerChangeWitness(
       ])
     ),
     validatorMultiproof(old, indices),
+    signerIndices.map(BigInt),
+  ]);
+}
+
+/** Authenticate an arbitrary target set and its complete trusted predecessor.
+ * Surviving keys refer to the target by position, even after reordering. */
+export function fullSetUpdate(
+  old: CacheLeaf[],
+  next: CacheLeaf[],
+  signerIndices: number[],
+): Constr<Data> {
+  const oldRecord = cacheRecord(old);
+  const nextRecord = cacheRecord(next);
+  if (
+    !signerIndices.length ||
+    signerIndices.some((index, i) =>
+      !Number.isInteger(index) || index < 0 || index >= next.length ||
+      i > 0 && signerIndices[i - 1] >= index
+    )
+  ) throw new Error("Signer positions must be sorted and unique");
+  const targetByKey = new Map(next.map((leaf) => [leaf.pubkey, leaf.index]));
+  const packedPower = (power: bigint) => power.toString(16).padStart(16, "0");
+  const trusted = oldRecord.root === nextRecord.root ? "" : old.map((leaf) => {
+    const targetIndex = targetByKey.get(leaf.pubkey);
+    return (targetIndex === undefined
+      ? "01" + leaf.pubkey
+      : "00" + targetIndex.toString(16).padStart(2, "0")) +
+      packedPower(leaf.power);
+  }).join("");
+  return new Constr(0, [
+    next.map((leaf) => leaf.pubkey + packedPower(leaf.power)).join(""),
+    trusted,
+    signerIndices.map(BigInt),
+    [...next].sort((left, right) =>
+      left.pubkey < right.pubkey ? -1 : left.pubkey > right.pubkey ? 1 : 0
+    ).map((leaf) => BigInt(leaf.index)),
   ]);
 }
 

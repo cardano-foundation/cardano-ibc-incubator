@@ -1,4 +1,10 @@
-import { Constr, Data, type LucidEvolution } from "@lucid-evolution/lucid";
+import {
+  Constr,
+  Data,
+  type LucidEvolution,
+  type Script,
+  validatorToRewardAddress,
+} from "@lucid-evolution/lucid";
 import { loadStagedTendermintValidators } from "./deployment-plan.ts";
 import { readValidator } from "./utils.ts";
 
@@ -13,11 +19,27 @@ export function loadCachedTendermintValidators(
     hostPolicy,
     recoveryHash,
   );
-  const update = readValidator(
-    "update_cached_client.update_cached_client.withdraw",
+  const updateCore = readValidator(
+    "verify_cached_client.verify_cached_client.withdraw",
     lucid,
     [hostPolicy, recoveryHash],
     Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
+  );
+  const generalUpdateCore = readValidator(
+    "verify_general_cached_client.verify_general_cached_client.withdraw",
+    lucid,
+    [hostPolicy, recoveryHash],
+    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
+  );
+  const update = readValidator(
+    "update_cached_client.update_cached_client.withdraw",
+    lucid,
+    [updateCore[1], generalUpdateCore[1], recoveryHash],
+    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
+      string,
+      string,
+      string,
+    ],
   );
   const cacheSpend = readValidator(
     "spending_validator_cache.spend_validator_cache.spend",
@@ -56,5 +78,42 @@ export function loadCachedTendermintValidators(
       string,
     ],
   );
-  return { staged, cacheSpend, cacheMint, update, clientSpend, clientMint };
+  // These credentials are registered once per deployment and must all be
+  // deregistered with recovery authorization before the HostState is removed.
+  const withdrawal = (title: string, tuple: [Script, string, string]) => ({
+    title,
+    validator: tuple[0],
+    scriptHash: tuple[1],
+    address: validatorToRewardAddress(
+      lucid.config().network ?? "Custom",
+      tuple[0],
+    ),
+  });
+  const withdrawalScripts = [
+    withdrawal("update_cached_client.update_cached_client.withdraw", update),
+    withdrawal(
+      "verify_cached_client.verify_cached_client.withdraw",
+      updateCore,
+    ),
+    withdrawal(
+      "verify_general_cached_client.verify_general_cached_client.withdraw",
+      generalUpdateCore,
+    ),
+    withdrawal("update_staged_client.update_staged_client.withdraw", [
+      staged.updateClient.validator,
+      staged.updateClient.scriptHash,
+      staged.updateClient.address,
+    ]),
+  ];
+  return {
+    withdrawalScripts,
+    staged,
+    cacheSpend,
+    cacheMint,
+    update,
+    updateCore,
+    generalUpdateCore,
+    clientSpend,
+    clientMint,
+  };
 }

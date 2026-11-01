@@ -1,102 +1,44 @@
-use aiken/collection/dict
+use aiken/builtin
 use aiken/collection/list
 use aiken/collection/pairs
-use cardano/address.{Credential}
-use cardano/assets.{PolicyId}
+use cardano/address.{Credential, Script}
 use cardano/certificate.{Certificate}
 use cardano/transaction.{Spend, Transaction}
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/cached/identity
-use ibc/client/ics_007_tendermint_client/cached/types.{
-  CacheDatum, CachedClientRedeemer, CachedUpdate,
-}
-use ibc/client/ics_007_tendermint_client/cached/verify
-use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
-use ibc/client/ics_007_tendermint_client/cometbft/validator_set
-use ibc/client/ics_007_tendermint_client/consensus_history
-use ibc/client/ics_007_tendermint_client/header.{Header}
 use ibc/utils/forwarding
-use ibc/utils/tx_time.{TxTime}
-use ibc/utils/validator_utils
 
+/// The client and cache guards pin this entry point. It selects a pinned core
+/// from the actual client spending witness without decoding that witness twice.
 validator update_cached_client(
-  host_policy: PolicyId,
+  update_script: ByteArray,
+  general_update_script: ByteArray,
   administrative_script: ByteArray,
 ) {
   withdraw(subject: AuthToken, credential: Credential, tx: Transaction) {
-    let raw: Data = subject
-    expect forwarding.require_zero(credential, raw, tx)
+    let expected: Data = subject
+    expect forwarding.require_zero(credential, expected, tx)
     expect [client] =
       list.filter(
         tx.inputs,
         fn(input) { auth.contain_auth_token(input.output, subject) },
       )
-    expect datum: ClientDatum = validator_utils.get_inline_datum(client.output)
-    expect datum.token == subject
-    expect Some(raw_spend) =
+    expect Some(raw) =
       pairs.get_first(tx.redeemers, Spend(client.output_reference))
-    expect CachedUpdate { update }: CachedClientRedeemer = raw_spend
-    // The spending client pins the cache policy. Both scripts independently
-    // bind its name to the actual subject, never to claims inside a cache.
-    let cache_policy = update.cache_token.policy_id
-    expect update.cache_token.name == identity.token_name(subject)
-    expect [cache_input] =
-      list.filter(
-        tx.inputs,
-        fn(input) { auth.contain_auth_token(input.output, update.cache_token) },
-      )
-    expect cache: CacheDatum =
-      validator_utils.get_inline_datum(cache_input.output)
-    expect
-      cache.token == update.cache_token && cache.client_token == subject && cache.client_address == client.output.address
-    expect tx.mint |> assets.tokens(cache_policy) |> dict.is_empty
-    expect tx.mint |> assets.tokens(subject.policy_id) |> dict.is_empty
-    let cache_output =
-      validator_utils.find_unique_continuation_output(
-        cache_input.output,
-        tx.outputs,
-        cache.token,
-      )
-    expect next_cache: CacheDatum =
-      validator_utils.get_inline_datum(cache_output)
-    let output =
-      validator_utils.find_unique_continuation_output(
-        client.output,
-        tx.outputs,
-        subject,
-      )
-    expect next: ClientDatum = validator_utils.get_inline_datum(output)
-    expect _ =
-      validator_utils.require_host_state_redeemer(
-        tx.inputs,
-        tx.outputs,
-        tx.redeemers,
-        host_policy,
-        validator_utils.ExpectUpdateClient,
-      )
-    let valid_to = validator_utils.get_tx_valid_to(tx.validity_range)
-    let time =
-      TxTime {
-        valid_from: validator_utils.get_tx_valid_from(tx.validity_range) * 1_000_000,
-        valid_to: valid_to * 1_000_000,
+    expect Pair(6, [payload]) = builtin.un_constr_data(raw)
+    expect Pair(0, [_,
+      _, _, _, _, _, _, sets, _]) = builtin.un_constr_data(payload)
+    let full =
+      when builtin.un_list_data(sets) is {
+        [set] -> builtin.un_constr_data(set).1st == 0
+        _ -> False
       }
-    let next_records = verify.header(datum, time, cache.records, update)
-    let header =
-      Header {
-        signed_header: update.signed_header,
-        validator_set: validator_set.null_validator_set(),
-        trusted_height: update.trusted_height,
-        trusted_validators: validator_set.null_validator_set(),
+    let selected =
+      if full {
+        general_update_script
+      } else {
+        update_script
       }
-    and {
-      next_cache == CacheDatum { ..cache, records: next_records },
-      client_datum.update_state(datum, next, header, valid_to),
-      consensus_history.insert(
-        datum.history_root,
-        consensus_history.from_client(datum),
-        update.history_siblings,
-      ) == next.history_root,
-    }
+    forwarding.require_zero(Script(selected), expected, tx)
   }
 
   publish(_redeemer: Void, certificate: Certificate, tx: Transaction) {

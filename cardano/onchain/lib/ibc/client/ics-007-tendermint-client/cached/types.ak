@@ -7,7 +7,7 @@ pub const max_validators = 256
 
 pub const max_records = 2
 
-pub const max_signers = 24
+pub const max_signers = 45
 
 pub type Record {
   root: ByteArray,
@@ -29,13 +29,28 @@ pub type PowerChange {
   new_power: Int,
 }
 
+/// A complete trusted set can reference an authenticated target key by index.
+/// Keys absent from the target are supplied explicitly.
+pub type TrustedLeaf {
+  FromTarget { target_index: Int, old_power: Int }
+  Prior { pubkey: ByteArray, power: Int }
+}
+
 pub type SetUpdate {
-  /// Reserved marker. Full misses use a staged receipt to refresh the cache.
-  Full { leaves: List<Leaf> }
+  /// Full target rows contain key32 || unsigned powerBE8. Old references are
+  /// tag00 || target-index1 || powerBE8 or tag01 || prior-key32 || powerBE8.
+  /// The verifier derives every hash and total from these exact row formats.
+  Full {
+    leaves: ByteArray,
+    trusted: ByteArray,
+    signers: List<Int>,
+    pubkey_order: List<Int>,
+  }
   Powers {
     old_root: ByteArray,
     leaves: List<PowerChange>,
     siblings: List<ByteArray>,
+    signers: List<Int>,
   }
 }
 
@@ -55,11 +70,13 @@ pub type MintCache {
   RetireCache { client_token: AuthToken }
 }
 
-/// Target leaves and signatures are in the same strictly increasing order.
-/// A Powers transition discloses their union with changed leaves and boundary
-/// neighbors. It authenticates both roots and old signer powers together, so
-/// target_siblings, trusted and trusted_siblings must then be empty.
-/// With no transition, cached roots use the separate membership witnesses.
+/// With no set transition, target leaves and signatures use the same strictly
+/// increasing order and cached roots use separate membership witnesses.
+/// Powers and Full carry their signer positions inside the transition. Their
+/// top-level target, target_siblings, trusted and trusted_siblings are empty.
+/// Powers authenticates the union of signers, changed leaves and boundary
+/// neighbors against both roots. Full authenticates complete target and old
+/// sets and proves target key uniqueness with pubkey_order.
 pub type Update {
   cache_token: AuthToken,
   signed_header: SignedHeader,

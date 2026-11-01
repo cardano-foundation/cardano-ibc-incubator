@@ -6,6 +6,7 @@ import parameters from "./fixtures/mainnet-protocol-parameters.json" with {
 import {
   cachedUpdateFixture,
   retainedLeaves,
+  retainedQuorumAvailability,
   retainedScenario,
 } from "./tendermint-cache-fixture.ts";
 import {
@@ -38,6 +39,24 @@ function assertDirectUnderThreeAda(
   assertEquals(result.completeFee, result.measured.fee);
 }
 
+function assertAvailabilityQuorum(
+  result: Awaited<ReturnType<typeof cachedUpdateFixture>>,
+  count: 28 | 34,
+) {
+  assertEquals(result.signatures, count);
+  const availability = result.signerAvailability;
+  assert(availability);
+  assertEquals(availability.requiredQuorumSignatures, count);
+  assertEquals(availability.addedSignatures, 0);
+  assertEquals(availability.selectedIndices.length, count);
+  const total = BigInt(availability.targetTotalPower);
+  assert(BigInt(availability.selectedTargetPower) * 3n > total * 2n);
+  assert(
+    BigInt(availability.selectedTargetPowerWithoutLast) * 3n <= total * 2n,
+    "The larger count must be needed for quorum rather than padded",
+  );
+}
+
 Deno.test("retained 45-validator root has a five-hash multiproof for the selected seventeen signers", () => {
   assertEquals(
     cacheRecord(retainedLeaves).root,
@@ -53,7 +72,7 @@ for (const mode of ["hit", "powers", "full", "adjacent"] as const) {
     const { signedCbor: _, ...report } = result;
     console.log(JSON.stringify(report));
     assertEquals(result.signatures, 17);
-    if (mode === "powers") assertDirectUnderThreeAda(result);
+    if (mode === "powers" || mode === "full") assertDirectUnderThreeAda(result);
   });
 }
 
@@ -173,17 +192,153 @@ for (const changedIndices of [[0, 14, 26], [0, 14, 26, 38]]) {
   });
 }
 
-Deno.test("capacity routing stages a stressed eight-change transaction before submission", async () => {
+Deno.test("shared proof submits eight dispersed changes with populated history and 24 signers below 3 ADA", async () => {
   const result = await cachedUpdateFixture("powers", "none", {
     changedIndices: [0, 6, 12, 18, 24, 30, 36, 42],
     historyRecords: 100,
     twoRecords: true,
     signerCount: 24,
   });
-  assertEquals(result.path, "staged");
-  assertEquals(result.directBudget?.fits, false);
-  assertEquals(result.rejectedDirectWasSubmitted, false);
+  assertDirectUnderThreeAda(result);
 });
+
+for (const count of [28, 34] as const) {
+  for (const workload of ["hit", "powers", "populated-powers"] as const) {
+    Deno.test(`availability-constrained ${count}-signer ${workload} quorum submits once below 3 ADA with reserve`, async () => {
+      const populated = workload === "populated-powers";
+      const result = await cachedUpdateFixture(
+        workload === "hit" ? "hit" : "powers",
+        "none",
+        {
+          availableSignerIndices: retainedQuorumAvailability[count],
+          changedIndices: populated ? [0, 14, 26, 38] : undefined,
+          historyRecords: populated ? 100 : undefined,
+          twoRecords: populated,
+        },
+      );
+      assertDirectUnderThreeAda(result);
+      assertAvailabilityQuorum(result, count);
+      if (populated) {
+        assertEquals(result.historyRecords, 100);
+        assertEquals(result.cacheRecords, 2);
+      }
+    });
+  }
+}
+
+for (const generalChange of ["replace", "add", "remove", "reorder"] as const) {
+  for (const populated of [false, true]) {
+    Deno.test(`general ${generalChange} transition${populated ? " with populated history and required34-signature quorum" : ""} submits once below 3 ADA`, async () => {
+      const result = await cachedUpdateFixture("full", "none", {
+        generalChange,
+        availableSignerIndices: populated
+          ? retainedQuorumAvailability[34]
+          : undefined,
+        historyRecords: populated ? 100 : undefined,
+        twoRecords: populated,
+      });
+      assertDirectUnderThreeAda(result);
+      assertEquals(result.generalChange, generalChange);
+      assertEquals(
+        result.oldValidatorCount,
+        generalChange === "add" ? 44 : generalChange === "remove" ? 46 : 45,
+      );
+      assertEquals(result.targetValidatorCount, 45);
+      assertEquals(result.targetSiblings, 0);
+      if (populated) {
+        assertAvailabilityQuorum(result, 34);
+        assertEquals(result.historyRecords, 100);
+        assertEquals(result.cacheRecords, 2);
+      }
+    });
+  }
+}
+
+for (const generalChange of ["replace", "add", "remove", "reorder"] as const) {
+  Deno.test(`general ${generalChange} authenticates uncached trusted power with a required34-signature quorum below 3 ADA`, async () => {
+    const result = await cachedUpdateFixture("full", "none", {
+      generalChange,
+      uncachedTrusted: true,
+      availableSignerIndices: retainedQuorumAvailability[34],
+      historyRecords: 100,
+      twoRecords: true,
+    });
+    assertDirectUnderThreeAda(result);
+    assertAvailabilityQuorum(result, 34);
+    assertEquals(result.trustedCacheHit, false);
+    assertEquals(result.fullTrustedReferences, result.oldValidatorCount);
+  });
+}
+
+Deno.test("full target authenticates an uncached unchanged trusted set without an old witness", async () => {
+  const result = await cachedUpdateFixture("full", "none", {
+    generalChange: "unchanged",
+    uncachedTrusted: true,
+    availableSignerIndices: retainedQuorumAvailability[34],
+    historyRecords: 100,
+    twoRecords: true,
+  });
+  assertDirectUnderThreeAda(result);
+  assertAvailabilityQuorum(result, 34);
+  assertEquals(result.trustedCacheHit, false);
+  assertEquals(result.fullTrustedReferences, 0);
+});
+
+for (
+  const [mutation, mode] of [
+    ["missing-core", "hit"],
+    ["missing-dispatcher", "hit"],
+    ["full-wrong-core", "full"],
+    ["core-subject", "hit"],
+  ] as const
+) {
+  Deno.test(`cached verifier composition rejects ${mutation}`, async () => {
+    await assertRejects(
+      () => cachedUpdateFixture(mode, mutation),
+      Error,
+      "cached update:",
+    );
+  });
+}
+
+for (
+  const mutation of [
+    "full-signer-power",
+    "full-packed-length",
+    "full-packed-duplicate-row",
+    "full-packed-duplicate-key-power",
+    "full-packed-zero-power",
+    "full-packed-power-overflow",
+    "full-packed-key",
+    "full-packed-missing-row",
+    "full-packed-trailing-bytes",
+    "full-missing-trusted",
+    "full-unverified-trusted",
+    "full-trusted-tag",
+    "full-trusted-truncated",
+    "full-trusted-trailing",
+    "full-trusted-zero-power",
+    "full-trusted-power-overflow",
+    "full-trusted-out-of-range",
+    "full-target-witness",
+    "full-extra-target",
+    "full-signer-index",
+    "full-signer-out-of-range",
+    "full-pubkey-order-duplicate",
+    "full-pubkey-order-missing",
+    "full-pubkey-order-extra",
+    "full-pubkey-order-reversed",
+    "full-pubkey-order-out-of-range",
+  ] as const
+) {
+  Deno.test(`general transition rejects ${mutation}`, async () => {
+    await assertRejects(
+      () => cachedUpdateFixture("full", mutation),
+      Error,
+      "cached update:",
+    );
+  });
+}
 
 for (
   const mutation of [
@@ -198,6 +353,9 @@ for (
     "shared-trusted-witness",
     "shared-target-witness",
     "shared-old-root",
+    "shared-extra-target",
+    "shared-signer-index",
+    "shared-signer-out-of-range",
     "quorum",
     "trust",
   ] as const

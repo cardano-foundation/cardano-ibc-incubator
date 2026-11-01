@@ -4,6 +4,7 @@ use ibc/client/ics_007_tendermint_client/cached/types.{
   Leaf, PowerChange, Record,
 }
 use ibc/client/ics_007_tendermint_client/cached/verify
+use ibc/client/ics_007_tendermint_client/cometbft/crypto/merkle/hash
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
 
 const a = #"1111111111111111111111111111111111111111111111111111111111111111"
@@ -498,4 +499,167 @@ test shared_proof_rejects_changed_to_reverse_address_tie() fail {
       [proof.leaf_hash(c, 25)],
       [Leaf { index: 0, pubkey: b, power: 50 }],
     )
+}
+
+fn seven_leaves() -> List<Leaf> {
+  [
+    Leaf { index: 0, pubkey: a, power: 700 },
+    Leaf { index: 1, pubkey: b, power: 600 },
+    Leaf { index: 2, pubkey: c, power: 500 },
+    Leaf {
+      index: 3,
+      pubkey: #"4444444444444444444444444444444444444444444444444444444444444444",
+      power: 400,
+    },
+    Leaf {
+      index: 4,
+      pubkey: #"5555555555555555555555555555555555555555555555555555555555555555",
+      power: 300,
+    },
+    Leaf {
+      index: 5,
+      pubkey: #"6666666666666666666666666666666666666666666666666666666666666666",
+      power: 200,
+    },
+    Leaf {
+      index: 6,
+      pubkey: #"7777777777777777777777777777777777777777777777777777777777777777",
+      power: 100,
+    },
+  ]
+}
+
+// Independent explicit RFC-6962 shape: four leaves on the left, three on the
+// right. This reference does not use the recursive proof traversal.
+fn seven_root(leaves: List<Leaf>) -> ByteArray {
+  expect [l0, l1, l2, l3, l4, l5, l6] = leaves
+  hash.inner_hash_opt_sha2_256(
+    hash.inner_hash_opt_sha2_256(
+      hash.inner_hash_opt_sha2_256(
+        proof.leaf_hash(l0.pubkey, l0.power),
+        proof.leaf_hash(l1.pubkey, l1.power),
+      ),
+      hash.inner_hash_opt_sha2_256(
+        proof.leaf_hash(l2.pubkey, l2.power),
+        proof.leaf_hash(l3.pubkey, l3.power),
+      ),
+    ),
+    hash.inner_hash_opt_sha2_256(
+      hash.inner_hash_opt_sha2_256(
+        proof.leaf_hash(l4.pubkey, l4.power),
+        proof.leaf_hash(l5.pubkey, l5.power),
+      ),
+      proof.leaf_hash(l6.pubkey, l6.power),
+    ),
+  )
+}
+
+fn seven_frontier() -> List<ByteArray> {
+  expect [l0, _, l2, l3, l4, l5, _] = seven_leaves()
+  [
+    proof.leaf_hash(l0.pubkey, l0.power),
+    hash.inner_hash_opt_sha2_256(
+      proof.leaf_hash(l2.pubkey, l2.power),
+      proof.leaf_hash(l3.pubkey, l3.power),
+    ),
+    hash.inner_hash_opt_sha2_256(
+      proof.leaf_hash(l4.pubkey, l4.power),
+      proof.leaf_hash(l5.pubkey, l5.power),
+    ),
+  ]
+}
+
+test multiproof_threads_frontier_across_both_uneven_branches() {
+  let all = seven_leaves()
+  expect [_, second, _, _, _, _, last] = all
+  proof.root(7, [second, last], seven_frontier()) == seven_root(all)
+}
+
+test multiproof_rejects_unused_frontier_after_nested_callbacks() fail {
+  expect [_, second, _, _, _, _, last] = seven_leaves()
+  expect _ = proof.root(7, [second, last], list.concat(seven_frontier(), [a]))
+}
+
+test shared_proof_matches_explicit_roots_with_changes_in_both_branches() {
+  let all = seven_leaves()
+  expect [_, _, third, _, _, _, last] = all
+  let old = Record { root: seven_root(all), count: 7, total_power: 2800 }
+  let changes =
+    list.map(
+      all,
+      fn(leaf) {
+        PowerChange {
+          index: leaf.index,
+          pubkey: leaf.pubkey,
+          old_power: leaf.power,
+          new_power: leaf.power + if leaf.index == 0 || leaf.index == 4 {
+            1
+          } else {
+            0
+          },
+        }
+      },
+    )
+  let expected =
+    list.map(
+      all,
+      fn(leaf) {
+        Leaf {
+          ..leaf,
+          power: leaf.power + if leaf.index == 0 || leaf.index == 4 {
+            1
+          } else {
+            0
+          },
+        }
+      },
+    )
+  let (next, overlap) = proof.shared_powers(old, changes, [], [third, last])
+  next == Record { root: seven_root(expected), count: 7, total_power: 2802 } && overlap == 600
+}
+
+test shared_proof_threads_partial_frontier_without_hiding_changed_neighbor() {
+  let all = seven_leaves()
+  expect [l0, l1, l2, l3, l4, l5, l6] = all
+  let old = Record { root: seven_root(all), count: 7, total_power: 2800 }
+  let disclosed =
+    list.map(
+      [l3, l4, l5, l6],
+      fn(leaf) {
+        PowerChange {
+          index: leaf.index,
+          pubkey: leaf.pubkey,
+          old_power: leaf.power,
+          new_power: leaf.power + if leaf.index == 4 {
+            1
+          } else {
+            0
+          },
+        }
+      },
+    )
+  let frontier =
+    [
+      hash.inner_hash_opt_sha2_256(
+        proof.leaf_hash(l0.pubkey, l0.power),
+        proof.leaf_hash(l1.pubkey, l1.power),
+      ),
+      proof.leaf_hash(l2.pubkey, l2.power),
+    ]
+  let expected =
+    list.map(
+      all,
+      fn(leaf) {
+        Leaf {
+          ..leaf,
+          power: leaf.power + if leaf.index == 4 {
+            1
+          } else {
+            0
+          },
+        }
+      },
+    )
+  let (next, overlap) = proof.shared_powers(old, disclosed, frontier, [l3, l6])
+  next == Record { root: seven_root(expected), count: 7, total_power: 2801 } && overlap == 500
 }

@@ -32,6 +32,7 @@ import {
   cacheRecord,
   cacheRecordData,
   compactStateSiblings,
+  fullSetUpdate,
   missedCacheBudgets,
   rotateCache,
   sharedPowerUpdate,
@@ -67,6 +68,33 @@ export const retainedLeaves: CacheLeaf[] = retainedScenario.header.validator_set
     power: BigInt(v.voting_power),
   }));
 
+const retainedCommittingIndices = retainedScenario.header.signed_header.commit
+  .signatures.flatMap((signature, index) =>
+    Number(signature.block_id_flag) === 2 ? [index] : []
+  );
+
+/** Withholding the highest-power available votes makes the existing weighted
+ * selector require these larger quorums. No signatures are created or changed. */
+export const retainedQuorumAvailability: Record<28 | 34, readonly number[]> = {
+  28: retainedCommittingIndices.filter((index) => index !== 0 && index !== 1),
+  34: retainedCommittingIndices.filter((index) =>
+    index !== 0 && index !== 1 && index !== 3
+  ),
+};
+
+function packedTrustedCount(packed: string): number {
+  let offset = 0;
+  let count = 0;
+  while (offset < packed.length) {
+    const tag = packed.slice(offset, offset + 2);
+    const width = tag === "00" ? 20 : tag === "01" ? 82 : 0;
+    assert(width > 0 && offset + width <= packed.length);
+    offset += width;
+    count++;
+  }
+  return count;
+}
+
 export type CacheMutation =
   | "none"
   | "total"
@@ -86,6 +114,10 @@ export type CacheMutation =
   | "client-address"
   | "cache-identity"
   | "missing-verifier"
+  | "missing-core"
+  | "missing-dispatcher"
+  | "full-wrong-core"
+  | "core-subject"
   | "admission-client"
   | "admission-shadow"
   | "admission-missing-cache"
@@ -99,14 +131,46 @@ export type CacheMutation =
   | "shared-missing-hash"
   | "shared-trusted-witness"
   | "shared-target-witness"
-  | "shared-old-root";
+  | "shared-old-root"
+  | "shared-extra-target"
+  | "shared-signer-index"
+  | "shared-signer-out-of-range"
+  | "full-signer-power"
+  | "full-packed-length"
+  | "full-packed-duplicate-row"
+  | "full-packed-duplicate-key-power"
+  | "full-packed-zero-power"
+  | "full-packed-power-overflow"
+  | "full-packed-key"
+  | "full-packed-missing-row"
+  | "full-packed-trailing-bytes"
+  | "full-missing-trusted"
+  | "full-unverified-trusted"
+  | "full-trusted-tag"
+  | "full-trusted-truncated"
+  | "full-trusted-trailing"
+  | "full-trusted-zero-power"
+  | "full-trusted-power-overflow"
+  | "full-trusted-out-of-range"
+  | "full-target-witness"
+  | "full-extra-target"
+  | "full-signer-index"
+  | "full-signer-out-of-range"
+  | "full-pubkey-order-duplicate"
+  | "full-pubkey-order-missing"
+  | "full-pubkey-order-extra"
+  | "full-pubkey-order-reversed"
+  | "full-pubkey-order-out-of-range";
 
 export interface CacheFixtureOptions {
   changedIndices?: number[];
   signerCount?: number;
+  availableSignerIndices?: readonly number[];
+  generalChange?: "replace" | "add" | "remove" | "reorder" | "unchanged";
+  uncachedTrusted?: boolean;
   historyRecords?: number;
   twoRecords?: boolean;
-  routing?: "auto" | "direct";
+  routing?: "auto" | "direct" | "staged";
   directSizeFailure?: boolean;
 }
 
@@ -122,6 +186,41 @@ export async function cachedUpdateFixture(
   const changed = mode === "powers" || mode === "full";
   const raw = scenario.header.signed_header;
   const h = raw.header;
+  const availability = options.availableSignerIndices;
+  if (
+    availability && (availability.length === 0 ||
+      availability.some((index, i) =>
+        !Number.isInteger(index) || index < 0 ||
+        index >= retainedLeaves.length ||
+        i > 0 && availability[i - 1] >= index ||
+        Number(raw.commit.signatures[index].block_id_flag) !== 2
+      ))
+  ) {
+    throw new Error(
+      "Availability must contain sorted unique committing positions",
+    );
+  }
+  const availableIndices = new Set(
+    availability ?? raw.commit.signatures.flatMap(
+      (signature, index) =>
+        Number(signature.block_id_flag) === 2 ? [index] : [],
+    ),
+  );
+  // This experiment withholds actual precommits. Every retained signature and
+  // timestamp stays unchanged. The staged fallback observes the same mask.
+  const availableCommitSignatures = raw.commit.signatures.map((
+    signature,
+    index,
+  ) =>
+    Number(signature.block_id_flag) === 2 && !availableIndices.has(index)
+      ? {
+        block_id_flag: 1,
+        validator_address: "",
+        timestamp: "0",
+        signature: "",
+      }
+      : signature
+  );
   const account = generateEmulatorAccount({ lovelace: 2_000_000_000n });
   const emulator = new Emulator([account]);
   emulator.time = Number(BigInt(h.time) / 1_000_000n) + 5_000;
@@ -153,13 +252,30 @@ export async function cachedUpdateFixture(
     ) as unknown as string[],
   );
   const rewardAddress = validatorToRewardAddress("Preprod", scripts.update[0]);
-  const register = await lucid.newTx().register.Stake(rewardAddress).register
-    .Stake(
-      validatorToRewardAddress(
-        "Preprod",
-        scripts.staged.updateClient.validator,
-      ),
-    ).complete();
+  const coreRewardAddress = validatorToRewardAddress(
+    "Preprod",
+    scripts.updateCore[0],
+  );
+  const generalRewardAddress = validatorToRewardAddress(
+    "Preprod",
+    scripts.generalUpdateCore[0],
+  );
+  const stagedRewardAddress = validatorToRewardAddress(
+    "Preprod",
+    scripts.staged.updateClient.validator,
+  );
+  let registerBuilder = lucid.newTx();
+  for (
+    const address of [
+      rewardAddress,
+      coreRewardAddress,
+      generalRewardAddress,
+      stagedRewardAddress,
+    ]
+  ) {
+    registerBuilder = registerBuilder.register.Stake(address);
+  }
+  const register = await registerBuilder.complete();
   await (await register.sign.withWallet().complete()).submit();
   emulator.awaitBlock();
   const clientName = await generateTokenName(
@@ -174,14 +290,53 @@ export async function cachedUpdateFixture(
   ).digest("hex");
   const cacheToken = c([scripts.cacheMint[1], cacheName]);
   const cacheUnit = scripts.cacheMint[1] + cacheName;
-  const oldLeaves = retainedLeaves.map((leaf) => ({ ...leaf }));
-  if (changed) {
+  let oldLeaves = retainedLeaves.map((leaf) => ({ ...leaf }));
+  if (mode === "powers") {
     for (const index of options.changedIndices ?? [0, 2]) {
       oldLeaves[index].power -= 1n;
     }
   }
-  if (mode === "full") oldLeaves[0].pubkey = "ff".repeat(32);
-  const initialRecord = cacheRecord(oldLeaves);
+  if (mode === "full") {
+    switch (options.generalChange ?? "replace") {
+      case "unchanged":
+        break;
+      case "replace":
+        oldLeaves[0].pubkey = "ff".repeat(32);
+        break;
+      case "add":
+        // The retained target adds the highest-power validator to an old44 set.
+        oldLeaves = oldLeaves.slice(1);
+        break;
+      case "remove":
+        // The retained target removes this old46th validator.
+        oldLeaves.push({
+          index: oldLeaves.length,
+          pubkey: "ab".repeat(32),
+          power: 1n,
+        });
+        break;
+      case "reorder":
+        oldLeaves.at(-1)!.power = oldLeaves[0].power + 1n;
+        break;
+    }
+    oldLeaves.sort((left, right) => {
+      if (left.power !== right.power) return left.power > right.power ? -1 : 1;
+      const address = (key: string) =>
+        createHash("sha256").update(Buffer.from(key, "hex")).digest("hex")
+          .slice(0, 40);
+      return address(left.pubkey).localeCompare(address(right.pubkey));
+    });
+    oldLeaves = oldLeaves.map((leaf, index) => ({ ...leaf, index }));
+  }
+  const oldRecord = cacheRecord(oldLeaves);
+  assert(
+    !options.uncachedTrusted || mode === "full",
+    "Uncached trusted roots require complete-set authentication",
+  );
+  const admittedLeaves: CacheLeaf[] = options.uncachedTrusted
+    ? [{ index: 0, pubkey: "cd".repeat(32), power: 1n }]
+    : oldLeaves;
+  const initialRecord = cacheRecord(admittedLeaves);
   const additionalSet: CacheLeaf[] = options.twoRecords
     ? [{ index: 0, pubkey: "ab".repeat(32), power: 1n }]
     : [];
@@ -189,9 +344,12 @@ export async function cachedUpdateFixture(
     initialRecord,
     ...(additionalSet.length ? [cacheRecord(additionalSet)] : []),
   ];
-  // The changed-set case uses a synthetic trusted bootstrap with the retained
-  // public keys and the requested one-unit power changes. Signatures are real.
-  const trustedRoot = !changed ? h.validators_hash : initialRecord.root;
+  // Power cases change only the requested old powers. General cases use the
+  // named canonical old-set variant. Target header and signatures stay real.
+  const trustedRoot = !changed ? h.validators_hash : oldRecord.root;
+  if (options.uncachedTrusted) {
+    assert(!initialRecords.some((record) => record.root === trustedRoot));
+  }
   const height = (n: bigint) => c([1n, n]);
   const trustedHeight = height(
     BigInt(scenario.header.trusted_height.revision_height),
@@ -300,6 +458,8 @@ export async function cachedUpdateFixture(
       clientScript,
       scripts.cacheSpend[0],
       scripts.update[0],
+      scripts.updateCore[0],
+      scripts.generalUpdateCore[0],
     ]
   ) {
     const publication = await lucid.newTx().pay.ToAddressWithData(
@@ -396,7 +556,7 @@ export async function cachedUpdateFixture(
       encode(
         c([
           admissionSubject,
-          oldLeaves.map(cacheLeafData),
+          admittedLeaves.map(cacheLeafData),
           additionalSet.map(cacheLeafData),
         ]),
       ),
@@ -464,7 +624,7 @@ export async function cachedUpdateFixture(
   });
   const selection = selectTendermintQuorumWitnesses({
     targetValidators: retainedLeaves.map(voting),
-    commitSignatures: raw.commit.signatures.map((sig) => ({
+    commitSignatures: availableCommitSignatures.map((sig) => ({
       block_id_flag: BigInt(sig.block_id_flag),
     })),
     trustedValidators: !changed ? undefined : oldLeaves.map(voting),
@@ -478,21 +638,16 @@ export async function cachedUpdateFixture(
     index >= 0;
     index--
   ) {
-    if (Number(raw.commit.signatures[index].block_id_flag) === 2) {
+    if (Number(availableCommitSignatures[index].block_id_flag) === 2) {
       selectedIndices.add(index);
     }
   }
   const indices = [...selectedIndices].sort((a, b) => a - b);
   if (mutation === "quorum") indices.pop();
   const target = indices.map((index) => retainedLeaves[index]);
-  const trustedIndices = !changed || mode === "powers"
-    ? []
-    : [...selection.memberships].map((index) =>
-      oldLeaves.findIndex((leaf) =>
-        leaf.pubkey === retainedLeaves[index].pubkey
-      )
-    ).sort((a, b) => a - b);
-  const trusted = trustedIndices.map((index) => oldLeaves[index]);
+  // Complete-set updates carry their entire trusted predecessor as compressed
+  // references. No independent old membership proof is needed.
+  const trusted: CacheLeaf[] = [];
   const blockId = (value: typeof h.last_block_id) =>
     c([
       value.hash,
@@ -515,7 +670,7 @@ export async function cachedUpdateFixture(
     h.proposer_address,
   ]);
   const signatures = indices.map((index) => {
-    const sig = raw.commit.signatures[index];
+    const sig = availableCommitSignatures[index];
     return c([
       BigInt(sig.block_id_flag),
       sig.validator_address,
@@ -532,17 +687,15 @@ export async function cachedUpdateFixture(
       signatures,
     ]),
   ]);
-  const targetSiblings = mode === "powers"
+  const targetSiblings = changed
     ? []
     : validatorMultiproof(retainedLeaves, indices);
-  const trustedSiblings = trusted.length
-    ? validatorMultiproof(oldLeaves, trustedIndices)
-    : [];
+  const trustedSiblings: string[] = [];
   const sets = !changed
     ? []
     : mode === "powers"
     ? [sharedPowerUpdate(oldLeaves, retainedLeaves, indices)!]
-    : [c([retainedLeaves.map(cacheLeafData)])];
+    : [fullSetUpdate(oldLeaves, retainedLeaves, indices)];
   let session: Awaited<ReturnType<typeof submitHistorySession>> | undefined;
   async function initializeStage() {
     if (session) return;
@@ -565,7 +718,7 @@ export async function cachedUpdateFixture(
       scripts.staged.sessionMint.validator,
       scripts.staged.sessionSpend.validator,
     ].map((script) => seed(account.address, {}, Data.void(), script));
-    const fullSignatures = raw.commit.signatures.map((sig) =>
+    const fullSignatures = availableCommitSignatures.map((sig) =>
       c([
         BigInt(sig.block_id_flag),
         sig.validator_address,
@@ -669,9 +822,12 @@ export async function cachedUpdateFixture(
       },
     };
     const targetRecord = cacheRecord(retainedLeaves);
+    const priorRecords = mode === "full" && !staged
+      ? rotateCache(initialRecords, oldRecord)
+      : initialRecords;
     const nextRecords = !changed
-      ? initialRecords
-      : rotateCache(initialRecords, targetRecord);
+      ? priorRecords
+      : rotateCache(priorRecords, targetRecord);
     const nextCache = c([
       ...cacheDatum.fields.slice(0, 3),
       nextRecords.map(cacheRecordData),
@@ -702,6 +858,7 @@ export async function cachedUpdateFixture(
       targetData[1].fields[0] = targetData[0].fields[0];
     }
     const setData = sets.map((set) => Data.from(encode(set)) as Constr<Data>);
+    let suppliedTarget = changed ? [] : targetData;
     let suppliedTargetSiblings = targetSiblings;
     let suppliedTrusted = trusted.map(cacheLeafData);
     let suppliedTrustedSiblings = trustedSiblings;
@@ -719,6 +876,18 @@ export async function cachedUpdateFixture(
       if (mutation === "shared-key") signer.fields[1] = "ff".repeat(32);
       if (mutation === "shared-position") {
         sharedLeaves[1].fields[0] = sharedLeaves[0].fields[0];
+      }
+      if (mutation === "shared-extra-target") suppliedTarget = targetData;
+      if (mutation === "shared-signer-index") {
+        const selected = setData[0].fields[3] as bigint[];
+        selected[1] = selected[0];
+        // Reuse a valid vote too, so uniqueness cannot be replaced by an
+        // accidental mismatch between the second public key and signature.
+        signatures[1] = signatures[0];
+      }
+      if (mutation === "shared-signer-out-of-range") {
+        const selected = setData[0].fields[3] as bigint[];
+        selected[selected.length - 1] = BigInt(retainedLeaves.length);
       }
       if (
         mutation === "shared-missing-signer" ||
@@ -777,6 +946,109 @@ export async function cachedUpdateFixture(
         )!;
       }
     }
+    if (mode === "full") {
+      const packedLeaves = setData[0].fields[0] as string;
+      const packedTrusted = setData[0].fields[1] as string;
+      const encodedPower = (power: bigint) =>
+        power.toString(16).padStart(16, "0");
+      const replaceTarget = (
+        start: number,
+        width: number,
+        replacement: string,
+      ) => {
+        setData[0].fields[0] = packedLeaves.slice(0, start * 2) + replacement +
+          packedLeaves.slice((start + width) * 2);
+      };
+      if (mutation === "full-signer-power") {
+        replaceTarget(
+          indices[0] * 40 + 32,
+          8,
+          encodedPower(retainedLeaves[indices[0]].power + 1n),
+        );
+      }
+      if (mutation === "full-packed-length") {
+        setData[0].fields[0] = packedLeaves.slice(0, -2);
+      }
+      if (mutation === "full-packed-duplicate-row") {
+        replaceTarget(40, 40, packedLeaves.slice(0, 80));
+      }
+      if (mutation === "full-packed-duplicate-key-power") {
+        replaceTarget(40, 32, packedLeaves.slice(0, 64));
+      }
+      if (mutation === "full-packed-zero-power") {
+        replaceTarget(32, 8, encodedPower(0n));
+      }
+      if (mutation === "full-packed-power-overflow") {
+        replaceTarget(32, 8, encodedPower(1n << 60n));
+      }
+      if (mutation === "full-packed-key") {
+        replaceTarget(0, 32, "ff".repeat(32));
+      }
+      if (mutation === "full-packed-missing-row") {
+        setData[0].fields[0] = packedLeaves.slice(0, -80);
+      }
+      if (mutation === "full-packed-trailing-bytes") {
+        setData[0].fields[0] = packedLeaves + "00";
+      }
+      if (mutation === "full-extra-target") suppliedTarget = targetData;
+      if (mutation === "full-signer-index") {
+        const selected = setData[0].fields[2] as bigint[];
+        selected[1] = selected[0];
+        signatures[1] = signatures[0];
+      }
+      if (mutation === "full-signer-out-of-range") {
+        const selected = setData[0].fields[2] as bigint[];
+        selected[selected.length - 1] = BigInt(retainedLeaves.length);
+      }
+      const pubkeyOrder = setData[0].fields[3] as bigint[];
+      if (mutation === "full-pubkey-order-duplicate") {
+        pubkeyOrder[1] = pubkeyOrder[0];
+      }
+      if (mutation === "full-pubkey-order-missing") pubkeyOrder.pop();
+      if (mutation === "full-pubkey-order-extra") {
+        pubkeyOrder.push(pubkeyOrder[0]);
+      }
+      if (mutation === "full-pubkey-order-reversed") pubkeyOrder.reverse();
+      if (mutation === "full-pubkey-order-out-of-range") {
+        pubkeyOrder[pubkeyOrder.length - 1] = BigInt(retainedLeaves.length);
+      }
+      if (mutation === "full-missing-trusted") {
+        setData[0].fields[1] = "";
+      }
+      if (mutation === "full-unverified-trusted") {
+        // Claim that the old-only replacement key had a verified target key.
+        // Its unchanged power cannot make this false old root authentic.
+        assert(packedTrusted.startsWith("01"));
+        setData[0].fields[1] = "0000" + encodedPower(oldLeaves[0].power) +
+          packedTrusted.slice(82);
+      }
+      if (mutation === "full-trusted-tag") {
+        setData[0].fields[1] = "02" + packedTrusted.slice(2);
+      }
+      if (mutation === "full-trusted-truncated") {
+        setData[0].fields[1] = packedTrusted.slice(0, -2);
+      }
+      if (mutation === "full-trusted-trailing") {
+        setData[0].fields[1] = packedTrusted + "00";
+      }
+      if (
+        mutation === "full-trusted-zero-power" ||
+        mutation === "full-trusted-power-overflow"
+      ) {
+        const powerOffset = packedTrusted.startsWith("00") ? 4 : 66;
+        const power = mutation === "full-trusted-zero-power" ? 0n : 1n << 60n;
+        setData[0].fields[1] = packedTrusted.slice(0, powerOffset) +
+          encodedPower(power) + packedTrusted.slice(powerOffset + 16);
+      }
+      if (mutation === "full-trusted-out-of-range") {
+        assert(packedTrusted.startsWith("01"));
+        setData[0].fields[1] = "00ff" + encodedPower(oldLeaves[0].power) +
+          packedTrusted.slice(82);
+      }
+      if (mutation === "full-target-witness") {
+        suppliedTargetSiblings = validatorMultiproof(retainedLeaves, indices);
+      }
+    }
     let suppliedCacheToken = cacheToken;
     if (mutation === "unrelated-cache") {
       const unrelatedClient = c([clientPolicy, "99"]);
@@ -799,7 +1071,7 @@ export async function cachedUpdateFixture(
       mutation === "cache-token" ? c([dummy, cacheName]) : suppliedCacheToken,
       mutation === "malformed-header" ? c([]) : signedHeader,
       trustedHeight,
-      targetData,
+      suppliedTarget,
       suppliedTargetSiblings,
       suppliedTrusted,
       suppliedTrustedSiblings,
@@ -819,6 +1091,9 @@ export async function cachedUpdateFixture(
       references[3],
       references[4],
       updateReference,
+      ...(session ? [] : [
+        references[mode === "full" && mutation !== "full-wrong-core" ? 7 : 6],
+      ]),
     ])
       .collectFrom(
         [host],
@@ -842,17 +1117,27 @@ export async function cachedUpdateFixture(
           : encode(c([update], 6)),
       )
       .collectFrom([cache], Data.void());
-    if (mutation !== "missing-verifier") {
-      builder.withdraw(
-        session
-          ? validatorToRewardAddress(
-            "Preprod",
-            scripts.staged.updateClient.validator,
-          )
-          : rewardAddress,
-        0n,
-        session ? encode(c([clientToken], 4)) : encode(clientToken),
-      );
+    if (session) {
+      if (mutation !== "missing-verifier") {
+        builder.withdraw(stagedRewardAddress, 0n, encode(c([clientToken], 4)));
+      }
+    } else {
+      if (
+        mutation !== "missing-verifier" && mutation !== "missing-dispatcher"
+      ) {
+        builder.withdraw(rewardAddress, 0n, encode(clientToken));
+      }
+      if (mutation !== "missing-verifier" && mutation !== "missing-core") {
+        builder.withdraw(
+          mode === "full" && mutation !== "full-wrong-core"
+            ? generalRewardAddress
+            : coreRewardAddress,
+          0n,
+          encode(
+            mutation === "core-subject" ? c([clientPolicy, "99"]) : clientToken,
+          ),
+        );
+      }
     }
     builder
       .pay.ToContract(clientAddress, {
@@ -885,27 +1170,27 @@ export async function cachedUpdateFixture(
   };
   let rejectedDirectCbor: string | undefined;
   let directFee: number | undefined;
-  const prepared = mode === "full"
-    ? undefined
-    : mutation === "none" && options.routing !== "direct"
-    ? await prepareCachedUpdate({
-      direct: async () => {
-        if (options.directSizeFailure) {
-          throw new Error(
-            "Max transaction size of 16384 exceeded. Found: 16400",
-          );
-        }
-        const signed = await buildCandidate(false);
-        directFee = Number(signed.toTransaction().body().fee());
-        rejectedDirectCbor = signed.toCBOR();
-        return signed;
-      },
-      staged: () => buildCandidate(true),
-      limits: parameters,
-      headroomPercent: 5,
-    })
-    : undefined;
-  const signed = prepared?.transaction ?? await buildCandidate(mode === "full");
+  const forceStaged = options.routing === "staged";
+  const prepared =
+    !forceStaged && mutation === "none" && options.routing !== "direct"
+      ? await prepareCachedUpdate({
+        direct: async () => {
+          if (options.directSizeFailure) {
+            throw new Error(
+              "Max transaction size of 16384 exceeded. Found: 16400",
+            );
+          }
+          const signed = await buildCandidate(false);
+          directFee = Number(signed.toTransaction().body().fee());
+          rejectedDirectCbor = signed.toCBOR();
+          return signed;
+        },
+        staged: () => buildCandidate(true),
+        limits: parameters,
+        headroomPercent: 5,
+      })
+      : undefined;
+  const signed = prepared?.transaction ?? await buildCandidate(forceStaged);
   const budget = evaluatedUpdateBudget(
     signed,
     parameters,
@@ -955,9 +1240,20 @@ export async function cachedUpdateFixture(
     .to_flat_format();
   for (let i = 0; i < redeemers.len(); i++) {
     const redeemer = redeemers.get(i);
-    let script = redeemer.tag() === CML.RedeemerTag.Reward
-      ? (session ? "update_staged_client" : "update_cached_client")
-      : "session_mint";
+    let script = "session_mint";
+    if (redeemer.tag() === CML.RedeemerTag.Reward) {
+      const withdrawn = signed.toTransaction().body().withdrawals()!.keys().get(
+        Number(redeemer.index()),
+      ).to_address().to_bech32();
+      const names: Record<string, string> = {
+        [rewardAddress]: "update_cached_client",
+        [coreRewardAddress]: "verify_cached_client",
+        [generalRewardAddress]: "verify_general_cached_client",
+        [stagedRewardAddress]: "update_staged_client",
+      };
+      assert(names[withdrawn], "Every withdrawal must have a known verifier");
+      script = names[withdrawn];
+    }
     if (redeemer.tag() === CML.RedeemerTag.Spend) {
       const input = signed.toTransaction().body().inputs().get(
         Number(redeemer.index()),
@@ -1011,7 +1307,24 @@ export async function cachedUpdateFixture(
       : undefined,
     historyRecords: historicalSnapshot.length,
     cacheRecords: initialRecords.length,
-    changedIndices: changed ? options.changedIndices ?? [0, 2] : [],
+    changedIndices: mode === "powers" ? options.changedIndices ?? [0, 2] : [],
+    generalChange: mode === "full"
+      ? options.generalChange ?? "replace"
+      : undefined,
+    oldValidatorCount: oldLeaves.length,
+    trustedCacheHit: initialRecords.some((record) =>
+      record.root === trustedRoot
+    ),
+    fullTrustedReferences: mode === "full"
+      ? packedTrustedCount(sets[0].fields[1] as string)
+      : 0,
+    fullTargetBytes: mode === "full"
+      ? (sets[0].fields[0] as string).length / 2
+      : 0,
+    fullTrustedBytes: mode === "full"
+      ? (sets[0].fields[1] as string).length / 2
+      : 0,
+    targetValidatorCount: retainedLeaves.length,
     measured,
     completeFee: measured.fee +
       (session?.measurements.reduce((sum, tx) => sum + tx.fee, 0) ?? 0),
@@ -1024,6 +1337,26 @@ export async function cachedUpdateFixture(
         (session?.measurements.reduce((sum, tx) => sum + tx.fee, 0) ?? 0),
     }),
     signatures: target.length,
+    signerAvailability: availability
+      ? {
+        availableIndices: [...availableIndices],
+        selectedIndices: indices,
+        requiredQuorumSignatures: selection.signatures.size,
+        addedSignatures: indices.length - selection.signatures.size,
+        targetTotalPower: retainedLeaves.reduce(
+          (total, leaf) => total + leaf.power,
+          0n,
+        ).toString(),
+        selectedTargetPower: target.reduce(
+          (total, leaf) => total + leaf.power,
+          0n,
+        ).toString(),
+        selectedTargetPowerWithoutLast: target.slice(0, -1).reduce(
+          (total, leaf) => total + leaf.power,
+          0n,
+        ).toString(),
+      }
+      : undefined,
     targetSiblings: targetSiblings.length,
     trustedSiblings: trustedSiblings.length,
     sharedLeaves: mode === "powers" ? (sets[0].fields[1] as Data[]).length : 0,

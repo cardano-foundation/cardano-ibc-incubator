@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   cachedUpdateFixture,
   type CacheFixtureOptions,
+  retainedQuorumAvailability,
 } from "./tendermint-cache-fixture.ts";
 import { CACHED_UPDATE_BUDGET } from "../src/tendermint-cache.ts";
 import parameters from "./fixtures/mainnet-protocol-parameters.json" with {
@@ -18,7 +19,6 @@ const cases: {
   id: string;
   mode: "hit" | "powers" | "adjacent" | "full";
   options?: CacheFixtureOptions;
-  requireDirect?: boolean;
 }[] = [
   { id: "hit", mode: "hit" },
   { id: "powers", mode: "powers" },
@@ -66,7 +66,6 @@ const cases: {
   {
     id: "dispersed-eight",
     mode: "powers",
-    requireDirect: false,
     options: {
       changedIndices: [0, 6, 12, 18, 24, 30, 36, 42],
       historyRecords: 100,
@@ -76,8 +75,61 @@ const cases: {
   },
   { id: "adjacent", mode: "adjacent" },
   { id: "full", mode: "full" },
+  ...([28, 34] as const).flatMap((count) => [
+    {
+      id: `availability-${count}`,
+      mode: "hit" as const,
+      options: { availableSignerIndices: retainedQuorumAvailability[count] },
+    },
+    {
+      id: `availability-powers-${count}`,
+      mode: "powers" as const,
+      options: { availableSignerIndices: retainedQuorumAvailability[count] },
+    },
+    {
+      id: `availability-populated-${count}`,
+      mode: "powers" as const,
+      options: {
+        availableSignerIndices: retainedQuorumAvailability[count],
+        changedIndices: [0, 14, 26, 38],
+        historyRecords: 100,
+        twoRecords: true,
+      },
+    },
+  ]),
+  ...(["replace", "add", "remove", "reorder"] as const).flatMap((
+    generalChange,
+  ) => [
+    {
+      id: `general-${generalChange}`,
+      mode: "full" as const,
+      options: { generalChange },
+    },
+    ...[false, true].map((uncachedTrusted) => ({
+      id: `general-${generalChange}-34-${uncachedTrusted ? "miss" : "cached"}`,
+      mode: "full" as const,
+      options: {
+        generalChange,
+        uncachedTrusted,
+        availableSignerIndices: retainedQuorumAvailability[34],
+        historyRecords: 100,
+        twoRecords: true,
+      },
+    })),
+  ]),
+  {
+    id: "general-unchanged-34-miss",
+    mode: "full",
+    options: {
+      generalChange: "unchanged",
+      uncachedTrusted: true,
+      availableSignerIndices: retainedQuorumAvailability[34],
+      historyRecords: 100,
+      twoRecords: true,
+    },
+  },
 ];
-for (const { id, mode, options, requireDirect = mode !== "full" } of cases) {
+for (const { id, mode, options } of cases) {
   const { signedCbor, ...result } = await cachedUpdateFixture(
     mode,
     "none",
@@ -85,7 +137,6 @@ for (const { id, mode, options, requireDirect = mode !== "full" } of cases) {
   );
   measurements.push({
     id,
-    requireDirect,
     ...result,
     signedTransactionSha256: createHash("sha256").update(signedCbor, "hex")
       .digest("hex"),
@@ -100,6 +151,9 @@ for (const { id, mode, options, requireDirect = mode !== "full" } of cases) {
 }
 const report = {
   compiler: "Aiken v1.1.24, silent traces",
+  blueprintSha256: createHash("sha256").update(
+    await Deno.readFile(new URL("../../onchain/plutus.json", import.meta.url)),
+  ).digest("hex"),
   evaluator: "Scalus, Cardano protocol major version 10",
   parameters:
     "cardano/offchain/scripts/fixtures/mainnet-protocol-parameters.json",
@@ -111,7 +165,7 @@ const report = {
   fixture:
     "cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity/normalized.json",
   changedSetFixture:
-    "Synthetic trusted bootstrap with one-unit power reductions at each listed position. Target header and signatures are the retained Injective fixture. The full fallback also replaces one trusted public key. These are capacity tests, not live changed-set replays.",
+    "Synthetic trusted bootstraps with one-unit power reductions or the listed key replacement, addition, removal or reordering. The target header and all selected signatures are the retained Injective fixture. These are capacity tests, not live changed-set replays.",
   historyFixture:
     "Populated cases seed an assumed previously authenticated 100-record client history after real client/cache admission. They do not replay those historical updates. Two cache records are authenticated by the real admission policy.",
   routing:
@@ -126,7 +180,7 @@ const report = {
     transactions: 1,
     headroomPercent: 5,
     modes:
-      "Cache hits and retained two-, three- and four-power-change cases, including populated history and 24 signers",
+      "Every retained normal update case, including eight changes, 28/34-signature availability, general set changes and uncached trusted roots",
   },
   acceptanceBudget: CACHED_UPDATE_BUDGET,
   modeledBudgetFee: parameters.minFeeA * CACHED_UPDATE_BUDGET.signedBytes +
@@ -144,9 +198,7 @@ console.log(json);
 if (write) await Deno.writeTextFile(new URL("report.json", directory), json);
 if (
   Deno.args.includes("--assert-budget") &&
-  measurements.some((result) =>
-    result.mode !== "full" && result.missedBudgets.length
-  )
+  measurements.some((result) => result.missedBudgets.length)
 ) {
   throw new Error(
     "Complete cached update exceeds the 1 ADA acceptance budget. See missedBudgets for the measured components.",
@@ -155,11 +207,9 @@ if (
 
 if (Deno.args.includes("--assert-direct-budget")) {
   const failed = measurements.filter((result) =>
-    result.requireDirect && (
-      result.path !== "direct" || result.updateTransactions !== 1 ||
-      result.completeFee >= 3_000_000 || result.directBudget?.fits !== true ||
-      result.directBudget.headroomPercent !== 5
-    )
+    result.path !== "direct" || result.updateTransactions !== 1 ||
+    result.completeFee >= 3_000_000 || result.directBudget?.fits !== true ||
+    result.directBudget.headroomPercent !== 5
   );
   if (failed.length) {
     throw new Error(

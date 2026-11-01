@@ -173,6 +173,20 @@ export async function shutdownFixture(
       ),
     }
     : undefined;
+  const cachedWithdrawalValidators = cachedScripts
+    ? Object.fromEntries(
+      cachedScripts.withdrawalScripts.map((entry, index) => [
+        ["update", "updateCore", "generalUpdateCore", "stagedUpdate"][index],
+        entry.scriptHash === updateClient.scriptHash ? updateClient : {
+          title: entry.title,
+          script: entry.validator.script,
+          scriptHash: entry.scriptHash,
+          address: entry.address,
+          refUtxo: reference(entry.validator),
+        },
+      ]),
+    )
+    : undefined;
   const spendClient = cachedScripts
     ? described(
       cachedScripts.clientSpend,
@@ -347,6 +361,18 @@ export async function shutdownFixture(
     [hostPolicy + fromText("ibc_host_state")]: 1n,
   }, Data.to(hostDatum, HostStateDatum));
   const deployment = {
+    ...(cached && cachedWithdrawalValidators
+      ? {
+        cachedTendermint: {
+          format: "authenticated-validator-cache-v1",
+          validators: {
+            ...cachedWithdrawalValidators,
+            cacheSpend: cached.cacheSpend,
+            cacheMint: cached.cacheMint,
+          },
+        },
+      }
+      : {}),
     validators: {
       updateClient,
       recoverClient,
@@ -557,11 +583,18 @@ export async function shutdownFixture(
     emulator.awaitBlock();
     return completed.toTransaction().body();
   }
-  await submit(
-    lucid.newTx().register.Stake(recoverClient.address).register.Stake(
-      updateClient.address,
+  let registration = lucid.newTx();
+  const stakingAddresses = new Set([
+    recoverClient.address,
+    updateClient.address,
+    ...Object.values(cachedWithdrawalValidators ?? {}).map((entry) =>
+      entry.address
     ),
-  );
+  ]);
+  for (const address of stakingAddresses) {
+    registration = registration.register.Stake(address);
+  }
+  await submit(registration);
   const packetReferences = [
     seed(
       referenceAccount.address,

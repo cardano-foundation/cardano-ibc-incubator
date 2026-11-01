@@ -11,6 +11,8 @@ import {
 } from "@lucid-evolution/lucid";
 import { Emulator, generateEmulatorAccount } from "@lucid-evolution/provider";
 import { createCardanoScalusEvaluator } from "../src/scalus-evaluator.ts";
+import { shutdownFixture } from "../src/testing/shutdown-fixture.ts";
+import { evaluatedUpdateBudget } from "../src/tendermint-cache-routing.ts";
 import { type DeploymentTemplate, readValidator } from "../src/utils.ts";
 import { loadHostStateValidator } from "../src/deployment-plan.ts";
 import {
@@ -21,8 +23,10 @@ import {
 } from "../types/index.ts";
 import {
   buildFinalizeShutdownTx,
+  buildReclaimRecoveryStakeTx,
   MIN_SHUTDOWN_GRACE_PERIOD_MS,
   partitionShutdownReferences,
+  shutdownStakeValidators,
   shutdownTiming,
 } from "./shutdown-deployment.ts";
 
@@ -467,4 +471,87 @@ Deno.test("atomic finalization stays below the mainnet transaction size", async 
     `Atomic finalization is ${signedBytes} bytes, above the safe transaction budget`,
   );
   assertEquals(await signed.submit(), signed.toHash());
+});
+
+Deno.test("cached shutdown refunds every forwarded credential deposit before HostState removal", async () => {
+  const f = await shutdownFixture(0n, "cached");
+  const validators = shutdownStakeValidators(f.deployment);
+  assertEquals(validators.length, 5);
+  for (const validator of validators) {
+    assertEquals(
+      (await f.emulator.getRewardAccount(validator.address)).registered,
+      true,
+    );
+  }
+  const balance = async () =>
+    (await f.lucid.utxosAt(f.account.address)).reduce(
+      (sum, utxo) => sum + utxo.assets.lovelace,
+      0n,
+    );
+  const before = await balance();
+  const completed = await buildReclaimRecoveryStakeTx(
+    f.lucid,
+    f.deployment,
+    f.hostUtxo,
+    f.hostDatum.deployer,
+    f.emulator.now(),
+  ).complete({ localUPLCEval: true });
+  const signed = await completed.sign.withWallet().complete();
+  assert(
+    evaluatedUpdateBudget(signed, f.emulator.protocolParameters, 0)
+      .withinLedger,
+  );
+  await signed.submit();
+  f.emulator.awaitBlock();
+  for (const validator of validators) {
+    assertEquals(
+      (await f.emulator.getRewardAccount(validator.address)).registered,
+      false,
+    );
+  }
+  assertEquals(
+    await balance(),
+    before +
+      BigInt(f.emulator.protocolParameters.keyDeposit) *
+        BigInt(validators.length) -
+      signed.toTransaction().body().fee(),
+  );
+  const host = await f.lucid.utxoByUnit(
+    f.deployment.hostStateNFT!.policyId + f.deployment.hostStateNFT!.name,
+  );
+  assertEquals(host.txHash, f.hostUtxo.txHash);
+  assertEquals(host.outputIndex, f.hostUtxo.outputIndex);
+});
+
+Deno.test("cached shutdown refuses missing credential inventory", async () => {
+  const f = await shutdownFixture(0n, "cached");
+  const deployment = { ...f.deployment, cachedTendermint: undefined };
+  assertThrows(
+    () => shutdownStakeValidators(deployment),
+    Error,
+    "complete script inventory",
+  );
+});
+
+Deno.test("cached shutdown keeps every additional script reference in its reclaim inventory", async () => {
+  const f = await shutdownFixture(0n, "cached");
+  const cached = f.deployment.cachedTendermint;
+  assert(cached);
+  const refs = [
+    f.deployment.validators.hostStateStt.refUtxo,
+    ...Object.values(cached.validators).map((validator) => validator.refUtxo),
+  ];
+  const partition = partitionShutdownReferences(f.deployment, refs);
+  assertEquals(partition.terminalReference.txHash, refs[0].txHash);
+  assertEquals(partition.terminalReference.outputIndex, refs[0].outputIndex);
+  assertEquals(partition.reclaimableReferences.length, 6);
+  const broken = structuredClone(f.deployment);
+  delete (broken.cachedTendermint!.validators as Partial<
+    NonNullable<DeploymentTemplate["cachedTendermint"]>["validators"]
+  >).generalUpdateCore;
+  assertThrows(
+    () => shutdownStakeValidators(broken),
+    Error,
+    "inventory is incomplete",
+  );
 });

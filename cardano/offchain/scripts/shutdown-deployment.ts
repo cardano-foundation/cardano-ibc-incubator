@@ -32,6 +32,8 @@ import {
 } from "../src/external_cardano.ts";
 import { buildLucidWithCompatibleProtocolParameters } from "../src/protocol_parameters.ts";
 import {
+  type CachedTendermintDeployment,
+  type DeployedScriptReference,
   type DeploymentTemplate,
   readValidator,
   submitTx,
@@ -772,6 +774,79 @@ function sameOutRef(left: UTxO, right: UTxO): boolean {
   return left.txHash === right.txHash && left.outputIndex === right.outputIndex;
 }
 
+const CACHED_WITHDRAWAL_ROLES = [
+  "update",
+  "updateCore",
+  "generalUpdateCore",
+  "stagedUpdate",
+] as const;
+const CACHED_SCRIPT_TITLES = {
+  update: "update_cached_client.update_cached_client.withdraw",
+  updateCore: "verify_cached_client.verify_cached_client.withdraw",
+  generalUpdateCore:
+    "verify_general_cached_client.verify_general_cached_client.withdraw",
+  stagedUpdate: "update_staged_client.update_staged_client.withdraw",
+  cacheSpend: "spending_validator_cache.spend_validator_cache.spend",
+  cacheMint: "minting_validator_cache.mint_validator_cache.mint",
+} as const;
+
+function cachedShutdownValidators(
+  deployment: DeploymentTemplate,
+): CachedTendermintDeployment["validators"] | undefined {
+  const cached = deployment.cachedTendermint;
+  const usesCachedClient = deployment.validators.spendClient?.title ===
+      "spending_cached_client.spend_cached_client.spend" ||
+    deployment.validators.updateClient?.title === CACHED_SCRIPT_TITLES.update;
+  if (!cached) {
+    if (usesCachedClient) {
+      throw new Error(
+        "Cached deployment shutdown requires its complete script inventory",
+      );
+    }
+    return undefined;
+  }
+  if (
+    cached.format !== "authenticated-validator-cache-v1" ||
+    Object.entries(CACHED_SCRIPT_TITLES).some(([role, title]) => {
+      const validator = cached.validators
+        ?.[role as keyof typeof CACHED_SCRIPT_TITLES];
+      return !validator || validator.title !== title || !validator.refUtxo;
+    })
+  ) {
+    throw new Error(
+      "Cached deployment shutdown script inventory is incomplete",
+    );
+  }
+  return cached.validators;
+}
+
+/** All finite withdrawal credentials must be checked before HostState removal. */
+export function shutdownStakeValidators(
+  deployment: DeploymentTemplate,
+): DeployedScriptReference[] {
+  const cached = cachedShutdownValidators(deployment);
+  const recovery = deployment.validators.recoverClient;
+  if (!recovery) {
+    if (cached) {
+      throw new Error(
+        "Cached deployment shutdown requires its recovery validator",
+      );
+    }
+    return [];
+  }
+  const validators = [
+    ...(deployment.validators.updateClient
+      ? [deployment.validators.updateClient]
+      : []),
+    ...(cached ? CACHED_WITHDRAWAL_ROLES.map((role) => cached[role]) : []),
+    recovery,
+  ];
+  return [
+    ...new Map(validators.map((validator) => [validator.address, validator]))
+      .values(),
+  ];
+}
+
 function deploymentReferenceOutRefs(
   deployment: DeploymentTemplate,
 ): UTxO[] {
@@ -788,6 +863,10 @@ function deploymentReferenceOutRefs(
         ...Object.values(validator.refValidator).map((entry) => entry.refUtxo),
       );
     }
+  }
+  const cached = cachedShutdownValidators(deployment);
+  if (cached) {
+    refs.push(...Object.values(cached).map((validator) => validator.refUtxo));
   }
   if (deployment.packetState) {
     for (
@@ -1118,8 +1197,8 @@ export async function enterShutdown(
 async function recoveryStakeRegistered(
   deployment: DeploymentTemplate,
 ): Promise<boolean> {
-  const recovery = deployment.validators.recoverClient;
-  if (!recovery) return false;
+  const validators = shutdownStakeValidators(deployment);
+  if (validators.length === 0) return false;
   const ogmiosUrl = Deno.env.get("OGMIOS_URL");
   if (!ogmiosUrl) {
     throw new Error(
@@ -1130,12 +1209,7 @@ async function recoveryStakeRegistered(
     ogmiosUrl,
     "queryLedgerState/rewardAccountSummaries",
     {
-      keys: [
-        recovery.address,
-        ...(deployment.validators.updateClient
-          ? [deployment.validators.updateClient.address]
-          : []),
-      ],
+      keys: validators.map((validator) => validator.address),
     },
     30000,
     5,
@@ -1164,13 +1238,15 @@ export function buildReclaimRecoveryStakeTx(
 ) {
   const recovery = deployment.validators.recoverClient;
   if (!recovery) throw new Error("Missing client recovery validator");
-  const update = deployment.validators.updateClient;
-  const tx = lucid.newTx().readFrom([hostUtxo, recovery.refUtxo]);
-  if (update) {
-    tx.readFrom([update.refUtxo]).deregister.Stake(update.address, Data.void());
+  const validators = shutdownStakeValidators(deployment);
+  const tx = lucid.newTx().readFrom([
+    hostUtxo,
+    ...validators.map((validator) => validator.refUtxo),
+  ]);
+  for (const validator of validators) {
+    tx.deregister.Stake(validator.address, Data.void());
   }
-  return tx.deregister.Stake(recovery.address, Data.void())
-    .addSignerKey(signerKeyHash)
+  return tx.addSignerKey(signerKeyHash)
     .validFrom(validFrom).validTo(validFrom + TX_VALIDITY_WINDOW_MS);
 }
 

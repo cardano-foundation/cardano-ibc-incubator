@@ -6,7 +6,6 @@ use ibc/client/ics_007_tendermint_client/cached/types.{
 }
 use ibc/client/ics_007_tendermint_client/cometbft/crypto/merkle/hash
 use ibc/client/ics_007_tendermint_client/multitx/types.{max_total_voting_power} as session_types
-use ibc/utils/bytes
 
 pub fn valid_power(power: Int) -> Bool {
   power > 0 && power <= max_total_voting_power
@@ -16,13 +15,23 @@ pub fn address(pubkey: ByteArray) -> ByteArray {
   builtin.sha2_256(pubkey) |> bytearray.take(20)
 }
 
+// Powers are positive and bounded before encoding. Each step emits the low
+// seven bits and recurses on the remaining unsigned value.
+fn positive_varint(value: Int) -> ByteArray {
+  if value < 128 {
+    builtin.cons_bytearray(value, #"")
+  } else {
+    builtin.cons_bytearray(value % 128 + 128, positive_varint(value / 128))
+  }
+}
+
 /// Positive Ed25519 SimpleValidator encoding. The key length and protobuf
 /// field tags are fixed. Only the voting-power varint changes between roots.
 pub fn leaf_bytes(pubkey: ByteArray, power: Int) -> ByteArray {
   expect bytearray.length(pubkey) == 32 && valid_power(power)
   builtin.append_bytearray(
     builtin.append_bytearray(#"0a220a20", pubkey),
-    builtin.cons_bytearray(16, bytes.encode_varint(power)),
+    builtin.cons_bytearray(16, positive_varint(power)),
   )
 }
 
@@ -58,7 +67,8 @@ fn walk(
   count: Int,
   leaves: List<Leaf>,
   siblings: List<ByteArray>,
-) -> (ByteArray, List<Leaf>, List<ByteArray>) {
+  finish: fn(ByteArray, List<Leaf>, List<ByteArray>) -> ByteArray,
+) -> ByteArray {
   let covered =
     when leaves is {
       [leaf, ..] -> leaf.index < start + count
@@ -68,18 +78,35 @@ fn walk(
     expect [leaf, ..rest] = leaves
     expect leaf.index >= start
     if count == 1 {
-      (leaf_hash(leaf.pubkey, leaf.power), rest, siblings)
+      finish(leaf_hash(leaf.pubkey, leaf.power), rest, siblings)
     } else {
       let pivot = split(count, 1)
-      let (left, after_left, remaining) = walk(start, pivot, leaves, siblings)
-      let (right, after_right, tail) =
-        walk(start + pivot, count - pivot, after_left, remaining)
-      (hash.inner_hash_opt_sha2_256(left, right), after_right, tail)
+      walk(
+        start,
+        pivot,
+        leaves,
+        siblings,
+        fn(left, after_left, remaining) {
+          walk(
+            start + pivot,
+            count - pivot,
+            after_left,
+            remaining,
+            fn(right, after_right, tail) {
+              finish(
+                hash.inner_hash_opt_sha2_256(left, right),
+                after_right,
+                tail,
+              )
+            },
+          )
+        },
+      )
     }
   } else {
     expect [sibling, ..rest] = siblings
     expect bytearray.length(sibling) == 32
-    (sibling, leaves, rest)
+    finish(sibling, leaves, rest)
   }
 }
 
@@ -90,9 +117,16 @@ pub fn root(
 ) -> ByteArray {
   expect count > 0 && count <= max_validators
   expect leaves != []
-  let (computed, remaining, tail) = walk(0, count, leaves, siblings)
-  expect remaining == [] && tail == []
-  computed
+  walk(
+    0,
+    count,
+    leaves,
+    siblings,
+    fn(computed, remaining, tail) {
+      expect remaining == [] && tail == []
+      computed
+    },
+  )
 }
 
 /// Full admission establishes the count and denominator from every leaf.
@@ -124,12 +158,16 @@ fn full_order(leaves: List<Leaf>, index: Int, keys: List<ByteArray>) -> Bool {
   }
 }
 
+/// Continuations pass hashes and proof cursors directly between branches.
+/// They avoid wrapping the remaining witness lists into a tuple at each node.
 fn walk_changes(
   start: Int,
   count: Int,
   leaves: List<PowerChange>,
   siblings: List<ByteArray>,
-) -> (ByteArray, ByteArray, List<PowerChange>, List<ByteArray>) {
+  finish: fn(ByteArray, ByteArray, List<PowerChange>, List<ByteArray>) ->
+    ByteArray,
+) -> ByteArray {
   let covered =
     when leaves is {
       [leaf, ..] -> leaf.index < start + count
@@ -146,64 +184,101 @@ fn walk_changes(
         } else {
           leaf_hash(leaf.pubkey, leaf.new_power)
         }
-      (old_hash, new_hash, rest, siblings)
+      finish(old_hash, new_hash, rest, siblings)
     } else {
       let pivot = split(count, 1)
-      let (old_left, new_left, after_left, remaining) =
-        walk_changes(start, pivot, leaves, siblings)
-      let (old_right, new_right, after_right, tail) =
-        walk_changes(start + pivot, count - pivot, after_left, remaining)
-      let old_hash = hash.inner_hash_opt_sha2_256(old_left, old_right)
-      let new_hash =
-        if old_left == new_left && old_right == new_right {
-          old_hash
-        } else {
-          hash.inner_hash_opt_sha2_256(new_left, new_right)
-        }
-      (old_hash, new_hash, after_right, tail)
+      walk_changes(
+        start,
+        pivot,
+        leaves,
+        siblings,
+        fn(old_left, new_left, after_left, remaining) {
+          walk_changes(
+            start + pivot,
+            count - pivot,
+            after_left,
+            remaining,
+            fn(old_right, new_right, after_right, tail) {
+              let old_hash = hash.inner_hash_opt_sha2_256(old_left, old_right)
+              let new_hash =
+                if old_left == new_left && old_right == new_right {
+                  old_hash
+                } else {
+                  hash.inner_hash_opt_sha2_256(new_left, new_right)
+                }
+              finish(old_hash, new_hash, after_right, tail)
+            },
+          )
+        },
+      )
     }
   } else {
     expect [sibling, ..rest] = siblings
     expect bytearray.length(sibling) == 32
-    (sibling, sibling, leaves, rest)
+    finish(sibling, sibling, leaves, rest)
   }
+}
+
+fn authenticated_new_root(
+  old: Record,
+  leaves: List<PowerChange>,
+  siblings: List<ByteArray>,
+) -> ByteArray {
+  walk_changes(
+    0,
+    old.count,
+    leaves,
+    siblings,
+    fn(old_root, new_root, remaining, tail) {
+      expect old_root == old.root && remaining == [] && tail == []
+      new_root
+    },
+  )
 }
 
 /// Boundary neighbors must be disclosed for every changed position. This
 /// proves the new canonical ordering without disclosing unchanged subtrees.
-fn boundaries(
+fn updated_total(
   leaves: List<PowerChange>,
   previous: Option<PowerChange>,
   count: Int,
-) -> Bool {
+  total: Int,
+) -> Int {
   when leaves is {
-    [] -> True
+    [] -> {
+      expect valid_power(total)
+      total
+    }
     [leaf, ..rest] -> {
       let changed = leaf.old_power != leaf.new_power
-      and {
+      expect
         when previous is {
           None -> !changed || leaf.index == 0
-          Some(prev) -> and {
-              prev.index < leaf.index,
-              if prev.index + 1 == leaf.index {
-                // The old root already authenticates unchanged ordering.
-                !changed && prev.old_power == prev.new_power || ordered(
-                  prev.pubkey,
-                  prev.new_power,
-                  leaf.pubkey,
-                  leaf.new_power,
-                )
-              } else {
-                !changed
-              },
+          Some(prev) -> {
+            expect prev.index < leaf.index
+            if prev.index + 1 == leaf.index {
+              !changed && prev.old_power == prev.new_power || ordered(
+                prev.pubkey,
+                prev.new_power,
+                leaf.pubkey,
+                leaf.new_power,
+              )
+            } else {
+              !changed
             }
-        },
+          }
+        }
+      expect
         when rest is {
           [] -> !changed || leaf.index == count - 1
           [next, ..] -> !changed || next.index == leaf.index + 1
-        },
-        boundaries(rest, Some(leaf), count),
-      }
+        }
+      updated_total(
+        rest,
+        Some(leaf),
+        count,
+        total + leaf.new_power - leaf.old_power,
+      )
     }
   }
 }
@@ -214,17 +289,9 @@ pub fn powers(
   siblings: List<ByteArray>,
 ) -> Record {
   expect old.count > 0 && old.count <= max_validators
-  expect leaves != [] && boundaries(leaves, None, old.count)
-  let (old_root, new_root, remaining, tail) =
-    walk_changes(0, old.count, leaves, siblings)
-  expect old_root == old.root && remaining == [] && tail == []
-  let total_power =
-    list.foldl(
-      leaves,
-      old.total_power,
-      fn(leaf, total) { total + leaf.new_power - leaf.old_power },
-    )
-  expect valid_power(total_power)
+  expect leaves != []
+  let total_power = updated_total(leaves, None, old.count, old.total_power)
+  let new_root = authenticated_new_root(old, leaves, siblings)
   Record { root: new_root, count: old.count, total_power }
 }
 
@@ -255,17 +322,84 @@ pub fn shared_powers(
   signers: List<Leaf>,
 ) -> (Record, Int) {
   expect old.count > 0 && old.count <= max_validators
-  expect leaves != [] && boundaries(leaves, None, old.count)
-  let (old_root, new_root, remaining, tail) =
-    walk_changes(0, old.count, leaves, siblings)
-  expect old_root == old.root && remaining == [] && tail == []
+  expect leaves != []
+  let total_power = updated_total(leaves, None, old.count, old.total_power)
+  let new_root = authenticated_new_root(old, leaves, siblings)
   let old_signed_power = signed_old_power(leaves, signers)
-  let total_power =
-    list.foldl(
-      leaves,
-      old.total_power,
-      fn(leaf, total) { total + leaf.new_power - leaf.old_power },
-    )
-  expect valid_power(total_power)
   (Record { root: new_root, count: old.count, total_power }, old_signed_power)
+}
+
+fn walk_hashes(
+  count: Int,
+  hashes: List<ByteArray>,
+  finish: fn(ByteArray, List<ByteArray>) -> ByteArray,
+) -> ByteArray {
+  if count == 1 {
+    expect [leaf, ..rest] = hashes
+    expect bytearray.length(leaf) == 32
+    finish(leaf, rest)
+  } else {
+    let pivot = split(count, 1)
+    walk_hashes(
+      pivot,
+      hashes,
+      fn(left, remaining) {
+        walk_hashes(
+          count - pivot,
+          remaining,
+          fn(right, tail) {
+            finish(hash.inner_hash_opt_sha2_256(left, right), tail)
+          },
+        )
+      },
+    )
+  }
+}
+
+/// A complete vector of leaf hashes follows the canonical RFC-6962 shape.
+/// This avoids decoding validators or recomputing hashes already authenticated
+/// by the caller. Every supplied hash is checked and consumed exactly once.
+pub fn hashes_root(hashes: List<ByteArray>) -> ByteArray {
+  let count = list.length(hashes)
+  expect count > 0 && count <= max_validators
+  walk_hashes(
+    count,
+    hashes,
+    fn(root, remaining) {
+      expect remaining == []
+      root
+    },
+  )
+}
+
+fn walk_packed(
+  start: Int,
+  count: Int,
+  vector: ByteArray,
+  stride: Int,
+  hash_offset: Int,
+) -> ByteArray {
+  if count == 1 {
+    builtin.slice_bytearray(start * stride + hash_offset, 32, vector)
+  } else {
+    let pivot = split(count, 1)
+    let left = walk_packed(start, pivot, vector, stride, hash_offset)
+    let right =
+      walk_packed(start + pivot, count - pivot, vector, stride, hash_offset)
+    hash.inner_hash_opt_sha2_256(left, right)
+  }
+}
+
+/// Internal native vectors can retain fixed-size metadata beside each hash.
+/// Validate their dimensions once, then read exact hash32 slices directly.
+pub fn packed_root(
+  count: Int,
+  vector: ByteArray,
+  stride: Int,
+  hash_offset: Int,
+) -> ByteArray {
+  expect count > 0 && count <= max_validators
+  expect stride >= 32 && hash_offset >= 0 && hash_offset + 32 <= stride
+  expect bytearray.length(vector) == count * stride
+  walk_packed(0, count, vector, stride, hash_offset)
 }
