@@ -93,7 +93,7 @@ class NodeTopologyTests(unittest.TestCase):
 
 
 class GenesisTests(unittest.TestCase):
-    def test_protocol_11_disables_experimental_hard_forks_in_json_and_yaml(self):
+    def test_protocol_11_prepares_hard_forks_and_tracing_in_json_and_yaml(self):
         for use_json in [True, False]:
             with self.subTest(use_json=use_json), tempfile.TemporaryDirectory() as folder:
                 args = native_files(folder)
@@ -117,11 +117,23 @@ class GenesisTests(unittest.TestCase):
                     actual = json.loads(original)
                     self.assertFalse(actual["ExperimentalHardForksEnabled"])
                     self.assertNotIn("TestEnableDevelopmentHardForkEras", actual)
+                    self.assertEqual(actual["TraceOptions"], {})
                 else:
                     self.assertIn("ExperimentalHardForksEnabled: false", original.decode())
                     self.assertNotIn("TestEnableDevelopmentHardForkEras", original.decode())
+                    self.assertIn("TraceOptions: {}", original.decode())
                 prepare_genesis(args, peer=True)
                 self.assertEqual(configuration.read_bytes(), original)
+
+    def test_protocol_11_keeps_existing_tracing_options(self):
+        with tempfile.TemporaryDirectory() as folder:
+            args = native_files(folder)
+            configuration = Path(args[2])
+            tracing = 'TraceOptions:\n  "":\n    severity: Warning\n'
+            configuration.write_text(configuration.read_text() + tracing)
+            prepare_genesis(args, peer=False)
+            self.assertIn(tracing, configuration.read_text())
+            self.assertEqual(configuration.read_text().count("TraceOptions:"), 1)
 
     def test_protocol_11_cost_model_is_installed_only_before_the_first_block(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -172,7 +184,7 @@ class GenesisTests(unittest.TestCase):
                 "ByronGenesisFile": "./genesis/byron-genesis.json",
                 "ShelleyGenesisFile": "./genesis/shelley-genesis.json",
                 "ConwayGenesisFile": "./genesis/conway-genesis.json",
-                        "AlonzoGenesisFile": "./genesis/alonzo-genesis.json",
+                "AlonzoGenesisFile": "./genesis/alonzo-genesis.json",
             }))
             prepare_genesis(args, peer=False)
             byron = json.loads((Path(folder) / "genesis/byron-genesis.json").read_text())
