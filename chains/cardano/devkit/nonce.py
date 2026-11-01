@@ -198,7 +198,7 @@ def observe(history, genesis_directory, query=cli_query):
     name = "Mark" if epoch == 0 else "Set"
     snapshot = normalize_stake(raw_snapshot["total"]["stake" + name],
                                [(pool_id, values["stake" + name]) for pool_id, values in raw_snapshot["pools"].items()])
-    snapshot = attach_vrf_keys(snapshot, ledger["stateBefore"]["esSnapshots"]["pstake" + name]["poolParams"])
+    snapshot = attach_vrf_keys(snapshot, ledger["stateBefore"]["esSnapshots"]["pstake" + name]["stakePoolsSnapShot"])
     history.record(identity, epoch, state.get("epochNonce"), snapshot)
 
 
