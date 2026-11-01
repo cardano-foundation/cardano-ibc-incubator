@@ -9,6 +9,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /app/cardano-bin /app/logs
 COPY --from=devkit-tools /app/yaci-cli /app/yaci-cli
+COPY --from=devkit-tools /app/yaci-cli.jar /app/yaci-cli.jar
 COPY --from=devkit-tools /app/config /app/config
 COPY --from=devkit-tools /app/kupo /app/kupo
 # Ogmios 7 supports the protocol-11 node and exact-block certificate queries.
