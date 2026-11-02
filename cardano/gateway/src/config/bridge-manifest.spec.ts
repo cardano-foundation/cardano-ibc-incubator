@@ -371,6 +371,20 @@ console.log(JSON.stringify(smokeManifest()))`,
     expect(bridgeManifestsEqual(manifestLoaded.bridgeManifest, staged.bridgeManifest)).toBe(true);
   });
 
+  it('retains all cached and staged scripts across both manifest formats', () => {
+    const deployment = buildStagedHandlerJsonDeployment();
+    const roles = ['update', 'updateCore', 'generalUpdateCore', 'stagedUpdate', 'cacheSpend', 'cacheMint'];
+    const cachedTendermint = { format: 'authenticated-validator-cache-v1', validators: Object.fromEntries(roles.map((role) => [role, role === 'stagedUpdate' ? deployment.validators.updateClient : buildValidator(role)])) };
+    const loaded = normalizeHandlerJsonDeploymentConfig({ ...deployment, cachedTendermint }, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' });
+    expect(loaded.deployment.cachedTendermint?.validators.cacheMint.scriptHash).toBe('cacheMint-hash');
+    expect(normalizeBridgeManifestConfig(loaded.bridgeManifest).deployment).toEqual(loaded.deployment);
+    for (const role of roles) {
+      const incomplete = { ...cachedTendermint, validators: { ...cachedTendermint.validators, [role]: undefined } };
+      expect(() => normalizeHandlerJsonDeploymentConfig({ ...deployment, cachedTendermint: incomplete }, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' })).toThrow();
+    }
+    expect(() => normalizeHandlerJsonDeploymentConfig({ ...deployment, cachedTendermint: { ...cachedTendermint, validators: { ...cachedTendermint.validators, stagedUpdate: buildValidator('another-staged-verifier') } } }, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' })).toThrow('different staged verifier');
+  });
+
   it('rejects ordinary forwarding support without staged sessions', () => {
     const deployment = buildHandlerJsonDeployment();
     const options = { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' as const };

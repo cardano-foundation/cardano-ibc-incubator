@@ -491,6 +491,19 @@ jobs:
         working-directory: cardano/offchain
         run: deno run --allow-env --allow-read --allow-net --allow-run scripts/test-gateway-packet-backlog.ts
 
+      - name: Exercise standard cached client creation and automatic update routing
+        working-directory: cardano/offchain
+        env:
+          IBC_CACHE_SIGNING_EVIDENCE: ${{ runner.temp }}/tendermint-cache-signing.json
+        run: deno run --allow-env --allow-read --allow-write --allow-net --allow-run scripts/test-gateway-tendermint-cache.ts
+
+      - name: Retain native Gateway transactions for independent Hermes authorization
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: tendermint-cache-signing
+          path: ${{ runner.temp }}/tendermint-cache-signing.json
+          if-no-files-found: error
+
       - name: Check independent migration rehearsal evidence controls
         run: |
           python3 scripts/ci/aiken-contract-migration/test-migration-evidence.py
@@ -1488,7 +1501,7 @@ jobs:
   hermes-relayer:
     name: Hermes Relayer
     if: ${{ !cancelled() && needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.hermes_changed != 'false' }}
-    needs: [docs-update, aiken-changes]
+    needs: [docs-update, aiken-changes, gateway]
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -1553,3 +1566,14 @@ jobs:
 
       - name: Test
         run: cargo test --manifest-path relayer/Cargo.toml -p ibc-relayer --lib --locked -- --test-threads=1
+
+      - name: Download native Gateway cache transactions
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: tendermint-cache-signing
+          path: ${{ runner.temp }}/tendermint-cache-signing
+
+      - name: Authorize actual direct and staged Gateway updates independently
+        env:
+          IBC_CACHE_SIGNING_EVIDENCE: ${{ runner.temp }}/tendermint-cache-signing/tendermint-cache-signing.json
+        run: cargo test --manifest-path relayer/Cargo.toml -p ibc-relayer --lib --locked production_gateway_transactions_pass_independent_policy -- --ignored --test-threads=1

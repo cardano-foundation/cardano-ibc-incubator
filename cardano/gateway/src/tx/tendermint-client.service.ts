@@ -1,3 +1,5 @@
+import { compactStateSiblings, DirectUpdateUnsupported, encodeValidatorCache, prepareCachedHeader, rotateCache } from '@cardano-ibc/tx-builder-runtime/tendermintCache';
+import { DirectUpdateBudgetExceeded, directUpdateCapacityError, evaluatedUnsignedUpdateBudget } from '@cardano-ibc/tx-builder-runtime/tendermintCacheRouting';
 import { ClientState as ProtoClientState, ConsensusState as ProtoConsensusState } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { initializeClientState, validateClientState } from '../shared/helpers/client-state';
 import { initializeConsensusState } from '../shared/helpers/consensus-state';
@@ -607,6 +609,12 @@ export class TendermintClientService {
         txValidTo: BigInt(validToTimeMs) * 1_000_000n,
       };
 
+      if (this.lucidService.hasCachedTendermintClient?.() &&
+          !tendermintHeaderConflictsWithStoredState(header, currentClientDatum) &&
+          this.isHeightGreater(updateConsensusHeight, currentClientDatum.state.clientState.latestHeight)) {
+        const direct = await this.updateClientWithCache(data, updateClientHeaderOperator, validityWindow, updateConsensusHeight);
+        if (direct) return direct;
+      }
       if (stagedTendermintClient) {
         return await this.updateClientWithStagedSession(
           data,
@@ -666,6 +674,55 @@ export class TendermintClientService {
       } else {
         throw error;
       }
+    }
+  }
+
+  private async updateClientWithCache(
+    data: MsgUpdateClient,
+    operator: UpdateClientOperatorDto,
+    window: Awaited<ReturnType<TendermintClientService['computeTxValidityWindow']>>,
+    height: Height,
+  ): Promise<MsgUpdateClientResponse | undefined> {
+    // Resume a confirmed session instead of abandoning its token and reserve.
+    const owner = this.requireKeyPaymentCredential(operator.constructedAddress);
+    const ledger = await this.queryTendermintLedgerSnapshot(
+      this.lucidService.getTendermintUpdateSessionAddress(),
+      this.lucidService.credentialToAddress(operator.constructedAddress),
+      operator.currentClientUtxo.address,
+    );
+    this.requireTendermintLedgerUtxo(ledger, operator.currentClientUtxo, 'indexed client');
+    if (this.matchingStagedTendermintRequestSessions(ledger.filter((u) => u.address === this.lucidService.getTendermintUpdateSessionAddress()), operator, owner).length) return undefined;
+    const validTo = capTendermintStagedValidTo({
+      proposedValidToMs: Math.min(window.validToTime, window.currentLedgerTime + TRANSACTION_TIME_TO_LIVE),
+      currentLedgerTimeMs: window.currentLedgerTime,
+      trustedHeight: operator.header.trustedHeight,
+      clientDatum: operator.clientDatum,
+      slotConfig: window.slotConfig,
+    });
+    const directOperator = { ...operator, txValidTo: BigInt(validTo) * 1_000_000n };
+    try {
+      // Protocol limits and the evaluated complete transaction select execution.
+      // The benchmark's 3 ADA target is not an update admission rule.
+      const limits = await this.lucidService.lucid.config().provider!.getProtocolParameters();
+      const { unsignedTx, pendingTreeUpdate } = await this.buildUnsignedUpdateClientTx(directOperator, undefined, true);
+      const result = await this.txOperationRunnerService.run({
+        operationName: 'updateCachedClient',
+        unsignedTx,
+        validity: { apply: (builder: TxBuilder) => builder.validFrom(window.validFromTime).validTo(validTo) },
+        wallet: { mode: 'refresh_from_address', address: operator.constructedAddress, context: 'updateCachedClient' },
+        completeOptions: { localUPLCEval: false, setCollateral: TRANSACTION_SET_COLLATERAL },
+        validateCompleted: (transaction) => {
+          const budget = evaluatedUnsignedUpdateBudget(transaction.toCBOR(), limits);
+          if (!budget.fits) throw new DirectUpdateBudgetExceeded(`Direct client update exceeds reserved transaction budgets: ${budget.exceeded.join(', ')}`);
+        },
+        pendingTreeUpdate,
+        syntheticEvents: [this.buildUpdateClientSyntheticEvent(EVENT_TYPE_CLIENT.UPDATE_CLIENT, operator.clientId, height, data.client_message!)],
+      });
+      return { unsigned_tx: { type_url: '', value: result.unsignedTxBytes }, client_id: Number(operator.clientId) } as unknown as MsgUpdateClientResponse;
+    } catch (error) {
+      if (!(error instanceof DirectUpdateUnsupported) && !directUpdateCapacityError(error)) throw error;
+      this.logger.log(`Using staged Tendermint verification: ${error instanceof Error ? error.message : String(error)}`);
+      return undefined;
     }
   }
 
@@ -2109,6 +2166,7 @@ export class TendermintClientService {
   public async buildUnsignedUpdateClientTx(
     updateClientOperator: UpdateClientOperatorDto,
     stagedFinalization?: StagedTendermintFinalization,
+    cachedUpdate = false,
   ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     const currentClientDatumState = updateClientOperator.clientDatum.state;
     const header = updateClientOperator.header;
@@ -2208,8 +2266,8 @@ export class TendermintClientService {
 
     const hostStateRedeemer = {
       UpdateClient: {
-        client_state_siblings: clientStateSiblings,
-        consensus_state_siblings: consensusStateSiblings,
+        client_state_siblings: cachedUpdate ? compactStateSiblings(clientStateSiblings) : clientStateSiblings,
+        consensus_state_siblings: cachedUpdate ? compactStateSiblings(consensusStateSiblings) : consensusStateSiblings,
       },
     };
 
@@ -2217,7 +2275,25 @@ export class TendermintClientService {
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     let unsignedTx: TxBuilder;
-    if (stagedFinalization) {
+    if (cachedUpdate) {
+      const { utxo: cacheUtxo, cache } = await this.lucidService.resolveValidatorCache(newClientDatum.token, updateClientOperator.currentClientUtxo.address);
+      const trusted = getHeightMapValue(currentClientDatumState.consensusStates, header.trustedHeight);
+      if (!trusted) throw new GrpcFailedPreconditionException('Missing authenticated trusted checkpoint');
+      const prepared = prepareCachedHeader({
+        header, cache, trustedRoot: trusted.next_validators_hash,
+        latestHeight: currentClientDatumState.clientState.latestHeight,
+        trustLevel: currentClientDatumState.clientState.trustLevel,
+        historySiblings: insertion.siblings,
+      });
+      const { Data, Constr } = this.lucidService.LucidImporter;
+      unsignedTx = await this.lucidService.createUnsignedCachedClientTransaction({
+        host: hostStateUtxo, client: updateClientOperator.currentClientUtxo, cache: cacheUtxo,
+        hostRedeemer: encodedHostStateRedeemer, clientRedeemer: prepared.redeemer,
+        hostDatum: encodedUpdatedHostStateDatum, clientDatum: encodedNewClientDatum, cacheDatum: prepared.nextCacheDatum,
+        subjectRedeemer: Data.to(new Constr(0, [newClientDatum.token.policyId, newClientDatum.token.name])), full: prepared.full,
+        signer: updateClientOperator.constructedAddress,
+      });
+    } else if (stagedFinalization) {
       const encodedSpendClientRedeemer = encodeSpendMultitxClientRedeemer(
         {
           FinalizeUpdate: {
@@ -2271,6 +2347,13 @@ export class TendermintClientService {
           'recoverClientWithdrawalRedeemer',
         ),
       );
+    }
+    if (stagedFinalization && this.lucidService.hasCachedTendermintClient?.()) {
+      const { utxo, cache } = await this.lucidService.resolveValidatorCache(newClientDatum.token, updateClientOperator.currentClientUtxo.address);
+      if (!('Complete' in stagedFinalization.datum.phase)) throw new GrpcFailedPreconditionException('Staged validator verification is incomplete');
+      const receipt = stagedFinalization.datum.phase.Complete;
+      const record = { root: receipt.targetRoot, count: Number(stagedFinalization.datum.plan.targetValidatorCount), totalPower: receipt.targetTotalPower };
+      unsignedTx = this.lucidService.includeValidatorCacheContinuation(unsignedTx, utxo, encodeValidatorCache({ ...cache, records: rotateCache(cache.records, record) }));
     }
     return {
       unsignedTx,

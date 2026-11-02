@@ -112,7 +112,19 @@ type PacketStateManifest = {
   guard: BridgeManifestValidator;
 };
 
+const CACHED_TENDERMINT_ROLES = ['update', 'updateCore', 'generalUpdateCore', 'stagedUpdate', 'cacheSpend', 'cacheMint'] as const;
+type CachedTendermintRole = typeof CACHED_TENDERMINT_ROLES[number];
+export type CachedTendermintConfig = {
+  format: 'authenticated-validator-cache-v1';
+  validators: Record<CachedTendermintRole, DeploymentValidator>;
+};
+type CachedTendermintManifest = {
+  format: 'authenticated-validator-cache-v1';
+  validators: Record<CachedTendermintRole, BridgeManifestValidator>;
+};
+
 export type DeploymentConfig = {
+  cachedTendermint?: CachedTendermintConfig;
   packetState: PacketStateDeployment;
   deploymentMode?: 'upgradeable' | 'legacy';
   migration?: MigrationRuntimeConfig;
@@ -215,6 +227,7 @@ type BridgeManifestTraceRegistry = {
 // external operators. It intentionally uses snake_case and only includes the
 // on-chain facts another Gateway/relayer stack needs to reconnect to this bridge.
 export type BridgeManifest = {
+  cached_tendermint?: CachedTendermintManifest;
   packet_state: PacketStateManifest;
   deploymentMode?: 'upgradeable' | 'legacy';
   migration?: MigrationRuntimeConfig;
@@ -752,6 +765,31 @@ function packetStateFromManifest(value: unknown): PacketStateDeployment {
   });
 }
 
+function cachedTendermintConfig(value: unknown): CachedTendermintConfig {
+  const cache = requireObject(value, 'cachedTendermint');
+  assert(cache.format === 'authenticated-validator-cache-v1', 'Unsupported validator cache format');
+  const validators = requireObject(cache.validators, 'cachedTendermint.validators');
+  return { format: 'authenticated-validator-cache-v1', validators: Object.fromEntries(
+    CACHED_TENDERMINT_ROLES.map((role) => [role, requireDeploymentValidator(validators[role], `cachedTendermint.validators.${role}`)]),
+  ) as CachedTendermintConfig['validators'] };
+}
+function validateCachedTendermint(cache: CachedTendermintConfig | undefined, update: DeploymentValidator | undefined, hasSessions: boolean): void {
+  if (!cache) return;
+  assert(hasSessions && update, 'Cached Tendermint requires staged fallback');
+  assert(JSON.stringify(cache.validators.stagedUpdate) === JSON.stringify(update), 'Cached Tendermint pins a different staged verifier');
+  for (const role of ['update', 'updateCore', 'generalUpdateCore', 'cacheSpend'] as const) {
+    assert(Boolean(cache.validators[role].address), `Cached Tendermint ${role} address is missing`);
+  }
+}
+function cachedTendermintToManifest(cache: CachedTendermintConfig): CachedTendermintManifest {
+  return { format: cache.format, validators: Object.fromEntries(CACHED_TENDERMINT_ROLES.map((role) => [role, deploymentValidatorToManifest(cache.validators[role])])) as CachedTendermintManifest['validators'] };
+}
+function cachedTendermintFromManifest(value: unknown): CachedTendermintConfig {
+  const cache = requireObject(value, 'cached_tendermint');
+  const validators = requireObject(cache.validators, 'cached_tendermint.validators');
+  return cachedTendermintConfig({ format: cache.format, validators: Object.fromEntries(CACHED_TENDERMINT_ROLES.map((role) => [role, manifestValidatorToDeployment(requireManifestValidator(validators[role], `cached_tendermint.validators.${role}`))])) });
+}
+
 export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfig {
   const deploymentAny = requireObject(deployment, 'deployment');
   const validators = requireObject(deploymentAny.validators, 'validators');
@@ -769,8 +807,10 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
     'Invalid bridge config: staged Tendermint spend and mint session validators must be configured together',
   );
   assert(!validators.updateClient || hasSpendSession, 'Ordinary client forwarding requires staged Tendermint sessions');
+  validateCachedTendermint(deploymentAny.cachedTendermint ? cachedTendermintConfig(deploymentAny.cachedTendermint) : undefined, validators.updateClient ? requireDeploymentValidator(validators.updateClient, 'validators.updateClient') : undefined, hasSpendSession);
 
   return {
+    ...(deploymentAny.cachedTendermint ? { cachedTendermint: cachedTendermintConfig(deploymentAny.cachedTendermint) } : {}),
     packetState: requirePacketState(deploymentAny.packetState),
     deploymentMode: checkedDeploymentMode(deploymentAny.deploymentMode, deploymentAny.migration),
     deployedAt: requireIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
@@ -866,6 +906,7 @@ export function normalizeHandlerJsonDeploymentConfig(
     deployment: normalizedDeployment,
     bridgeManifest: {
       schema_version: 6,
+      ...(normalizedDeployment.cachedTendermint ? { cached_tendermint: cachedTendermintToManifest(normalizedDeployment.cachedTendermint) } : {}),
       packet_state: packetStateToManifest(normalizedDeployment.packetState),
       ...(normalizedDeployment.deploymentMode ? { deploymentMode: normalizedDeployment.deploymentMode } : {}),
       ...(normalizedDeployment.migration ? { migration: normalizedDeployment.migration } : {}),
@@ -955,6 +996,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
     'Invalid bridge config: staged Tendermint spend and mint session validators must be configured together',
   );
   assert(!validators.update_client || hasSpendSession, 'Ordinary client forwarding requires staged Tendermint sessions');
+  validateCachedTendermint(manifestAny.cached_tendermint ? cachedTendermintFromManifest(manifestAny.cached_tendermint) : undefined, validators.update_client ? manifestValidatorToDeployment(requireManifestValidator(validators.update_client, 'validators.update_client')) : undefined, hasSpendSession);
 
   // Manifest startup is the inverse path: validate the public document, then
   // rebuild the internal deployment shape so downstream Gateway code stays
@@ -964,6 +1006,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
     packet_state: packetStateToManifest(packetStateFromManifest(manifestAny.packet_state)),
     deploymentMode: checkedDeploymentMode(manifestAny.deploymentMode, manifestAny.migration),
     ...(manifestAny.migration !== undefined ? { migration: requireMigrationConfig(manifestAny.migration) } : {}),
+    ...(manifestAny.cached_tendermint ? { cached_tendermint: cachedTendermintToManifest(cachedTendermintFromManifest(manifestAny.cached_tendermint)) } : {}),
     consensus_history_format: consensusHistoryFormat,
     deployment_id: requireNonEmptyString(manifestAny.deployment_id, 'deployment_id'),
     deployed_at: requireIsoTimestamp(manifestAny.deployed_at, 'deployed_at'),
@@ -1050,6 +1093,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   return {
     bridgeManifest,
     deployment: {
+      ...(bridgeManifest.cached_tendermint ? { cachedTendermint: cachedTendermintFromManifest(bridgeManifest.cached_tendermint) } : {}),
       packetState: packetStateFromManifest(bridgeManifest.packet_state),
       deployedAt: bridgeManifest.deployed_at,
       ...(bridgeManifest.deploymentMode ? { deploymentMode: bridgeManifest.deploymentMode } : {}),

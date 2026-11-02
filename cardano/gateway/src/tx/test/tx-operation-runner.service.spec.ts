@@ -103,6 +103,24 @@ describe('TxOperationRunnerService', () => {
     expect(factory).toHaveBeenCalledTimes(1);
   });
 
+  it('does not register state or events for an evaluated candidate rejected by the budget gate', async () => {
+    const { service, lucidService, txEventsService, ibcTreePendingUpdatesService } = makeService();
+    const completed = { toCBOR: () => 'evaluated-candidate', toHash: () => 'rejected-hash' };
+    const builder = { complete: jest.fn().mockResolvedValue(completed), lucidConfig: () => ({ wallet: {} }) } as any;
+    const validateCompleted = jest.fn(() => { throw new Error('direct budget exceeded'); });
+    await expect(service.run({
+      operationName: 'updateCachedClient', unsignedTx: builder,
+      wallet: { mode: 'refresh_from_address', address: 'operator', context: 'updateCachedClient' },
+      validity: { apply: (tx) => tx }, validateCompleted,
+      pendingTreeUpdate: { expectedNewRoot: 'new-root', commit: jest.fn() },
+      syntheticEvents: [{ type: 'update_client', attributes: [] }],
+    })).rejects.toThrow('direct budget exceeded');
+    expect(validateCompleted).toHaveBeenCalledWith(completed);
+    expect(txEventsService.register).not.toHaveBeenCalled();
+    expect(ibcTreePendingUpdatesService.register).not.toHaveBeenCalled();
+    expect(lucidService.endWalletSelectionScope).toHaveBeenCalledTimes(1);
+  });
+
   it('completes tx and registers pending update/events for refresh wallet mode', async () => {
     const {
       service,

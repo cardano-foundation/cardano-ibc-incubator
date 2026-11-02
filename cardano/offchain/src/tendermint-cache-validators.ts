@@ -5,14 +5,15 @@ import {
   type Script,
   validatorToRewardAddress,
 } from "@lucid-evolution/lucid";
-import { loadStagedTendermintValidators } from "./deployment-plan.ts";
+import { loadStagedTendermintValidators } from "./tendermint-validators.ts";
 import { readValidator } from "./utils.ts";
 
-/** Opt-in prototype. Register clientSpend with the normal client registry. */
+/** The standard client supports direct updates and staged verification. */
 export function loadCachedTendermintValidators(
   lucid: LucidEvolution,
   hostPolicy: string,
   recoveryHash: string,
+  registryPolicy?: string,
 ) {
   const staged = loadStagedTendermintValidators(
     lucid,
@@ -42,13 +43,15 @@ export function loadCachedTendermintValidators(
     ],
   );
   const cacheSpend = readValidator(
-    "spending_validator_cache.spend_validator_cache.spend",
+    registryPolicy
+      ? "upgradeable/validator_cache.validator_cache.spend"
+      : "spending_validator_cache.spend_validator_cache.spend",
     lucid,
-    [staged.sessionMint.policyId, update[1], staged.updateClient.scriptHash],
-    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
-      string,
-      string,
-      string,
+    [
+      ...(registryPolicy ? [registryPolicy] : []),
+      staged.sessionMint.policyId,
+      update[1],
+      staged.updateClient.scriptHash,
     ],
   );
   const cacheMint = readValidator(
@@ -58,9 +61,12 @@ export function loadCachedTendermintValidators(
     Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
   );
   const clientSpend = readValidator(
-    "spending_cached_client.spend_cached_client.spend",
+    registryPolicy
+      ? "upgradeable/cached_client.cached_client.spend"
+      : "spending_cached_client.spend_cached_client.spend",
     lucid,
     [
+      ...(registryPolicy ? [registryPolicy, 1n] : []),
       hostPolicy,
       staged.updateClient.scriptHash,
       update[1],
@@ -69,14 +75,13 @@ export function loadCachedTendermintValidators(
     ],
   );
   const clientMint = readValidator(
-    "minting_cached_client.mint_cached_client.mint",
+    registryPolicy
+      ? "upgradeable/mint_cached_client.mint_cached_client.mint"
+      : "minting_cached_client.mint_cached_client.mint",
     lucid,
-    [clientSpend[1], hostPolicy, cacheMint[1]],
-    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
-      string,
-      string,
-      string,
-    ],
+    registryPolicy
+      ? [registryPolicy, cacheMint[1]]
+      : [clientSpend[1], hostPolicy, cacheMint[1]],
   );
   // These credentials are registered once per deployment and must all be
   // deregistered with recovery authorization before the HostState is removed.

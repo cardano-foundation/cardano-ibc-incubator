@@ -32,7 +32,10 @@ import {
   cacheRecord,
   cacheRecordData,
   compactStateSiblings,
+  decodeCachedUpdate,
   fullSetUpdate,
+  prepareCachedHeader,
+  readValidatorCache,
   rotateCache,
   sharedPowerUpdate,
   validatorMultiproof,
@@ -171,6 +174,8 @@ export interface CacheFixtureOptions {
   twoRecords?: boolean;
   routing?: "auto" | "direct" | "staged";
   directSizeFailure?: boolean;
+  emptyCache?: boolean;
+  productionWitness?: boolean;
 }
 
 /** Real cache admission and a complete signed update under retained parameters. */
@@ -332,14 +337,18 @@ export async function cachedUpdateFixture(
     !options.uncachedTrusted || mode === "full",
     "Uncached trusted roots require complete-set authentication",
   );
-  const admittedLeaves: CacheLeaf[] = options.uncachedTrusted
+  const admittedLeaves: CacheLeaf[] = options.emptyCache
+    ? []
+    : options.uncachedTrusted
     ? [{ index: 0, pubkey: "cd".repeat(32), power: 1n }]
     : oldLeaves;
-  const initialRecord = cacheRecord(admittedLeaves);
+  const initialRecord = cacheRecord(
+    options.emptyCache ? oldLeaves : admittedLeaves,
+  );
   const additionalSet: CacheLeaf[] = options.twoRecords
     ? [{ index: 0, pubkey: "ab".repeat(32), power: 1n }]
     : [];
-  const initialRecords = [
+  const initialRecords = options.emptyCache ? [] : [
     initialRecord,
     ...(additionalSet.length ? [cacheRecord(additionalSet)] : []),
   ];
@@ -824,10 +833,8 @@ export async function cachedUpdateFixture(
     const priorRecords = mode === "full" && !staged
       ? rotateCache(initialRecords, oldRecord)
       : initialRecords;
-    const nextRecords = !changed
-      ? priorRecords
-      : rotateCache(priorRecords, targetRecord);
-    const nextCache = c([
+    const nextRecords = rotateCache(priorRecords, targetRecord);
+    let nextCache = c([
       ...cacheDatum.fields.slice(0, 3),
       nextRecords.map(cacheRecordData),
     ]);
@@ -1066,7 +1073,7 @@ export async function cachedUpdateFixture(
       emulator.ledger[cache.txHash + cache.outputIndex].utxo = cache;
       nextCache.fields[0] = suppliedCacheToken;
     }
-    const update = c([
+    let update = c([
       mutation === "cache-token" ? c([dummy, cacheName]) : suppliedCacheToken,
       mutation === "malformed-header" ? c([]) : signedHeader,
       trustedHeight,
@@ -1077,6 +1084,50 @@ export async function cachedUpdateFixture(
       setData,
       compactStateSiblings(historySiblings),
     ]);
+    let fullWitness = mode === "full";
+    if (options.productionWitness && !staged) {
+      const decoded = decodeCachedUpdate(encode(c([update], 6)))!;
+      const validators = (leaves: CacheLeaf[]) =>
+        leaves.map((leaf) => ({
+          pubkey: leaf.pubkey,
+          votingPower: leaf.power,
+          address: createHash("sha256").update(Buffer.from(leaf.pubkey, "hex"))
+            .digest("hex").slice(0, 40),
+        }));
+      const prepared = prepareCachedHeader({
+        cache: readValidatorCache(
+          cache,
+          { policyId: clientPolicy, name: clientName },
+          scripts.cacheMint[1],
+          clientAddress,
+        ),
+        header: {
+          signedHeader: {
+            ...decoded.signedHeader,
+            commit: {
+              ...decoded.signedHeader.commit,
+              signatures: availableCommitSignatures.map((sig) => ({
+                block_id_flag: BigInt(sig.block_id_flag),
+                validator_address: sig.validator_address,
+                timestamp: BigInt(sig.timestamp),
+                signature: sig.signature,
+              })),
+            },
+          },
+          trustedHeight: decoded.trustedHeight,
+          validatorSet: { validators: validators(retainedLeaves) },
+          trustedValidators: { validators: validators(oldLeaves) },
+        },
+        latestHeight: decoded.trustedHeight,
+        trustedRoot,
+        trustLevel: { numerator: 1n, denominator: 3n },
+        historySiblings,
+      });
+      update = (Data.from(prepared.redeemer) as Constr<Data>)
+        .fields[0] as Constr<Data>;
+      nextCache = Data.from(prepared.nextCacheDatum) as Constr<Data>;
+      fullWitness = prepared.full;
+    }
     const updateReference = session
       ? seed(
         account.address,
@@ -1091,7 +1142,7 @@ export async function cachedUpdateFixture(
       references[4],
       updateReference,
       ...(session ? [] : [
-        references[mode === "full" && mutation !== "full-wrong-core" ? 7 : 6],
+        references[fullWitness && mutation !== "full-wrong-core" ? 7 : 6],
       ]),
     ])
       .collectFrom(
@@ -1128,7 +1179,7 @@ export async function cachedUpdateFixture(
       }
       if (mutation !== "missing-verifier" && mutation !== "missing-core") {
         builder.withdraw(
-          mode === "full" && mutation !== "full-wrong-core"
+          fullWitness && mutation !== "full-wrong-core"
             ? generalRewardAddress
             : coreRewardAddress,
           0n,

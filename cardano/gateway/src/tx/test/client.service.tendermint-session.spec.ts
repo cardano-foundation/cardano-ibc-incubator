@@ -1,5 +1,7 @@
 import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
 import * as Lucid from '@lucid-evolution/lucid';
+import * as CacheRouting from '@cardano-ibc/tx-builder-runtime/tendermintCacheRouting';
+import { DirectUpdateUnsupported } from '@cardano-ibc/tx-builder-runtime/tendermintCache';
 import { BinaryReader } from '@cardano-ibc/proto-types/build/binary';
 
 import { EVENT_TYPE_CLIENT } from '../../constant';
@@ -2025,5 +2027,58 @@ describe('ClientService staged Tendermint session recovery and seed reservations
         assets: { lovelace: 3_000_000n },
       }),
     ).toThrow('not authenticated by its declared NFT');
+  });
+});
+
+
+describe('automatic cached update selection', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  async function harness() {
+    const h = makeHarness();
+    h.lucidService.lucid.config = () => ({ provider: { getProtocolParameters: async () => ({ maxTxSize: 16384, maxTxExMem: 16500000, maxTxExSteps: 10000000000 }) } });
+    h.lucidService.queryLedgerStateUtxosAtAddresses.mockResolvedValue([clientUtxo()]);
+    const window = await (h.service as any).computeTxValidityWindow();
+    const run = () => (h.service as any).updateClientWithCache(UPDATE_MESSAGE, updateOperator(), window, { revisionNumber: 0n, revisionHeight: 11n });
+    return { ...h, run };
+  }
+
+  it('returns an evaluated direct transaction without initializing a session', async () => {
+    const h = await harness();
+    jest.spyOn(CacheRouting, 'evaluatedUnsignedUpdateBudget').mockReturnValue({ fits: true } as any);
+    const response = await h.run();
+    expect(response.unsigned_tx.type_url).toBe('');
+    expect(h.buildFinal).toHaveBeenCalledWith(expect.objectContaining({ txValidTo: BigInt(TEST_CURRENT_LEDGER_TIME_MS + 120000) * 1000000n }), undefined, true);
+    expect(h.lucidService.createUnsignedTendermintSessionTransaction).not.toHaveBeenCalled();
+    expect(h.pendingUpdates.peek('default-final')).toBeDefined();
+  });
+
+  it('falls back without recording rejected transaction state when the reserve does not fit', async () => {
+    const h = await harness();
+    jest.spyOn(CacheRouting, 'evaluatedUnsignedUpdateBudget').mockReturnValue({ fits: false, exceeded: ['memory'] } as any);
+    expect(await h.run()).toBeUndefined();
+    expect(h.pendingUpdates.peek('default-final')).toBeUndefined();
+    expect(h.txEvents.take('default-final')).toBeUndefined();
+  });
+
+  it('falls back for an unsupported direct witness', async () => {
+    const h = await harness();
+    h.buildFinal.mockRejectedValue(new DirectUpdateUnsupported('quorum exceeds direct signer limit'));
+    expect(await h.run()).toBeUndefined();
+    expect(h.runnerSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(['failed script execution: invalid membership', 'provider connection refused'])('propagates %s instead of treating it as a resource miss', async (message) => {
+    const h = await harness();
+    h.buildFinal.mockRejectedValue(new Error(message));
+    await expect(h.run()).rejects.toThrow(message);
+    expect(h.pendingUpdates.peek('default-final')).toBeUndefined();
+  });
+
+  it('resumes a confirmed session before attempting a direct candidate', async () => {
+    const h = await harness();
+    jest.spyOn(h.service as any, 'matchingStagedTendermintRequestSessions').mockReturnValue([{}]);
+    expect(await h.run()).toBeUndefined();
+    expect(h.buildFinal).not.toHaveBeenCalled();
   });
 });

@@ -1,3 +1,4 @@
+import { loadCachedTendermintValidators } from "./tendermint-cache-validators.ts";
 import {
   assert,
   assertEquals,
@@ -137,7 +138,7 @@ Deno.test("the optional benchmark policy is inventoried and pins the registry va
   }
 });
 
-Deno.test("the deployment inventory uses the staged client and session policy graph", async () => {
+Deno.test("the standard client publishes direct verification and staged fallback", async () => {
   const plan = await loadDeploymentPlan(lucidLoader, inputs);
   const staged = loadStagedTendermintValidators(
     lucidLoader,
@@ -147,10 +148,17 @@ Deno.test("the deployment inventory uses the staged client and session policy gr
   assertEquals(plan.updateClient.hash, staged.updateClient.scriptHash);
   assertEquals(plan.sessionSpend.hash, staged.sessionSpend.scriptHash);
   assertEquals(plan.sessionMint.hash, staged.sessionMint.policyId);
-  assertEquals(plan.spendClient.hash, staged.clientSpend.scriptHash);
+  const cached = loadCachedTendermintValidators(
+    lucidLoader,
+    plan.hostNft.hash,
+    plan.recoverClient.hash,
+  );
+  assertEquals(plan.spendClient.hash, cached.clientSpend[1]);
+  assertEquals(plan.cacheMint.hash, cached.cacheMint[1]);
+  assertEquals(plan.cachedUpdateClient.hash, cached.update[1]);
   assertEquals(
     plan.spendClient.title,
-    "spending_multitx_client.spend_multitx_client.spend",
+    "spending_cached_client.spend_cached_client.spend",
   );
   for (
     const validator of [
@@ -159,6 +167,11 @@ Deno.test("the deployment inventory uses the staged client and session policy gr
       plan.spendClient,
       plan.recoverClient,
       plan.updateClient,
+      plan.cachedUpdateClient,
+      plan.verifyCachedClient,
+      plan.verifyGeneralCachedClient,
+      plan.cacheSpend,
+      plan.cacheMint,
     ]
   ) {
     assert(plan.referenceValidators.includes(validator));

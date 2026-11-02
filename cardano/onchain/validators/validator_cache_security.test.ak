@@ -1,3 +1,4 @@
+use aiken/builtin
 use cardano/address.{Script, from_script}
 use cardano/assets
 use cardano/transaction.{
@@ -18,7 +19,9 @@ use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, host_state_token_name,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{CreateClient}
+use ibc/migration/types.{registry_token_name} as migration_types
 use spending_validator_cache
+use upgradeable/validator_cache as upgradeable_cache
 
 const client_script =
   #"11111111111111111111111111111111111111111111111111111111"
@@ -62,41 +65,38 @@ fn datum() -> CacheDatum {
 }
 
 fn cache_tx(cache: CacheDatum) -> Transaction {
-  let cache_output =
-    Output {
-      address: from_script(cache_script),
-      value: assets.from_asset(cache.token.policy_id, cache.token.name, 1),
-      datum: InlineDatum(cache),
-      reference_script: None,
-    }
-  let client_output =
-    Output {
-      address: cache.client_address,
-      value: assets.from_asset(
-        cache.client_token.policy_id,
-        cache.client_token.name,
-        1,
-      ),
-      datum: NoDatum,
-      reference_script: None,
-    }
-  let raw: Data =
-    CachedUpdate {
-      update: Update {
-        cache_token: cache.token,
-        signed_header: SignedHeader {
-          header: header.null_tm_header(),
-          commit: commit.null_commit(),
-        },
-        trusted_height: height.zero_height(),
-        target: [],
-        target_siblings: [],
-        trusted: [],
-        trusted_siblings: [],
-        sets: [],
-        history_siblings: [],
+  let cache_output = Output {
+    address: from_script(cache_script),
+    value: assets.from_asset(cache.token.policy_id, cache.token.name, 1),
+    datum: InlineDatum(cache),
+    reference_script: None,
+  }
+  let client_output = Output {
+    address: cache.client_address,
+    value: assets.from_asset(
+      cache.client_token.policy_id,
+      cache.client_token.name,
+      1,
+    ),
+    datum: NoDatum,
+    reference_script: None,
+  }
+  let raw: Data = CachedUpdate {
+    update: Update {
+      cache_token: cache.token,
+      signed_header: SignedHeader {
+        header: header.null_tm_header(),
+        commit: commit.null_commit(),
       },
-    }
+      trusted_height: height.zero_height(),
+      target: [],
+      target_siblings: [],
+      trusted: [],
+      trusted_siblings: [],
+      sets: [],
+      history_siblings: [],
+    },
+  }
   let subject_data: Data = cache.client_token
   Transaction {
     ..placeholder,
@@ -111,6 +111,143 @@ fn cache_tx(cache: CacheDatum) -> Transaction {
       Pair(Withdraw(Script(update_script)), subject_data),
     ],
   }
+}
+
+fn migrating_cache_tx() -> Transaction {
+  let cache = datum()
+  let tx = cache_tx(cache)
+  expect [cache_input, client_input] = tx.inputs
+  expect [cache_output] = tx.outputs
+  let destination = from_script(policy)
+  let raw = builtin.constr_data(100, [])
+  Transaction {
+    ..tx,
+    inputs: [
+      cache_input,
+      client_input,
+      Input {
+        output_reference: ref(2),
+        output: Output {
+          ..cache_output,
+          value: assets.from_asset(host_policy, registry_token_name, 1),
+        },
+      },
+    ],
+    outputs: [
+      Output { ..client_input.output, address: destination },
+      Output {
+        ..cache_output,
+        datum: InlineDatum(CacheDatum { ..cache, client_address: destination }),
+      },
+    ],
+    redeemers: [
+      Pair(Spend(ref(1)), raw),
+      Pair(Spend(ref(2)), builtin.constr_data(0, [])),
+    ],
+  }
+}
+
+test registry_cache_guard_preserves_records_when_its_client_moves() {
+  upgradeable_cache.validator_cache.spend(
+    host_policy,
+    policy,
+    update_script,
+    policy,
+    Some(datum()),
+    builtin.constr_data(100, []),
+    ref(0),
+    migrating_cache_tx(),
+  )
+}
+
+test registry_cache_guard_requires_the_registry_spend_for_a_move() fail {
+  let tx = migrating_cache_tx()
+  expect [cache, client, _] = tx.inputs
+  upgradeable_cache.validator_cache.spend(
+    host_policy,
+    policy,
+    update_script,
+    policy,
+    Some(datum()),
+    builtin.constr_data(100, []),
+    ref(0),
+    Transaction { ..tx, inputs: [cache, client] },
+  )
+}
+
+test registry_cache_move_cannot_rewrite_an_authenticated_denominator() fail {
+  let tx = migrating_cache_tx()
+  expect [client, cache] = tx.outputs
+  let old = datum()
+  upgradeable_cache.validator_cache.spend(
+    host_policy,
+    policy,
+    update_script,
+    policy,
+    Some(old),
+    builtin.constr_data(100, []),
+    ref(0),
+    Transaction {
+      ..tx,
+      outputs: [
+        client,
+        Output {
+          ..cache,
+          datum: InlineDatum(
+            CacheDatum { ..old, client_address: client.address, records: [] },
+          ),
+        },
+      ],
+    },
+  )
+}
+
+test registry_cache_move_cannot_change_the_subject_identity() fail {
+  let tx = migrating_cache_tx()
+  expect [client, cache] = tx.outputs
+  let old = datum()
+  upgradeable_cache.validator_cache.spend(
+    host_policy,
+    policy,
+    update_script,
+    policy,
+    Some(old),
+    builtin.constr_data(100, []),
+    ref(0),
+    Transaction {
+      ..tx,
+      outputs: [
+        client,
+        Output {
+          ..cache,
+          datum: InlineDatum(
+            CacheDatum {
+              ..old,
+              client_address: client.address,
+              client_token: AuthToken { policy_id: policy, name: "other" },
+            },
+          ),
+        },
+      ],
+    },
+  )
+}
+
+test registry_cache_guard_cannot_use_migration_to_skip_the_client_move() fail {
+  let tx = migrating_cache_tx()
+  upgradeable_cache.validator_cache.spend(
+    host_policy,
+    policy,
+    update_script,
+    policy,
+    Some(datum()),
+    builtin.constr_data(100, []),
+    ref(0),
+    Transaction {
+      ..tx,
+      redeemers: [Pair(Spend(ref(2)), builtin.constr_data(0, []))],
+    },
+  )
 }
 
 // These call the cache guard alone. No client guard or update verifier runs
@@ -225,16 +362,15 @@ test cache_guard_rejects_changed_cache_identity_without_client_guard() fail {
 
 test cache_guard_rejects_unrelated_name_claiming_subject() fail {
   let original = datum()
-  let cache =
-    CacheDatum {
-      ..original,
-      token: AuthToken {
-        policy_id: original.token.policy_id,
-        name: identity.token_name(
-          AuthToken { policy_id: policy, name: "unrelated" },
-        ),
-      },
-    }
+  let cache = CacheDatum {
+    ..original,
+    token: AuthToken {
+      policy_id: original.token.policy_id,
+      name: identity.token_name(
+        AuthToken { policy_id: policy, name: "unrelated" },
+      ),
+    },
+  }
   spending_validator_cache.spend_validator_cache.spend(
     policy,
     update_script,
@@ -247,53 +383,51 @@ test cache_guard_rejects_unrelated_name_claiming_subject() fail {
 }
 
 fn admission_tx() -> (AuthToken, Transaction) {
-  let host =
-    HostStateDatum {
-      state: HostState {
-        version: 0,
-        ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
-        next_client_sequence: 0,
-        next_connection_sequence: 0,
-        next_channel_sequence: 0,
-        bound_port: [],
-        last_update_time: 0,
-      },
-      nft_policy: host_policy,
-      deployer: client_script,
-      control: HostStateControl {
-        port_registry: [],
-        shutdown: Active,
-        live_clients: 0,
-        live_connections: 0,
-        live_channels: 0,
-        last_heartbeat_time: 0,
-      },
-    }
-  let token =
-    AuthToken {
-      policy_id: policy,
-      name: auth.generate_token_name(
-        AuthToken { policy_id: host_policy, name: host_state_token_name },
-        client_prefix,
-        "0",
-      ),
-    }
-  let client =
-    Output {
-      address: from_script(client_script),
-      value: assets.from_asset(policy, token.name, 1),
-      datum: NoDatum,
-      reference_script: None,
-    }
-  let host_output =
-    Output {
-      address: from_script(host_policy),
-      value: assets.from_asset(host_policy, host_state_token_name, 1),
-      datum: InlineDatum(host),
-      reference_script: None,
-    }
-  let raw: Data =
-    CreateClient { client_state_siblings: [], consensus_state_siblings: [] }
+  let host = HostStateDatum {
+    state: HostState {
+      version: 0,
+      ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: [],
+      last_update_time: 0,
+    },
+    nft_policy: host_policy,
+    deployer: client_script,
+    control: HostStateControl {
+      port_registry: [],
+      shutdown: Active,
+      live_clients: 0,
+      live_connections: 0,
+      live_channels: 0,
+      last_heartbeat_time: 0,
+    },
+  }
+  let token = AuthToken {
+    policy_id: policy,
+    name: auth.generate_token_name(
+      AuthToken { policy_id: host_policy, name: host_state_token_name },
+      client_prefix,
+      "0",
+    ),
+  }
+  let client = Output {
+    address: from_script(client_script),
+    value: assets.from_asset(policy, token.name, 1),
+    datum: NoDatum,
+    reference_script: None,
+  }
+  let host_output = Output {
+    address: from_script(host_policy),
+    value: assets.from_asset(host_policy, host_state_token_name, 1),
+    datum: InlineDatum(host),
+    reference_script: None,
+  }
+  let raw: Data = CreateClient {
+    client_state_siblings: [],
+    consensus_state_siblings: [],
+  }
   (
     token,
     Transaction {
@@ -314,28 +448,25 @@ test admission_identifies_the_host_created_client() {
 
 test admission_rejects_arbitrary_client_without_host_creation() fail {
   let (token, tx) = admission_tx()
-  expect _ =
-    identity.admitted_client(
-      host_policy,
-      token,
-      Transaction { ..tx, inputs: [] },
-    )
+  expect _ = identity.admitted_client(
+    host_policy,
+    token,
+    Transaction { ..tx, inputs: [] },
+  )
 }
 
 test admission_rejects_shadow_token_at_an_unrelated_script() fail {
   let (token, tx) = admission_tx()
   let impostor = AuthToken { policy_id: cache_script, name: token.name }
-  let extra =
-    Output {
-      address: from_script(cache_script),
-      value: assets.from_asset(impostor.policy_id, impostor.name, 1),
-      datum: NoDatum,
-      reference_script: None,
-    }
-  expect _ =
-    identity.admitted_client(
-      host_policy,
-      impostor,
-      Transaction { ..tx, outputs: [extra, ..tx.outputs] },
-    )
+  let extra = Output {
+    address: from_script(cache_script),
+    value: assets.from_asset(impostor.policy_id, impostor.name, 1),
+    datum: NoDatum,
+    reference_script: None,
+  }
+  expect _ = identity.admitted_client(
+    host_policy,
+    impostor,
+    Transaction { ..tx, outputs: [extra, ..tx.outputs] },
+  )
 }

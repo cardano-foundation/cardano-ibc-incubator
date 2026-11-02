@@ -794,8 +794,10 @@ function cachedShutdownValidators(
   deployment: DeploymentTemplate,
 ): CachedTendermintDeployment["validators"] | undefined {
   const cached = deployment.cachedTendermint;
-  const usesCachedClient = deployment.validators.spendClient?.title ===
-      "spending_cached_client.spend_cached_client.spend" ||
+  const usesCachedClient = [
+    "spending_cached_client.spend_cached_client.spend",
+    "upgradeable/cached_client.cached_client.spend",
+  ].includes(deployment.validators.spendClient?.title) ||
     deployment.validators.updateClient?.title === CACHED_SCRIPT_TITLES.update;
   if (!cached) {
     if (usesCachedClient) {
@@ -810,7 +812,11 @@ function cachedShutdownValidators(
     Object.entries(CACHED_SCRIPT_TITLES).some(([role, title]) => {
       const validator = cached.validators
         ?.[role as keyof typeof CACHED_SCRIPT_TITLES];
-      return !validator || validator.title !== title || !validator.refUtxo;
+      const expected =
+        role === "cacheSpend" && deployment.deploymentMode === "upgradeable"
+          ? "upgradeable/validator_cache.validator_cache.spend"
+          : title;
+      return !validator || validator.title !== expected || !validator.refUtxo;
     })
   ) {
     throw new Error(

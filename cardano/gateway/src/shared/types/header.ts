@@ -201,7 +201,9 @@ export function convertHeaderToTendermint(header: Header): HeaderMsg {
           block_id_flag: toTendermintBlockIdFlag(commitSig.block_id_flag),
           validator_address: commitSig?.validator_address ? fromHex(commitSig.validator_address) : new Uint8Array(),
           timestamp: {
-            seconds: commitSig.timestamp / 10n ** 9n,
+            seconds: commitSig.block_id_flag === 1n && commitSig.timestamp === 0n
+              ? -EPOCH_DIFF_BTW_GO_JS / 10n ** 9n
+              : commitSig.timestamp / 10n ** 9n,
             nanos: Number(commitSig.timestamp % 10n ** 9n),
           } as Timestamp,
           signature: commitSig?.signature ? fromHex(commitSig.signature) : new Uint8Array(),

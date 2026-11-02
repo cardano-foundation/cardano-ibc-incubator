@@ -1,3 +1,8 @@
+import {
+  encodeValidatorCache,
+  readValidatorCache,
+  type ValidatorCache,
+} from "./tendermint-cache.ts";
 import { assertEmergencyAuthority } from "../types/plutus/Migration.ts";
 import {
   Constr,
@@ -41,6 +46,7 @@ export type MigrationInputs = {
   registryReference: UTxO;
   object?: UTxO;
   objectReference?: UTxO;
+  clientCache?: { utxo: UTxO; reference: UTxO; cache: ValidatorCache };
   transferRoot?: UTxO;
   successorReferences?: UTxO[];
   preparationHost?: UTxO;
@@ -579,6 +585,7 @@ export async function buildMigrationTransaction(
       references.map((utxo) => [`${utxo.txHash}#${utxo.outputIndex}`, utxo]),
     ).values(),
   ];
+  if (inputs.clientCache) references.push(inputs.clientCache.reference);
   let tx = lucid.newTx().readFrom(references).collectFrom(
     [inputs.registry],
     Data.to(action, RegistryRedeemer),
@@ -602,6 +609,33 @@ export async function buildMigrationTransaction(
       .pay.ToContract(destination, { kind: "inline", value: objectDatum! }, {
         ...inputs.object!.assets,
       }, inputs.object!.scriptRef ?? undefined);
+  }
+  if (inputs.clientCache) {
+    if (
+      !destination || typeof action !== "object" || !("MoveCore" in action) ||
+      action.MoveCore.role !== 1n || !inputs.object
+    ) throw new Error("Cache movement requires its paired client migration");
+    const { utxo, cache } = inputs.clientCache;
+    const authenticated = readValidatorCache(
+      utxo,
+      cache.clientToken,
+      cache.token.policyId,
+      inputs.object.address,
+    );
+    if (
+      inputs.object
+        .assets[
+          authenticated.clientToken.policyId + authenticated.clientToken.name
+        ] !== 1n
+    ) throw new Error("Cache identifies another migrating client");
+    tx = tx.collectFrom([utxo], MIGRATION_SPEND)
+      .pay.ToContract(utxo.address, {
+        kind: "inline",
+        value: encodeValidatorCache({
+          ...authenticated,
+          clientAddress: destination,
+        }),
+      }, { ...utxo.assets });
   }
   for (const signer of new Set(inputs.signers ?? [])) {
     tx = tx.addSignerKey(signer);

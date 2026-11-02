@@ -978,7 +978,7 @@ export type DeployedScriptReference = {
   refUtxo: UTxO;
 };
 
-/** Finite script inventory for the opt-in authenticated-cache deployment. */
+/** Finite script inventory shared by direct and staged client updates. */
 export type CachedTendermintDeployment = {
   format: "authenticated-validator-cache-v1";
   validators: Record<

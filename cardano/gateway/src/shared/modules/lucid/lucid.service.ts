@@ -1,3 +1,5 @@
+import { initializeValidatorCache, readValidatorCache, validatorCacheToken, type CacheToken, type ValidatorCache } from '@cardano-ibc/tx-builder-runtime/tendermintCache';
+import type { CachedTendermintConfig } from '../../../config/bridge-manifest';
 import {
   migrationReference,
   withClientRecoveryApproval,
@@ -161,6 +163,11 @@ function encodeTransferEscrowShardRedeemer(data: unknown, Lucid: typeof import('
 }
 
 type ReferenceScripts = {
+  cacheSpend?: UTxO;
+  cacheMint?: UTxO;
+  cachedUpdate?: UTxO;
+  cacheCore?: UTxO;
+  cacheGeneral?: UTxO;
   spendChannel: UTxO;
   spendTraceRegistry?: UTxO;
   mintChannel: UTxO;
@@ -212,6 +219,11 @@ export class LucidService implements OnModuleInit {
   ) {
     const deploymentConfig = this.configService.get('deployment');
     this.referenceScriptOutRefs = {
+      cacheSpend: deploymentConfig.cachedTendermint?.validators.cacheSpend.refUtxo,
+      cacheMint: deploymentConfig.cachedTendermint?.validators.cacheMint.refUtxo,
+      cachedUpdate: deploymentConfig.cachedTendermint?.validators.update.refUtxo,
+      cacheCore: deploymentConfig.cachedTendermint?.validators.updateCore.refUtxo,
+      cacheGeneral: deploymentConfig.cachedTendermint?.validators.generalUpdateCore.refUtxo,
       spendConnection: deploymentConfig.validators.spendConnection.refUtxo,
       spendChannel: deploymentConfig.validators.spendChannel.refUtxo,
       spendTraceRegistry: deploymentConfig.validators.spendTraceRegistry?.refUtxo,
@@ -872,6 +884,49 @@ export class LucidService implements OnModuleInit {
     return this.configService.get('deployment')?.migration?.profile === 'cardano-ibc-compatible-v5';
   }
 
+  public hasCachedTendermintClient(): boolean {
+    return Boolean(this.configService.get('deployment').cachedTendermint);
+  }
+
+  public async resolveValidatorCache(client: CacheToken, clientAddress: string): Promise<{ utxo: UTxO; cache: ValidatorCache }> {
+    const config = this.configService.get('deployment').cachedTendermint as CachedTendermintConfig | undefined;
+    if (!config) throw new GrpcFailedPreconditionException('Validator cache is not configured');
+    const token = validatorCacheToken(client, config.validators.cacheMint.scriptHash);
+    const utxo = await this.findUtxoByUnit(token.policyId + token.name);
+    if (utxo.address !== config.validators.cacheSpend.address) throw new GrpcFailedPreconditionException('Validator cache is at an unauthenticated address');
+    return { utxo, cache: readValidatorCache(utxo, client, token.policyId, clientAddress) };
+  }
+
+  public includeValidatorCacheContinuation(tx: TxBuilder, utxo: UTxO, nextDatum: string): TxBuilder {
+    if (!this.referenceScripts.cacheSpend) throw new GrpcFailedPreconditionException('Validator cache reference script is unavailable');
+    return tx.readFrom([this.referenceScripts.cacheSpend])
+      .collectFrom([utxo], this.LucidImporter.Data.void())
+      .pay.ToContract(utxo.address, { kind: 'inline', value: nextDatum }, utxo.assets);
+  }
+
+  public async createUnsignedCachedClientTransaction(args: {
+    host: UTxO; client: UTxO; cache: UTxO;
+    hostRedeemer: string; clientRedeemer: string;
+    hostDatum: string; clientDatum: string; cacheDatum: string;
+    subjectRedeemer: string; full: boolean; signer: string;
+  }): Promise<TxBuilder> {
+    const deployment = this.configService.get('deployment');
+    const config = deployment.cachedTendermint as CachedTendermintConfig | undefined;
+    const core = args.full ? this.referenceScripts.cacheGeneral : this.referenceScripts.cacheCore;
+    const coreConfig = args.full ? config?.validators.generalUpdateCore : config?.validators.updateCore;
+    if (!config || !this.referenceScripts.cachedUpdate || !core || !coreConfig?.address || !config.validators.update.address) throw new GrpcFailedPreconditionException('Cached client verification scripts are unavailable');
+    const tx = (await this.newTxBuilder(false, 2n))
+      .readFrom([this.referenceScripts.hostStateStt, this.referenceScripts.spendClient, this.referenceScripts.cachedUpdate, core])
+      .collectFrom([{ ...args.host, datumHash: undefined }], args.hostRedeemer)
+      .collectFrom([args.client], args.clientRedeemer)
+      .pay.ToContract(deployment.validators.hostStateStt.address, { kind: 'inline', value: args.hostDatum }, args.host.assets)
+      .pay.ToContract(deployment.validators.spendClient.address, { kind: 'inline', value: args.clientDatum }, args.client.assets)
+      .withdraw(config.validators.update.address, 0n, args.subjectRedeemer)
+      .withdraw(coreConfig.address, 0n, args.subjectRedeemer)
+      .addSigner(args.signer);
+    return this.includeValidatorCacheContinuation(tx, args.cache, args.cacheDatum);
+  }
+
   public hasStagedTendermintClient(): boolean {
     const validators = this.configService.get('deployment').validators;
     return Boolean(validators.spendTendermintUpdateSession && validators.mintTendermintUpdateSession);
@@ -1268,6 +1323,16 @@ export class LucidService implements OnModuleInit {
     addPayToContract(deploymentConfig.validators.spendClient.address, encodedClientDatum, {
       [clientAuthTokenUnit]: 1n,
     });
+
+    if (this.hasCachedTendermintClient()) {
+      const config = deploymentConfig.cachedTendermint as CachedTendermintConfig;
+      if (!this.referenceScripts.cacheMint || !config.validators.cacheSpend.address) throw new GrpcFailedPreconditionException('Paired client/cache creation is unavailable');
+      const datum = await this.decodeDatum<ClientDatum>(encodedClientDatum, 'client');
+      const cache = initializeValidatorCache(datum.token, config.validators.cacheMint.scriptHash, deploymentConfig.validators.spendClient.address);
+      tx.readFrom([this.referenceScripts.cacheMint])
+        .mintAssets({ [cache.tokenUnit]: 1n }, cache.mintRedeemer)
+        .pay.ToContract(config.validators.cacheSpend.address, { kind: 'inline', value: cache.datum }, { [cache.tokenUnit]: 1n });
+    }
 
     console.log('[DEBUG TX] ================================================');
 
