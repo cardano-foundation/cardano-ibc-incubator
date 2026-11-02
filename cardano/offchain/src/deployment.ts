@@ -975,6 +975,9 @@ export const createDeployment = async (
             plan.registry.token.name,
           registryAddress: plan.implementationRegistry.address,
           registryReference: refUtxosInfo[plan.implementationRegistry.hash],
+          governanceAuthority: plan.governanceAuthority
+            ? cachedScript(plan.governanceAuthority)
+            : undefined,
           registryDatum: Data.to(plan.registry, Registry),
           generation: "1",
           compatibility: plan.registry.current.compatibility,

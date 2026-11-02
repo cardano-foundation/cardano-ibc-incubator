@@ -467,6 +467,13 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
     registryUtxo,
     deployment.migration.registryUnit,
   );
+  const governance = deployment.migration.governanceAuthority;
+  assert(governance?.refUtxo.scriptRef);
+  assertEquals(governance.scriptHash, registry.approval_authority);
+  assertEquals(
+    validatorToScriptHash(governance.refUtxo.scriptRef),
+    registry.approval_authority,
+  );
   assertEquals(registry.phase, "Ready");
   assertEquals(registry.current.generation, 1n);
   assertEquals(

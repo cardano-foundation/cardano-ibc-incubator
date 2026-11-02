@@ -1051,6 +1051,7 @@ export type DeploymentTemplate = {
     originalAddresses: string[];
     registryAddress: string;
     registryReference: UTxO;
+    governanceAuthority?: DeployedScriptReference;
     registryDatum: string;
     baseline: unknown;
     lineage: Array<
