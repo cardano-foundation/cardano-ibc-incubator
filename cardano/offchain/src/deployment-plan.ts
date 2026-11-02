@@ -26,7 +26,6 @@ import {
   assertGovernance,
   type Authority,
   AuthoritySchema,
-  CredentialSchema,
   type Governance,
   GovernanceSchema,
   plutusAddress,
