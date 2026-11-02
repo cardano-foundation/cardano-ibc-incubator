@@ -86,6 +86,9 @@ type BasePlan = {
   governanceAuthority: PlannedValidator | null;
   sessionMint: PlannedValidator;
   updateClient: PlannedValidator;
+  cachedUpdateClient?: PlannedValidator;
+  cacheMint?: PlannedValidator;
+  cacheSpend?: PlannedValidator;
   recoverClient: PlannedValidator;
   verifyProof: PlannedValidator;
   mintPort: PlannedValidator;
@@ -244,19 +247,45 @@ export async function loadSuccessorImplementation(
     base,
     Data.Tuple([Data.Bytes(), Data.Integer()]),
   );
-  load(
-    "upgradeable/client.client.spend",
-    [...base, baseline.hostNft.hash, baseline.updateClient.hash, {
-      Script: [baseline.recoverClient.hash],
-    }],
-    Data.Tuple([
-      Data.Bytes(),
-      Data.Integer(),
-      Data.Bytes(),
-      Data.Bytes(),
-      CredentialSchema,
-    ]),
-  );
+  if (baseline.cacheMint && baseline.cachedUpdateClient) {
+    load(
+      "upgradeable/cached_client.cached_client.spend",
+      [
+        ...base,
+        baseline.hostNft.hash,
+        baseline.updateClient.hash,
+        baseline.cachedUpdateClient.hash,
+        baseline.cacheMint.hash,
+        { Script: [baseline.recoverClient.hash] },
+      ],
+      Data.Tuple([
+        Data.Bytes(),
+        Data.Integer(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+        CredentialSchema,
+      ]),
+    );
+  } else {
+    load(
+      "upgradeable/client.client.spend",
+      [
+        ...base,
+        baseline.hostNft.hash,
+        baseline.updateClient.hash,
+        { Script: [baseline.recoverClient.hash] },
+      ],
+      Data.Tuple([
+        Data.Bytes(),
+        Data.Integer(),
+        Data.Bytes(),
+        Data.Bytes(),
+        CredentialSchema,
+      ]),
+    );
+  }
   load(
     "upgradeable/connection.connection.spend",
     [

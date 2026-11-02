@@ -40,9 +40,7 @@ class MigrationRuntime(profile.Runtime):
             raise ValueError('Refusing to overwrite an existing migration runtime')
         reservations = []
         try:
-            ports = {'DEVKIT_NODE_PORT': 23001, 'DEVKIT_OGMIOS_PORT': ogmios_port,
-                     'DEVKIT_KUPO_PORT': kupo_port, 'DEVKIT_HISTORY_PORT': 29083,
-                     'DEVKIT_HISTORY_DB_PORT': 27432}
+            ports = {'DEVKIT_OGMIOS_PORT': ogmios_port, 'DEVKIT_KUPO_PORT': kupo_port}
             for key in profile.PORTS:
                 reservation = socket.socket()
                 reservation.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

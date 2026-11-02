@@ -108,7 +108,7 @@ async function checkCase(sample: ShutdownSnapshotCase) {
         utxo.assets[f.deployment.modules.transfer.identifier] === 1n
       );
     await f.submit(
-      buildReclaimStateTx(
+      await buildReclaimStateTx(
         f.lucid,
         f.deployment,
         await f.lucid.utxoByUnit(

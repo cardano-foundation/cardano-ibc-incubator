@@ -1,3 +1,4 @@
+import { readValidatorCache, validatorCacheToken } from "./tendermint-cache.ts";
 import {
   Data,
   fromText,
@@ -400,6 +401,30 @@ export async function nextMigrationStep(
         phase.next[key],
       );
       await withObject(policy + name, role + 1);
+      if (role === 0 && baseline.cacheMint && baseline.cacheSpend) {
+        const client = { policyId: policy, name };
+        const token = validatorCacheToken(client, baseline.cacheMint.hash);
+        const utxo = await lucid.utxoByUnit(token.policyId + token.name);
+        if (utxo.address !== baseline.cacheSpend.address) {
+          throw new Error(
+            "Migrating client cache is at an unauthenticated address",
+          );
+        }
+        inputs.clientCache = {
+          utxo,
+          cache: readValidatorCache(
+            utxo,
+            client,
+            token.policyId,
+            inputs.object!.address,
+          ),
+          reference: await referenceFor(
+            lucid,
+            references,
+            baseline.cacheSpend.hash,
+          ),
+        };
+      }
       action = { MoveCore: { role: BigInt(role + 1) } };
     } else if (!phase.module_moved) {
       await withObject(unitOf(phase.registration.module_token), 4);

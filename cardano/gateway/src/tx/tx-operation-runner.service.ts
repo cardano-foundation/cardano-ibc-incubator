@@ -52,6 +52,7 @@ export type TxOperationPlan<TExtraResponseFields = Record<string, never>> = {
   wallet: TxWalletInstruction;
   completeOptions?: TxCompleteOptions;
   completeRetry?: TxCompleteRetryPolicy;
+  validateCompleted?: (transaction: CompletedUnsignedTx) => void;
   pendingTreeUpdate?: PendingTreeUpdate | (() => PendingTreeUpdate | undefined);
   syntheticEvents?: GatewayEvent[];
   extraResponseFields?: TExtraResponseFields;
@@ -308,11 +309,13 @@ export class TxOperationRunnerService {
         // Lucid newTx() captures its wallet before this serialized refresh.
         txWithValidity.lucidConfig().wallet = this.lucidService.lucid.wallet();
 
-        return (await txWithValidity.complete({
+        const completed = (await txWithValidity.complete({
           localUPLCEval: false,
           setCollateral: TRANSACTION_SET_COLLATERAL,
           ...(plan.completeOptions || {}),
         })) as CompletedUnsignedTx;
+        plan.validateCompleted?.(completed);
+        return completed;
       } catch (error) {
         lastError = error;
         const retryPolicy = plan.completeRetry;

@@ -1,3 +1,4 @@
+import { applyCachedPowers, cacheRecord, decodeCacheAdmission, decodeCachedUpdate, reconstructCachedHeader, validatorCacheRoots, validatorCacheToken, type CacheLeaf } from '@cardano-ibc/tx-builder-runtime/tendermintCache';
 import { bootstrapSettlementCredit } from './settlement-credit';
 import { encodeInitialClient, initialClientPlan } from './client-initialization';
 import { withAuthenticatedPoolBindings } from './pool-registry-checkpoint';
@@ -531,6 +532,89 @@ export class QueryService {
     }
 
     return reconstructStagedTendermintHeader(completeSession, sessionRedeemers);
+  }
+
+  private async recoverCachedTendermintHeader(clientUtxo: UtxoDto, clientDatum: ClientDatum, redeemers: ParsedTxRedeemer[]): Promise<TendermintHeader | null> {
+    const deployment = this.configService.get('deployment');
+    const config = deployment.cachedTendermint;
+    if (!config) return null;
+    const client = clientDatum.token;
+    const token = validatorCacheToken(client, config.validators.cacheMint.scriptHash);
+    const candidate = redeemers.some((r) => {
+      try { return r.type === REDEEMER_TYPE.SPEND && decodeCachedUpdate(r.data)?.cacheToken.name === token.name; }
+      catch { return false; }
+    });
+    if (!candidate) return null;
+    if (client.policyId !== deployment.validators.mintClientStt.scriptHash || clientUtxo.assetsPolicy !== client.policyId || clientUtxo.assetsName !== client.name) throw new Error('Cached event does not identify the canonical client NFT');
+    const [inputs, history] = await Promise.all([
+      this.getCanonicalTransactionInputs(clientUtxo.txHash),
+      this.historyService.findUtxosByPolicyIdAndPrefixTokenName(client.policyId, client.name),
+    ]);
+    const index = this.findInputIndexForToken(inputs, history, clientUtxo.address || deployment.validators.spendClient.address, client);
+    if (index === null) return null;
+    const raw = redeemers.find((r) => r.type === REDEEMER_TYPE.SPEND && r.index === BigInt(index));
+    const witness = raw ? decodeCachedUpdate(raw.data) : undefined;
+    if (!witness) return null;
+    if (witness.cacheToken.policyId !== token.policyId || witness.cacheToken.name !== token.name) throw new Error('Cached event uses another client cache');
+    const input = inputs[index];
+    const previous = history.find((row) => row.txHash === input.txHash && Number(row.outputIndex) === Number(input.outputIndex));
+    if (!previous?.datum) throw new Error('Missing cached event client input datum');
+    const previousDatum = await decodeClientDatum(previous.datum, this.lucidService.LucidImporter);
+    const trusted = [...previousDatum.state.consensusStates].find(([h]) => h.revisionNumber === witness.trustedHeight.revisionNumber && h.revisionHeight === witness.trustedHeight.revisionHeight)?.[1];
+    if (!trusted) throw new Error('Missing cached event trusted checkpoint');
+    let sources: Map<string, UtxoDto[]> | undefined;
+    const memo = new Map<string, CacheLeaf[]>();
+    const active = new Set<string>();
+    const resolve = async (root: string): Promise<CacheLeaf[]> => {
+      const known = memo.get(root);
+      if (known) return known;
+      if (active.has(root)) throw new Error('Cyclic validator cache history');
+      active.add(root);
+      try {
+        if (!sources) {
+          sources = new Map();
+          const cacheHistory = await this.historyService.findUtxosByPolicyIdAndPrefixTokenName(token.policyId, token.name);
+          // A root's first appearance must disclose its full set, a power
+          // transition from an earlier root, or a completed staged receipt.
+          // Later cache hits contain no new set data and need no replay.
+          for (const row of cacheHistory) {
+            if (!row.datum || row.address !== config.validators.cacheSpend.address || row.assetsPolicy !== token.policyId || row.assetsName !== token.name) continue;
+            for (const hash of validatorCacheRoots(row.datum, client, token.policyId)) {
+              const current = sources.get(hash);
+              if (!current || Number(row.blockNo) < Number(current[0].blockNo)) sources.set(hash, [row]);
+              else if (Number(row.blockNo) === Number(current[0].blockNo)) current.push(row);
+            }
+          }
+        }
+        for (const row of sources.get(root) ?? []) {
+          const evidence = await this.getTransactionRedeemers(row.txHash);
+          for (const r of evidence) {
+            try {
+              const admission = r.type === REDEEMER_TYPE.MINT ? decodeCacheAdmission(r.data) : [];
+              const transition = r.type === REDEEMER_TYPE.SPEND ? decodeCachedUpdate(r.data) : undefined;
+              const full = transition?.set?.kind === 'full' ? [transition.set.target, transition.set.trusted] : [];
+              for (const set of [...admission, ...full]) if (cacheRecord(set).root === root) { memo.set(root, set); return set; }
+              if (transition?.set?.kind === 'powers' && transition.signedHeader.header.validatorsHash === root && transition.set.oldRoot !== root) {
+                const set = applyCachedPowers(transition, await resolve(transition.set.oldRoot));
+                memo.set(root, set);
+                return set;
+              }
+            } catch { /* Other scripts in the same transaction need not use this witness ABI. */ }
+          }
+          const clientOutput = history.find((output) => output.txHash === row.txHash && output.datum);
+          if (clientOutput?.datum) {
+            const datum = await decodeClientDatum(clientOutput.datum, this.lucidService.LucidImporter);
+            const staged = await this.recoverStagedTendermintHeader(clientOutput, datum, evidence);
+            if (staged) for (const validators of [staged.validatorSet.validators, staged.trustedValidators.validators]) {
+              const set = validators.map((v, index) => ({ index, pubkey: v.pubkey, power: v.votingPower }));
+              if (cacheRecord(set).root === root) { memo.set(root, set); return set; }
+            }
+          }
+        }
+        throw new Error(`Incomplete validator cache history for root ${root}`);
+      } finally { active.delete(root); }
+    };
+    return reconstructCachedHeader(witness, trusted.next_validators_hash, resolve);
   }
 
   private clientEventType(redeemers: ParsedTxRedeemer[], stagedHeader: TendermintHeader | null): string {
@@ -1590,8 +1674,8 @@ export class QueryService {
           }
 
           const redeemers = await this.getTransactionRedeemers(clientUtxo.txHash);
-          const stagedRedeemer = await this.findStagedClientRedeemer(clientUtxo, clientDatum, redeemers);
-          let stagedHeader: TendermintHeader | null = null;
+          let stagedHeader = await this.recoverCachedTendermintHeader(clientUtxo, clientDatum, redeemers);
+          const stagedRedeemer = stagedHeader ? null : await this.findStagedClientRedeemer(clientUtxo, clientDatum, redeemers);
           let spendClientRedeemerData: SpendClientRedeemer | undefined;
           if (stagedRedeemer === 'UpgradeClient') {
             spendClientRedeemerData = 'UpgradeClient';
@@ -1623,7 +1707,7 @@ export class QueryService {
                 stagedRedeemer.FinalizeUpdate.sessionToken,
               );
             }
-          } else {
+          } else if (!stagedHeader) {
             spendClientRedeemerData = findSpendClientRedeemer(redeemers, this.lucidService.LucidImporter);
           }
           const substituteClientId =

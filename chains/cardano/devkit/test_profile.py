@@ -3,12 +3,23 @@ import subprocess
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from profile import DEFAULTS, PRODUCERS, Runtime, block_production_ready, normalized_genesis, validate_settings, write_env
+from profile import DEFAULTS, PRODUCERS, Runtime, block_production_ready, normalized_genesis, validate_settings, wait_for, write_env
 
 
 class ProfileTests(unittest.TestCase):
+    def test_wait_does_not_report_an_earlier_error_after_the_probe_recovers(self):
+        elapsed = [0]
+
+        def sleep(seconds):
+            elapsed[0] += seconds
+
+        with patch("profile.time.monotonic", side_effect=lambda: elapsed[0]), \
+                patch("profile.time.sleep", side_effect=sleep):
+            with self.assertRaisesRegex(RuntimeError, "Timed out waiting for producers: not ready"):
+                wait_for("producers", Mock(side_effect=[OSError("relation block does not exist"), False]), timeout=4)
+
     def test_funding_splits_confirmed_native_wallet_inputs_and_returns_its_change(self):
         with tempfile.TemporaryDirectory() as folder:
             runtime = Runtime(Path(folder))

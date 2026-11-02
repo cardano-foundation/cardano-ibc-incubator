@@ -29,6 +29,8 @@
     "./incrementalIbcTree": { "types": "./dist/incrementalIbcTree.d.ts", "default": "./dist/incrementalIbcTree.js" },
     "./plutusSerialise": { "types": "./dist/plutusSerialise.d.ts", "default": "./dist/plutusSerialise.js" },
     "./historyBootstrap": { "types": "./dist/historyBootstrap.d.ts", "default": "./dist/historyBootstrap.js" },
+    "./tendermintCache": { "types": "./dist/tendermintCache.d.ts", "default": "./dist/tendermintCache.js" },
+    "./tendermintCacheRouting": { "types": "./dist/tendermintCacheRouting.d.ts", "default": "./dist/tendermintCacheRouting.js" },
     "./migrationRuntime": { "types": "./dist/migrationRuntime.d.ts", "default": "./dist/migrationRuntime.js" }
   },
   "typesVersions": {
@@ -46,6 +48,8 @@
       "incrementalIbcTree": ["dist/incrementalIbcTree.d.ts"],
       "plutusSerialise": ["dist/plutusSerialise.d.ts"],
       "historyBootstrap": ["dist/historyBootstrap.d.ts"],
+      "tendermintCache": ["dist/tendermintCache.d.ts"],
+      "tendermintCacheRouting": ["dist/tendermintCacheRouting.d.ts"],
       "migrationRuntime": ["dist/migrationRuntime.d.ts"]
     }
   },

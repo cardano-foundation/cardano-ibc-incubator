@@ -1,3 +1,4 @@
+import { loadCachedTendermintValidators } from "./tendermint-cache-validators.ts";
 import {
   assert,
   assertEquals,
@@ -137,7 +138,7 @@ Deno.test("the optional benchmark policy is inventoried and pins the registry va
   }
 });
 
-Deno.test("the deployment inventory uses the staged client and session policy graph", async () => {
+Deno.test("the standard client publishes direct verification and staged fallback", async () => {
   const plan = await loadDeploymentPlan(lucidLoader, inputs);
   const staged = loadStagedTendermintValidators(
     lucidLoader,
@@ -147,10 +148,17 @@ Deno.test("the deployment inventory uses the staged client and session policy gr
   assertEquals(plan.updateClient.hash, staged.updateClient.scriptHash);
   assertEquals(plan.sessionSpend.hash, staged.sessionSpend.scriptHash);
   assertEquals(plan.sessionMint.hash, staged.sessionMint.policyId);
-  assertEquals(plan.spendClient.hash, staged.clientSpend.scriptHash);
+  const cached = loadCachedTendermintValidators(
+    lucidLoader,
+    plan.hostNft.hash,
+    plan.recoverClient.hash,
+  );
+  assertEquals(plan.spendClient.hash, cached.clientSpend[1]);
+  assertEquals(plan.cacheMint.hash, cached.cacheMint[1]);
+  assertEquals(plan.cachedUpdateClient.hash, cached.update[1]);
   assertEquals(
     plan.spendClient.title,
-    "spending_multitx_client.spend_multitx_client.spend",
+    "spending_cached_client.spend_cached_client.spend",
   );
   for (
     const validator of [
@@ -159,6 +167,11 @@ Deno.test("the deployment inventory uses the staged client and session policy gr
       plan.spendClient,
       plan.recoverClient,
       plan.updateClient,
+      plan.cachedUpdateClient,
+      plan.verifyCachedClient,
+      plan.verifyGeneralCachedClient,
+      plan.cacheSpend,
+      plan.cacheMint,
     ]
   ) {
     assert(plan.referenceValidators.includes(validator));
@@ -219,26 +232,43 @@ Deno.test("the plan carries nonce changes through the full applied dependency gr
   );
 });
 
-Deno.test("every reference in both production deployment modes satisfies the publication guard", async () => {
-  for (const benchmarkVoucherEnabled of [false, true]) {
-    const plan = await loadDeploymentPlan(lucidLoader, {
-      ...inputs,
-      benchmarkVoucherEnabled,
-    });
-    const report = buildReferenceValidatorSizeReport(
-      plan.referenceValidators.map(({ script }) => script),
-      16_384,
-    );
-    const intrinsicallyOversized = report.filter(({ intrinsicallyOversized }) =>
-      intrinsicallyOversized
-    ).map((
-      entry,
-    ) => ({ title: plan.referenceValidators[entry.index].title, ...entry }));
-    assertEquals(
-      intrinsicallyOversized,
-      [],
-      `benchmarkVoucherEnabled=${benchmarkVoucherEnabled}`,
-    );
+Deno.test("every reference in legacy and upgradeable deployment modes satisfies the publication guard", async () => {
+  for (const upgradeable of [false, true]) {
+    for (const benchmarkVoucherEnabled of [false, true]) {
+      const plan = await loadDeploymentPlan(lucidLoader, {
+        ...inputs,
+        benchmarkVoucherEnabled,
+        migration: upgradeable
+          ? {
+            registryNonce: {
+              transaction_id: "55".repeat(32),
+              output_index: 3n,
+            },
+            governance: {
+              signers: ["66".repeat(28)],
+              quorum: 1n,
+              delay_ms: 86_400_000n,
+            },
+            emergency: { signers: ["77".repeat(28)], quorum: 1n },
+          }
+          : undefined,
+      });
+      const report = buildReferenceValidatorSizeReport(
+        plan.referenceValidators.map(({ script }) => script),
+        16_384,
+      );
+      const intrinsicallyOversized = report.filter((
+        { intrinsicallyOversized },
+      ) => intrinsicallyOversized).map((entry) => ({
+        title: plan.referenceValidators[entry.index].title,
+        ...entry,
+      }));
+      assertEquals(
+        intrinsicallyOversized,
+        [],
+        `upgradeable=${upgradeable}, benchmarkVoucherEnabled=${benchmarkVoucherEnabled}`,
+      );
+    }
   }
 });
 

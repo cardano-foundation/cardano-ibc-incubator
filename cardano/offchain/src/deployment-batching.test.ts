@@ -272,8 +272,8 @@ for (const splitRequired of [true, false]) {
       }
       assertEquals(fundedOutputs, RESERVED_DEPLOYMENT_NONCE_COUNT + 16);
     } else {
-      // Register the recovery and ordinary update credentials before deployment.
-      assertEquals(firstBody.certs()?.len(), 2);
+      // Register recovery, staging and all three cached verifier credentials.
+      assertEquals(firstBody.certs()?.len(), 5);
     }
   });
 }

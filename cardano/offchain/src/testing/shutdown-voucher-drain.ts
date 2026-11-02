@@ -107,7 +107,7 @@ export async function checkVoucherDrain(
     ) {
       await assertRejects(
         async () =>
-          buildReclaimStateTx(
+          (await buildReclaimStateTx(
             lucid,
             deployment,
             await f.host(),
@@ -115,7 +115,7 @@ export async function checkVoucherDrain(
             f.address,
             emulator.now(),
             await lucid.utxoByUnit(deployment.modules.transfer.identifier),
-          ).complete({ localUPLCEval: true }),
+          )).complete({ localUPLCEval: true }),
         Error,
         "failed script execution",
       );

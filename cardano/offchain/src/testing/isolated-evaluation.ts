@@ -38,7 +38,7 @@ export function isolateEvaluation(
   ) {
     throw new Error("Isolated evaluation requires an initialized emulator");
   }
-  const slotConfig = SLOT_CONFIG_NETWORK[config.network];
+  const slotConfig = config.slotConfig ?? SLOT_CONFIG_NETWORK[config.network];
   emulator.evaluateTx = async (tx, additional = []) => {
     const body = CML.Transaction.from_cbor_hex(tx).body();
     const refs = [];

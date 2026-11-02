@@ -1,0 +1,17 @@
+{
+  "reviewedCommit": "45139b2d3a6e97e391fddf0cc5d130d86c9c2797",
+  "release": "https://github.com/cardano-foundation/cardano-ibc-incubator/releases/tag/benchmark/tendermint-cache-45139b2d",
+  "protocol10": {
+    "url": "https://github.com/cardano-foundation/cardano-ibc-incubator/releases/download/benchmark/tendermint-cache-45139b2d/tendermint-cache-protocol-10-45139b2d.tar.gz",
+    "sha256": "1029928c855013b825a6231a87c4e5646c7825ee8c64a84be4b8df5782c33ece",
+    "sourceCommit": "e3a35dcf6f4f74854c4dfd2334078ce52d912876",
+    "blueprintSha256": "be740dd49e615f4f37f9bb2906658eaa523186ac75e256d3404004311a1473ea",
+    "parametersSha256": "95bef260c463f2b8f456fa3c455ded9adb19b6c7154813ff6c6ef83ee593c6f6",
+    "sourceManifestSha256": "a3b1fbc9aa20c7918781fd9d4e0cdb1ffa70285813052170826b49ed6001cc1f",
+    "benchmarkSha256": "7ea31401b94b87f231740ab1bc77d2f18fba3e4cca03650d253030294a62691d"
+  },
+  "protocol11ReviewedBaseline": {
+    "url": "https://github.com/cardano-foundation/cardano-ibc-incubator/releases/download/benchmark/tendermint-cache-45139b2d/tendermint-cache-protocol-11-45139b2d.tar.gz",
+    "sha256": "27e04e2abd1eedeb415f9232e68d7014a2c2d8a4efe7fd618609504097967976"
+  }
+}

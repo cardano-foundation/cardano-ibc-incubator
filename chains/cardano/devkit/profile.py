@@ -94,6 +94,7 @@ def wait_for(label, probe, timeout=180, quiet=False):
             result = probe()
             if result:
                 return result
+            last_error = "not ready"
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             last_error = str(error)
         if time.monotonic() >= next_log:
@@ -348,6 +349,7 @@ class Runtime:
             path.read_bytes() for path in (
                 PROFILE / "Dockerfile", PROFILE / "compose.yaml", PROFILE / "node.properties",
                 PROFILE / "entrypoint.sh", PROFILE / "cardano-cli.sh", PROFILE / "bootstrap.py",
+                PROFILE / "cardano_cli.py",
                 PROFILE / "nonce.py", PROFILE / "cardano_node.py",
                 PROFILE.parent / "yaci/config/application.properties",
             )

@@ -85,3 +85,6 @@ studies/cardano_probabilistic_finality/out*/
 
 # Internal Gateway client initialization encoder
 cardano/gateway/bin/
+
+# Full benchmark diagnostics are archived separately from review summaries
+/.artifacts/tendermint-cache/

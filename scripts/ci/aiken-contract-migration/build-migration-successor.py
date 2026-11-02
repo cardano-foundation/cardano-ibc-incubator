@@ -32,7 +32,7 @@ def main():
         shutil.copytree(source / directory, target / directory)
     for name in ["aiken.toml", "aiken.lock"]:
         shutil.copy2(source / name, target / name)
-    for role in ["host_state", "client", "connection", "channel", "transfer"]:
+    for role in ["host_state", "client", "cached_client", "connection", "channel", "transfer"]:
         path = target / "validators/upgradeable" / f"{role}.ak"
         content = path.read_text()
         # Match the wrapper's first branch boundary, never a production library.

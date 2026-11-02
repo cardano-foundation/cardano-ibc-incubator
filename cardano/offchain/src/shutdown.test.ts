@@ -17,7 +17,7 @@ const record = (...fields: Data[]) => new Constr(0, fields);
 const encode = (data: Data) => Data.to(data);
 const EMPTY_ROOT = "00".repeat(32);
 
-for (const clientMode of ["legacy", "staged"] as const) {
+for (const clientMode of ["legacy", "staged", "cached"] as const) {
   Deno.test(`shutdown reclaims every state family and its recovery staking deposit (${clientMode})`, async () => {
     const f = await fixture(0n, clientMode);
     let groups = await scanDeploymentState(f.lucid, f.deployment);
@@ -61,13 +61,15 @@ for (const clientMode of ["legacy", "staged"] as const) {
       const refund = group.utxos.reduce(
         (total, utxo) => total + utxo.assets.lovelace,
         0n,
-      );
+      ) + (clientMode === "cached" && kind === "client"
+        ? f.cache!.assets.lovelace
+        : 0n);
       const before = (await f.lucid.utxosAt(f.account.address)).reduce(
         (total, utxo) => total + utxo.assets.lovelace,
         0n,
       );
       await f.submit(
-        buildReclaimStateTx(
+        await buildReclaimStateTx(
           f.lucid,
           f.deployment,
           await f.lucid.utxoByUnit(
@@ -117,7 +119,7 @@ for (const clientMode of ["legacy", "staged"] as const) {
       { length: body.certs()!.len() },
       (_, index) => body.certs()!.get(index).as_unreg_cert()!,
     );
-    assertEquals(certificates.length, 2);
+    assertEquals(certificates.length, clientMode === "cached" ? 5 : 2);
     const certificate = certificates.find((entry) =>
       entry.stake_credential().as_script()!.to_hex() === credential.scriptHash
     )!;
@@ -137,7 +139,8 @@ for (const clientMode of ["legacy", "staged"] as const) {
     );
     assertEquals(
       await balance(),
-      before + 2n * certificate.deposit() - body.fee(),
+      before + BigInt(clientMode === "cached" ? 5 : 2) * certificate.deposit() -
+        body.fee(),
     );
   });
 }
@@ -239,7 +242,7 @@ Deno.test("shutdown refuses an unknown client validator instead of guessing its 
     { kind },
   ) => kind === "client")!;
   f.deployment.validators.spendClient.title = "unknown.spend";
-  assertThrows(
+  await assertRejects(
     () =>
       buildReclaimStateTx(
         f.lucid,

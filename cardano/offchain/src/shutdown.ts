@@ -5,6 +5,7 @@ import {
   type LucidEvolution,
   type UTxO,
 } from "@lucid-evolution/lucid";
+import { readValidatorCache, validatorCacheToken } from "./tendermint-cache.ts";
 import { DeploymentIbcTree } from "./deployment.ts";
 import type { DeploymentTemplate } from "./utils.ts";
 import { fromText } from "@lucid-evolution/lucid";
@@ -307,7 +308,7 @@ function transferWithdrawal(
   );
 }
 
-export function buildReclaimStateTx(
+export async function buildReclaimStateTx(
   lucid: LucidEvolution,
   deployment: DeploymentTemplate,
   hostUtxo: UTxO,
@@ -368,6 +369,7 @@ export function buildReclaimStateTx(
     group.kind === "client" && ![
       "spending_client.spend_client.spend",
       "spending_multitx_client.spend_multitx_client.spend",
+      "spending_cached_client.spend_cached_client.spend",
     ].includes(clientTitle)
   ) {
     throw new Error(`Unknown client validator for shutdown: ${clientTitle}`);
@@ -386,7 +388,10 @@ export function buildReclaimStateTx(
   const index: Record<StateKind, number> = {
     channel: 10,
     connection: 2,
-    client: clientTitle === "spending_multitx_client.spend_multitx_client.spend"
+    client: [
+        "spending_multitx_client.spend_multitx_client.spend",
+        "spending_cached_client.spend_cached_client.spend",
+      ].includes(clientTitle)
       ? 4
       : 2,
     transfer: 2,
@@ -400,6 +405,50 @@ export function buildReclaimStateTx(
     "packet-liquidity": 0,
   };
   const tx = lucid.newTx();
+  if (
+    group.kind === "client" &&
+    clientTitle === "spending_cached_client.spend_cached_client.spend"
+  ) {
+    const cached = deployment.cachedTendermint?.validators;
+    if (!cached) {
+      throw new Error(
+        "Cached client retirement requires the pinned cache validators",
+      );
+    }
+    const policy = deployment.validators.mintClientStt.scriptHash;
+    const [clientUnit] = Object.keys(burns).filter((unit) =>
+      unit.startsWith(policy) && burns[unit] === -1n
+    );
+    if (!clientUnit) {
+      throw new Error(
+        "Cached client retirement requires exactly one client NFT",
+      );
+    }
+    const clientToken = { policyId: policy, name: clientUnit.slice(56) };
+    const token = validatorCacheToken(clientToken, cached.cacheMint.scriptHash);
+    const cacheUnit = token.policyId + token.name;
+    const cacheUtxo = await lucid.utxoByUnit(cacheUnit);
+    if (!cacheUtxo) {
+      throw new Error("Missing paired validator cache for client retirement");
+    }
+    if (cacheUtxo.address !== cached.cacheSpend.address) {
+      throw new Error("Client cache is outside its pinned validator");
+    }
+    readValidatorCache(
+      cacheUtxo,
+      clientToken,
+      token.policyId,
+      group.utxos[0].address,
+    );
+    tx.readFrom([cached.cacheSpend.refUtxo, cached.cacheMint.refUtxo])
+      .collectFrom([cacheUtxo], Data.void())
+      .mintAssets(
+        { [cacheUnit]: -1n },
+        encode(new Constr(1, [record(policy, clientToken.name)])),
+      );
+    addAssets(assets, cacheUtxo.assets);
+    addAssets(assets, { [cacheUnit]: -1n });
+  }
   if (packetReferences.length) tx.readFrom(packetReferences);
   if (retirement) {
     const [kind, countField] = retirement;
