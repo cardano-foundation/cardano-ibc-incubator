@@ -21,31 +21,34 @@ validator mint_validator_cache(host_policy: PolicyId, cache_script: ByteArray) {
           assets.quantity_of(tx.mint, client_token.policy_id, client_token.name) == 1
         let client = identity.admitted_client(host_policy, client_token, tx)
         expect Script(_) = client.address.payment_credential
-        let token = AuthToken {
-          policy_id: policy,
-          name: identity.token_name(client_token),
-        }
-        expect [output] = list.filter(
-          tx.outputs,
-          fn(output) { auth.contain_auth_token(output, token) },
-        )
+        let token =
+          AuthToken {
+            policy_id: policy,
+            name: identity.token_name(client_token),
+          }
+        expect [output] =
+          list.filter(
+            tx.outputs,
+            fn(output) { auth.contain_auth_token(output, token) },
+          )
         expect output.address.payment_credential == Script(cache_script)
         expect datum: CacheDatum = validator_utils.get_inline_datum(output)
-        let records = if leaves == [] {
-          // Standard Hermes creation has no validator set. Authenticate the
-          // first record during a later full-set update, never invent a total.
-          expect additional_set == []
-          []
-        } else {
-          let first = proof.full(leaves)
-          if additional_set == [] {
-            [first]
+        let records =
+          if leaves == [] {
+            // Standard Hermes creation has no validator set. Authenticate the
+            // first record during a later full-set update, never invent a total.
+            expect additional_set == []
+            []
           } else {
-            let second = proof.full(additional_set)
-            expect first.root != second.root
-            [first, second]
+            let first = proof.full(leaves)
+            if additional_set == [] {
+              [first]
+            } else {
+              let second = proof.full(additional_set)
+              expect first.root != second.root
+              [first, second]
+            }
           }
-        }
         and {
           validator_utils.require_exact_marker_mint(
             tx.mint,
@@ -63,17 +66,18 @@ validator mint_validator_cache(host_policy: PolicyId, cache_script: ByteArray) {
         }
       }
       RetireCache { client_token } -> {
-        let token = AuthToken {
-          policy_id: policy,
-          name: identity.token_name(client_token),
-        }
-        expect [input] = list.filter(
-          tx.inputs,
-          fn(input) { auth.contain_auth_token(input.output, token) },
-        )
-        expect datum: CacheDatum = validator_utils.get_inline_datum(
-          input.output,
-        )
+        let token =
+          AuthToken {
+            policy_id: policy,
+            name: identity.token_name(client_token),
+          }
+        expect [input] =
+          list.filter(
+            tx.inputs,
+            fn(input) { auth.contain_auth_token(input.output, token) },
+          )
+        expect datum: CacheDatum =
+          validator_utils.get_inline_datum(input.output)
         and {
           input.output.address.payment_credential == Script(cache_script),
           datum.token == token && datum.client_token == client_token,

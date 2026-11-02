@@ -29,27 +29,30 @@ validator validator_cache(
       expect datum.token.name == identity.token_name(datum.client_token)
       expect
         assets.quantity_of(tx.mint, datum.token.policy_id, datum.token.name) == 0
-      expect [client] = list.filter(
-        tx.inputs,
-        fn(input) { auth.contain_auth_token(input.output, datum.client_token) },
-      )
+      expect [client] =
+        list.filter(
+          tx.inputs,
+          fn(input) {
+            auth.contain_auth_token(input.output, datum.client_token)
+          },
+        )
       expect client.output.address == datum.client_address
-      expect Some(client_redeemer) = pairs.get_first(
-        tx.redeemers,
-        Spend(client.output_reference),
-      )
+      expect Some(client_redeemer) =
+        pairs.get_first(tx.redeemers, Spend(client.output_reference))
       expect migration.is_migration(client_redeemer)
-      expect [output] = list.filter(
-        tx.outputs,
-        fn(output) { auth.contain_auth_token(output, datum.client_token) },
-      )
+      expect [output] =
+        list.filter(
+          tx.outputs,
+          fn(output) { auth.contain_auth_token(output, datum.client_token) },
+        )
       // Registry validation authenticates the exact destination and preserves
       // the client datum. The cache moves its binding in that same transaction.
-      let continuation = validator_utils.find_unique_continuation_output(
-        own.output,
-        tx.outputs,
-        datum.token,
-      )
+      let continuation =
+        validator_utils.find_unique_continuation_output(
+          own.output,
+          tx.outputs,
+          datum.token,
+        )
       expect next: CacheDatum = validator_utils.get_inline_datum(continuation)
       next == CacheDatum { ..datum, client_address: output.address }
     } else {

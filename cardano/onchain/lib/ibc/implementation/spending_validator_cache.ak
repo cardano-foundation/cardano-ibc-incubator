@@ -32,10 +32,11 @@ pub fn validate(
   expect Some(own) = transaction.find_input(tx.inputs, own_ref)
   expect auth.contain_auth_token(own.output, datum.token)
   expect datum.token.name == identity.token_name(datum.client_token)
-  expect [client] = list.filter(
-    tx.inputs,
-    fn(input) { auth.contain_auth_token(input.output, datum.client_token) },
-  )
+  expect [client] =
+    list.filter(
+      tx.inputs,
+      fn(input) { auth.contain_auth_token(input.output, datum.client_token) },
+    )
   expect client.output.address == datum.client_address
   if assets.quantity_of(
     tx.mint,
@@ -53,17 +54,16 @@ pub fn validate(
         assets.zero,
         datum.token.policy_id,
       )
-    let continuation = validator_utils.find_unique_continuation_output(
-      own.output,
-      tx.outputs,
-      datum.token,
-    )
+    let continuation =
+      validator_utils.find_unique_continuation_output(
+        own.output,
+        tx.outputs,
+        datum.token,
+      )
     expect next: CacheDatum = validator_utils.get_inline_datum(continuation)
     expect identity.preserves(datum, next)
-    expect Some(raw) = pairs.get_first(
-      tx.redeemers,
-      Spend(client.output_reference),
-    )
+    expect Some(raw) =
+      pairs.get_first(tx.redeemers, Spend(client.output_reference))
     if builtin.un_constr_data(raw).1st == 6 {
       let cache_token = identity.update_cache_token(raw)
       let expected: Data = datum.client_token
@@ -73,27 +73,28 @@ pub fn validate(
         tx,
       )
     } else {
-      expect FinalizeUpdate { session_token, .. }: SpendMultitxClientRedeemer = raw
-      let expected: Data = CheckStagedClientHistory {
-        subject_token: datum.client_token,
-      }
+      expect FinalizeUpdate { session_token, .. }: SpendMultitxClientRedeemer =
+        raw
+      let expected: Data =
+        CheckStagedClientHistory { subject_token: datum.client_token }
       expect forwarding.require_zero(Script(staged_script), expected, tx)
       expect session_token.policy_id == session_policy
-      expect [session] = list.filter(
-        tx.inputs,
-        fn(input) { auth.contain_auth_token(input.output, session_token) },
-      )
-      expect receipt: SessionDatum = validator_utils.get_inline_datum(
-        session.output,
-      )
+      expect [session] =
+        list.filter(
+          tx.inputs,
+          fn(input) { auth.contain_auth_token(input.output, session_token) },
+        )
+      expect receipt: SessionDatum =
+        validator_utils.get_inline_datum(session.output)
       expect
         receipt.session_token == session_token && receipt.plan.client_token == datum.client_token
       expect Complete { target_root, target_total_power, .. } = receipt.phase
-      let record = Record {
-        root: target_root,
-        count: receipt.plan.target_validator_count,
-        total_power: target_total_power,
-      }
+      let record =
+        Record {
+          root: target_root,
+          count: receipt.plan.target_validator_count,
+          total_power: target_total_power,
+        }
       and {
         assets.quantity_of(tx.mint, datum.token.policy_id, datum.token.name) == 0,
         assets.quantity_of(tx.mint, session_policy, session_token.name) == -1,

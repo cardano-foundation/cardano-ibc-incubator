@@ -28,26 +28,29 @@ validator cached_client(
   ) {
     if migration.is_migration(raw) {
       expect Some(datum) = datum
-      let token = AuthToken {
-        policy_id: cache_policy,
-        name: identity.token_name(datum.token),
-      }
-      expect [_] = list.filter(
-        transaction.inputs,
-        fn(input) { auth.contain_auth_token(input.output, token) },
-      )
+      let token =
+        AuthToken {
+          policy_id: cache_policy,
+          name: identity.token_name(datum.token),
+        }
+      expect [_] =
+        list.filter(
+          transaction.inputs,
+          fn(input) { auth.contain_auth_token(input.output, token) },
+        )
       migration.migration_witness(transaction, registry_policy)
     } else {
-      let references = if builtin.un_constr_data(raw).1st == 6 {
-        transaction.reference_inputs
-      } else {
-        expect redeemer: SpendMultitxClientRedeemer = raw
-        when redeemer is {
-          RecoverClient { .. } ->
-            migration.recovery_registry_inputs(transaction, registry_policy)
-          _ -> transaction.reference_inputs
+      let references =
+        if builtin.un_constr_data(raw).1st == 6 {
+          transaction.reference_inputs
+        } else {
+          expect redeemer: SpendMultitxClientRedeemer = raw
+          when redeemer is {
+            RecoverClient { .. } ->
+              migration.recovery_registry_inputs(transaction, registry_policy)
+            _ -> transaction.reference_inputs
+          }
         }
-      }
       expect
         migration.operation_allowed_from_inputs(
           references,

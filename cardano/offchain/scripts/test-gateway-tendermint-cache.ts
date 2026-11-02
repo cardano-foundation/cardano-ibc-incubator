@@ -194,7 +194,9 @@ const server = Deno.serve(
           }),
         };
       } else if (body.method === "signSubmit") {
-      lucid.selectWallet.fromSeed(account.seedPhrase, { addressType: "Enterprise" });
+        lucid.selectWallet.fromSeed(account.seedPhrase, {
+          addressType: "Enterprise",
+        });
         const unsigned = CML.Transaction.from_cbor_hex(body.args[0]).body();
         const resolve = async (refs: CML.TransactionInputList | undefined) => {
           const keys = Array.from({ length: refs?.len() ?? 0 }, (_, i) => {

@@ -41,14 +41,16 @@ pub fn validate(
     expect
       if redeemer == ReclaimClient {
         expect Some(datum) = datum
-        let cache_token = AuthToken {
-          policy_id: cache_policy,
-          name: identity.token_name(datum.token),
-        }
-        expect [_] = list.filter(
-          tx.inputs,
-          fn(input) { auth.contain_auth_token(input.output, cache_token) },
-        )
+        let cache_token =
+          AuthToken {
+            policy_id: cache_policy,
+            name: identity.token_name(datum.token),
+          }
+        expect [_] =
+          list.filter(
+            tx.inputs,
+            fn(input) { auth.contain_auth_token(input.output, cache_token) },
+          )
         assets.quantity_of(tx.mint, cache_policy, cache_token.name) == -1
       } else {
         True

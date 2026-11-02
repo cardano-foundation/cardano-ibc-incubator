@@ -1,3 +1,4 @@
+import { initializeValidatorCache } from "../tendermint-cache.ts";
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { createCardanoScalusEvaluator } from "../scalus-evaluator.ts";
 import {
@@ -248,10 +249,25 @@ export async function deploymentScenario() {
         const next = await successor(old);
         next.state.next_client_sequence++;
         next.control.live_clients++;
+        let creation = hostTx(input, next, {
+          CreateClient: { client_state_siblings, consensus_state_siblings },
+        });
+        const cached = deployment.cachedTendermint?.validators;
+        if (cached) {
+          const cache = initializeValidatorCache(
+            { policyId: nft.policy_id, name: nft.name },
+            cached.cacheMint.scriptHash,
+            deployment.validators.spendClient.address,
+          );
+          creation = creation.readFrom([cached.cacheMint.refUtxo])
+            .mintAssets({ [cache.tokenUnit]: 1n }, cache.mintRedeemer)
+            .pay.ToContract(cached.cacheSpend.address, {
+              kind: "inline",
+              value: cache.datum,
+            }, { [cache.tokenUnit]: 1n });
+        }
         await api.submit(
-          hostTx(input, next, {
-            CreateClient: { client_state_siblings, consensus_state_siblings },
-          })
+          creation
             .readFrom([deployment.validators.mintClientStt.refUtxo])
             .mintAssets({ [nft.policy_id + nft.name]: 1n }, Data.void())
             .pay.ToContract(deployment.validators.spendClient.address, {
@@ -651,7 +667,7 @@ export async function deploymentScenario() {
           )
           : undefined;
         await api.submit(
-          buildReclaimStateTx(
+          await buildReclaimStateTx(
             lucid,
             deployment,
             await host(),
