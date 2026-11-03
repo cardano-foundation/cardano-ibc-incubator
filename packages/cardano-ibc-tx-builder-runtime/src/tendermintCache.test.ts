@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { test } from "node:test";
 import { type Constr, credentialToAddress, Data } from "@lucid-evolution/lucid";
 import {
   type CachedHeader,
   type CacheLeaf,
+  cacheLeafData,
+  cacheLeafHash,
   cacheRecord,
   decodeCachedUpdate,
   DirectUpdateUnsupported,
@@ -120,6 +123,58 @@ function scenario(count: number, trustedPowers?: bigint[], cached = true) {
   return { args, target, trusted };
 }
 
+function cachedProofs(redeemer: string) {
+  const update = (Data.from(redeemer) as Constr<Data>)
+    .fields[0] as Constr<Data>;
+  const leaves = (field: number): CacheLeaf[] =>
+    (update.fields[field] as Constr<Data>[]).map((leaf) => ({
+      index: Number(leaf.fields[0]),
+      pubkey: leaf.fields[1] as string,
+      power: leaf.fields[2] as bigint,
+    }));
+  return {
+    target: leaves(3),
+    trusted: leaves(5),
+    targetSiblings: update.fields[4] as string[],
+    trustedSiblings: update.fields[6] as string[],
+    sets: update.fields[7] as Data[],
+  };
+}
+
+function proofRoot(count: number, leaves: CacheLeaf[], siblings: string[]) {
+  let consumed = 0;
+  const walk = (start: number, count: number): string => {
+    const covered = leaves.filter((leaf) =>
+      leaf.index >= start && leaf.index < start + count
+    );
+    if (!covered.length) return siblings[consumed++];
+    if (count === 1) return cacheLeafHash(covered[0]);
+    const pivot = 2 ** Math.floor(Math.log2(count - 1));
+    return createHash("sha256").update(Buffer.from(
+      "01" + walk(start, pivot) + walk(start + pivot, count - pivot),
+      "hex",
+    )).digest("hex");
+  };
+  const root = walk(0, count);
+  assert.equal(consumed, siblings.length);
+  return root;
+}
+
+function allOverlapRedeemer(redeemer: string, trusted: CacheLeaf[]) {
+  const raw = Data.from(redeemer) as Constr<Data>;
+  const update = raw.fields[0] as Constr<Data>;
+  const signedKeys = new Set(
+    cachedProofs(redeemer).target.map((leaf) => leaf.pubkey),
+  );
+  const overlaps = trusted.filter((leaf) => signedKeys.has(leaf.pubkey));
+  update.fields[5] = overlaps.map(cacheLeafData);
+  update.fields[6] = validatorMultiproof(
+    trusted,
+    overlaps.map((leaf) => leaf.index),
+  );
+  return Data.to<Data>(raw, undefined, { canonical: true });
+}
+
 function checkSelection(
   args: Parameters<typeof prepareCachedHeader>[0],
   target: CacheLeaf[],
@@ -153,6 +208,45 @@ function checkSelection(
     witness.signedHeader.commit.signatures.map((sig) => sig.validator_address),
     indices.map((index) => address(target[index].pubkey)),
   );
+  const proofs = cachedProofs(prepared.redeemer);
+  if (!proofs.sets.length) {
+    assert.deepEqual(proofs.target, selected);
+    assert.equal(
+      proofRoot(target.length, proofs.target, proofs.targetSiblings),
+      cacheRecord(target).root,
+    );
+    if (cacheRecord(target).root === args.trustedRoot) {
+      assert.deepEqual(proofs.trusted, []);
+      assert.deepEqual(proofs.trustedSiblings, []);
+    } else {
+      const positions = proofs.trusted.map((leaf) => leaf.index);
+      assert.deepEqual(
+        positions,
+        [...new Set(positions)].sort((a, b) => a - b),
+      );
+      assert.deepEqual(
+        proofs.trusted,
+        positions.map((index) => trusted[index]),
+      );
+      assert(
+        proofs.trusted.every((leaf) =>
+          selected.some((signer) => signer.pubkey === leaf.pubkey)
+        ),
+      );
+      assert(
+        proofs.trusted.reduce((sum, leaf) => sum + leaf.power, 0n) *
+            args.trustLevel.denominator >
+          cacheRecord(trusted).totalPower * args.trustLevel.numerator,
+      );
+      assert.equal(
+        proofRoot(trusted.length, proofs.trusted, proofs.trustedSiblings),
+        args.trustedRoot,
+      );
+    }
+  } else {
+    assert.deepEqual(proofs.trusted, []);
+    assert.deepEqual(proofs.trustedSiblings, []);
+  }
   return prepared;
 }
 
@@ -165,6 +259,14 @@ test("the 65-validator dual-quorum counterexample needs 44 available signatures 
     assert.equal(trusted.reduce((sum, leaf) => sum + leaf.power, 0n), 164n);
     const result = checkSelection(args, target, trusted);
     assert.equal(result.signatureCount, 44);
+    if (cached) {
+      assert.deepEqual(cachedProofs(result.redeemer).trusted, [trusted[0]]);
+      assert.equal(trusted[0].power, 100n);
+      assert(
+        result.redeemer.length <
+          allOverlapRedeemer(result.redeemer, trusted).length,
+      );
+    }
     const selected = decodeCachedUpdate(result.redeemer)!.signers;
     assert(selected.includes(64));
     assert.equal(
@@ -181,6 +283,48 @@ test("the 65-validator dual-quorum counterexample needs 44 available signatures 
     }
     assert.deepEqual(prepareCachedHeader(args), result);
   }
+});
+
+test("trusted membership selection uses the strict configured threshold independently of target signatures", () => {
+  for (
+    const [numerator, denominator, count] of [[1n, 3n, 2], [1n, 2n, 3]] as const
+  ) {
+    const { args, target, trusted } = scenario(7, [1n, 1n, 1n, 1n, 2n, 2n, 4n]);
+    args.trustLevel = { numerator, denominator };
+    args.header.signedHeader.commit.signatures[0].block_id_flag = 1n;
+    args.header.signedHeader.commit.signatures[1].block_id_flag = 1n;
+    const result = checkSelection(args, target, trusted);
+    assert.equal(result.signatureCount, 5);
+    const proof = cachedProofs(result.redeemer);
+    assert.equal(proof.trusted.length, count);
+    assert(
+      proof.trusted.slice(0, -1).reduce((sum, leaf) => sum + leaf.power, 0n) *
+          denominator <= cacheRecord(trusted).totalPower * numerator,
+    );
+  }
+});
+
+test("separate trusted proofs require both different roots to be cached", () => {
+  for (const cachedRoot of ["target", "trusted"] as const) {
+    const { args, target, trusted } = scenario(12, [
+      ...Array<bigint>(11).fill(1n),
+      100n,
+    ]);
+    args.cache.records = [
+      cacheRecord(cachedRoot === "target" ? target : trusted),
+    ];
+    const result = checkSelection(args, target, trusted);
+    assert.equal(cachedProofs(result.redeemer).sets.length, 1);
+  }
+});
+
+test("all overlapping memberships are retained when the configured threshold needs them", () => {
+  const { args, target, trusted } = scenario(6, [1n, 1n, 1n, 1n, 1n, 2n]);
+  args.trustLevel = { numerator: 9n, denominator: 10n };
+  const result = checkSelection(args, target, trusted);
+  assert.equal(result.signatureCount, 6);
+  assert.equal(cachedProofs(result.redeemer).trusted.length, 6);
+  assert.equal(result.redeemer, allOverlapRedeemer(result.redeemer, trusted));
 });
 
 test("an unavailable trusted high-power signer cannot be used to avoid the direct limit", () => {
@@ -282,7 +426,7 @@ test("keys outside the trusted set receive no overlap credit", () => {
   assert(!decodeCachedUpdate(result.redeemer)!.signers.includes(0));
 });
 
-test("equal-size quorums prefer a smaller combined target and trusted multiproof", () => {
+test("equal-size quorums rank complete witness size after reducing trusted memberships", () => {
   const { args, target, trusted } = scenario(10, [
     11n,
     23n,
@@ -295,23 +439,22 @@ test("equal-size quorums prefer a smaller combined target and trusted multiproof
     2n,
     7n,
   ]);
-  const prefix = target.slice(0, 7);
-  const oldPrefix = trusted.filter((leaf) =>
-    prefix.some((signer) => signer.pubkey === leaf.pubkey)
-  );
-  assert.equal(
-    validatorMultiproof(target, prefix.map((leaf) => leaf.index)).length +
-      validatorMultiproof(trusted, oldPrefix.map((leaf) => leaf.index)).length,
-    5,
-  );
   const result = checkSelection(args, target, trusted);
   assert.equal(result.signatureCount, 7);
-  const update = (Data.from(result.redeemer) as Constr<Data>)
-    .fields[0] as Constr<Data>;
-  assert.equal(
-    (update.fields[4] as Data[]).length + (update.fields[6] as Data[]).length,
-    4,
+  assert.equal(cachedProofs(result.redeemer).trusted.length, 2);
+  assert(
+    result.redeemer.length <
+      allOverlapRedeemer(result.redeemer, trusted).length,
   );
+  for (
+    let signerCandidate = 1;
+    signerCandidate < result.candidateCount;
+    signerCandidate++
+  ) {
+    const other = checkSelection({ ...args, signerCandidate }, target, trusted);
+    assert.equal(other.signatureCount, 7);
+    assert(result.redeemer.length <= other.redeemer.length);
+  }
 });
 
 test("invalid candidate positions are rejected", () => {

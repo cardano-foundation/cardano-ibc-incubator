@@ -449,7 +449,7 @@ function signerCandidates(
       [1n, 1n, true],
     ] as const
   ) {
-    let remaining = [...available];
+    const remaining = [...available];
     const selected: CacheLeaf[] = [];
     let target = 0n;
     let trusted = 0n;
@@ -589,7 +589,7 @@ export function prepareCachedHeader(args: {
   }
   const targetCached = cache.records.some((r) => r.root === targetRecord.root);
   const oldCached = cache.records.some((r) => r.root === trustedRoot);
-  const build = (indices: number[]) => {
+  const build = (indices: number[], trustedIndices: number[] = []) => {
     let sets: Constr<Data>[] = [];
     let targetLeaves: Constr<Data>[] = [];
     let trustedLeaves: Constr<Data>[] = [];
@@ -600,9 +600,6 @@ export function prepareCachedHeader(args: {
       targetLeaves = indices.map((i) => cacheLeafData(target[i]));
       targetSiblings = validatorMultiproof(target, indices);
       if (!sameRoot) {
-        const signedKeys = new Set(indices.map((i) => target[i].pubkey));
-        const trustedIndices = old.filter((leaf) => signedKeys.has(leaf.pubkey))
-          .map((leaf) => leaf.index);
         trustedLeaves = trustedIndices.map((i) => cacheLeafData(old[i]));
         trustedSiblings = validatorMultiproof(old, trustedIndices);
       }
@@ -678,7 +675,27 @@ export function prepareCachedHeader(args: {
       }),
     };
   };
-  const byCount = candidates.map(build).sort((a, b) =>
+  const byCount = candidates.map((indices) => {
+    if (!targetCached || !oldCached || sameRoot) return build(indices);
+    const signedKeys = new Set(indices.map((i) => target[i].pubkey));
+    const overlaps = old.filter((leaf) => signedKeys.has(leaf.pubkey))
+      .map((leaf) => leaf.index);
+    let power = 0n;
+    // The old set is already in descending power and canonical index order.
+    const minimal = overlaps.filter((i) => {
+      if (
+        power * trustLevel.denominator >
+          oldRecord.totalPower * trustLevel.numerator
+      ) return false;
+      power += old[i].power;
+      return true;
+    });
+    const all = build(indices, overlaps);
+    if (minimal.length === overlaps.length) return all;
+    const compact = build(indices, minimal);
+    // Compare complete witnesses so frontier hashes count toward the choice.
+    return compact.redeemer.length <= all.redeemer.length ? compact : all;
+  }).sort((a, b) =>
     a.signatureCount - b.signatureCount ||
     a.redeemer.length - b.redeemer.length ||
     a.redeemer.localeCompare(b.redeemer)
