@@ -3,8 +3,19 @@ import type { HistoryService } from './history.service';
 import { loadStakeWeightedStabilityEvidenceByHeight } from './stability-evidence';
 import { getStabilityPolicy, getStabilityLookaheadDepth } from './stability-scoring';
 import { GrpcNotFoundException } from '../../exception/grpc_exceptions';
+import { YaciRestHistoryChangedError } from '../../shared/helpers/yaci-rest';
 
 export async function latestPacketProofHeight(historyService: HistoryService, logger: Logger): Promise<bigint> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await findPacketProofHeight(historyService, logger);
+    } catch (error) {
+      if (!(error instanceof YaciRestHistoryChangedError) || attempt >= 2) throw error;
+    }
+  }
+}
+
+async function findPacketProofHeight(historyService: HistoryService, logger: Logger): Promise<bigint> {
   const tip = await historyService.findLatestBlock();
   if (!tip) throw new Error('Cardano history is unavailable');
   const policy = getStabilityPolicy();

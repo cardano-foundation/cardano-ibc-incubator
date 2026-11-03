@@ -33,6 +33,7 @@ use crate::{
 
 const TRANSFER_PORT_ID: &str = "transfer";
 const HERMES_CARDANO_QUERY_TIMEOUT_SECS: u64 = 20;
+const HERMES_CHANNEL_DISCOVERY_TIMEOUT_SECS: u64 = 120;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RouteChain {
@@ -684,7 +685,7 @@ pub fn query_open_transfer_channel_pair(
             "--counterparty-chain",
             b_chain_id,
         ],
-        Duration::from_secs(HERMES_CARDANO_QUERY_TIMEOUT_SECS),
+        Duration::from_secs(HERMES_CHANNEL_DISCOVERY_TIMEOUT_SECS),
     ) {
         Ok(output) => output,
         Err(error) => {
