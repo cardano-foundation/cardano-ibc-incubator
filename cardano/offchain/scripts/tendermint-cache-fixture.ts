@@ -120,6 +120,9 @@ export type CacheMutation =
   | "missing-dispatcher"
   | "full-wrong-core"
   | "core-subject"
+  | "cached-trusted-power"
+  | "cached-trusted-overlap"
+  | "cached-trusted-unsigned"
   | "admission-client"
   | "admission-shadow"
   | "admission-missing-cache"
@@ -180,6 +183,7 @@ export interface CacheFixtureOptions {
   trustedLeaves?: CacheLeaf[];
   cacheTarget?: boolean;
   existingCache?: boolean;
+  allTrustedOverlaps?: boolean;
 }
 
 /** Real cache admission and a complete signed update under retained parameters. */
@@ -802,6 +806,13 @@ export async function cachedUpdateFixture(
   }
   let nextClientDatum!: Constr<Data>;
   let nextCacheDatum!: Constr<Data>;
+  let directWitness: {
+    signatures: number;
+    target: number;
+    trusted: number;
+    targetSiblings: number;
+    trustedSiblings: number;
+  } | undefined;
   async function buildCandidate(staged: boolean): Promise<TxSigned> {
     if (staged) await initializeStage();
     const currentTime = emulator.now();
@@ -1165,6 +1176,74 @@ export async function cachedUpdateFixture(
         .fields[0] as Constr<Data>;
       nextCache = Data.from(prepared.nextCacheDatum) as Constr<Data>;
       fullWitness = prepared.full;
+      if (options.allTrustedOverlaps) {
+        const signedKeys = new Set(
+          (update.fields[3] as Constr<Data>[]).map((leaf) => leaf.fields[1]),
+        );
+        const overlaps = oldLeaves.filter((leaf) =>
+          signedKeys.has(leaf.pubkey)
+        );
+        update.fields[5] = overlaps.map(cacheLeafData);
+        update.fields[6] = validatorMultiproof(
+          oldLeaves,
+          overlaps.map((leaf) => leaf.index),
+        );
+      }
+      if (mutation === "cached-trusted-power") {
+        const [leaf] = update.fields[5] as Constr<Data>[];
+        leaf.fields[2] = (leaf.fields[2] as bigint) + 1n;
+      }
+      if (mutation === "cached-trusted-overlap") {
+        const signedKeys = new Set(
+          (update.fields[3] as Constr<Data>[]).map((leaf) => leaf.fields[1]),
+        );
+        const leaf = oldLeaves.find((leaf) =>
+          leaf.power === 1n && signedKeys.has(leaf.pubkey)
+        )!;
+        update.fields[5] = [cacheLeafData(leaf)];
+        update.fields[6] = validatorMultiproof(oldLeaves, [leaf.index]);
+      }
+      if (mutation === "cached-trusted-unsigned") {
+        const trustedKey = (update.fields[5] as Constr<Data>[])[0].fields[1];
+        const selected = (update.fields[3] as Constr<Data>[])
+          .map((leaf) => Number(leaf.fields[0]));
+        const replacement = retainedLeaves.find((leaf) =>
+          !selected.includes(leaf.index)
+        )!;
+        const positions = [
+          ...selected.filter((i) => retainedLeaves[i].pubkey !== trustedKey),
+          replacement.index,
+        ]
+          .sort((a, b) => a - b);
+        update.fields[3] = positions.map((i) =>
+          cacheLeafData(retainedLeaves[i])
+        );
+        update.fields[4] = validatorMultiproof(retainedLeaves, positions);
+        const commit = (update.fields[1] as Constr<Data>).fields[1] as Constr<
+          Data
+        >;
+        commit.fields[3] = positions.map((i) => {
+          const sig = availableCommitSignatures[i];
+          return c([
+            BigInt(sig.block_id_flag),
+            sig.validator_address,
+            BigInt(sig.timestamp),
+            sig.signature,
+          ]);
+        });
+      }
+    }
+    if (options.productionWitness && !staged) {
+      const commit = (update.fields[1] as Constr<Data>).fields[1] as Constr<
+        Data
+      >;
+      directWitness = {
+        signatures: (commit.fields[3] as Data[]).length,
+        target: (update.fields[3] as Data[]).length,
+        trusted: (update.fields[5] as Data[]).length,
+        targetSiblings: (update.fields[4] as Data[]).length,
+        trustedSiblings: (update.fields[6] as Data[]).length,
+      };
     }
     const updateReference = session
       ? seed(
@@ -1387,6 +1466,7 @@ export async function cachedUpdateFixture(
     path: session ? "staged" as const : "direct" as const,
     directBudget: prepared?.directBudget,
     directFee,
+    directWitness,
     directFailure: prepared && "directFailure" in prepared
       ? prepared.directFailure
       : undefined,
