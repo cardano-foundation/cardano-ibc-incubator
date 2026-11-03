@@ -654,6 +654,18 @@ describe('YaciHistoryService', () => {
       .resolves.toEqual({ currentEpochStartSlot: 16200000n, currentEpochEndSlotExclusive: 16205000n });
   });
 
+  it('anchors pool production reads to the proof block rather than the moving tip', async () => {
+    const epochBlocks = jest.fn().mockResolvedValue([]);
+    jest.spyOn(service as any, 'restHistory').mockReturnValue({
+      snapshot: async (_height: number, read: (anchor: unknown) => unknown) =>
+        read({ number: block.height, hash: block.hash }),
+      epochBlocks,
+    });
+    await service.findObservedPoolProductionAtBlock(block);
+    expect(epochBlocks).toHaveBeenCalledTimes(6);
+    expect(epochBlocks.mock.calls.every(([, height]) => height === block.height)).toBe(true);
+  });
+
   it('retries epoch-context acquisition at a newer block in the same epoch when the original point is too old', async () => {
     (service as any).findLatestBlockInEpoch.mockResolvedValue({ height: 119, hash: 'ef'.repeat(32), slotNo: 1199n, epochNo: 7 });
     entityManagerMock.query

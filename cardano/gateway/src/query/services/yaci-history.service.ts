@@ -598,7 +598,7 @@ export class YaciHistoryService implements HistoryService {
         throw new StaleIbcTreeStateError('Observed production anchor changed');
       const rows: Array<{ epoch: number; slot_leader: string }> = [];
       for (let epoch = Math.max(0, block.epochNo - 5); epoch <= block.epochNo; epoch++) {
-        for (const row of await source.epochBlocks(epoch)) {
+        for (const row of await source.epochBlocks(epoch, anchor.number)) {
           if (row.number <= anchor.number) rows.push(row);
         }
       }
