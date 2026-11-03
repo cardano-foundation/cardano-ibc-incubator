@@ -700,30 +700,39 @@ export class TendermintClientService {
       slotConfig: window.slotConfig,
     });
     const directOperator = { ...operator, txValidTo: BigInt(validTo) * 1_000_000n };
-    try {
-      // Protocol limits and the evaluated complete transaction select execution.
-      // The benchmark's 3 ADA target is not an update admission rule.
-      const limits = await this.lucidService.lucid.config().provider!.getProtocolParameters();
-      const { unsignedTx, pendingTreeUpdate } = await this.buildUnsignedUpdateClientTx(directOperator, undefined, true);
-      const result = await this.txOperationRunnerService.run({
-        operationName: 'updateCachedClient',
-        unsignedTx,
-        validity: { apply: (builder: TxBuilder) => builder.validFrom(window.validFromTime).validTo(validTo) },
-        wallet: { mode: 'refresh_from_address', address: operator.constructedAddress, context: 'updateCachedClient' },
-        completeOptions: { localUPLCEval: false, setCollateral: TRANSACTION_SET_COLLATERAL },
-        validateCompleted: (transaction) => {
-          const budget = evaluatedUnsignedUpdateBudget(transaction.toCBOR(), limits);
-          if (!budget.fits) throw new DirectUpdateBudgetExceeded(`Direct client update exceeds reserved transaction budgets: ${budget.exceeded.join(', ')}`);
-        },
-        pendingTreeUpdate,
-        syntheticEvents: [this.buildUpdateClientSyntheticEvent(EVENT_TYPE_CLIENT.UPDATE_CLIENT, operator.clientId, height, data.client_message!)],
-      });
-      return { unsigned_tx: { type_url: '', value: result.unsignedTxBytes }, client_id: Number(operator.clientId) } as unknown as MsgUpdateClientResponse;
-    } catch (error) {
-      if (!(error instanceof DirectUpdateUnsupported) && !directUpdateCapacityError(error)) throw error;
-      this.logger.log(`Using staged Tendermint verification: ${error instanceof Error ? error.message : String(error)}`);
-      return undefined;
+    let signerCandidates = 1;
+    for (let signerCandidate = 0; signerCandidate < signerCandidates; signerCandidate++) {
+      try {
+        // Protocol limits and the evaluated complete transaction select execution.
+        // The benchmark's 3 ADA target is not an update admission rule.
+        const limits = await this.lucidService.lucid.config().provider!.getProtocolParameters();
+        const { unsignedTx, pendingTreeUpdate, cachedSignerCandidates } = await this.buildUnsignedUpdateClientTx(directOperator, undefined, true, signerCandidate);
+        signerCandidates = cachedSignerCandidates ?? 1;
+        const result = await this.txOperationRunnerService.run({
+          operationName: 'updateCachedClient',
+          unsignedTx,
+          validity: { apply: (builder: TxBuilder) => builder.validFrom(window.validFromTime).validTo(validTo) },
+          wallet: { mode: 'refresh_from_address', address: operator.constructedAddress, context: 'updateCachedClient' },
+          completeOptions: { localUPLCEval: false, setCollateral: TRANSACTION_SET_COLLATERAL },
+          validateCompleted: (transaction) => {
+            const budget = evaluatedUnsignedUpdateBudget(transaction.toCBOR(), limits);
+            if (!budget.fits) throw new DirectUpdateBudgetExceeded(`Direct client update exceeds reserved transaction budgets: ${budget.exceeded.join(', ')}`);
+          },
+          pendingTreeUpdate,
+          syntheticEvents: [this.buildUpdateClientSyntheticEvent(EVENT_TYPE_CLIENT.UPDATE_CLIENT, operator.clientId, height, data.client_message!)],
+        });
+        return { unsigned_tx: { type_url: '', value: result.unsignedTxBytes }, client_id: Number(operator.clientId) } as unknown as MsgUpdateClientResponse;
+      } catch (error) {
+        if (!(error instanceof DirectUpdateUnsupported) && !directUpdateCapacityError(error)) throw error;
+        if (!(error instanceof DirectUpdateUnsupported) && signerCandidate + 1 < signerCandidates) {
+          this.logger.log(`Trying another direct signer selection: ${error instanceof Error ? error.message : String(error)}`);
+          continue;
+        }
+        this.logger.log(`Using staged Tendermint verification: ${error instanceof Error ? error.message : String(error)}`);
+        return undefined;
+      }
     }
+    return undefined;
   }
 
   private async updateClientWithStagedMisbehaviour(
@@ -2167,7 +2176,8 @@ export class TendermintClientService {
     updateClientOperator: UpdateClientOperatorDto,
     stagedFinalization?: StagedTendermintFinalization,
     cachedUpdate = false,
-  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
+    cachedSignerCandidate = 0,
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate; cachedSignerCandidates?: number }> {
     const currentClientDatumState = updateClientOperator.clientDatum.state;
     const header = updateClientOperator.header;
     const insertion = await this.lucidService.prepareConsensusHistoryUpdate(updateClientOperator.currentClientUtxo);
@@ -2275,6 +2285,7 @@ export class TendermintClientService {
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     let unsignedTx: TxBuilder;
+    let cachedSignerCandidates: number | undefined;
     if (cachedUpdate) {
       const { utxo: cacheUtxo, cache } = await this.lucidService.resolveValidatorCache(newClientDatum.token, updateClientOperator.currentClientUtxo.address);
       const trusted = getHeightMapValue(currentClientDatumState.consensusStates, header.trustedHeight);
@@ -2284,7 +2295,9 @@ export class TendermintClientService {
         latestHeight: currentClientDatumState.clientState.latestHeight,
         trustLevel: currentClientDatumState.clientState.trustLevel,
         historySiblings: insertion.siblings,
+        signerCandidate: cachedSignerCandidate,
       });
+      cachedSignerCandidates = prepared.candidateCount;
       const { Data, Constr } = this.lucidService.LucidImporter;
       unsignedTx = await this.lucidService.createUnsignedCachedClientTransaction({
         host: hostStateUtxo, client: updateClientOperator.currentClientUtxo, cache: cacheUtxo,
@@ -2358,6 +2371,7 @@ export class TendermintClientService {
     return {
       unsignedTx,
       pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+      ...(cachedUpdate ? { cachedSignerCandidates } : {}),
     };
   }
 

@@ -403,6 +403,88 @@ function leavesFrom(
   });
 }
 
+// This is a bounded search, not a proof that a smaller quorum is impossible.
+// Keep the target prefix and try trusted power and several balanced priorities.
+function signerCandidates(
+  available: CacheLeaf[],
+  trustedPower: Map<string, CacheLeaf>,
+  targetRequired: bigint,
+  trustedRequired: bigint,
+  prefix: number[],
+): number[][] {
+  const candidates = new Map<string, number[]>();
+  const oldPower = (leaf: CacheLeaf) =>
+    trustedPower.get(leaf.pubkey)?.power ?? 0n;
+  const retain = (selected: CacheLeaf[]) => {
+    let target = selected.reduce((total, leaf) => total + leaf.power, 0n);
+    let trusted = selected.reduce((total, leaf) => total + oldPower(leaf), 0n);
+    // Remove redundant choices while retaining canonical prefixes on ties.
+    for (const leaf of [...selected].sort((a, b) => b.index - a.index)) {
+      if (
+        target - leaf.power >= targetRequired &&
+        trusted - oldPower(leaf) >= trustedRequired
+      ) {
+        selected = selected.filter((entry) => entry.index !== leaf.index);
+        target -= leaf.power;
+        trusted -= oldPower(leaf);
+      }
+    }
+    if (
+      target < targetRequired || trusted < trustedRequired ||
+      selected.length > 45
+    ) return;
+    const indices = selected.map((leaf) => leaf.index).sort((a, b) => a - b);
+    candidates.set(indices.join(","), indices);
+  };
+  const prefixSet = new Set(prefix);
+  retain(available.filter((leaf) => prefixSet.has(leaf.index)));
+  const min = (a: bigint, b: bigint) => a < b ? a : b;
+  for (
+    const [targetWeight, trustedWeight, reverse] of [
+      [1n, 0n, false],
+      [0n, 1n, false],
+      [1n, 1n, false],
+      [2n, 1n, false],
+      [1n, 2n, false],
+      [1n, 1n, true],
+    ] as const
+  ) {
+    let remaining = [...available];
+    const selected: CacheLeaf[] = [];
+    let target = 0n;
+    let trusted = 0n;
+    while (target < targetRequired || trusted < trustedRequired) {
+      const needTarget = targetRequired > target ? targetRequired - target : 0n;
+      const needTrusted = trustedRequired > trusted
+        ? trustedRequired - trusted
+        : 0n;
+      const score = (leaf: CacheLeaf) => {
+        if (needTarget === 0n) return min(oldPower(leaf), needTrusted);
+        if (needTrusted === 0n) return min(leaf.power, needTarget);
+        return min(leaf.power, needTarget) * needTrusted * targetWeight +
+          min(oldPower(leaf), needTrusted) * needTarget * trustedWeight;
+      };
+      remaining.sort((a, b) => {
+        const difference = score(b) - score(a);
+        return difference > 0n
+          ? 1
+          : difference < 0n
+          ? -1
+          : reverse
+          ? b.index - a.index
+          : a.index - b.index;
+      });
+      const leaf = remaining.shift();
+      if (!leaf) break;
+      selected.push(leaf);
+      target += leaf.power;
+      trusted += oldPower(leaf);
+    }
+    retain(selected);
+  }
+  return [...candidates.values()];
+}
+
 /** Build the same compact witness used by the retained native benchmarks.
  * A miss authenticates both complete sets directly. It does not select staging.
  */
@@ -413,6 +495,7 @@ export function prepareCachedHeader(args: {
   latestHeight: Height;
   trustLevel: { numerator: bigint; denominator: bigint };
   historySiblings: string[];
+  signerCandidate?: number;
 }) {
   const { header, cache, trustedRoot, trustLevel } = args;
   if (
@@ -484,99 +567,137 @@ export function prepareCachedHeader(args: {
       overlap * trustLevel.denominator <=
         oldRecord.totalPower * trustLevel.numerator
   ) throw new Error("Available signatures do not satisfy both quorum rules");
-  if (indices.length > 45) {
+  const validIdentity = (leaf: CacheLeaf) => {
+    const signature = signatures[leaf.index];
+    return signature.block_id_flag === 2n &&
+      signature.validator_address === hash(leaf.pubkey).slice(0, 40) &&
+      /^[0-9a-f]{128}$/.test(signature.signature);
+  };
+  const candidates = adjacent || sameRoot
+    ? indices.length <= 45 ? [indices] : []
+    : signerCandidates(
+      target.filter(validIdentity),
+      oldByKey,
+      targetRecord.totalPower * 2n / 3n + 1n,
+      oldRecord.totalPower * trustLevel.numerator / trustLevel.denominator + 1n,
+      indices,
+    );
+  if (!candidates.length) {
     throw new DirectUpdateUnsupported(
-      "Required quorum exceeds the direct verifier's signature capacity",
+      "No selected quorum fits the direct verifier's signature capacity",
     );
   }
   const targetCached = cache.records.some((r) => r.root === targetRecord.root);
   const oldCached = cache.records.some((r) => r.root === trustedRoot);
-  let sets: Constr<Data>[] = [];
-  let targetLeaves: Constr<Data>[] = [];
-  let trustedLeaves: Constr<Data>[] = [];
-  let targetSiblings: string[] = [];
-  let trustedSiblings: string[] = [];
-  let full = false;
-  if (targetCached && oldCached) {
-    targetLeaves = indices.map((i) => cacheLeafData(target[i]));
-    targetSiblings = validatorMultiproof(target, indices);
-    if (!sameRoot) {
-      const signedKeys = new Set(indices.map((i) => target[i].pubkey));
-      const trustedIndices = old.filter((leaf) => signedKeys.has(leaf.pubkey))
-        .map((leaf) => leaf.index);
-      trustedLeaves = trustedIndices.map((i) => cacheLeafData(old[i]));
-      trustedSiblings = validatorMultiproof(old, trustedIndices);
+  const build = (indices: number[]) => {
+    let sets: Constr<Data>[] = [];
+    let targetLeaves: Constr<Data>[] = [];
+    let trustedLeaves: Constr<Data>[] = [];
+    let targetSiblings: string[] = [];
+    let trustedSiblings: string[] = [];
+    let full = false;
+    if (targetCached && oldCached) {
+      targetLeaves = indices.map((i) => cacheLeafData(target[i]));
+      targetSiblings = validatorMultiproof(target, indices);
+      if (!sameRoot) {
+        const signedKeys = new Set(indices.map((i) => target[i].pubkey));
+        const trustedIndices = old.filter((leaf) => signedKeys.has(leaf.pubkey))
+          .map((leaf) => leaf.index);
+        trustedLeaves = trustedIndices.map((i) => cacheLeafData(old[i]));
+        trustedSiblings = validatorMultiproof(old, trustedIndices);
+      }
+    } else {
+      const powers = oldCached
+        ? sharedPowerUpdate(old, target, indices)
+        : undefined;
+      full = powers === undefined;
+      sets = [powers ?? fullSetUpdate(old, target, indices)];
     }
-  } else {
-    const powers = oldCached
-      ? sharedPowerUpdate(old, target, indices)
-      : undefined;
-    full = powers === undefined;
-    sets = [powers ?? fullSetUpdate(old, target, indices)];
-  }
-  const block = (id: BlockId) =>
-    record(id.hash, record(id.partSetHeader.total, id.partSetHeader.hash));
-  const h = header.signedHeader.header;
-  const commit = header.signedHeader.commit;
-  const signedHeader = record(
-    record(
-      record(h.version.block, h.version.app),
-      h.chainId,
-      h.height,
-      h.time,
-      block(h.lastBlockId),
-      h.lastCommitHash,
-      h.dataHash,
-      h.validatorsHash,
-      h.nextValidatorsHash,
-      h.consensusHash,
-      h.appHash,
-      h.lastResultsHash,
-      h.evidenceHash,
-      h.proposerAddress,
-    ),
-    record(
-      commit.height,
-      commit.round,
-      block(commit.blockId),
-      indices.map((i) => {
-        const s = signatures[i];
-        return record(
-          s.block_id_flag,
-          s.validator_address,
-          s.timestamp,
-          s.signature,
-        );
+    const block = (id: BlockId) =>
+      record(id.hash, record(id.partSetHeader.total, id.partSetHeader.hash));
+    const h = header.signedHeader.header;
+    const commit = header.signedHeader.commit;
+    const signedHeader = record(
+      record(
+        record(h.version.block, h.version.app),
+        h.chainId,
+        h.height,
+        h.time,
+        block(h.lastBlockId),
+        h.lastCommitHash,
+        h.dataHash,
+        h.validatorsHash,
+        h.nextValidatorsHash,
+        h.consensusHash,
+        h.appHash,
+        h.lastResultsHash,
+        h.evidenceHash,
+        h.proposerAddress,
+      ),
+      record(
+        commit.height,
+        commit.round,
+        block(commit.blockId),
+        indices.map((i) => {
+          const s = signatures[i];
+          return record(
+            s.block_id_flag,
+            s.validator_address,
+            s.timestamp,
+            s.signature,
+          );
+        }),
+      ),
+    );
+    const update = record(
+      cacheTokenData(cache.token),
+      signedHeader,
+      record(
+        header.trustedHeight.revisionNumber,
+        header.trustedHeight.revisionHeight,
+      ),
+      targetLeaves,
+      targetSiblings,
+      trustedLeaves,
+      trustedSiblings,
+      sets,
+      compactStateSiblings(args.historySiblings),
+    );
+    const previous = full && !sameRoot
+      ? rotateCache(cache.records, oldRecord)
+      : cache.records;
+    return {
+      signatureCount: indices.length,
+      full,
+      redeemer: Data.to<Data>(new Constr(6, [update]), undefined, {
+        canonical: true,
       }),
-    ),
-  );
-  const update = record(
-    cacheTokenData(cache.token),
-    signedHeader,
-    record(
-      header.trustedHeight.revisionNumber,
-      header.trustedHeight.revisionHeight,
-    ),
-    targetLeaves,
-    targetSiblings,
-    trustedLeaves,
-    trustedSiblings,
-    sets,
-    compactStateSiblings(args.historySiblings),
-  );
-  const previous = full && !sameRoot
-    ? rotateCache(cache.records, oldRecord)
-    : cache.records;
-  return {
-    full,
-    redeemer: Data.to<Data>(new Constr(6, [update]), undefined, {
-      canonical: true,
-    }),
-    nextCacheDatum: encodeValidatorCache({
-      ...cache,
-      records: rotateCache(previous, targetRecord),
-    }),
+      nextCacheDatum: encodeValidatorCache({
+        ...cache,
+        records: rotateCache(previous, targetRecord),
+      }),
+    };
   };
+  const byCount = candidates.map(build).sort((a, b) =>
+    a.signatureCount - b.signatureCount ||
+    a.redeemer.length - b.redeemer.length ||
+    a.redeemer.localeCompare(b.redeemer)
+  );
+  const smallest =
+    [...byCount].sort((a, b) =>
+      a.redeemer.length - b.redeemer.length ||
+      a.signatureCount - b.signatureCount
+    )[0];
+  // A tighter proof can fit even when it needs another signature.
+  const prepared = [...new Set([byCount[0], smallest, ...byCount])].slice(0, 3);
+  const candidate = args.signerCandidate ?? 0;
+  if (
+    !Number.isInteger(candidate) || candidate < 0 ||
+    candidate >= prepared.length
+  ) {
+    throw new Error("Invalid cached signer candidate");
+  }
+  return { ...prepared[candidate], candidateCount: prepared.length };
 }
 
 function fields(value: Data, count: number, index = 0): Data[] {

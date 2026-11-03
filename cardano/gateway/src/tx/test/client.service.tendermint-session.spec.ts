@@ -2048,7 +2048,7 @@ describe('automatic cached update selection', () => {
     jest.spyOn(CacheRouting, 'evaluatedUnsignedUpdateBudget').mockReturnValue({ fits: true } as any);
     const response = await h.run();
     expect(response.unsigned_tx.type_url).toBe('');
-    expect(h.buildFinal).toHaveBeenCalledWith(expect.objectContaining({ txValidTo: BigInt(TEST_CURRENT_LEDGER_TIME_MS + 120000) * 1000000n }), undefined, true);
+    expect(h.buildFinal).toHaveBeenCalledWith(expect.objectContaining({ txValidTo: BigInt(TEST_CURRENT_LEDGER_TIME_MS + 120000) * 1000000n }), undefined, true, 0);
     expect(h.lucidService.createUnsignedTendermintSessionTransaction).not.toHaveBeenCalled();
     expect(h.pendingUpdates.peek('default-final')).toBeDefined();
   });
@@ -2057,6 +2057,50 @@ describe('automatic cached update selection', () => {
     const h = await harness();
     jest.spyOn(CacheRouting, 'evaluatedUnsignedUpdateBudget').mockReturnValue({ fits: false, exceeded: ['memory'] } as any);
     expect(await h.run()).toBeUndefined();
+    expect(h.pendingUpdates.peek('default-final')).toBeUndefined();
+    expect(h.txEvents.take('default-final')).toBeUndefined();
+  });
+
+  it('evaluates another signer subset before selecting staging', async () => {
+    const h = await harness();
+    h.buildFinal.mockResolvedValue({
+      unsignedTx: createTxBuilder('default-final'),
+      pendingTreeUpdate: { expectedNewRoot: 'ff'.repeat(32), commit: jest.fn() },
+      cachedSignerCandidates: 2,
+    });
+    jest.spyOn(CacheRouting, 'evaluatedUnsignedUpdateBudget')
+      .mockReturnValueOnce({ fits: false, exceeded: ['memory'] } as any)
+      .mockReturnValueOnce({ fits: true } as any);
+    expect((await h.run()).unsigned_tx.type_url).toBe('');
+    expect(h.buildFinal.mock.calls.map(call => call[3])).toEqual([0, 1]);
+    expect(h.runnerSpy).toHaveBeenCalledTimes(2);
+    expect(h.pendingUpdates.peek('default-final')).toBeDefined();
+    expect(h.lucidService.createUnsignedTendermintSessionTransaction).not.toHaveBeenCalled();
+  });
+
+  it('exhausts the bounded candidates without recording over-budget transactions', async () => {
+    const h = await harness();
+    h.buildFinal.mockResolvedValue({
+      unsignedTx: createTxBuilder('default-final'),
+      pendingTreeUpdate: { expectedNewRoot: 'ff'.repeat(32), commit: jest.fn() },
+      cachedSignerCandidates: 3,
+    });
+    jest.spyOn(CacheRouting, 'evaluatedUnsignedUpdateBudget').mockReturnValue({ fits: false, exceeded: ['memory'] } as any);
+    expect(await h.run()).toBeUndefined();
+    expect(h.buildFinal.mock.calls.map(call => call[3])).toEqual([0, 1, 2]);
+    expect(h.pendingUpdates.peek('default-final')).toBeUndefined();
+    expect(h.txEvents.take('default-final')).toBeUndefined();
+  });
+
+  it('propagates an invalid later candidate instead of hiding it behind staging', async () => {
+    const h = await harness();
+    h.buildFinal.mockResolvedValueOnce({
+      unsignedTx: createTxBuilder('default-final'),
+      pendingTreeUpdate: { expectedNewRoot: 'ff'.repeat(32), commit: jest.fn() },
+      cachedSignerCandidates: 2,
+    }).mockRejectedValueOnce(new Error('failed script execution: invalid membership'));
+    jest.spyOn(CacheRouting, 'evaluatedUnsignedUpdateBudget').mockReturnValue({ fits: false, exceeded: ['memory'] } as any);
+    await expect(h.run()).rejects.toThrow('invalid membership');
     expect(h.pendingUpdates.peek('default-final')).toBeUndefined();
     expect(h.txEvents.take('default-final')).toBeUndefined();
   });
