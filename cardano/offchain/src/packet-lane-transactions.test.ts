@@ -15,6 +15,7 @@ import {
   fromText,
   getAddressDetails,
   type LucidEvolution,
+  toScriptRef,
   type TxSigned,
   type UTxO,
   validatorToScriptHash,
@@ -59,6 +60,90 @@ function assertCompactLaneUpdate(lane: Constr<Data>) {
       assert(!path.includes("00".repeat(32)));
       assert(path.every((sibling) => sibling === "" || sibling.length === 64));
     }
+  }
+}
+
+async function checkAcknowledgementPolicies(
+  f: Awaited<ReturnType<typeof packetLaneFixture>>,
+  lucid: LucidEvolution,
+  signed: TxSigned,
+) {
+  const transaction = signed.toTransaction();
+  const mint = transaction.body().mint()!;
+  const policies = Array.from(
+    { length: mint.keys().len() },
+    (_, i) => mint.keys().get(i).to_hex(),
+  );
+  assertEquals(
+    policies.sort(),
+    [
+      f.deployment.batchPolicy,
+      f.deployment.operations.acknowledge.policy,
+      f.deployment.proofVerifier.policy,
+    ].sort(),
+  );
+  const references = await resolveInputs(
+    lucid,
+    transaction.body().reference_inputs(),
+  );
+  assert(
+    !references.some((input) =>
+      input.txHash === f.deployment.operations.funds.reference.txHash &&
+      input.outputIndex === f.deployment.operations.funds.reference.outputIndex
+    ),
+  );
+  const units = CML.compute_total_ex_units(
+    transaction.witness_set().redeemers()!,
+  );
+  console.log(
+    "acknowledgement-cost " + JSON.stringify({
+      fee: transaction.body().fee().toString(),
+      bytes: signed.toCBOR().length / 2,
+      referencedScriptBytes: references.reduce(
+        (total, input) =>
+          total +
+          (input.scriptRef
+            ? toScriptRef(input.scriptRef).as_plutus_v3()!.to_raw_bytes().length
+            : 0),
+        0,
+      ),
+      memory: units.mem().toString(),
+      cpu: units.steps().toString(),
+    }),
+  );
+  // Evaluate the compiled scripts directly so an unbalanced token mutation
+  // cannot pass this regression merely by failing the ledger's value check.
+  for (
+    const entries of [
+      [["acknowledge", 2n]],
+      [["acknowledge", -1n]],
+      [["receive", 1n]],
+      [["acknowledge", 1n], ["extra", 1n]],
+    ] as [string, bigint][][]
+  ) {
+    const invalid = signed.toTransaction();
+    const body = invalid.body();
+    const mint = body.mint()!;
+    const assets = CML.MapAssetNameToNonZeroInt64.new();
+    for (const [name, quantity] of entries) {
+      assets.insert(CML.AssetName.from_hex(fromText(name)), quantity);
+    }
+    mint.insert_assets(
+      CML.ScriptHash.from_hex(f.deployment.batchPolicy),
+      assets,
+    );
+    body.set_mint(mint);
+    const cbor = CML.Transaction.new(
+      body,
+      invalid.witness_set(),
+      true,
+      invalid.auxiliary_data(),
+    ).to_cbor_hex();
+    await assertRejects(
+      () => f.emulator.evaluateTx(cbor),
+      Error,
+      scriptFailureMessage,
+    );
   }
 }
 
@@ -255,6 +340,7 @@ Deno.test("native ADA send and acknowledgement omit unused references with recon
     changeMintRedeemer(signedAck.toTransaction(), (operation) => {
       assertCompactLaneUpdate(operation.fields[3] as Constr<Data>);
     });
+    if (!control) await checkAcknowledgementPolicies(f, wallet, signedAck);
     const acknowledged = await submitReconciled(f, wallet, signedAck);
     return {
       sent,
@@ -697,6 +783,7 @@ Deno.test("two ready acknowledgements share fees with reconciled balances and ex
     combined.tx,
     "two ready acknowledgements",
   );
+  await checkAcknowledgementPolicies(f, wallet, signed);
   const units = CML.compute_total_ex_units(
     signed.toTransaction().witness_set().redeemers()!,
   );
