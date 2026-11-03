@@ -38,7 +38,7 @@ use ibc/core/ics_004/types/keys as channel_keys
 use ibc/core/ics_004/types/order.{Unordered}
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_004/types/state.{Closed, FlushComplete, Flushing, Open}
-use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
+use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_024_host_requirements/channel_keys as channel_paths
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/encoding/hex
@@ -57,6 +57,8 @@ pub type LaneInputUpdate {
   updates: List<LaneUpdate>,
 }
 
+// Packet policies bind these opaque ICS-23 payloads to the pinned verifier's
+// exact request. The verifier decodes and validates each Merkle proof.
 pub type BatchOperation {
   SendBatch {
     sequencer_ref: OutputReference,
@@ -67,14 +69,14 @@ pub type BatchOperation {
   Acknowledge {
     packet: Packet,
     proof_height: Height,
-    proof: MerkleProof,
+    proof: Data,
     lane: LaneInputUpdate,
   }
   Timeout {
     packet: Packet,
     data: FungibleTokenPacketData,
     proof_height: Height,
-    proof: MerkleProof,
+    proof: Data,
     lane: LaneInputUpdate,
     liquidity_refs: List<OutputReference>,
   }
@@ -87,7 +89,7 @@ pub type BatchOperation {
     packet: Packet,
     data: FungibleTokenPacketData,
     proof_height: Height,
-    proof: MerkleProof,
+    proof: Data,
     lane: LaneInputUpdate,
     liquidity_refs: List<OutputReference>,
   }
@@ -96,7 +98,7 @@ pub type BatchOperation {
     data: FungibleTokenPacketData,
     err: ByteArray,
     proof_height: Height,
-    proof: MerkleProof,
+    proof: Data,
     lane: LaneInputUpdate,
     liquidity_refs: List<OutputReference>,
   }
@@ -104,10 +106,10 @@ pub type BatchOperation {
     packet: Packet,
     data: FungibleTokenPacketData,
     proof_height: Height,
-    proof: MerkleProof,
+    proof: Data,
     lane: LaneInputUpdate,
     liquidity_refs: List<OutputReference>,
-    proof_close: MerkleProof,
+    proof_close: Data,
     // The upgrade sequence of the proven closed counterparty channel.
     counterparty_upgrade_sequence: Int,
   }
@@ -164,14 +166,12 @@ pub fn operation(transaction: Transaction, policy: PolicyId) -> BatchOperation {
 
 fn history_witness(transaction: Transaction, policy: PolicyId) -> Option<Data> {
   expect Some(raw) = pairs.get_first(transaction.redeemers, Mint(policy))
-  expect authorized: AuthorizedOperation = raw
-  when authorized.history_witness is {
-    None -> None
-    Some(witness) -> {
-      let raw: Data = witness
-      Some(raw)
-    }
-  }
+  // Read only the envelope's history field. Client resolution authenticates it.
+  let envelope = builtin.un_constr_data(raw)
+  expect builtin.fst_pair(envelope) == 0
+  expect [_, _, history] = builtin.snd_pair(envelope)
+  expect witness: Option<Data> = history
+  witness
 }
 
 // Issuance pins this NFT to the lane guard. Spending it runs the exact state

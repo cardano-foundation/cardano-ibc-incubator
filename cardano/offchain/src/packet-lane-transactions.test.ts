@@ -1126,17 +1126,26 @@ Deno.test("authenticated timeout drains liquidity, burns its identity and refund
 function changeMintRedeemer(
   transaction: CML.Transaction,
   mutate: (operation: Constr<Data>, authorized: Constr<Data>) => void,
+  mutateProof?: (request: Constr<Data>) => void,
 ): string {
   const witnesses = transaction.witness_set();
   const original = witnesses.redeemers()!.to_flat_format();
   const redeemers = CML.MapRedeemerKeyToRedeemerVal.new();
   let found = false;
+  let proofRequests = 0;
   for (let i = 0; i < original.len(); i++) {
     const redeemer = original.get(i);
     const data = Data.from(redeemer.data().to_cbor_hex()) as Constr<Data>;
     if (redeemer.tag() === CML.RedeemerTag.Mint && data.fields?.length === 3) {
       mutate(data.fields[1] as Constr<Data>, data);
       found = true;
+    }
+    if (
+      mutateProof && redeemer.tag() === CML.RedeemerTag.Mint &&
+      data.fields?.length === 2
+    ) {
+      mutateProof(data.fields[0] as Constr<Data>);
+      proofRequests++;
     }
     redeemers.insert(
       CML.RedeemerKey.new(redeemer.tag(), redeemer.index()),
@@ -1147,6 +1156,7 @@ function changeMintRedeemer(
     );
   }
   assert(found);
+  if (mutateProof) assertEquals(proofRequests, 1);
   witnesses.set_redeemers(
     CML.Redeemers.new_map_redeemer_key_to_redeemer_val(redeemers),
   );
@@ -1159,6 +1169,96 @@ function changeMintRedeemer(
     transaction.auxiliary_data(),
   ).to_cbor_hex();
 }
+
+Deno.test("opaque packet proofs remain bound to the pinned verifier request", async () => {
+  const f = await packetLaneFixture();
+  const { intents } = await f.admit(1);
+  const wallet = await f.wallet();
+  const sent = await buildPacketSendBatch(
+    wallet,
+    f.deployment,
+    intents,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await submitReconciled(
+    f,
+    wallet,
+    await signMeasured(wallet, sent.tx, "opaque proof source send"),
+  );
+  const packet = sent.packets[0];
+  const proof = f.proofs.get(packet.fields[0] as bigint)!;
+  const ack = await buildPacketAcknowledgement(
+    wallet,
+    f.deployment,
+    packet,
+    proof.height,
+    proof.proof,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  const signed = await signMeasured(
+    wallet,
+    ack.tx,
+    "opaque proof acknowledgement",
+  );
+  const transaction = () => CML.Transaction.from_cbor_hex(signed.toCBOR());
+  const mutations: Array<(request: Constr<Data>) => void> = [
+    (request) => {
+      (request.fields[0] as Constr<Data>).fields[0] = fromText("other-chain-1");
+    },
+    (request) => request.fields[2] = record(1n, 1n),
+    (request) => request.fields[8] = record([]),
+    (request) =>
+      request.fields[9] = record([fromText("ibc"), fromText("wrong")]),
+    (request) => request.fields[10] = "00".repeat(32),
+  ];
+  for (const mutate of mutations) {
+    const invalid = changeMintRedeemer(transaction(), () => {}, mutate);
+    await assertRejects(
+      () => f.emulator.evaluateTx(invalid),
+      Error,
+      scriptFailureMessage,
+    );
+  }
+  const altered = Data.from(encode(proof.proof)) as Constr<Data>;
+  const layers = altered.fields[0] as Constr<Data>[];
+  const leaf = (layers[0].fields[0] as Constr<Data>).fields[0] as Constr<Data>;
+  leaf.fields[1] = "00".repeat(32);
+  // Matching payloads must still pass the verifier's decoding and ICS-23 checks.
+  for (const payload of [0n, record([]), altered]) {
+    const invalid = changeMintRedeemer(
+      transaction(),
+      (operation) => operation.fields[2] = payload,
+      (request) => request.fields[8] = payload,
+    );
+    await assertRejects(
+      () => f.emulator.evaluateTx(invalid),
+      Error,
+      scriptFailureMessage,
+    );
+  }
+  const mismatched = changeMintRedeemer(
+    transaction(),
+    (operation) => operation.fields[2] = 0n,
+  );
+  await assertRejects(
+    () => f.emulator.evaluateTx(mismatched),
+    Error,
+    scriptFailureMessage,
+  );
+  const units = CML.compute_total_ex_units(
+    transaction().witness_set().redeemers()!,
+  );
+  const result = await submitReconciled(f, wallet, signed);
+  console.log(JSON.stringify({
+    profile: "opaque packet proof acknowledgement",
+    feeLovelace: result.fee.toString(),
+    memory: units.mem().toString(),
+    cpu: units.steps().toString(),
+    signedBytes: signed.toCBOR().length / 2,
+  }));
+});
 
 Deno.test("a funded intent can be cancelled by its owner before batching", async () => {
   const f = await packetLaneFixture();
