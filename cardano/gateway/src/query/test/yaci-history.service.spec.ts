@@ -2,6 +2,7 @@ import { YaciRestHistory } from '../../shared/helpers/yaci-rest-history';
 import { ConfigService } from '@nestjs/config';
 import { EntityManager } from 'typeorm';
 import {
+  ogmiosRequest,
   queryCurrentEpochStakeDistribution,
   queryCurrentEpochVerificationData,
   queryEpochContextAtPoint,
@@ -10,6 +11,7 @@ import {
 import { YaciHistoryService } from '../services/yaci-history.service';
 
 jest.mock('../../shared/helpers/ogmios', () => ({
+  ogmiosRequest: jest.fn(),
   queryCurrentEpochStakeDistribution: jest.fn(),
   queryCurrentEpochVerificationData: jest.fn(),
   queryEpochContextAtPoint: jest.fn(),
@@ -599,10 +601,12 @@ describe('YaciHistoryService', () => {
     expect(queryEpochContextAtPoint).not.toHaveBeenCalled();
   });
 
-  it('falls back to configured epoch length when the next epoch start slot is unavailable', async () => {
+  it('uses the era schedule when an epoch starts with empty slots', async () => {
     (service as any).findEpochSlotBounds.mockRestore();
-    jest.spyOn(YaciRestHistory.prototype, 'firstBlockInEpoch').mockImplementation(async (epoch) => epoch === 7 ? { slot: 0 } as never : null);
-    (service as any).restHistory = () => new YaciRestHistory({} as never);
+    (ogmiosRequest as jest.Mock).mockResolvedValue([{
+      start: { slot: 0, epoch: 7 },
+      parameters: { epochLength: 432000, slotLength: { milliseconds: 1000 } },
+    }]);
 
     (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
       ...defaultVerificationData,
@@ -637,6 +641,20 @@ describe('YaciHistoryService', () => {
       },
     });
   });
+
+  it('keeps epoch bounds fixed when the first produced slots differ between epochs', async () => {
+    (service as any).findEpochSlotBounds.mockRestore();
+    (ogmiosRequest as jest.Mock).mockResolvedValue([{
+      start: { slot: 0, epoch: 0 },
+      parameters: { epochLength: 5000, slotLength: { milliseconds: 1000 } },
+    }]);
+    await expect((service as any).findEpochSlotBounds({ epochNo: 3239, slotNo: 16195006n }))
+      .resolves.toEqual({ currentEpochStartSlot: 16195000n, currentEpochEndSlotExclusive: 16200000n });
+    await expect((service as any).findEpochSlotBounds({ epochNo: 3240, slotNo: 16200002n }))
+      .resolves.toEqual({ currentEpochStartSlot: 16200000n, currentEpochEndSlotExclusive: 16205000n });
+  });
+
+
 
   it('retries epoch-context acquisition at a newer block in the same epoch when the original point is too old', async () => {
     (service as any).findLatestBlockInEpoch.mockResolvedValue({ height: 119, hash: 'ef'.repeat(32), slotNo: 1199n, epochNo: 7 });
@@ -1307,5 +1325,23 @@ describe.each(['Preprod', 'Preview', 'Mainnet'])('Current epoch stake snapshots 
     await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
       'Blockfrost current epoch stake snapshot total 1200 exceeds epoch 7 active stake 1000',
     );
+  });
+});
+
+
+describe('Yaci proof production anchor', () => {
+  it('anchors pool production reads to the proof block rather than the moving tip', async () => {
+    const service = new YaciHistoryService(new ConfigService({}), {} as any, {} as EntityManager);
+    const block = { height: 100, hash: 'ab'.repeat(32), prevHash: 'cd'.repeat(32), slotNo: 1100n,
+      epochNo: 7, timestampUnixNs: 1_000_000_000n, slotLeader: 'pool' };
+    const epochBlocks = jest.fn().mockResolvedValue([]);
+    jest.spyOn(service as any, 'restHistory').mockReturnValue({
+      snapshot: async (_height: number, read: (anchor: unknown) => unknown) =>
+        read({ number: block.height, hash: block.hash }),
+      epochBlocks,
+    });
+    await service.findObservedPoolProductionAtBlock(block);
+    expect(epochBlocks).toHaveBeenCalledTimes(6);
+    expect(epochBlocks.mock.calls.every(([, height]) => height === block.height)).toBe(true);
   });
 });

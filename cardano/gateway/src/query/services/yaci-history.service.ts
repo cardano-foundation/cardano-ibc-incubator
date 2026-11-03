@@ -7,12 +7,14 @@ import { validatePublicNetworkStabilityConfig } from '../../config';
 import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 import { CLIENT_PREFIX } from '../../constant';
 import {
+  ogmiosRequest,
   queryCurrentEpochStakeDistribution,
   queryCurrentEpochVerificationData,
   queryEpochContextAtPoint,
   queryOperationalCertificateCountersAtPoint,
   queryInitialPoolParametersAtPoint,
 } from '../../shared/helpers/ogmios';
+import { epochTimingAtSlot } from '../../shared/helpers/epoch-timing';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { BoundedCache } from '../../shared/helpers/bounded-cache';
 import { MetricsService } from '../../health/metrics.service';
@@ -596,7 +598,7 @@ export class YaciHistoryService implements HistoryService {
         throw new StaleIbcTreeStateError('Observed production anchor changed');
       const rows: Array<{ epoch: number; slot_leader: string }> = [];
       for (let epoch = Math.max(0, block.epochNo - 5); epoch <= block.epochNo; epoch++) {
-        for (const row of await source.epochBlocks(epoch)) {
+        for (const row of await source.epochBlocks(epoch, anchor.number)) {
           if (row.number <= anchor.number) rows.push(row);
         }
       }
@@ -619,7 +621,7 @@ export class YaciHistoryService implements HistoryService {
       this.configService.get<string>('cardanoNetwork'),
       this.configService.get<string>('cardanoEpochParamsEndpoint'),
     );
-    const slotBounds = await this.findEpochSlotBounds(block.epochNo);
+    const slotBounds = await this.findEpochSlotBounds(block);
     if (!slotBounds) {
       return null;
     }
@@ -2084,24 +2086,17 @@ export class YaciHistoryService implements HistoryService {
   }
 
   private async findEpochSlotBounds(
-    epoch: number,
+    block: Pick<HistoryBlock, 'epochNo' | 'slotNo'>,
   ): Promise<Pick<HistoryEpochVerificationContext, 'currentEpochStartSlot' | 'currentEpochEndSlotExclusive'> | null> {
-    const source = this.restHistory();
-    const first = await source.firstBlockInEpoch(epoch);
-    if (!first) return null;
-    const startSlot = BigInt(first.slot);
-    const next = await source.firstBlockInEpoch(epoch + 1);
-    const nextEpochStartSlot = next ? BigInt(next.slot) : null;
-    const configuredEpochLength = BigInt(this.configService.get<number>('cardanoEpochLength') || 0);
-    const currentEpochEndSlotExclusive =
-      nextEpochStartSlot ?? (configuredEpochLength > 0n ? startSlot + configuredEpochLength : null);
-    if (currentEpochEndSlotExclusive === null) {
-      return null;
-    }
-
+    const endpoint = this.configService.get<string>('ogmiosEndpoint');
+    if (!endpoint) return null;
+    const eras = await ogmiosRequest<Parameters<typeof epochTimingAtSlot>[0]>(
+      endpoint, 'queryLedgerState/eraSummaries', {},
+    );
+    const timing = epochTimingAtSlot(eras, block.slotNo, block.epochNo);
     return {
-      currentEpochStartSlot: startSlot,
-      currentEpochEndSlotExclusive,
+      currentEpochStartSlot: timing.firstEpochSlot,
+      currentEpochEndSlotExclusive: timing.firstEpochSlot + timing.epochLengthSlots,
     };
   }
 

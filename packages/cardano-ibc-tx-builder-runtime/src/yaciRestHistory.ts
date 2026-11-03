@@ -332,10 +332,13 @@ export class YaciRestHistory {
     });
   }
 
-  async epochBlocks(epoch: number): Promise<RestEpochBlock[]> {
+  async epochBlocks(
+    epoch: number,
+    at: number | bigint | "latest" = "latest",
+  ): Promise<RestEpochBlock[]> {
     if (!Number.isSafeInteger(epoch) || epoch < 0)
       throw new Error("Invalid Yaci epoch");
-    return this.snapshot("latest", (tip) =>
+    return this.snapshot(at, (tip) =>
       this.readEpochBlocks(epoch, tip.number),
     );
   }
