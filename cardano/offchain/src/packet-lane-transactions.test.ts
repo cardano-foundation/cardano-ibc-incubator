@@ -50,6 +50,18 @@ const scriptFailureMessage = Deno.env.get("PACKET_LANE_NODE_URL")
   ? "validator"
   : "failed script execution";
 
+function assertCompactLaneUpdate(lane: Constr<Data>) {
+  for (const update of lane.fields[1] as Constr<Data>[]) {
+    for (const siblings of update.fields[1] as string[][]) {
+      const path = siblings.length === 65 ? siblings.slice(1) : siblings;
+      assertEquals(path.length, 64);
+      assert(path.includes(""));
+      assert(!path.includes("00".repeat(32)));
+      assert(path.every((sibling) => sibling === "" || sibling.length === 64));
+    }
+  }
+}
+
 async function resolveInputs(
   lucid: LucidEvolution,
   inputs: CML.TransactionInputList | undefined,
@@ -209,6 +221,9 @@ Deno.test("native ADA send and acknowledgement omit unused references with recon
       f.emulator.now(),
       f.emulator.now() + 60_000,
     );
+    for (const lane of batch.operation.fields[3] as Constr<Data>[]) {
+      assertCompactLaneUpdate(lane);
+    }
     if (control) batch.tx.readFrom(extra);
     const sent = await submitReconciled(
       f,
@@ -230,17 +245,17 @@ Deno.test("native ADA send and acknowledgement omit unused references with recon
       f.emulator.now() + 60_000,
     );
     if (control) ack.tx.readFrom(extra);
-    const acknowledged = await submitReconciled(
-      f,
+    const signedAck = await sign(
       wallet,
-      await sign(
-        wallet,
-        ack.tx,
-        control
-          ? "full-reference acknowledgement"
-          : "minimal-reference acknowledgement",
-      ),
+      ack.tx,
+      control
+        ? "full-reference acknowledgement"
+        : "minimal-reference acknowledgement",
     );
+    changeMintRedeemer(signedAck.toTransaction(), (operation) => {
+      assertCompactLaneUpdate(operation.fields[3] as Constr<Data>);
+    });
+    const acknowledged = await submitReconciled(f, wallet, signedAck);
     return {
       sent,
       acknowledged,
@@ -352,11 +367,15 @@ Deno.test("forty receives on one lane retain bounded live state and rebuild dela
       f.emulator.now(),
       f.emulator.now() + 60_000,
     );
-    await submitReconciled(
-      f,
+    const signed = await signMeasured(
       wallet,
-      await signMeasured(wallet, receive.tx, `history receive ${sequence}`),
+      receive.tx,
+      `history receive ${sequence}`,
     );
+    changeMintRedeemer(signed.toTransaction(), (operation) => {
+      assertCompactLaneUpdate(operation.fields[4] as Constr<Data>);
+    });
+    await submitReconciled(f, wallet, signed);
     const unit = Object.keys(receive.input.assets).find((unit) =>
       unit.startsWith(f.deployment.statePolicy)
     )!;
@@ -711,6 +730,7 @@ Deno.test("same-lane sends use sequential witnesses and stale packet completions
   assertEquals(lanes.length, 1);
   const updates = lanes[0].fields[1] as Constr<Data>[];
   assertEquals(updates.length, 2);
+  assertCompactLaneUpdate(lanes[0]);
   assert(encode(updates[0].fields[1]) !== encode(updates[1].fields[1]));
   const signed = await signMeasured(builder, batch.tx, "two sends in one lane");
   const corrupted = changeMintRedeemer(signed.toTransaction(), (operation) => {

@@ -1,12 +1,75 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { mock, test } from "node:test";
-import { IbcTreeNodeStore } from "./incrementalIbcTree.ts";
+import { Data } from "@lucid-evolution/lucid";
+import {
+  IbcTreeNodeStore,
+  verifyIbcTreeWitness,
+} from "./incrementalIbcTree.ts";
 import { ICS23MerkleTree } from "./ics23MerkleTree.ts";
-import { PacketMerkleTree } from "./packetLaneTree.ts";
+import { PacketLaneTree, PacketMerkleTree } from "./packetLaneTree.ts";
+import { compactStateSiblings } from "./tendermintCache.ts";
 
 const key = (kind: string, sequence: bigint) =>
   `${kind}/ports/transfer/channels/channel-0/sequences/${sequence}`;
+
+test("local packet witnesses compact zero siblings without changing exported proofs", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const tree = new PacketLaneTree(
+      new PacketMerkleTree(new IbcTreeNodeStore(db)),
+    );
+    const reference = new ICS23MerkleTree();
+    for (
+      const [path, value] of [
+        [key("commitments", 1n), "ab".repeat(32)],
+        [key("receipts", 1n), "01"],
+        [key("acks", 1n), "cd".repeat(32)],
+        [key("commitments", 1n), ""],
+      ]
+    ) {
+      const siblings = tree.getSiblings(path);
+      const compact = compactStateSiblings(siblings);
+      const encoded = Data.to(compact);
+      assert.deepEqual(Data.from(encoded), compact);
+      assert.equal(compact.length, 64);
+      assert(compact.includes(""));
+      assert(!compact.includes("00".repeat(32)));
+      assert.equal(
+        (Data.to(siblings).length - encoded.length) / 2,
+        compact.filter((sibling) => sibling === "").length * 33,
+      );
+      const expanded = compact.map((sibling) => sibling || "00".repeat(32));
+      assert.deepEqual(expanded, siblings);
+      assert(
+        verifyIbcTreeWitness(
+          path,
+          tree.get(path) ?? "",
+          expanded,
+          tree.getRoot(),
+        ),
+      );
+      tree.set(path, value);
+      reference.set(path, value);
+      assert(verifyIbcTreeWitness(path, value, expanded, tree.getRoot()));
+      assert.equal(tree.getRoot(), reference.getRoot());
+      assert.deepEqual(
+        tree.tree.getSiblings(path),
+        reference.getSiblings(path),
+      );
+      assert.deepEqual(
+        value
+          ? tree.tree.generateProof(path)
+          : tree.tree.generateNonExistenceProof(path),
+        value
+          ? reference.generateProof(path)
+          : reference.generateNonExistenceProof(path),
+      );
+    }
+  } finally {
+    db.close();
+  }
+});
 
 test("incremental packet snapshots retain byte-identical roots and proofs through inserts, deletes and forks", () => {
   const db = new DatabaseSync(":memory:");
@@ -173,6 +236,16 @@ test("incremental packet snapshots preserve collision-bucket proofs", () => {
       reference.set(path, value);
       assert.equal(tree.getRoot(), reference.getRoot());
       for (const candidate of keys) {
+        const siblings = tree.getSiblings(candidate).map((value) =>
+          value.toString("hex")
+        );
+        const compact = compactStateSiblings(siblings);
+        assert.equal(compact.length, siblings.length);
+        if (siblings.length === 65) assert.equal(compact[0], siblings[0]);
+        assert.deepEqual(
+          compact.map((sibling) => sibling || "00".repeat(32)),
+          siblings,
+        );
         assert.deepEqual(
           tree.getSiblings(candidate),
           reference.getSiblings(candidate),

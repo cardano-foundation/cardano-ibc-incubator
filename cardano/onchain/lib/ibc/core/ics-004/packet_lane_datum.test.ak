@@ -7,6 +7,7 @@ use ibc/core/ics_004/packet_lane_datum.{
 }
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_024_host_requirements/packet_keys
+use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
 use ibc/testing/sparse_tree
 
 fn packet(sequence: Int) -> Packet {
@@ -62,6 +63,119 @@ fn received() -> PacketLaneDatum {
       },
     ],
   )
+}
+
+fn compact_siblings(siblings: List<ByteArray>) -> List<ByteArray> {
+  list.map(
+    siblings,
+    fn(sibling) {
+      if sibling == tree.empty_hash {
+        #""
+      } else {
+        sibling
+      }
+    },
+  )
+}
+
+fn commit_with_witness(siblings: List<ByteArray>) -> PacketLaneDatum {
+  packet_lane_datum.apply_updates(
+    empty(),
+    [
+      LaneUpdate {
+        mutation: CommitPacket { packet: packet(1) },
+        siblings: [siblings],
+      },
+    ],
+  )
+}
+
+test packet_lane_compact_empty_witness_preserves_commitment() {
+  commit_with_witness(list.repeat(#"", 64)) == committed()
+}
+
+test packet_lane_mixed_empty_witness_preserves_commitment() {
+  commit_with_witness(
+    list.concat(list.repeat(#"", 32), list.repeat(tree.empty_hash, 32)),
+  ) == committed()
+}
+
+test packet_lane_compact_receive_preserves_both_insertions() {
+  let receipt = packet_keys.packet_receipt_path("transfer", "channel-0", 1)
+  let ack = packet_keys.packet_acknowledgement_path("transfer", "channel-0", 1)
+  packet_lane_datum.apply_updates(
+    empty(),
+    [
+      LaneUpdate {
+        mutation: ReceivePacket {
+          packet: packet(1),
+          acknowledgement: #"1111111111111111111111111111111111111111111111111111111111111111",
+          proof_height: height(10),
+        },
+        siblings: [
+          compact_siblings(sparse_tree.siblings([], receipt)),
+          compact_siblings(sparse_tree.siblings([Pair(receipt, #"01")], ack)),
+        ],
+      },
+    ],
+  ) == received()
+}
+
+test packet_lane_compact_completion_preserves_received_state() {
+  let key = packet_keys.packet_commitment_path("transfer", "channel-0", 1)
+  let receipt = packet_keys.packet_receipt_path("transfer", "channel-0", 1)
+  let ack = packet_keys.packet_acknowledgement_path("transfer", "channel-0", 1)
+  let entries =
+    [
+      Pair(receipt, #"01"),
+      Pair(
+        ack,
+        #"1111111111111111111111111111111111111111111111111111111111111111",
+      ),
+    ]
+  let committed =
+    packet_lane_datum.apply_updates(
+      received(),
+      [
+        LaneUpdate {
+          mutation: CommitPacket { packet: packet(1) },
+          siblings: [compact_siblings(sparse_tree.siblings(entries, key))],
+        },
+      ],
+    )
+  packet_lane_datum.apply_updates(
+    committed,
+    [
+      LaneUpdate {
+        mutation: CompletePacket { packet: packet(1) },
+        siblings: [
+          compact_siblings(
+            sparse_tree.siblings(
+              [Pair(key, packet_mod.commit_packet(packet(1))), ..entries],
+              key,
+            ),
+          ),
+        ],
+      },
+    ],
+  ) == PacketLaneDatum { ..received(), version: 3 }
+}
+
+test packet_lane_compact_empty_witness_rejects_missing_level() fail {
+  expect _ = commit_with_witness(list.repeat(#"", 63))
+}
+
+test packet_lane_compact_empty_witness_rejects_extra_level() fail {
+  expect _ = commit_with_witness(list.repeat(#"", 65))
+}
+
+test packet_lane_empty_witness_rejects_nonzero_sibling() fail {
+  expect _ =
+    commit_with_witness([builtin.sha2_256("nonzero"), ..list.repeat(#"", 63)])
+}
+
+test packet_lane_empty_witness_rejects_short_zero_sibling() fail {
+  expect _ = commit_with_witness([#"00", ..list.repeat(#"", 63)])
 }
 
 test packet_lane_exact_commitment_root() {

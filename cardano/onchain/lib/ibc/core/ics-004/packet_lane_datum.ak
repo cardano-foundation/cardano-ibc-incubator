@@ -182,8 +182,9 @@ fn apply_update(update: LaneUpdate, old: PacketLaneDatum) -> PacketLaneDatum {
   }
 }
 
-// Empty lanes have a unique all-zero witness. Validate it once and compute
-// only the new root. Nonempty lanes retain the general two-root verification.
+// Empty lanes have only zero siblings, encoded as empty bytes or full hashes.
+// Validate them once and compute only the new root. Nonempty lanes retain the
+// general two-root verification.
 fn update_root(
   old_root: ByteArray,
   key: ByteArray,
@@ -193,7 +194,11 @@ fn update_root(
 ) -> ByteArray {
   if old_root == tree.empty_hash {
     expect old_value == ""
-    expect list.all(siblings, fn(sibling) { sibling == tree.empty_hash })
+    expect
+      list.all(
+        siblings,
+        fn(sibling) { sibling == #"" || sibling == tree.empty_hash },
+      )
     tree.compute_value_root(key, new_value, siblings)
   } else {
     tree.apply_update(old_root, key, old_value, new_value, siblings)
