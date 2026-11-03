@@ -654,17 +654,7 @@ describe('YaciHistoryService', () => {
       .resolves.toEqual({ currentEpochStartSlot: 16200000n, currentEpochEndSlotExclusive: 16205000n });
   });
 
-  it('anchors pool production reads to the proof block rather than the moving tip', async () => {
-    const epochBlocks = jest.fn().mockResolvedValue([]);
-    jest.spyOn(service as any, 'restHistory').mockReturnValue({
-      snapshot: async (_height: number, read: (anchor: unknown) => unknown) =>
-        read({ number: block.height, hash: block.hash }),
-      epochBlocks,
-    });
-    await service.findObservedPoolProductionAtBlock(block);
-    expect(epochBlocks).toHaveBeenCalledTimes(6);
-    expect(epochBlocks.mock.calls.every(([, height]) => height === block.height)).toBe(true);
-  });
+
 
   it('retries epoch-context acquisition at a newer block in the same epoch when the original point is too old', async () => {
     (service as any).findLatestBlockInEpoch.mockResolvedValue({ height: 119, hash: 'ef'.repeat(32), slotNo: 1199n, epochNo: 7 });
@@ -1335,5 +1325,23 @@ describe.each(['Preprod', 'Preview', 'Mainnet'])('Current epoch stake snapshots 
     await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
       'Blockfrost current epoch stake snapshot total 1200 exceeds epoch 7 active stake 1000',
     );
+  });
+});
+
+
+describe('Yaci proof production anchor', () => {
+  it('anchors pool production reads to the proof block rather than the moving tip', async () => {
+    const service = new YaciHistoryService(new ConfigService({}), {} as any, {} as EntityManager);
+    const block = { height: 100, hash: 'ab'.repeat(32), prevHash: 'cd'.repeat(32), slotNo: 1100n,
+      epochNo: 7, timestampUnixNs: 1_000_000_000n, slotLeader: 'pool' };
+    const epochBlocks = jest.fn().mockResolvedValue([]);
+    jest.spyOn(service as any, 'restHistory').mockReturnValue({
+      snapshot: async (_height: number, read: (anchor: unknown) => unknown) =>
+        read({ number: block.height, hash: block.hash }),
+      epochBlocks,
+    });
+    await service.findObservedPoolProductionAtBlock(block);
+    expect(epochBlocks).toHaveBeenCalledTimes(6);
+    expect(epochBlocks.mock.calls.every(([, height]) => height === block.height)).toBe(true);
   });
 });
