@@ -176,6 +176,10 @@ export interface CacheFixtureOptions {
   directSizeFailure?: boolean;
   emptyCache?: boolean;
   productionWitness?: boolean;
+  scenario?: typeof retainedScenario;
+  trustedLeaves?: CacheLeaf[];
+  cacheTarget?: boolean;
+  existingCache?: boolean;
 }
 
 /** Real cache admission and a complete signed update under retained parameters. */
@@ -184,9 +188,14 @@ export async function cachedUpdateFixture(
   mutation: CacheMutation = "none",
   options: CacheFixtureOptions = {},
 ) {
-  const scenario = mode === "adjacent"
-    ? fixture.scenarios.adjacent_mixed
-    : retainedScenario;
+  const scenario = options.scenario ??
+    (mode === "adjacent" ? fixture.scenarios.adjacent_mixed : retainedScenario);
+  const retainedLeaves: CacheLeaf[] = scenario.header.validator_set.validators
+    .map((validator, index) => ({
+      index,
+      pubkey: validator.pub_key.ed25519,
+      power: BigInt(validator.voting_power),
+    }));
   const changed = mode === "powers" || mode === "full";
   const raw = scenario.header.signed_header;
   const h = raw.header;
@@ -294,7 +303,9 @@ export async function cachedUpdateFixture(
   ).digest("hex");
   const cacheToken = c([scripts.cacheMint[1], cacheName]);
   const cacheUnit = scripts.cacheMint[1] + cacheName;
-  let oldLeaves = retainedLeaves.map((leaf) => ({ ...leaf }));
+  let oldLeaves = (options.trustedLeaves ?? retainedLeaves).map((leaf) => ({
+    ...leaf,
+  }));
   if (mode === "powers") {
     for (const index of options.changedIndices ?? [0, 2]) {
       oldLeaves[index].power -= 1n;
@@ -345,7 +356,9 @@ export async function cachedUpdateFixture(
   const initialRecord = cacheRecord(
     options.emptyCache ? oldLeaves : admittedLeaves,
   );
-  const additionalSet: CacheLeaf[] = options.twoRecords
+  const additionalSet: CacheLeaf[] = options.cacheTarget
+    ? retainedLeaves
+    : options.twoRecords
     ? [{ index: 0, pubkey: "ab".repeat(32), power: 1n }]
     : [];
   const initialRecords = options.emptyCache ? [] : [
@@ -588,18 +601,43 @@ export async function cachedUpdateFixture(
     value: Data.to(hostDatum, HostStateDatum, { canonical: true }),
   }, host.assets)
     .validFrom(emulator.now()).validTo(emulator.now() + 30_000);
-  const admission = await admissionBuilder.complete({ localUPLCEval: true })
-    .catch((error) => {
-      throw new Error(`cache admission: ${error}`, { cause: error });
-    });
-  const signedAdmission = await admission.sign.withWallet().complete();
-  const admissionBudget = evaluatedUpdateBudget(signedAdmission, parameters, 0);
-  assert(
-    admissionBudget.withinLedger,
-    `Cache admission exceeds ledger limits: ${JSON.stringify(admissionBudget)}`,
-  );
-  assertEquals(await signedAdmission.submit(), signedAdmission.toHash());
-  emulator.awaitBlock();
+  let admissionFee = 0;
+  let admissionBudget: ReturnType<typeof evaluatedUpdateBudget> | undefined;
+  if (options.existingCache) {
+    // An authenticated pre-existing checkpoint isolates complete update costs
+    // from cache creation. Large caches can be populated by earlier updates.
+    host.datum = Data.to(hostDatum, HostStateDatum, { canonical: true });
+    seed(
+      clientAddress,
+      { [clientUnit]: 1n, lovelace: 30_000_000n },
+      encode(clientDatum),
+    );
+    seed(
+      scripts.cacheSpend[2],
+      { [cacheUnit]: 1n, lovelace: 5_000_000n },
+      encode(cacheDatum),
+    );
+  } else {
+    const admission = await admissionBuilder.complete({ localUPLCEval: true })
+      .catch((error) => {
+        throw new Error(`cache admission: ${error}`, { cause: error });
+      });
+    const signedAdmission = await admission.sign.withWallet().complete();
+    admissionFee = Number(signedAdmission.toTransaction().body().fee());
+    admissionBudget = evaluatedUpdateBudget(
+      signedAdmission,
+      parameters,
+      0,
+    );
+    assert(
+      admissionBudget.withinLedger,
+      `Cache admission exceeds ledger limits: ${
+        JSON.stringify(admissionBudget)
+      }`,
+    );
+    assertEquals(await signedAdmission.submit(), signedAdmission.toHash());
+    emulator.awaitBlock();
+  }
   const client = await lucid.utxoByUnit(clientUnit);
   const cache = await lucid.utxoByUnit(cacheUnit);
   host = await lucid.utxoByUnit(hostPolicy + hostName);
@@ -1409,7 +1447,7 @@ export async function cachedUpdateFixture(
     sharedSiblings: mode === "powers"
       ? (sets[0].fields[2] as Data[]).length
       : 0,
-    admissionFee: Number(signedAdmission.toTransaction().body().fee()),
+    admissionFee,
     admissionBudget,
     signedCbor: signed.toCBOR(),
     fallbackSessions: session?.measurements,
