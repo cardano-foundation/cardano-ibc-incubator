@@ -49,8 +49,6 @@ validator packet_lane_batch(
     expect
       when authorized.operation is {
         SendBatch { .. } |
-        Acknowledge { .. } |
-        AcknowledgeBatch { .. } |
         Timeout { .. } |
         TimeoutOnClose { .. } |
         Reject { .. } |

@@ -598,6 +598,13 @@ pub fn validate_acknowledgements(
   op: BatchOperation,
   verify_policy: PolicyId,
 ) -> Bool {
+  expect
+    validator_utils.require_exact_marker_mint(
+      transaction.mint,
+      policy,
+      "acknowledge",
+      1,
+    )
   let packets = acknowledgements(op)
   expect [Acknowledge { proof_height, .. }, ..] = packets
   let channel = channel_reference(transaction, channel_token)
@@ -1082,11 +1089,6 @@ pub fn validate_funds(
         )
       }
     }
-    Acknowledge { .. } | AcknowledgeBatch { .. } ->
-      assets.tokens(transaction.mint, policy) == dict.singleton(
-        "acknowledge",
-        1,
-      )
     Timeout { packet, .. } |
     TimeoutOnClose { packet, .. } |
     Reject { packet, .. } -> {
