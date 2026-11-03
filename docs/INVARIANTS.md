@@ -515,6 +515,13 @@ same-lane sequential witnesses, stale completion rebuilding, rollback reload,
 native returns, voucher mint/refund and timeout-on-close. Repeated multi-asset
 round trips check accounting reclamation at capacity.
 
+Packet operations carry opaque ICS-23 proof data. Each operation still binds
+the exact client, height, path, value and payload to the pinned verifier's
+request. That verifier decodes and verifies the proof. The compiled packet
+regression rejects mismatched requests and matching malformed, empty or
+corrupted proofs. Historical checkpoint witnesses remain authenticated against
+the client history root.
+
 Normal lane packet transactions do not spend HostState or the channel datum.
 Their packet policies still authenticate the channel, client, callback and
 counterparty proofs. Send sequencing is a separate authenticated output.
