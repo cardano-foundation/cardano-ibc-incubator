@@ -48,7 +48,7 @@ fn signatures(
   }
 }
 
-fn checked_signature(
+pub fn checked_signature(
   key: ByteArray,
   sig: CommitSig,
   prefix: ByteArray,
@@ -250,7 +250,7 @@ fn authenticate_full(
   }
 }
 
-fn header_with(
+pub fn header_with(
   client: ClientDatum,
   time: TxTime,
   records: List<Record>,

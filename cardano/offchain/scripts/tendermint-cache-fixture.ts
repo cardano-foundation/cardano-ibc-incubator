@@ -24,6 +24,12 @@ import { submitHistorySession } from "./consensus-history-staged-fixture.ts";
 import { DeploymentIbcTree } from "../src/deployment.ts";
 import { generateTokenName, readValidator } from "../src/utils.ts";
 import { loadCachedTendermintValidators } from "../src/tendermint-cache-validators.ts";
+import {
+  loadRosterPrototypeValidators,
+  prepareRosterHeader,
+  rosterOrder,
+  rosterRecordData,
+} from "../src/validator-roster.ts";
 import { createCardanoScalusEvaluator } from "../src/scalus-evaluator.ts";
 import { serialisePlutusData } from "../src/plutus_serialise.ts";
 import {
@@ -184,6 +190,40 @@ export interface CacheFixtureOptions {
   cacheTarget?: boolean;
   existingCache?: boolean;
   allTrustedOverlaps?: boolean;
+  roster?: "hit" | "refresh" | "fallback";
+  rosterReserve?: bigint;
+  rosterAttack?:
+    | "admission-root"
+    | "admission-count"
+    | "admission-total"
+    | "admission-rows"
+    | "admission-owner"
+    | "admission-client"
+    | "admission-token"
+    | "admission-three"
+    | "admission-script"
+    | "forged-roster"
+    | "wrong-policy"
+    | "hit-signature"
+    | "hit-quorum"
+    | "hit-index"
+    | "hit-missing"
+    | "hit-overlap"
+    | "hit-unsigned"
+    | "refresh-total"
+    | "refresh-known"
+    | "refresh-owner"
+    | "refresh-empty"
+    | "refresh-three"
+    | "refresh-withdraw"
+    | "refresh-script";
+  closeRoster?:
+    | "close"
+    | "no-authority"
+    | "short-refund"
+    | "wrong-owner"
+    | "no-burn";
+  remintRoster?: boolean;
 }
 
 /** Real cache admission and a complete signed update under retained parameters. */
@@ -253,7 +293,10 @@ export async function cachedUpdateFixture(
     evaluator: createCardanoScalusEvaluator(),
   });
   lucid.selectWallet.fromSeed(account.seedPhrase);
-  const scripts = loadCachedTendermintValidators(
+  const prototype = options.roster
+    ? loadRosterPrototypeValidators(lucid, hostPolicy, "00".repeat(28))
+    : undefined;
+  const scripts = prototype ?? loadCachedTendermintValidators(
     lucid,
     hostPolicy,
     "00".repeat(28),
@@ -288,11 +331,17 @@ export async function cachedUpdateFixture(
       coreRewardAddress,
       generalRewardAddress,
       stagedRewardAddress,
+      ...(prototype ? [prototype.roster.rewardAddress] : []),
     ]
   ) {
     registerBuilder = registerBuilder.register.Stake(address);
   }
   const register = await registerBuilder.complete();
+  const registration = {
+    fee: Number(register.toTransaction().body().fee()),
+    credentialCount: prototype ? 5 : 4,
+    depositPerCredential: Number(emulator.protocolParameters.keyDeposit),
+  };
   await (await register.sign.withWallet().complete()).submit();
   emulator.awaitBlock();
   const clientName = await generateTokenName(
@@ -475,6 +524,8 @@ export async function cachedUpdateFixture(
   };
   const references: UTxO[] = [];
   const publicationBytes: number[] = [];
+  const publicationFees: number[] = [];
+  const publicationMinimumAda: number[] = [];
   for (
     const script of [
       hostScript,
@@ -485,6 +536,13 @@ export async function cachedUpdateFixture(
       scripts.update[0],
       scripts.updateCore[0],
       scripts.generalUpdateCore[0],
+      ...(prototype
+        ? [
+          prototype.roster.mint[0],
+          prototype.roster.spend[0],
+          prototype.roster.hit[0],
+        ]
+        : []),
     ]
   ) {
     const publication = await lucid.newTx().pay.ToAddressWithData(
@@ -495,6 +553,15 @@ export async function cachedUpdateFixture(
     ).complete();
     const signed = await publication.sign.withWallet().complete();
     publicationBytes.push(signed.toCBOR().length / 2);
+    publicationFees.push(Number(signed.toTransaction().body().fee()));
+    publicationMinimumAda.push(
+      Number(
+        CML.min_ada_required(
+          signed.toTransaction().body().outputs().get(0),
+          BigInt(parameters.coinsPerUtxoByte),
+        ),
+      ),
+    );
     assert(
       publicationBytes.at(-1)! <= parameters.maxTxSize,
       `reference publication uses ${publicationBytes.at(-1)} bytes`,
@@ -536,6 +603,58 @@ export async function cachedUpdateFixture(
   const cacheDatum = c([cacheToken, clientToken, plutusAddress, [
     ...initialRecords.map(cacheRecordData),
   ]]);
+  const rosterUnit = prototype ? prototype.roster.mint[1] + cacheName : "";
+  const rosterToken = c([prototype?.roster.mint[1] ?? "", cacheName]);
+  const rosterSets = !prototype || options.emptyCache
+    ? []
+    : [admittedLeaves, ...(additionalSet.length ? [additionalSet] : [])];
+  const rosterDatum = c([
+    rosterToken,
+    clientToken,
+    plutusAddress,
+    signer,
+    rosterSets.map(rosterRecordData),
+  ]);
+  if (options.rosterAttack?.startsWith("admission-")) {
+    const records = rosterDatum.fields[4] as Constr<Data>[];
+    const attack = options.rosterAttack;
+    if (attack === "admission-root") records[0].fields[0] = "00".repeat(32);
+    if (attack === "admission-count") {
+      records[0].fields[1] = (records[0].fields[1] as bigint) + 1n;
+    }
+    if (attack === "admission-total") records[0].fields[2] = 1n;
+    if (attack === "admission-rows") {
+      records[0].fields[3] = (records[0].fields[3] as string).slice(0, -2);
+    }
+    if (attack === "admission-owner") rosterDatum.fields[3] = "ff".repeat(28);
+    if (attack === "admission-client") {
+      rosterDatum.fields[1] = c([clientPolicy, "99"]);
+    }
+    if (attack === "admission-token") {
+      rosterDatum.fields[0] = c([dummy, cacheName]);
+    }
+    if (attack === "admission-three") {
+      rosterDatum.fields[4] = [records[0], records[0], records[0]];
+    }
+  }
+  const rosterAssets = (datum: Constr<Data>, reserve = 0n) => {
+    let lovelace = reserve;
+    for (let pass = 0; pass < 4; pass++) {
+      const output = utxoToCore({
+        txHash: "00".repeat(32),
+        outputIndex: 0,
+        address: prototype!.roster.spend[2],
+        datum: encode(datum),
+        assets: { [rosterUnit]: 1n, lovelace },
+      }).output();
+      const minimum = CML.min_ada_required(
+        output,
+        BigInt(parameters.coinsPerUtxoByte),
+      );
+      lovelace = minimum > lovelace ? minimum : lovelace;
+    }
+    return { [rosterUnit]: 1n, lovelace };
+  };
   if (mutation === "admission-total") {
     (cacheDatum.fields[3] as Constr<Data>[])[0].fields[2] = 1n;
   }
@@ -600,6 +719,26 @@ export async function cachedUpdateFixture(
         value: Data.void(),
       }, { [shadow[1] + clientName]: 1n, lovelace: 5_000_000n });
   }
+  if (prototype) {
+    admissionBuilder.readFrom([references[8]])
+      .mintAssets(
+        { [rosterUnit]: 1n },
+        encode(c([clientToken, rosterSets.map(rosterOrder)])),
+      )
+      .pay.ToContract(
+        prototype.roster.spend[2],
+        {
+          kind: "inline",
+          value: encode(rosterDatum),
+        },
+        options.rosterAttack === "admission-script"
+          ? { [rosterUnit]: 1n, lovelace: 100_000_000n }
+          : rosterAssets(rosterDatum, options.rosterReserve),
+        options.rosterAttack === "admission-script"
+          ? readValidator("minting_mock_token.mint_mock_token.mint", lucid)[0]
+          : undefined,
+      );
+  }
   admissionBuilder.pay.ToContract(hostAddress, {
     kind: "inline",
     value: Data.to(hostDatum, HostStateDatum, { canonical: true }),
@@ -608,6 +747,10 @@ export async function cachedUpdateFixture(
   let admissionFee = 0;
   let admissionBudget: ReturnType<typeof evaluatedUpdateBudget> | undefined;
   if (options.existingCache) {
+    assert(
+      !prototype,
+      "Roster prototype admission must be evaluated and submitted",
+    );
     // An authenticated pre-existing checkpoint isolates complete update costs
     // from cache creation. Large caches can be populated by earlier updates.
     host.datum = Data.to(hostDatum, HostStateDatum, { canonical: true });
@@ -644,6 +787,10 @@ export async function cachedUpdateFixture(
   }
   const client = await lucid.utxoByUnit(clientUnit);
   const cache = await lucid.utxoByUnit(cacheUnit);
+  const rosterInput = prototype
+    ? await lucid.utxoByUnit(rosterUnit)
+    : undefined;
+  const initialRosterLovelace = rosterInput?.assets.lovelace;
   host = await lucid.utxoByUnit(hostPolicy + hostName);
   const historicalSnapshot: [string, string][] = [];
   for (let index = 1; index <= (options.historyRecords ?? 0); index++) {
@@ -1143,7 +1290,7 @@ export async function cachedUpdateFixture(
           address: createHash("sha256").update(Buffer.from(leaf.pubkey, "hex"))
             .digest("hex").slice(0, 40),
         }));
-      const prepared = prepareCachedHeader({
+      const prepareArgs = {
         cache: readValidatorCache(
           cache,
           { policyId: clientPolicy, name: clientName },
@@ -1171,7 +1318,22 @@ export async function cachedUpdateFixture(
         trustedRoot,
         trustLevel: { numerator: 1n, denominator: 3n },
         historySiblings,
-      });
+      };
+      if (options.roster === "hit") {
+        const stored = (Data.from(rosterInput!.datum!) as Constr<Data>)
+          .fields[4] as Constr<Data>[];
+        prepareArgs.cache.records = stored.map((record) => ({
+          root: record.fields[0] as string,
+          count: Number(record.fields[1]),
+          totalPower: record.fields[2] as bigint,
+        }));
+      }
+      const prepared = options.roster === "hit"
+        ? prepareRosterHeader(prepareArgs, {
+          policyId: prototype!.roster.mint[1],
+          name: cacheName,
+        })
+        : prepareCachedHeader(prepareArgs);
       update = (Data.from(prepared.redeemer) as Constr<Data>)
         .fields[0] as Constr<Data>;
       nextCache = Data.from(prepared.nextCacheDatum) as Constr<Data>;
@@ -1233,7 +1395,7 @@ export async function cachedUpdateFixture(
         });
       }
     }
-    if (options.productionWitness && !staged) {
+    if (options.productionWitness && !staged && options.roster !== "hit") {
       const commit = (update.fields[1] as Constr<Data>).fields[1] as Constr<
         Data
       >;
@@ -1253,15 +1415,61 @@ export async function cachedUpdateFixture(
         scripts.staged.updateClient.validator,
       )
       : references[5];
-    const builder = lucid.newTx().readFrom([
-      references[0],
-      references[3],
-      references[4],
-      updateReference,
-      ...(session ? [] : [
-        references[fullWitness && mutation !== "full-wrong-core" ? 7 : 6],
-      ]),
-    ])
+    const rosterHit = options.roster === "hit" && !staged;
+    let rosterReference = rosterInput;
+    if (rosterHit) {
+      const attack = options.rosterAttack;
+      const commit = (update.fields[1] as Constr<Data>).fields[1] as Constr<
+        Data
+      >;
+      const positions = update.fields[3] as bigint[];
+      if (attack === "hit-signature") {
+        (commit.fields[3] as Constr<Data>[])[0].fields[3] = "00".repeat(64);
+      }
+      if (attack === "hit-quorum") {
+        positions.pop();
+        (commit.fields[3] as Data[]).pop();
+      }
+      if (attack === "hit-index") positions[0] = -1n;
+      if (attack === "hit-overlap") update.fields[4] = [];
+      if (attack === "hit-unsigned") {
+        const keys = new Set(
+          positions.map((i) => retainedLeaves[Number(i)].pubkey),
+        );
+        update.fields[4] = [
+          BigInt(oldLeaves.find((leaf) => !keys.has(leaf.pubkey))!.index),
+        ];
+      }
+      if (attack === "forged-roster") {
+        rosterReference = seed(
+          prototype!.roster.spend[2],
+          {},
+          rosterInput!.datum!,
+        );
+      }
+      if (attack === "wrong-policy") {
+        const fake = c([dummy, cacheName]);
+        update.fields[0] = fake;
+        const datum = Data.from(rosterInput!.datum!) as Constr<Data>;
+        datum.fields[0] = fake;
+        rosterReference = seed(prototype!.roster.spend[2], {
+          [dummy + cacheName]: 1n,
+        }, encode(datum));
+      }
+    }
+    const builder = lucid.newTx().readFrom(
+      rosterHit
+        ? [references[0], references[3], references[10], rosterReference!]
+        : [
+          references[0],
+          references[3],
+          references[4],
+          updateReference,
+          ...(session ? [] : [
+            references[fullWitness && mutation !== "full-wrong-core" ? 7 : 6],
+          ]),
+        ],
+    )
       .collectFrom(
         [host],
         Data.to(
@@ -1281,12 +1489,75 @@ export async function cachedUpdateFixture(
           ? encode(
             c([session.token, [], compactStateSiblings(historySiblings)]),
           )
-          : encode(c([update], 6)),
+          : encode(c([update], rosterHit ? 7 : 6)),
+      );
+    if (!rosterHit) builder.collectFrom([cache], Data.void());
+    if (prototype && options.roster === "refresh") {
+      const records = (nextCache.fields[3] as Constr<Data>[]).map((record) => {
+        const root = record.fields[0];
+        return [retainedLeaves, oldLeaves, ...rosterSets].find((leaves) =>
+          cacheRecord(leaves).root === root
+        )!;
+      });
+      assert(records.every(Boolean));
+      const nextRoster = c([
+        ...rosterDatum.fields.slice(0, 4),
+        records.map(rosterRecordData),
+      ]);
+      const rosterAttack = options.rosterAttack;
+      const nextRecords = nextRoster.fields[4] as Constr<Data>[];
+      if (rosterAttack === "refresh-total") nextRecords[0].fields[2] = 1n;
+      if (rosterAttack === "refresh-owner") {
+        nextRoster.fields[3] = "ff".repeat(28);
+      }
+      if (rosterAttack === "refresh-empty") nextRoster.fields[4] = [];
+      if (rosterAttack === "refresh-three") {
+        nextRoster.fields[4] = [nextRecords[0], nextRecords[1], nextRecords[0]];
+      }
+      if (rosterAttack === "refresh-known") {
+        nextRecords[1].fields[3] = "ff".repeat(32) +
+          (nextRecords[1].fields[3] as string).slice(64);
+      }
+      const known = new Set(
+        rosterSets.map((leaves) => cacheRecord(leaves).root),
+      );
+      builder.readFrom([references[9]]).collectFrom(
+        [rosterInput!],
+        encode(
+          c([
+            records.map((leaves) =>
+              known.has(cacheRecord(leaves).root) ? [] : rosterOrder(leaves)
+            ),
+          ]),
+        ),
       )
-      .collectFrom([cache], Data.void());
+        .pay.ToContract(
+          prototype.roster.spend[2],
+          {
+            kind: "inline",
+            value: encode(nextRoster),
+          },
+          rosterAttack === "refresh-withdraw"
+            ? { [rosterUnit]: 1n, lovelace: rosterInput!.assets.lovelace - 1n }
+            : rosterAttack === "refresh-script"
+            ? { [rosterUnit]: 1n, lovelace: 100_000_000n }
+            : rosterAssets(nextRoster, rosterInput!.assets.lovelace),
+          rosterAttack === "refresh-script"
+            ? readValidator("minting_mock_token.mint_mock_token.mint", lucid)[0]
+            : undefined,
+        );
+    }
     if (session) {
       if (mutation !== "missing-verifier") {
         builder.withdraw(stagedRewardAddress, 0n, encode(c([clientToken], 4)));
+      }
+    } else if (rosterHit) {
+      if (options.rosterAttack !== "hit-missing") {
+        builder.withdraw(
+          prototype!.roster.rewardAddress,
+          0n,
+          encode(clientToken),
+        );
       }
     } else {
       if (
@@ -1306,19 +1577,20 @@ export async function cachedUpdateFixture(
         );
       }
     }
-    builder
-      .pay.ToContract(clientAddress, {
-        kind: "inline",
-        value: encode(nextClient),
-      }, client.assets)
-      .pay.ToContract(scripts.cacheSpend[2], {
+    builder.pay.ToContract(clientAddress, {
+      kind: "inline",
+      value: encode(nextClient),
+    }, client.assets);
+    if (!rosterHit) {
+      builder.pay.ToContract(scripts.cacheSpend[2], {
         kind: "inline",
         value: encode(nextCache),
-      }, cache.assets)
-      .pay.ToContract(hostAddress, {
-        kind: "inline",
-        value: Data.to(nextHost, HostStateDatum, { canonical: true }),
-      }, host.assets)
+      }, cache.assets);
+    }
+    builder.pay.ToContract(hostAddress, {
+      kind: "inline",
+      value: Data.to(nextHost, HostStateDatum, { canonical: true }),
+    }, host.assets)
       .validFrom(currentTime).validTo(currentTime + 30_000);
     const completed = await (session ? session.finalize(builder) : builder)
       .complete({ localUPLCEval: true }).catch((error) => {
@@ -1387,8 +1659,15 @@ export async function cachedUpdateFixture(
   );
   assertEquals(
     (await lucid.utxoByUnit(cacheUnit)).datum,
-    encode(nextCacheDatum),
+    options.roster === "hit" ? cache.datum : encode(nextCacheDatum),
   );
+  const rosterOutput = prototype
+    ? await lucid.utxoByUnit(rosterUnit)
+    : undefined;
+  if (options.roster === "hit") {
+    assertEquals(rosterOutput?.txHash, rosterInput?.txHash);
+    assertEquals(rosterOutput?.outputIndex, rosterInput?.outputIndex);
+  }
   if (!session) assertEquals(signed.toTransaction().body().mint(), undefined);
   assertEquals((await lucid.utxosAt(scripts.cacheSpend[2])).length, 1);
   assertEquals(
@@ -1417,6 +1696,9 @@ export async function cachedUpdateFixture(
         [coreRewardAddress]: "verify_cached_client",
         [generalRewardAddress]: "verify_general_cached_client",
         [stagedRewardAddress]: "update_staged_client",
+        ...(prototype
+          ? { [prototype.roster.rewardAddress]: "verify_roster_client" }
+          : {}),
       };
       assert(names[withdrawn], "Every withdrawal must have a known verifier");
       script = names[withdrawn];
@@ -1425,7 +1707,13 @@ export async function cachedUpdateFixture(
       const input = signed.toTransaction().body().inputs().get(
         Number(redeemer.index()),
       );
-      const consumed = [host, client, cache, ...(session ? [session.utxo] : [])]
+      const consumed = [
+        host,
+        client,
+        cache,
+        ...(rosterInput ? [rosterInput] : []),
+        ...(session ? [session.utxo] : []),
+      ]
         .find((utxo) =>
           utxo.txHash === input.transaction_id().to_hex() &&
           utxo.outputIndex === Number(input.index())
@@ -1438,6 +1726,8 @@ export async function cachedUpdateFixture(
         ? "spending_cached_client"
         : address === scripts.cacheSpend[2]
         ? "spending_validator_cache"
+        : prototype && address === prototype.roster.spend[2]
+        ? "validator_roster"
         : "session_spend";
     }
     redeemerBudgets.push({
@@ -1461,6 +1751,56 @@ export async function cachedUpdateFixture(
     JSON.stringify({ measured, redeemerBudgets }),
   );
   assert(measured.steps <= parameters.maxTxExSteps);
+  const updateTransactionCount = submittedTransactions.size;
+  if (prototype && options.remintRoster) {
+    await lucid.newTx().readFrom([references[8]])
+      .mintAssets(
+        { [rosterUnit]: 1n },
+        encode(c([clientToken, rosterSets.map(rosterOrder)])),
+      )
+      .pay.ToContract(prototype.roster.spend[2], {
+        kind: "inline",
+        value: encode(rosterDatum),
+      }, rosterAssets(rosterDatum))
+      .complete({ localUPLCEval: true });
+  }
+  let retirement:
+    | { fee: number; signedBytes: number; refunded: number }
+    | undefined;
+  if (prototype && options.closeRoster) {
+    const close = options.closeRoster;
+    const other = generateEmulatorAccount({}).address;
+    const builder = lucid.newTx().readFrom([references[8], references[9]])
+      .collectFrom([rosterOutput!], encode(c([], 1)))
+      .pay.ToAddress(close === "wrong-owner" ? other : account.address, {
+        lovelace: rosterOutput!.assets.lovelace -
+          (close === "short-refund" ? 1n : 0n),
+      });
+    if (close !== "no-burn") {
+      builder.mintAssets({ [rosterUnit]: -1n }, encode(c([clientToken], 1)));
+    }
+    if (close !== "no-authority") builder.addSignerKey(signer);
+    const tx = await builder.complete({
+      localUPLCEval: true,
+      changeAddress: close === "short-refund" || close === "wrong-owner"
+        ? other
+        : account.address,
+    });
+    const signed = await tx.sign.withWallet().complete();
+    assert(evaluatedUpdateBudget(signed, parameters, 0).withinLedger);
+    await signed.submit();
+    emulator.awaitBlock();
+    assertEquals((await lucid.utxosAt(prototype.roster.spend[2])).length, 0);
+    assertEquals(
+      (await lucid.utxoByUnit(clientUnit)).datum,
+      encode(nextClientDatum),
+    );
+    retirement = {
+      fee: Number(signed.toTransaction().body().fee()),
+      signedBytes: signed.toCBOR().length / 2,
+      refunded: Number(rosterOutput!.assets.lovelace),
+    };
+  }
   return {
     mode,
     path: session ? "staged" as const : "direct" as const,
@@ -1494,12 +1834,39 @@ export async function cachedUpdateFixture(
       : 0,
     targetValidatorCount: retainedLeaves.length,
     measured,
+    publicCommitments: {
+      clientState: publicBytes(
+        (nextClientDatum.fields[0] as Constr<Data>).fields[0],
+      ),
+      consensusState: publicBytes(
+        [...((nextClientDatum.fields[0] as Constr<Data>).fields[1] as Map<
+          Data,
+          Data
+        >).values()][0],
+      ),
+    },
     transactionId: signed.toHash(),
     completeFee: measured.fee +
       (session?.measurements.reduce((sum, tx) => sum + tx.fee, 0) ?? 0),
-    updateTransactions: submittedTransactions.size,
+    updateTransactions: updateTransactionCount,
     redeemerBudgets,
     publicationBytes,
+    publicationFees,
+    publicationMinimumAda,
+    registration,
+    retirement,
+    roster: prototype
+      ? {
+        initialLovelace: Number(initialRosterLovelace),
+        currentLovelace: Number(rosterOutput!.assets.lovelace),
+        datumBytes: rosterOutput!.datum!.length / 2,
+        scriptBytes: {
+          hit: prototype.roster.hit[0].script.length / 2,
+          refresh: prototype.roster.spend[0].script.length / 2,
+          mint: prototype.roster.mint[0].script.length / 2,
+        },
+      }
+      : undefined,
     signatures: target.length,
     signerAvailability: availability
       ? {

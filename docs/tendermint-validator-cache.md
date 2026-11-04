@@ -1,5 +1,7 @@
 # Authenticated Tendermint validator cache
 
+The separate [authenticated roster experiment](authenticated-validator-roster.md) measures storing admitted rows in a data-only reference output. It saves fees on hits but misses the proposed funding hurdle at a 60% hit rate. Its implementation and signed evidence remain an opt-in prototype.
+
 New Cardano deployments use one Tendermint client with direct and staged execution paths. The Gateway evaluates a direct candidate with a resource reserve and automatically selects staging when needed. Operators do not select a separate client mode.
 
 An update with eight dispersed power changes previously selected twelve transactions costing about 9.13 ADA. The direct witness also stopped at 24 signatures and general validator changes used the staged path. The optimized verifier submits every retained acceptance case in one transaction below 3 ADA with the existing 5% resource reserve. This includes genuine 28- and 34-signature availability cases, eight power changes and general key replacement, addition, removal and reordering.

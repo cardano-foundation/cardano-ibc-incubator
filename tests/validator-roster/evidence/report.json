@@ -1,0 +1,2245 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "22c4c70b",
+  "compiler": "aiken v1.1.24",
+  "traceLevel": "silent",
+  "protocolMajorVersion": 11,
+  "blueprintSha256": "945cb44105897f0d9765a0fdce8b7402b6a906fb79909ace76a167fa57562216",
+  "parametersSha256": "95bef260c463f2b8f456fa3c455ded9adb19b6c7154813ff6c6ef83ee593c6f6",
+  "feeParameters": {
+    "minFeeA": 44,
+    "minFeeB": 155381,
+    "priceMem": 0.0577,
+    "priceStep": 0.0000721,
+    "referenceScriptByteCost": 15,
+    "coinsPerUtxoByte": 4310
+  },
+  "sourceHashes": {
+    "cardano/onchain/lib/ibc/client/ics-007-tendermint-client/cached/roster.ak": "73676d2740ca302ab4557fd208b2a7dce60dd9e2691f1ac801c3e04c57f42ab6",
+    "cardano/onchain/lib/ibc/client/ics-007-tendermint-client/cached/roster_update.ak": "b374462c79b7e242789ebf4f8b8b0295dcece4f7c14cbcf470124c72dd11e263",
+    "cardano/onchain/lib/ibc/client/ics-007-tendermint-client/cached/verify.ak": "a02403718cf3404b59527195685441e4c14abda47d39d325a56af75df03e3548",
+    "cardano/onchain/validators/experimental/validator_roster.ak": "306ceec6046a55c4a24e363f063cef882e4c7047fe36442b413274f450860e4a",
+    "cardano/onchain/validators/experimental/mint_validator_roster.ak": "b66937f1a168f02f36049e32c7285d65349dcae36e3899f7f7356b5cddd383e0",
+    "cardano/onchain/validators/experimental/roster_client.ak": "37d5213f7979516b895a89fab1714c89eb39db29b084bc2a4dce84d4050fd6a0",
+    "cardano/onchain/validators/experimental/verify_roster_client.ak": "024b8262027fa2223af778d1c50c0d5d2526bb866fe3e50a7ba3ece8c2fbf251",
+    "cardano/offchain/src/validator-roster.ts": "c5d58da42a0e04f42e086a6d26e1393abc510896153ded2b678744bcccfbe658",
+    "cardano/offchain/scripts/tendermint-cache-fixture.ts": "cc3ae2990140f0ecaa9458ca951d0545c700665377704279440e8921abfae8c3",
+    "cardano/offchain/scripts/benchmark-validator-roster.ts": "f3993601c7230d0f1fb2b759271d16cf45cc379bce5e02cbb84fabf15d02661d",
+    "cardano/offchain/scripts/validator-roster-economics.ts": "913e1af7ba299e6a6b9862ad1e416063ffd5aaf5bc054d29a8305e9a7f3508ea",
+    "cardano/offchain/src/scalus-evaluator.ts": "608d88398ecabf6808682b6a43568ddba6788b562684918ba65693222021ae8a",
+    "cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity/normalized.json": "bb9954cf88a8cc86a64914174f5055fa631be8c503d02c594290e84d6defdf75"
+  },
+  "optimisticFreeRefresh": [
+    {
+      "id": "hit-17",
+      "hitSavingLovelace": 347178,
+      "extraChangedSetLovelace": 0,
+      "hitPercent": 60,
+      "monthlyUpdates": 6000,
+      "netSavingPerUpdateLovelace": 208306.8,
+      "monthlySavingLovelace": 1249840800,
+      "hurdlePerUpdateLovelace": 284000,
+      "clearsFivePercentHurdle": false,
+      "requiredHitPercent": 81.80241835600182
+    },
+    {
+      "id": "hit-28",
+      "hitSavingLovelace": 399083,
+      "extraChangedSetLovelace": 0,
+      "hitPercent": 60,
+      "monthlyUpdates": 6000,
+      "netSavingPerUpdateLovelace": 239449.8,
+      "monthlySavingLovelace": 1436698800,
+      "hurdlePerUpdateLovelace": 284000,
+      "clearsFivePercentHurdle": false,
+      "requiredHitPercent": 71.1631415018931
+    },
+    {
+      "id": "hit-34",
+      "hitSavingLovelace": 429151,
+      "extraChangedSetLovelace": 0,
+      "hitPercent": 60,
+      "monthlyUpdates": 6000,
+      "netSavingPerUpdateLovelace": 257490.6,
+      "monthlySavingLovelace": 1544943600,
+      "hurdlePerUpdateLovelace": 284000,
+      "clearsFivePercentHurdle": false,
+      "requiredHitPercent": 66.17717306961885
+    }
+  ],
+  "assumptions": {
+    "hitPercent": 60,
+    "monthlyUpdates": 6000,
+    "hurdlePerUpdateLovelace": 284000,
+    "lockedCapitalIsRecurringFee": false,
+    "completeFeeIncludesAllStagedUpdateTransactions": true,
+    "setupFeesAmortizedIntoRecurringSavings": false,
+    "nativeEmulatorMeasurementsNotPublicChainInclusion": true
+  },
+  "measurements": [
+    {
+      "id": "hit-17",
+      "kind": "hit",
+      "baseline": {
+        "path": "direct",
+        "completeFeeLovelace": 2024959,
+        "updateTransactions": 1,
+        "measured": {
+          "signedBytes": 5415,
+          "referencedScriptBytes": 39716,
+          "memory": 10240560,
+          "steps": 5577991223,
+          "fee": 2024959
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 5415,
+            "memory": 10240560,
+            "steps": 5577991223
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [],
+          "fits": true
+        },
+        "admissionFeeLovelace": 1951711,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 8087,
+            "memory": 11647458,
+            "steps": 4319300946
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 17,
+        "transactionId": "dd433298bc6c4c8ad55fbcc46a62d01273588c3c14f9cc4ba3bf39a68a97e56e",
+        "signedTransactionSha256": "60d21b2e89471ec0b114c28faeb69f91fd210030afeaa1134beb3bc6e0a1369a",
+        "signedTransactionFile": "hit-17-baseline.cbor.hex",
+        "registration": {
+          "fee": 171661,
+          "credentialCount": 4,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          293013,
+          376217,
+          216805,
+          851549,
+          825765
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          13184290,
+          21334500,
+          5719370,
+          67895430,
+          65369770
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 0,
+            "memory": 115513,
+            "steps": 58546687
+          },
+          {
+            "script": "spending_validator_cache",
+            "tag": 0,
+            "index": 1,
+            "memory": 359767,
+            "steps": 160218899
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 2,
+            "memory": 2999807,
+            "steps": 1775738556
+          },
+          {
+            "script": "update_cached_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 178637,
+            "steps": 85237682
+          },
+          {
+            "script": "verify_cached_client",
+            "tag": 3,
+            "index": 1,
+            "memory": 6586836,
+            "steps": 3498249399
+          }
+        ]
+      },
+      "prototype": {
+        "path": "direct",
+        "completeFeeLovelace": 1677781,
+        "updateTransactions": 1,
+        "measured": {
+          "signedBytes": 4008,
+          "referencedScriptBytes": 31917,
+          "memory": 8504784,
+          "steps": 4957546012,
+          "fee": 1677781
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 4008,
+            "memory": 8504784,
+            "steps": 4957546012
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [],
+          "fits": true
+        },
+        "admissionFeeLovelace": 2411171,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 10554,
+            "memory": 14962860,
+            "steps": 5376679338
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 17,
+        "transactionId": "6e884d7461f1fd944b864724bde395fe8add1a930e611cbc8eeb1b01a0900407",
+        "signedTransactionSha256": "559824227115cbc92adcb81cf77109ca752980e10aaa8d2f26d8dbaba25cdd8a",
+        "signedTransactionFile": "hit-17-prototype.cbor.hex",
+        "roster": {
+          "initialLovelace": 10249180,
+          "currentLovelace": 10249180,
+          "datumBytes": 2103,
+          "scriptBytes": {
+            "hit": 13151,
+            "refresh": 3541,
+            "mint": 4635
+          }
+        },
+        "retirement": {
+          "fee": 338098,
+          "signedBytes": 750,
+          "refunded": 10249180
+        },
+        "registration": {
+          "fee": 173157,
+          "credentialCount": 5,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          309249,
+          376217,
+          216805,
+          851549,
+          825765,
+          372697,
+          324561,
+          747401
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          14774680,
+          21334500,
+          5719370,
+          67895430,
+          65369770,
+          20989700,
+          16274560,
+          57693660
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 0,
+            "memory": 101591,
+            "steps": 50740009
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 1,
+            "memory": 2952627,
+            "steps": 1762689938
+          },
+          {
+            "script": "verify_roster_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 5450566,
+            "steps": 3144116065
+          }
+        ]
+      },
+      "savingLovelace": 347178
+    },
+    {
+      "id": "hit-28",
+      "kind": "hit",
+      "baseline": {
+        "path": "direct",
+        "completeFeeLovelace": 2244693,
+        "updateTransactions": 1,
+        "measured": {
+          "signedBytes": 6968,
+          "referencedScriptBytes": 39716,
+          "memory": 11593658,
+          "steps": 6595026186,
+          "fee": 2244693
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 6968,
+            "memory": 11593658,
+            "steps": 6595026186
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [],
+          "fits": true
+        },
+        "admissionFeeLovelace": 1951711,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 8087,
+            "memory": 11647458,
+            "steps": 4319300946
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 28,
+        "transactionId": "28084e8a355e9e1b70257aa9dd3c43a5ed4f4832272468e305d1b26a36d54ce3",
+        "signedTransactionSha256": "86757e7af1ff071891bf9f5ed5a32295e05a4874f413a8f8f1391bcdd497cf5b",
+        "signedTransactionFile": "hit-28-baseline.cbor.hex",
+        "registration": {
+          "fee": 171661,
+          "credentialCount": 4,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          293013,
+          376217,
+          216805,
+          851549,
+          825765
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          13184290,
+          21334500,
+          5719370,
+          67895430,
+          65369770
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 0,
+            "memory": 115513,
+            "steps": 58546687
+          },
+          {
+            "script": "spending_validator_cache",
+            "tag": 0,
+            "index": 1,
+            "memory": 359767,
+            "steps": 160218899
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 2,
+            "memory": 2999807,
+            "steps": 1775738556
+          },
+          {
+            "script": "update_cached_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 178637,
+            "steps": 85237682
+          },
+          {
+            "script": "verify_cached_client",
+            "tag": 3,
+            "index": 1,
+            "memory": 7939934,
+            "steps": 4515284362
+          }
+        ]
+      },
+      "prototype": {
+        "path": "direct",
+        "completeFeeLovelace": 1845610,
+        "updateTransactions": 1,
+        "measured": {
+          "signedBytes": 5129,
+          "referencedScriptBytes": 31917,
+          "memory": 9439921,
+          "steps": 5852803344,
+          "fee": 1845610
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 5129,
+            "memory": 9439921,
+            "steps": 5852803344
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [],
+          "fits": true
+        },
+        "admissionFeeLovelace": 2411171,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 10554,
+            "memory": 14962860,
+            "steps": 5376679338
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 28,
+        "transactionId": "8983f48edb321f7e4dac1963f8fd1267e687aad73855617d7dd7f15f439b6252",
+        "signedTransactionSha256": "66cc83f233d5ae762d61ccd3e1327a32ad94925e4752c558b6e8cfbcf8764c7f",
+        "signedTransactionFile": "hit-28-prototype.cbor.hex",
+        "roster": {
+          "initialLovelace": 10249180,
+          "currentLovelace": 10249180,
+          "datumBytes": 2103,
+          "scriptBytes": {
+            "hit": 13151,
+            "refresh": 3541,
+            "mint": 4635
+          }
+        },
+        "registration": {
+          "fee": 173157,
+          "credentialCount": 5,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          309249,
+          376217,
+          216805,
+          851549,
+          825765,
+          372697,
+          324561,
+          747401
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          14774680,
+          21334500,
+          5719370,
+          67895430,
+          65369770,
+          20989700,
+          16274560,
+          57693660
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 0,
+            "memory": 101591,
+            "steps": 50740009
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 1,
+            "memory": 2952627,
+            "steps": 1762689938
+          },
+          {
+            "script": "verify_roster_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 6385703,
+            "steps": 4039373397
+          }
+        ]
+      },
+      "savingLovelace": 399083
+    },
+    {
+      "id": "hit-34",
+      "kind": "hit",
+      "baseline": {
+        "path": "direct",
+        "completeFeeLovelace": 2366794,
+        "updateTransactions": 1,
+        "measured": {
+          "signedBytes": 7833,
+          "referencedScriptBytes": 39716,
+          "memory": 12350492,
+          "steps": 7154962208,
+          "fee": 2366794
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 7833,
+            "memory": 12350492,
+            "steps": 7154962208
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [],
+          "fits": true
+        },
+        "admissionFeeLovelace": 1951711,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 8087,
+            "memory": 11647458,
+            "steps": 4319300946
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 34,
+        "transactionId": "79d3737d679ce01f11372d7b1d083230753759a09260f83f361cbcfdd42b9ab7",
+        "signedTransactionSha256": "6f348b1d511a90473ebf42a2337d7a7e2c9e5d70b2b05c7b78c8ea229737e5a4",
+        "signedTransactionFile": "hit-34-baseline.cbor.hex",
+        "registration": {
+          "fee": 171661,
+          "credentialCount": 4,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          293013,
+          376217,
+          216805,
+          851549,
+          825765
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          13184290,
+          21334500,
+          5719370,
+          67895430,
+          65369770
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 0,
+            "memory": 115513,
+            "steps": 58546687
+          },
+          {
+            "script": "spending_validator_cache",
+            "tag": 0,
+            "index": 1,
+            "memory": 359767,
+            "steps": 160218899
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 2,
+            "memory": 2999807,
+            "steps": 1775738556
+          },
+          {
+            "script": "update_cached_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 178637,
+            "steps": 85237682
+          },
+          {
+            "script": "verify_cached_client",
+            "tag": 3,
+            "index": 1,
+            "memory": 8696768,
+            "steps": 5075220384
+          }
+        ]
+      },
+      "prototype": {
+        "path": "direct",
+        "completeFeeLovelace": 1937643,
+        "updateTransactions": 1,
+        "measured": {
+          "signedBytes": 5746,
+          "referencedScriptBytes": 31917,
+          "memory": 9953003,
+          "steps": 6342127116,
+          "fee": 1937643
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 5746,
+            "memory": 9953003,
+            "steps": 6342127116
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [],
+          "fits": true
+        },
+        "admissionFeeLovelace": 2411171,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 10554,
+            "memory": 14962860,
+            "steps": 5376679338
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 34,
+        "transactionId": "7206b09a879dd0447f928fe56defe99c416b6fbd3dc82c6456e8ce787ee7be52",
+        "signedTransactionSha256": "236010c822fe6d51f5d2b7e037a19e0a588058a89f47e4faa25e618055a2d309",
+        "signedTransactionFile": "hit-34-prototype.cbor.hex",
+        "roster": {
+          "initialLovelace": 10249180,
+          "currentLovelace": 10249180,
+          "datumBytes": 2103,
+          "scriptBytes": {
+            "hit": 13151,
+            "refresh": 3541,
+            "mint": 4635
+          }
+        },
+        "registration": {
+          "fee": 173157,
+          "credentialCount": 5,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          309249,
+          376217,
+          216805,
+          851549,
+          825765,
+          372697,
+          324561,
+          747401
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          14774680,
+          21334500,
+          5719370,
+          67895430,
+          65369770,
+          20989700,
+          16274560,
+          57693660
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 0,
+            "memory": 101591,
+            "steps": 50740009
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 1,
+            "memory": 2952627,
+            "steps": 1762689938
+          },
+          {
+            "script": "verify_roster_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 6898785,
+            "steps": 4528697169
+          }
+        ]
+      },
+      "savingLovelace": 429151
+    },
+    {
+      "id": "powers-two-17",
+      "kind": "refresh",
+      "baseline": {
+        "path": "direct",
+        "completeFeeLovelace": 2121603,
+        "updateTransactions": 1,
+        "measured": {
+          "signedBytes": 5616,
+          "referencedScriptBytes": 39716,
+          "memory": 11308641,
+          "steps": 5940977401,
+          "fee": 2121603
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 5616,
+            "memory": 11308641,
+            "steps": 5940977401
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [],
+          "fits": true
+        },
+        "admissionFeeLovelace": 1951711,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 8087,
+            "memory": 11647458,
+            "steps": 4319300946
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 17,
+        "transactionId": "7323a91801b1994f3ab7b09b226462858b19b68fb8f8016b6183e56b63415d9a",
+        "signedTransactionSha256": "c3cffae243d497665356d872f7cc2b8358ee51b5c9eb7cc2bf5e3d3223795b74",
+        "signedTransactionFile": "powers-two-17-baseline.cbor.hex",
+        "registration": {
+          "fee": 171661,
+          "credentialCount": 4,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          293013,
+          376217,
+          216805,
+          851549,
+          825765
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          13184290,
+          21334500,
+          5719370,
+          67895430,
+          65369770
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 0,
+            "memory": 115513,
+            "steps": 58546687
+          },
+          {
+            "script": "spending_validator_cache",
+            "tag": 0,
+            "index": 1,
+            "memory": 368813,
+            "steps": 163027214
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 2,
+            "memory": 2999807,
+            "steps": 1775738556
+          },
+          {
+            "script": "update_cached_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 182390,
+            "steps": 86663633
+          },
+          {
+            "script": "verify_cached_client",
+            "tag": 3,
+            "index": 1,
+            "memory": 7642118,
+            "steps": 3857001311
+          }
+        ]
+      },
+      "prototype": {
+        "path": "direct",
+        "completeFeeLovelace": 2610874,
+        "updateTransactions": 1,
+        "measured": {
+          "signedBytes": 9898,
+          "referencedScriptBytes": 43623,
+          "memory": 14104631,
+          "steps": 6900876865,
+          "fee": 2610874
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 9898,
+            "memory": 14104631,
+            "steps": 6900876865
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [],
+          "fits": true
+        },
+        "admissionFeeLovelace": 2411171,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 10554,
+            "memory": 14962860,
+            "steps": 5376679338
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 17,
+        "transactionId": "648479c5201b32aadf845b3382b40064f4d84415be1012e4815117c5e39e4952",
+        "signedTransactionSha256": "e340654461f84ffc41014b6604874c99cfa2173f51296f88abfed9ac9d41b607",
+        "signedTransactionFile": "powers-two-17-prototype.cbor.hex",
+        "roster": {
+          "initialLovelace": 10249180,
+          "currentLovelace": 18451110,
+          "datumBytes": 4006,
+          "scriptBytes": {
+            "hit": 13151,
+            "refresh": 3541,
+            "mint": 4635
+          }
+        },
+        "registration": {
+          "fee": 173157,
+          "credentialCount": 5,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          309249,
+          376217,
+          216805,
+          851549,
+          825765,
+          372697,
+          324561,
+          747401
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          14774680,
+          21334500,
+          5719370,
+          67895430,
+          65369770,
+          20989700,
+          16274560,
+          57693660
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 0,
+            "memory": 124765,
+            "steps": 62505527
+          },
+          {
+            "script": "spending_validator_cache",
+            "tag": 0,
+            "index": 1,
+            "memory": 389805,
+            "steps": 173577206
+          },
+          {
+            "script": "validator_roster",
+            "tag": 0,
+            "index": 2,
+            "memory": 2625668,
+            "steps": 898902251
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 3,
+            "memory": 3046987,
+            "steps": 1788787174
+          },
+          {
+            "script": "update_cached_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 199693,
+            "steps": 95795502
+          },
+          {
+            "script": "verify_cached_client",
+            "tag": 3,
+            "index": 1,
+            "memory": 7717713,
+            "steps": 3881309205
+          }
+        ]
+      },
+      "savingLovelace": -489271
+    },
+    {
+      "id": "powers-three-28",
+      "kind": "refresh",
+      "baseline": {
+        "path": "direct",
+        "completeFeeLovelace": 2401226,
+        "updateTransactions": 1,
+        "measured": {
+          "signedBytes": 7292,
+          "referencedScriptBytes": 39716,
+          "memory": 13323923,
+          "steps": 7183667051,
+          "fee": 2401226
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 7292,
+            "memory": 13323923,
+            "steps": 7183667051
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [],
+          "fits": true
+        },
+        "admissionFeeLovelace": 1951711,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 8087,
+            "memory": 11647458,
+            "steps": 4319300946
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 28,
+        "transactionId": "d738d067e8acef42bba44a8b95cc6cb4a2c2300016a69182c7ade6c8bc1d0983",
+        "signedTransactionSha256": "2f02d9a93092aeab27e64b9ccb7c48f1d7278a4bd2ae9ad3d545ffc887ae80bf",
+        "signedTransactionFile": "powers-three-28-baseline.cbor.hex",
+        "registration": {
+          "fee": 171661,
+          "credentialCount": 4,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          293013,
+          376217,
+          216805,
+          851549,
+          825765
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          13184290,
+          21334500,
+          5719370,
+          67895430,
+          65369770
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 0,
+            "memory": 115513,
+            "steps": 58546687
+          },
+          {
+            "script": "spending_validator_cache",
+            "tag": 0,
+            "index": 1,
+            "memory": 368813,
+            "steps": 163027214
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 2,
+            "memory": 2999807,
+            "steps": 1775738556
+          },
+          {
+            "script": "update_cached_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 182390,
+            "steps": 86663633
+          },
+          {
+            "script": "verify_cached_client",
+            "tag": 3,
+            "index": 1,
+            "memory": 9657400,
+            "steps": 5099690961
+          }
+        ]
+      },
+      "prototype": {
+        "path": "staged",
+        "completeFeeLovelace": 9852108,
+        "updateTransactions": 12,
+        "measured": {
+          "signedBytes": 6776,
+          "referencedScriptBytes": 59026,
+          "memory": 12935701,
+          "steps": 5599728971,
+          "fee": 2617673
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 11574,
+            "memory": 16119913,
+            "steps": 8143566515
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [
+            "memory"
+          ],
+          "fits": false
+        },
+        "admissionFeeLovelace": 2411171,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 10554,
+            "memory": 14962860,
+            "steps": 5376679338
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 28,
+        "transactionId": "9c17f25748680c8fb2a741db920ca615808844f54dea12fa3e078d572e3816fc",
+        "signedTransactionSha256": "fb36577feb174f9585a1a30222dee7a5db94c9d93555c140503c991bc6ebe836",
+        "signedTransactionFile": "powers-three-28-prototype.cbor.hex",
+        "fallbackSessions": [
+          {
+            "operation": "session initialize",
+            "fee": 466756,
+            "bytes": 2199,
+            "memory": 1207740,
+            "steps": 471088900
+          },
+          {
+            "operation": "session verify trusted",
+            "fee": 748731,
+            "bytes": 3094,
+            "memory": 3533291,
+            "steps": 1167284161
+          },
+          {
+            "operation": "session verify trusted",
+            "fee": 706366,
+            "bytes": 2826,
+            "memory": 3155602,
+            "steps": 1045512162
+          },
+          {
+            "operation": "session verify target",
+            "fee": 736325,
+            "bytes": 3174,
+            "memory": 3205474,
+            "steps": 1208746923
+          },
+          {
+            "operation": "session verify target",
+            "fee": 863515,
+            "bytes": 3731,
+            "memory": 4338028,
+            "steps": 1726547233
+          },
+          {
+            "operation": "session verify target",
+            "fee": 707516,
+            "bytes": 2623,
+            "memory": 2997138,
+            "steps": 1312164673
+          },
+          {
+            "operation": "session verify target",
+            "fee": 680053,
+            "bytes": 2531,
+            "memory": 2753807,
+            "steps": 1182131709
+          },
+          {
+            "operation": "session verify target",
+            "fee": 711128,
+            "bytes": 2702,
+            "memory": 2998696,
+            "steps": 1312794842
+          },
+          {
+            "operation": "session verify target",
+            "fee": 595841,
+            "bytes": 2253,
+            "memory": 2002490,
+            "steps": 785056007
+          },
+          {
+            "operation": "session verify target",
+            "fee": 538627,
+            "bytes": 2106,
+            "memory": 1468500,
+            "steps": 508575539
+          },
+          {
+            "operation": "session verify target",
+            "fee": 479577,
+            "bytes": 1741,
+            "memory": 945339,
+            "steps": 330988897
+          }
+        ],
+        "roster": {
+          "initialLovelace": 10249180,
+          "currentLovelace": 18451110,
+          "datumBytes": 4006,
+          "scriptBytes": {
+            "hit": 13151,
+            "refresh": 3541,
+            "mint": 4635
+          }
+        },
+        "registration": {
+          "fee": 173157,
+          "credentialCount": 5,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          309249,
+          376217,
+          216805,
+          851549,
+          825765,
+          372697,
+          324561,
+          747401
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          14774680,
+          21334500,
+          5719370,
+          67895430,
+          65369770,
+          20989700,
+          16274560,
+          57693660
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "session_spend",
+            "tag": 0,
+            "index": 0,
+            "memory": 878318,
+            "steps": 294793485
+          },
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 2,
+            "memory": 317116,
+            "steps": 106713025
+          },
+          {
+            "script": "spending_validator_cache",
+            "tag": 0,
+            "index": 3,
+            "memory": 875945,
+            "steps": 334883974
+          },
+          {
+            "script": "validator_roster",
+            "tag": 0,
+            "index": 4,
+            "memory": 2657870,
+            "steps": 914122519
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 5,
+            "memory": 3104253,
+            "steps": 1807198364
+          },
+          {
+            "script": "session_mint",
+            "tag": 1,
+            "index": 0,
+            "memory": 1180762,
+            "steps": 381857944
+          },
+          {
+            "script": "update_staged_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 3921437,
+            "steps": 1760159660
+          }
+        ]
+      },
+      "savingLovelace": -7450882
+    },
+    {
+      "id": "powers-eight-34",
+      "kind": "refresh",
+      "baseline": {
+        "path": "direct",
+        "completeFeeLovelace": 2599809,
+        "updateTransactions": 1,
+        "measured": {
+          "signedBytes": 8380,
+          "referencedScriptBytes": 39716,
+          "memory": 14893485,
+          "steps": 8017887220,
+          "fee": 2599809
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 8380,
+            "memory": 14893485,
+            "steps": 8017887220
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [],
+          "fits": true
+        },
+        "admissionFeeLovelace": 1951711,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 8087,
+            "memory": 11647458,
+            "steps": 4319300946
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 34,
+        "transactionId": "527595f44a72ac0a574810bd2fec6130f90e6b508079d813a04da716fd57a8c0",
+        "signedTransactionSha256": "019d1a60b9c2181cd628334e38596970e835671b553a0d213645f05b18ca9cd6",
+        "signedTransactionFile": "powers-eight-34-baseline.cbor.hex",
+        "registration": {
+          "fee": 171661,
+          "credentialCount": 4,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          293013,
+          376217,
+          216805,
+          851549,
+          825765
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          13184290,
+          21334500,
+          5719370,
+          67895430,
+          65369770
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 0,
+            "memory": 115513,
+            "steps": 58546687
+          },
+          {
+            "script": "spending_validator_cache",
+            "tag": 0,
+            "index": 1,
+            "memory": 368813,
+            "steps": 163027214
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 2,
+            "memory": 2999807,
+            "steps": 1775738556
+          },
+          {
+            "script": "update_cached_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 182390,
+            "steps": 86663633
+          },
+          {
+            "script": "verify_cached_client",
+            "tag": 3,
+            "index": 1,
+            "memory": 11226962,
+            "steps": 5933911130
+          }
+        ]
+      },
+      "prototype": {
+        "path": "staged",
+        "completeFeeLovelace": 10100926,
+        "updateTransactions": 12,
+        "measured": {
+          "signedBytes": 6776,
+          "referencedScriptBytes": 59026,
+          "memory": 12935701,
+          "steps": 5599728971,
+          "fee": 2617673
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 12662,
+            "memory": 17689475,
+            "steps": 8977786684
+          },
+          "withinLedger": false,
+          "headroomPercent": 5,
+          "exceeded": [
+            "memory"
+          ],
+          "fits": false
+        },
+        "admissionFeeLovelace": 2411171,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 10554,
+            "memory": 14962860,
+            "steps": 5376679338
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 34,
+        "transactionId": "8af3d102afa0256785a69a3641b2f5325c5218008140f2bb8407f5e2a99c0741",
+        "signedTransactionSha256": "6dd4197d00bbe09aa82ab4f135a1ff4d6b4f4008ed8fa3646f529d6e7f6897d8",
+        "signedTransactionFile": "powers-eight-34-prototype.cbor.hex",
+        "fallbackSessions": [
+          {
+            "operation": "session initialize",
+            "fee": 466756,
+            "bytes": 2199,
+            "memory": 1207740,
+            "steps": 471088900
+          },
+          {
+            "operation": "session verify trusted",
+            "fee": 748731,
+            "bytes": 3094,
+            "memory": 3533291,
+            "steps": 1167284161
+          },
+          {
+            "operation": "session verify trusted",
+            "fee": 706366,
+            "bytes": 2826,
+            "memory": 3155602,
+            "steps": 1045512162
+          },
+          {
+            "operation": "session verify target",
+            "fee": 669161,
+            "bytes": 2804,
+            "memory": 2619108,
+            "steps": 972260322
+          },
+          {
+            "operation": "session verify target",
+            "fee": 940802,
+            "bytes": 4285,
+            "memory": 4999652,
+            "steps": 1930924981
+          },
+          {
+            "operation": "session verify target",
+            "fee": 746125,
+            "bytes": 2900,
+            "memory": 3327548,
+            "steps": 1414188339
+          },
+          {
+            "operation": "session verify target",
+            "fee": 680053,
+            "bytes": 2531,
+            "memory": 2753807,
+            "steps": 1182131709
+          },
+          {
+            "operation": "session verify target",
+            "fee": 711128,
+            "bytes": 2702,
+            "memory": 2998696,
+            "steps": 1312794842
+          },
+          {
+            "operation": "session verify target",
+            "fee": 710125,
+            "bytes": 2625,
+            "memory": 3027512,
+            "steps": 1322810476
+          },
+          {
+            "operation": "session verify target",
+            "fee": 624429,
+            "bytes": 2385,
+            "memory": 2238369,
+            "steps": 912241163
+          },
+          {
+            "operation": "session verify target",
+            "fee": 479577,
+            "bytes": 1741,
+            "memory": 945339,
+            "steps": 330988897
+          }
+        ],
+        "roster": {
+          "initialLovelace": 10249180,
+          "currentLovelace": 18451110,
+          "datumBytes": 4006,
+          "scriptBytes": {
+            "hit": 13151,
+            "refresh": 3541,
+            "mint": 4635
+          }
+        },
+        "registration": {
+          "fee": 173157,
+          "credentialCount": 5,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          309249,
+          376217,
+          216805,
+          851549,
+          825765,
+          372697,
+          324561,
+          747401
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          14774680,
+          21334500,
+          5719370,
+          67895430,
+          65369770,
+          20989700,
+          16274560,
+          57693660
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "session_spend",
+            "tag": 0,
+            "index": 0,
+            "memory": 878318,
+            "steps": 294793485
+          },
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 2,
+            "memory": 317116,
+            "steps": 106713025
+          },
+          {
+            "script": "spending_validator_cache",
+            "tag": 0,
+            "index": 3,
+            "memory": 875945,
+            "steps": 334883974
+          },
+          {
+            "script": "validator_roster",
+            "tag": 0,
+            "index": 4,
+            "memory": 2657870,
+            "steps": 914122519
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 5,
+            "memory": 3104253,
+            "steps": 1807198364
+          },
+          {
+            "script": "session_mint",
+            "tag": 1,
+            "index": 0,
+            "memory": 1180762,
+            "steps": 381857944
+          },
+          {
+            "script": "update_staged_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 3921437,
+            "steps": 1760159660
+          }
+        ]
+      },
+      "savingLovelace": -7501117
+    },
+    {
+      "id": "general-replace-17",
+      "kind": "refresh",
+      "baseline": {
+        "path": "direct",
+        "completeFeeLovelace": 2354937,
+        "updateTransactions": 1,
+        "measured": {
+          "signedBytes": 7010,
+          "referencedScriptBytes": 39130,
+          "memory": 13571607,
+          "steps": 6661820869,
+          "fee": 2354937
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 7010,
+            "memory": 13571607,
+            "steps": 6661820869
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [],
+          "fits": true
+        },
+        "admissionFeeLovelace": 1951711,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 8087,
+            "memory": 11647458,
+            "steps": 4319300946
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 17,
+        "transactionId": "c8855fcb45d2d9df72165d30fba25fb0f4f9c1ff2dd8fb2601a176a2a3c00795",
+        "signedTransactionSha256": "94a99d368e5d7849adad4db47c67e216f047ecca01ca5f59de47d69e7a363aeb",
+        "signedTransactionFile": "general-replace-17-baseline.cbor.hex",
+        "registration": {
+          "fee": 171661,
+          "credentialCount": 4,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          293013,
+          376217,
+          216805,
+          851549,
+          825765
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          13184290,
+          21334500,
+          5719370,
+          67895430,
+          65369770
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 0,
+            "memory": 115513,
+            "steps": 58546687
+          },
+          {
+            "script": "spending_validator_cache",
+            "tag": 0,
+            "index": 1,
+            "memory": 368813,
+            "steps": 163027214
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 2,
+            "memory": 2999807,
+            "steps": 1775738556
+          },
+          {
+            "script": "update_cached_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 182390,
+            "steps": 86663633
+          },
+          {
+            "script": "verify_general_cached_client",
+            "tag": 3,
+            "index": 1,
+            "memory": 9905084,
+            "steps": 4577844779
+          }
+        ]
+      },
+      "prototype": {
+        "path": "staged",
+        "completeFeeLovelace": 9494456,
+        "updateTransactions": 12,
+        "measured": {
+          "signedBytes": 6776,
+          "referencedScriptBytes": 59026,
+          "memory": 12880079,
+          "steps": 5582066540,
+          "fee": 2613190
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 11292,
+            "memory": 16368597,
+            "steps": 7621880333
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [
+            "memory"
+          ],
+          "fits": false
+        },
+        "admissionFeeLovelace": 2411171,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 10554,
+            "memory": 14962860,
+            "steps": 5376679338
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 17,
+        "transactionId": "4de1c9a857b71000760e6602bf0061b7ddfab359ff329e5dd55b3cbe835e7717",
+        "signedTransactionSha256": "655d2af0803a3490566e90f193ef70797b3d5e0f5f268bbdb45ef1f126b7fcfc",
+        "signedTransactionFile": "general-replace-17-prototype.cbor.hex",
+        "fallbackSessions": [
+          {
+            "operation": "session initialize",
+            "fee": 466756,
+            "bytes": 2199,
+            "memory": 1207740,
+            "steps": 471088900
+          },
+          {
+            "operation": "session verify trusted",
+            "fee": 748731,
+            "bytes": 3094,
+            "memory": 3533291,
+            "steps": 1167284161
+          },
+          {
+            "operation": "session verify trusted",
+            "fee": 706366,
+            "bytes": 2826,
+            "memory": 3155602,
+            "steps": 1045512162
+          },
+          {
+            "operation": "session verify target",
+            "fee": 831901,
+            "bytes": 3637,
+            "memory": 4046189,
+            "steps": 1578991953
+          },
+          {
+            "operation": "session verify target",
+            "fee": 785969,
+            "bytes": 3176,
+            "memory": 3673601,
+            "steps": 1521445388
+          },
+          {
+            "operation": "session verify target",
+            "fee": 707472,
+            "bytes": 2622,
+            "memory": 2997138,
+            "steps": 1312164673
+          },
+          {
+            "operation": "session verify target",
+            "fee": 537243,
+            "bytes": 2065,
+            "memory": 1473632,
+            "steps": 510288395
+          },
+          {
+            "operation": "session verify target",
+            "fee": 539836,
+            "bytes": 2143,
+            "memory": 1463368,
+            "steps": 506862683
+          },
+          {
+            "operation": "session verify target",
+            "fee": 538832,
+            "bytes": 2066,
+            "memory": 1492184,
+            "steps": 516878317
+          },
+          {
+            "operation": "session verify target",
+            "fee": 538583,
+            "bytes": 2105,
+            "memory": 1468500,
+            "steps": 508575539
+          },
+          {
+            "operation": "session verify target",
+            "fee": 479577,
+            "bytes": 1741,
+            "memory": 945339,
+            "steps": 330988897
+          }
+        ],
+        "roster": {
+          "initialLovelace": 10249180,
+          "currentLovelace": 18451110,
+          "datumBytes": 4006,
+          "scriptBytes": {
+            "hit": 13151,
+            "refresh": 3541,
+            "mint": 4635
+          }
+        },
+        "registration": {
+          "fee": 173157,
+          "credentialCount": 5,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          309249,
+          376217,
+          216805,
+          851549,
+          825765,
+          372697,
+          324561,
+          747401
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          14774680,
+          21334500,
+          5719370,
+          67895430,
+          65369770,
+          20989700,
+          16274560,
+          57693660
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 0,
+            "memory": 309328,
+            "steps": 101558071
+          },
+          {
+            "script": "spending_validator_cache",
+            "tag": 0,
+            "index": 1,
+            "memory": 864727,
+            "steps": 327214262
+          },
+          {
+            "script": "validator_roster",
+            "tag": 0,
+            "index": 2,
+            "memory": 2650082,
+            "steps": 908967565
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 3,
+            "memory": 3050487,
+            "steps": 1789786809
+          },
+          {
+            "script": "session_spend",
+            "tag": 0,
+            "index": 4,
+            "memory": 890464,
+            "steps": 302588635
+          },
+          {
+            "script": "session_mint",
+            "tag": 1,
+            "index": 0,
+            "memory": 1194482,
+            "steps": 391916976
+          },
+          {
+            "script": "update_staged_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 3920509,
+            "steps": 1760034222
+          }
+        ]
+      },
+      "savingLovelace": -7139519
+    },
+    {
+      "id": "first-admission-17",
+      "kind": "refresh",
+      "baseline": {
+        "path": "direct",
+        "completeFeeLovelace": 2149957,
+        "updateTransactions": 1,
+        "measured": {
+          "signedBytes": 6463,
+          "referencedScriptBytes": 39130,
+          "memory": 11343601,
+          "steps": 5935668245,
+          "fee": 2149957
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 6463,
+            "memory": 11343601,
+            "steps": 5935668245
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [],
+          "fits": true
+        },
+        "admissionFeeLovelace": 1327730,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 6086,
+            "memory": 4925661,
+            "steps": 2265345743
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 17,
+        "transactionId": "a47b0674ea45b51cadbda42d74a72ee52446815009df21ee9c440d09c7b2aebc",
+        "signedTransactionSha256": "e32fc167fa810f1a73772ac98b3621edad5a549d038f60f516edff3706f27b16",
+        "signedTransactionFile": "first-admission-17-baseline.cbor.hex",
+        "registration": {
+          "fee": 171661,
+          "credentialCount": 4,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          293013,
+          376217,
+          216805,
+          851549,
+          825765
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          13184290,
+          21334500,
+          5719370,
+          67895430,
+          65369770
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 0,
+            "memory": 115513,
+            "steps": 58546687
+          },
+          {
+            "script": "spending_validator_cache",
+            "tag": 0,
+            "index": 1,
+            "memory": 359767,
+            "steps": 160218899
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 2,
+            "memory": 2999807,
+            "steps": 1775738556
+          },
+          {
+            "script": "update_cached_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 182390,
+            "steps": 86663633
+          },
+          {
+            "script": "verify_general_cached_client",
+            "tag": 3,
+            "index": 1,
+            "memory": 7686124,
+            "steps": 3854500470
+          }
+        ]
+      },
+      "prototype": {
+        "path": "direct",
+        "completeFeeLovelace": 2549527,
+        "updateTransactions": 1,
+        "measured": {
+          "signedBytes": 8841,
+          "referencedScriptBytes": 43037,
+          "memory": 14081763,
+          "steps": 6859660518,
+          "fee": 2549527
+        },
+        "publicCommitments": {
+          "clientState": "d8799f4b696e6a6563746976652d31d8799f0103ff1b00044c1ff25200001b0006722feb7b00001b00000002540be400d8799f0000ffd8799f011a0abf6732ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffff80ff",
+          "consensusState": "d8799f1b18cf5f037c12d3cb582085e2f38d84848c577e196fc82d59ea0071fcdfbe1897c28f570b2c731cb83f9bd8799f5820ff81deb22895c2985a3df96a277775fe78d7013aa6eabce4b2b000a7f3231613ffff"
+        },
+        "directBudget": {
+          "measured": {
+            "signedBytes": 8841,
+            "memory": 14081763,
+            "steps": 6859660518
+          },
+          "withinLedger": true,
+          "headroomPercent": 5,
+          "exceeded": [],
+          "fits": true
+        },
+        "admissionFeeLovelace": 1534540,
+        "admissionBudget": {
+          "measured": {
+            "signedBytes": 6581,
+            "memory": 6177376,
+            "steps": 2673537952
+          },
+          "withinLedger": true,
+          "headroomPercent": 0,
+          "exceeded": [],
+          "fits": true
+        },
+        "signatures": 17,
+        "transactionId": "eafab14104d800ba39928afa2d475299cbd794231ce4bebd397fe78953abd595",
+        "signedTransactionSha256": "46f3a84cd332d82478e5ebe296d753192c03f5eaf90303ea744411020046da9d",
+        "signedTransactionFile": "first-admission-17-prototype.cbor.hex",
+        "roster": {
+          "initialLovelace": 2042940,
+          "currentLovelace": 10249180,
+          "datumBytes": 2103,
+          "scriptBytes": {
+            "hit": 13151,
+            "refresh": 3541,
+            "mint": 4635
+          }
+        },
+        "registration": {
+          "fee": 173157,
+          "credentialCount": 5,
+          "depositPerCredential": 2000000
+        },
+        "publicationFeesLovelace": [
+          854365,
+          603565,
+          353205,
+          309249,
+          376217,
+          216805,
+          851549,
+          825765,
+          372697,
+          324561,
+          747401
+        ],
+        "publicationMinimumAdaLovelace": [
+          68171270,
+          43604270,
+          19080370,
+          14774680,
+          21334500,
+          5719370,
+          67895430,
+          65369770,
+          20989700,
+          16274560,
+          57693660
+        ],
+        "redeemerBudgets": [
+          {
+            "script": "spending_cached_client",
+            "tag": 0,
+            "index": 0,
+            "memory": 124765,
+            "steps": 62505527
+          },
+          {
+            "script": "spending_validator_cache",
+            "tag": 0,
+            "index": 1,
+            "memory": 380759,
+            "steps": 170768891
+          },
+          {
+            "script": "validator_roster",
+            "tag": 0,
+            "index": 2,
+            "memory": 2566840,
+            "steps": 862835060
+          },
+          {
+            "script": "host_state_stt",
+            "tag": 0,
+            "index": 3,
+            "memory": 3046987,
+            "steps": 1788787174
+          },
+          {
+            "script": "update_cached_client",
+            "tag": 3,
+            "index": 0,
+            "memory": 199693,
+            "steps": 95795502
+          },
+          {
+            "script": "verify_general_cached_client",
+            "tag": 3,
+            "index": 1,
+            "memory": 7762719,
+            "steps": 3878968364
+          }
+        ]
+      },
+      "savingLovelace": -399570
+    }
+  ],
+  "economics": [
+    {
+      "hit": "hit-17",
+      "changed": "powers-two-17",
+      "hitSavingLovelace": 347178,
+      "extraChangedSetLovelace": 489271,
+      "hitPercent": 60,
+      "monthlyUpdates": 6000,
+      "netSavingPerUpdateLovelace": 12598.4,
+      "monthlySavingLovelace": 75590400,
+      "hurdlePerUpdateLovelace": 284000,
+      "clearsFivePercentHurdle": false,
+      "requiredHitPercent": 92.44687960652712
+    },
+    {
+      "hit": "hit-28",
+      "changed": "powers-three-28",
+      "hitSavingLovelace": 399083,
+      "extraChangedSetLovelace": 7450882,
+      "hitPercent": 60,
+      "monthlyUpdates": 6000,
+      "netSavingPerUpdateLovelace": -2740903,
+      "monthlySavingLovelace": -16445418000,
+      "hurdlePerUpdateLovelace": 284000,
+      "clearsFivePercentHurdle": false,
+      "requiredHitPercent": 98.53396798584453
+    },
+    {
+      "hit": "hit-34",
+      "changed": "powers-eight-34",
+      "hitSavingLovelace": 429151,
+      "extraChangedSetLovelace": 7501117,
+      "hitPercent": 60,
+      "monthlyUpdates": 6000,
+      "netSavingPerUpdateLovelace": -2742956.2,
+      "monthlySavingLovelace": -16457737200,
+      "hurdlePerUpdateLovelace": 284000,
+      "clearsFivePercentHurdle": false,
+      "requiredHitPercent": 98.1696583268056
+    },
+    {
+      "hit": "hit-17",
+      "changed": "general-replace-17",
+      "hitSavingLovelace": 347178,
+      "extraChangedSetLovelace": 7139519,
+      "hitPercent": 60,
+      "monthlyUpdates": 6000,
+      "netSavingPerUpdateLovelace": -2647500.8,
+      "monthlySavingLovelace": -15885004800,
+      "hurdlePerUpdateLovelace": 284000,
+      "clearsFivePercentHurdle": false,
+      "requiredHitPercent": 99.15612986608113
+    }
+  ]
+}
