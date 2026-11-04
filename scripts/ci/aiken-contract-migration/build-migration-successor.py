@@ -45,7 +45,7 @@ def main():
             # The production heartbeat already caps its window at two minutes.
             # Tighten this branch further so the rehearsal still proves that
             # the successor enforces new code while normal ten-second probes pass.
-            heartbeat = re.compile(r"Heartbeat\s*->\s*host\.validate_heartbeat\(\s*old_datum,\s*new_datum,\s*transaction\.validity_range\s*,?\s*\)")
+            heartbeat = re.compile(r"Heartbeat\s*->\s*host\.validate_heartbeat\(\s*old_datum,\s*new_datum,\s*transaction\.validity_range\s*,\s*heartbeat_schedule\s*,?\s*\)")
             if len(heartbeat.findall(content)) != 1:
                 raise RuntimeError("Heartbeat wrapper changed: review successor fixture")
             content = heartbeat.sub(lambda match: match.group(0) + " && migration_window.get_tx_valid_to(transaction.validity_range) - migration_window.get_tx_valid_from(transaction.validity_range) <= 30000", content)

@@ -1,4 +1,3 @@
-use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use aiken/builtin
 use aiken/cbor
 use aiken/collection/pairs
@@ -55,6 +54,7 @@ use ibc/core/ics_023_vector_commitments/merkle.{
 }
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/packet_keys
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
   empty_ibc_state_root, host_state_token_name,

@@ -1,4 +1,3 @@
-use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use aiken/cbor
 use aiken/collection/pairs
 use aiken/interval
@@ -51,6 +50,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof,
   MerkleRoot} as merkle
 use ibc/core/ics_024_host_requirements/channel_keys
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use ibc/core/ics_025_handler_interface/host_state.{
   HostState, HostStateControl, HostStateDatum, ModuleRegistration,
 }

@@ -1,4 +1,3 @@
-use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use aiken/builtin
 use aiken/cbor
 use aiken/collection/list
@@ -54,6 +53,7 @@ use ibc/core/ics_004/types/upgrade.{
 }
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_024_host_requirements/channel_keys
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use ibc/core/ics_025_handler_interface/host_state.{HostState, HostStateDatum}
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   HandlePacket, HostStateRedeemer, UpgradeChannel,

@@ -1,4 +1,3 @@
-use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 // Independent kernel fixtures. These tests call the real validators; they do
 // not claim ledger balance, script dispatch, or populated bridge integration.
 use aiken/builtin
@@ -31,6 +30,7 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
   UncheckedRational,
 }
 use ibc/core/ics_005/types/ibc_module_redeemer.{ReclaimModule}
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
   ShuttingDown, host_state_token_name, min_shutdown_grace_period_ms,
@@ -1591,7 +1591,10 @@ test migration_adversarial_cleanup_control_has_valid_legacy_authority_and_state(
           hash(4),
           hash(5),
           "",
-          HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2 * ready_at },
+          HeartbeatSchedule {
+            epoch_origin_ms: 0,
+            epoch_length_ms: 2 * ready_at,
+          },
           Some(host()),
           EnterShutdown {
             grace_period_end: approval_upper + min_shutdown_grace_period_ms,

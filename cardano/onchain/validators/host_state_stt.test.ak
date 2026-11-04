@@ -1,4 +1,3 @@
-use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use aiken/builtin
 use aiken/cbor
 use aiken/collection/list
@@ -58,6 +57,7 @@ use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
   ShutdownState, ShuttingDown, empty_ibc_state_root, host_state_token_name,
@@ -680,7 +680,10 @@ fn spend_host_state_with_backup(
             )
           expect InlineDatum(raw) = output.datum
           expect datum: HostStateDatum = raw
-          interval.between(datum.state.last_update_time - 1, datum.state.last_update_time)
+          interval.between(
+            datum.state.last_update_time - 1,
+            datum.state.last_update_time,
+          )
         }
         _ -> placeholder.validity_range
       },

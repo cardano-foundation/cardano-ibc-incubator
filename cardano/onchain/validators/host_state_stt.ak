@@ -240,7 +240,8 @@ validator host_state_stt(
                 validator_utils.get_tx_valid_to(validity_range),
               ),
             }
-          Heartbeat -> validate_heartbeat(
+          Heartbeat ->
+            validate_heartbeat(
               old_datum,
               new_datum,
               validity_range,
