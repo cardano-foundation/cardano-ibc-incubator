@@ -1,3 +1,4 @@
+import { nextHeartbeatTime } from "../../../packages/cardano-ibc-tx-builder-runtime/src/heartbeatSchedule.ts";
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import {
   Data,
@@ -236,6 +237,15 @@ Deno.test("compiled governance graduates the deployer without its signature and 
     ) => {
       const host = await lucid.utxoByUnit(hostUnit);
       const datum = Data.from(host.datum!, HostStateDatum);
+      const eligible = nextHeartbeatTime(
+        deployment.heartbeatSchedule!,
+        datum.control.last_heartbeat_time,
+        emulator.now(),
+      );
+      if (eligible > emulator.now()) {
+        emulator.awaitSlot(Math.ceil((eligible - emulator.now()) / 1_000));
+        lucid.clearUTxOOverride();
+      }
       return lucid.newTx().readFrom([
         await lucid.utxoByUnit(unit),
         deployment.validators.hostStateStt.refUtxo,
