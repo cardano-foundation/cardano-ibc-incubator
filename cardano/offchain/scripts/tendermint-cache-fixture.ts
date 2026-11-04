@@ -22,6 +22,7 @@ import {
 } from "../src/tendermint-cache-routing.ts";
 import { submitHistorySession } from "./consensus-history-staged-fixture.ts";
 import { DeploymentIbcTree } from "../src/deployment.ts";
+import { loadHostStateValidator } from "../src/deployment-plan.ts";
 import { generateTokenName, readValidator } from "../src/utils.ts";
 import { loadCachedTendermintValidators } from "../src/tendermint-cache-validators.ts";
 import { createCardanoScalusEvaluator } from "../src/scalus-evaluator.ts";
@@ -260,13 +261,15 @@ export async function cachedUpdateFixture(
   );
   const [clientScript, clientHash, clientAddress] = scripts.clientSpend;
   const [clientMint, clientPolicy] = scripts.clientMint;
-  const [hostScript, , hostAddress] = readValidator(
-    "host_state_stt.host_state_stt.spend",
+  const [hostScript, , hostAddress] = loadHostStateValidator(
     lucid,
-    [hostPolicy, clientHash, dummy, dummy, clientPolicy, dummy, dummy, ""],
-    Data.Tuple(
-      Array.from({ length: 8 }, () => Data.Bytes()),
-    ) as unknown as string[],
+    hostPolicy,
+    clientHash,
+    dummy,
+    dummy,
+    clientPolicy,
+    dummy,
+    dummy,
   );
   const rewardAddress = validatorToRewardAddress("Preprod", scripts.update[0]);
   const coreRewardAddress = validatorToRewardAddress(
