@@ -18,7 +18,8 @@ pub fn permitted(
 ) -> Bool {
   expect Finite(from) = validity.lower_bound.bound_type
   expect Finite(to) = validity.upper_bound.bound_type
-  let HeartbeatSchedule { epoch_origin_ms: origin, epoch_length_ms: length } = schedule
+  let HeartbeatSchedule { epoch_origin_ms: origin, epoch_length_ms: length } =
+    schedule
   expect origin >= 0 && length >= 2
   if from < origin {
     False

@@ -486,7 +486,6 @@ pub fn validate_finalize_shutdown(
     !pairs.has_key(datum.control.port_registry, "transfer"),
   }
 }
-
 /// Order byte-string map keys for `pairs.insert_by_ascending_key` using the
 /// order required by canonical CBOR.
 ///

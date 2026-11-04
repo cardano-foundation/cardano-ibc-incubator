@@ -3,10 +3,11 @@ use aiken/interval
 use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule, permitted}
 
 test midpoint_uses_the_deployment_origin_and_accepts_missed_epochs() {
-  let schedule = HeartbeatSchedule {
-    epoch_origin_ms: 1_700_000_000_000,
-    epoch_length_ms: 86_400_000,
-  }
+  let schedule =
+    HeartbeatSchedule {
+      epoch_origin_ms: 1_700_000_000_000,
+      epoch_length_ms: 86_400_000,
+    }
   let midpoint = schedule.epoch_origin_ms + 7 * 86_400_000 + 43_200_000
   and {
     !permitted(schedule, 0, interval.between(midpoint - 1, midpoint + 1)),
@@ -34,10 +35,8 @@ fn cases() -> Fuzzer<(Int, Int, Int)> {
 
 test prop_midpoint_and_epoch_limits_hold_for_custom_networks(sample via cases()) {
   let (origin, length, epoch) = sample
-  let schedule = HeartbeatSchedule {
-    epoch_origin_ms: origin,
-    epoch_length_ms: length,
-  }
+  let schedule =
+    HeartbeatSchedule { epoch_origin_ms: origin, epoch_length_ms: length }
   let midpoint = origin + epoch * length + length / 2
   let previous = midpoint - length + 1
   and {

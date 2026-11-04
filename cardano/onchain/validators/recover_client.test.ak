@@ -1,4 +1,3 @@
-use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use aiken/cbor
 use aiken/collection/list
 use aiken/collection/pairs
@@ -42,6 +41,7 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/keys.{client_prefix}
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_024_host_requirements/client_keys
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, host_state_token_name,
 }
