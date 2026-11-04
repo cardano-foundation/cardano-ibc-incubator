@@ -31,7 +31,7 @@ Recovery cannot replace an active client. See
 [Tendermint client recovery](tendermint-update-capacity.md#expired-or-frozen-client-recovery).
 
 Another power is registering previously unbound ports. An attacker can occupy unused ports or exhaust the bounded registry. Existing port registrations cannot be overwritten.
-Heartbeats are permissionless and leave the IBC commitment root unchanged. Any funded relayer can submit one at or after the epoch midpoint. The contracts allow at most one heartbeat per epoch. The key does not provide
+Heartbeats are permissionless and leave the IBC commitment root unchanged. Automatic submission is disabled by default because authenticated snapshot observations can publish fresh proof heights without a HostState write. Any funded relayer can still submit a manual heartbeat at or after the epoch midpoint. The contracts allow at most one heartbeat per epoch. The key does not provide
 a general contract upgrade or arbitrary state-editing capability. A deployment
 can name one backup operator before deployment. That key can claim the deployer
 role at any time, so it must be trusted as an administrator. The backup cannot

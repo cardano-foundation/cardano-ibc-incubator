@@ -32,3 +32,33 @@ The v8 driver supplies packet transaction bodies to `TestExportAcceptanceHistory
 in the core module. That generator signs every native header and derives the
 rollover nonces from the preceding signed history. The driver checks the proofs
 against their roots and runs the resulting evidence through the real v8 host.
+
+`native-heartbeat-free.json.gz` uses one-second slots and 100,000-slot epochs
+with the normal 48-hour trusting period. The only transaction updates a packet
+lane at height 1125. It adds a transfer commitment and records a receipt and ACK.
+HostState is never spent. `gateway-heartbeat-free.pb.gz` is the ordinary
+observation built by Gateway at the following empty block.
+
+`TestRouteContinuesWithoutHostStateHeartbeats` starts with an established v8
+route and sends packets before the idle interval. Rootless checkpoints cross two
+epochs and keep the client active for more than 48 hours. The test then consumes
+the exact Gateway header and verifies receipt, acknowledgement and timeout
+processing through the IBC and ICS-20 keepers at the fresh height. It checks the
+voucher balance and rejects timeout use of the old proof height. This is a signed
+synthetic Cardano history with a virtual uninterrupted destination clock. It does
+not admit the source transaction on a live Cardano ledger or run a live relayer.
+
+To regenerate it, first run this in the v8 module:
+
+```sh
+UPDATE_HEARTBEAT_FREE_FIXTURE=1 go test . -run '^TestExportHeartbeatFreeHistory$' -count=1
+```
+
+Then run this in Gateway with its usual built workspace dependencies:
+
+```sh
+UPDATE_HEARTBEAT_FREE_FIXTURE=1 npm test -- --runInBand --coverage=false --runTestsByPath src/query/test/query.service.stability-anchor-contract.spec.ts --testNamePattern 'fresh ordinary observation after idle epochs'
+```
+
+Finally run `go test . -run '^TestRouteContinuesWithoutHostStateHeartbeats$' -count=1`
+in the v8 module. Normal tests read both saved fixtures without regenerating them.

@@ -111,11 +111,12 @@ max_total_protocol_output_lovelace = 50000000
 max_wallet_lovelace_top_up = 5000000
 max_validity_interval_slots = 3600
 
-# Any funded Cardano signer may submit a root-preserving heartbeat.
-# Gateway waits six hours after the latest HostState transaction. The contract
-# enforces a separate six-hour heartbeat cooldown. This is the retry interval,
-# not the heartbeat cadence. Hermes also rechecks hourly for rollbacks.
-host_state_heartbeat_interval = '60s'
+# Automatic HostState heartbeats are disabled. Snapshot observations can publish
+# fresh packet-proof heights without rewriting HostState. Keep client refresh
+# enabled above so rootless checkpoints continue renewing the client's lifetime.
+# Manual submission remains available with `hermes tx host-state-heartbeat`.
+# Operators who explicitly need the automatic worker can opt in with:
+# host_state_heartbeat_interval = '60s'
 
 # Cardano network ID (1 = mainnet, 0 = testnet)
 network_id = 0

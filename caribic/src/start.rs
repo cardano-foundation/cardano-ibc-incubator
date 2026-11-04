@@ -42,10 +42,10 @@ const HERMES_SIGNING_KUPO_KEY_PLACEHOLDER: &str = "# __CARDANO_SIGNING_KUPO_API_
 const HERMES_SIGNING_OGMIOS_KEY_PLACEHOLDER: &str = "# __CARDANO_SIGNING_OGMIOS_API_KEY_FILE__";
 static RELAYER_REMOTE_TIP_CHECK_ONCE: Once = Once::new();
 
-mod heartbeat;
 mod hermes;
+mod proof_readiness;
 
-pub(crate) use heartbeat::with_local_heartbeat;
+pub(crate) use proof_readiness::with_local_proof_readiness;
 
 pub use hermes::{
     hermes_create_channel, hermes_create_client, hermes_create_connection, hermes_keys_add,

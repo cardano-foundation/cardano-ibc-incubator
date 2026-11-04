@@ -280,6 +280,8 @@ function assertFileInventory() {
     // Persistent live acceptance currently targets only the local v8 profile.
     "acceptance_host_test.go",
     "acceptance_source_test.go",
+    // The heartbeat-free route regression uses v8 transfer and channel keepers.
+    "heartbeat_free_route_test.go",
     "internal/cardanodatum/channel_upgrade_sequence.go",
     // Channel upgrades exist only in ibc-go v8. v10 must still verify
     // upgradable Cardano channel ends.
