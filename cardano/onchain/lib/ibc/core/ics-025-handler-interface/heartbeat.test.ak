@@ -34,6 +34,7 @@ fn cases() -> Fuzzer<(Int, Int, Int)> {
 }
 
 test prop_midpoint_and_epoch_limits_hold_for_custom_networks(sample via cases()) {
+  fuzz.label(@"fuzz.unit.host.heartbeat.midpoint_and_epoch_limits")
   let (origin, length, epoch) = sample
   let schedule =
     HeartbeatSchedule { epoch_origin_ms: origin, epoch_length_ms: length }
