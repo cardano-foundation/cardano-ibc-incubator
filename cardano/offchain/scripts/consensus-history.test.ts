@@ -1,3 +1,4 @@
+import { loadHostStateValidator } from "../src/deployment-plan.ts";
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import {
   applyDoubleCborEncoding,
@@ -223,18 +224,15 @@ async function fixture(
       governedPlan.hostState.hash,
       governedPlan.hostState.address,
     ]
-    : applyBytes(
-      "host_state_stt.host_state_stt.spend",
-      [
-        hostPolicy,
-        clientHash,
-        dummy,
-        packet?.channelHash ?? dummy,
-        clientPolicyId,
-        packet?.connectionPolicy ?? dummy,
-        packet?.channelPolicy ?? dummy,
-        "",
-      ],
+    : loadHostStateValidator(
+      lucid,
+      hostPolicy,
+      clientHash,
+      dummy,
+      packet?.channelHash ?? dummy,
+      clientPolicyId,
+      packet?.connectionPolicy ?? dummy,
+      packet?.channelPolicy ?? dummy,
     );
   const rewardAddress = validatorToRewardAddress("Preprod", recoveryScript);
   const updateRewardAddress = staged

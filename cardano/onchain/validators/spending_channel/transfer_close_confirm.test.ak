@@ -1,3 +1,4 @@
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use aiken/cbor
 use aiken/collection/pairs
 use aiken/interval
@@ -509,6 +510,7 @@ fn check_close(f: Fixture) -> Bool {
       mock.connection_minting_policy_id,
       mock.channel_minting_policy_id,
       "",
+      HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
       None,
       f.host_redeemer,
       host_input.output_reference,
@@ -804,6 +806,7 @@ fn cancel_after_close(authority: Bool) -> Bool {
       mock.connection_minting_policy_id,
       mock.channel_minting_policy_id,
       "",
+      HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
       None,
       UpgradeChannel,
       host_input.output_reference,

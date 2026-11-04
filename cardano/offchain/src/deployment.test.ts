@@ -153,6 +153,7 @@ Deno.test("HostState deployment pins the state-token minting policies", () => {
       "connection_policy_id",
       "channel_policy_id",
       "backup_operator",
+      "heartbeat_schedule",
     ],
   );
 });

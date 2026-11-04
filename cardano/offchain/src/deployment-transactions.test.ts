@@ -1,3 +1,7 @@
+import {
+  heartbeatWindowAllowed,
+  nextHeartbeatTime,
+} from "../../../packages/cardano-ibc-tx-builder-runtime/src/heartbeatSchedule.ts";
 import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import {
   Data,
@@ -83,6 +87,10 @@ async function deploymentFixture(
     output_index: BigInt(index),
   });
   const plan = await loadDeploymentPlan(lucid, {
+    heartbeatSchedule: {
+      epochOriginMs: TEST_TIME - 216_000_000,
+      epochLengthMs: 432_000_000,
+    },
     backupOperatorKeyHash,
     hostStateNonce: outref(2),
     transferModuleNonce: outref(3),
@@ -376,7 +384,7 @@ Deno.test("mock token mint fits with inline policy, wallet witness and token cha
   );
 });
 
-Deno.test("permissionless heartbeat is paid by another wallet and enforces its cooldown", async () => {
+Deno.test("permissionless heartbeat agrees with Gateway timing and permits one per epoch", async () => {
   const { lucid, emulator, nonceUtxo, plan } = await deploymentFixture(false);
   const published = await completeReferenceBatchTx(
     lucid,
@@ -429,11 +437,14 @@ Deno.test("permissionless heartbeat is paid by another wallet and enforces its c
   assert(relayerKey?.type === "Key");
   assert(relayerKey.hash !== datum.deployer);
 
-  const heartbeat = async (forgeClock = false) => {
+  const buildHeartbeat = async (
+    forgeClock = false,
+    window?: [number, number],
+  ) => {
     const [host] = await lucid.utxosAt(plan.hostState.address);
     const old = Data.from(host.datum!, HostStateDatum);
-    const from = emulator.now();
-    const to = from + 120_000;
+    const from = window?.[0] ?? emulator.now();
+    const to = window?.[1] ?? from + 120_000;
     const next: HostStateDatum = {
       ...old,
       state: {
@@ -456,6 +467,10 @@ Deno.test("permissionless heartbeat is paid by another wallet and enforces its c
         value: Data.to(next, HostStateDatum, { canonical: true }),
       }, host.assets)
       .validFrom(from).validTo(to).complete({ localUPLCEval: true });
+    return { tx, next, host };
+  };
+  const heartbeat = async (forgeClock = false) => {
+    const { tx, next, host } = await buildHeartbeat(forgeClock);
     const signed = await tx.sign.withWallet().complete();
     assertEquals(
       signed.toTransaction().witness_set().vkeywitnesses()?.len(),
@@ -478,11 +493,34 @@ Deno.test("permissionless heartbeat is paid by another wallet and enforces its c
     assertEquals(Data.from(updated.datum!, HostStateDatum), next);
     return next;
   };
+  const schedule = plan.inputs.heartbeatSchedule!;
+  const midpoint = TEST_TIME;
+  const end = midpoint + schedule.epochLengthMs / 2;
+  // Each decision is checked against the fully applied production validator.
+  for (
+    const [from, to, allowed] of [
+      [midpoint - 1_000, midpoint + 1_000, false],
+      [midpoint, midpoint + 1_000, true],
+      [midpoint + 3_600_000, midpoint + 3_601_000, true],
+      [end - 2_000, end - 1_000, true],
+      [end - 1_000, end, false],
+      [midpoint, midpoint + 121_000, false],
+    ] as const
+  ) {
+    assertEquals(heartbeatWindowAllowed(schedule, 0n, from, to), allowed);
+    if (allowed) await buildHeartbeat(false, [from, to]);
+    else await assertRejects(() => buildHeartbeat(false, [from, to]));
+  }
   const first = await heartbeat();
   await assertRejects(() => heartbeat());
-  // Advancing beyond the ledger-bound previous upper bound reopens the cooldown.
-  const delay = Number(first.control.last_heartbeat_time) + 21_600_000 -
-    emulator.now();
+  emulator.awaitSlot(21_600);
+  await assertRejects(() => heartbeat());
+  const next = nextHeartbeatTime(
+    schedule,
+    first.control.last_heartbeat_time,
+    emulator.now(),
+  );
+  const delay = next - emulator.now();
   emulator.awaitSlot(Math.ceil(delay / 1_000));
   await assertRejects(() => heartbeat(true));
   const second = await heartbeat();

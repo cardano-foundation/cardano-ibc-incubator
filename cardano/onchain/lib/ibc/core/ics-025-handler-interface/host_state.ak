@@ -21,6 +21,7 @@ use aiken/interval.{Finite}
 use aiken/primitive/bytearray
 use cardano/transaction.{ValidityRange}
 use ibc/auth.{AuthToken}
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 
 // Empty ICS-23 Merkle tree root (32 bytes of zeros)
 pub const empty_ibc_state_root =
@@ -349,14 +350,14 @@ pub fn validate_update_only_root(
 
 /// A heartbeat preserves all committed IBC state and pays for its own transaction.
 /// Only its version, monitoring timestamp and protected heartbeat clock advance.
-/// Finite ledger bounds prevent forged timestamps from bypassing the cooldown or
+/// Finite ledger bounds prevent forged timestamps from bypassing the epoch limit or
 /// postponing the next heartbeat indefinitely. Other operations preserve this clock.
 pub fn validate_heartbeat(
   old: HostStateDatum,
   new: HostStateDatum,
   validity_range: ValidityRange,
+  schedule: HeartbeatSchedule,
 ) -> Bool {
-  expect Finite(valid_from) = validity_range.lower_bound.bound_type
   expect Finite(valid_to) = validity_range.upper_bound.bound_type
   let previous = old.control.last_heartbeat_time
   let timed_old =
@@ -366,11 +367,7 @@ pub fn validate_heartbeat(
     }
   and {
     old.control.shutdown |> is_active,
-    previous >= 0,
-    valid_from >= 0,
-    valid_to > valid_from,
-    valid_to - valid_from <= heartbeat_max_validity_ms,
-    previous == 0 || valid_from >= previous + heartbeat_interval_ms,
+    heartbeat.permitted(schedule, previous, validity_range),
     validate_update_only_root(timed_old, new),
     new.state.ibc_state_root == old.state.ibc_state_root,
     new.state.last_update_time == valid_to,
@@ -490,10 +487,6 @@ pub fn validate_finalize_shutdown(
   }
 }
 
-/// Permissionless heartbeats may spend the shared HostState at most every six hours.
-pub const heartbeat_interval_ms = 21_600_000
-
-pub const heartbeat_max_validity_ms = 120_000
 /// Order byte-string map keys for `pairs.insert_by_ascending_key` using the
 /// order required by canonical CBOR.
 ///

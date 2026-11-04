@@ -1,12 +1,15 @@
+import {
+  checkedHeartbeatSchedule,
+  HEARTBEAT_MAX_VALIDITY_MS,
+  heartbeatWindowAllowed,
+  nextHeartbeatTime,
+  type HeartbeatSchedule,
+} from '@cardano-ibc/tx-builder-runtime/heartbeatSchedule';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
-import {
-  HOST_STATE_HEARTBEAT_INTERVAL_MS,
-  TRANSACTION_SET_COLLATERAL,
-  TRANSACTION_TIME_TO_LIVE,
-} from '~@/config/constant.config';
+import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import {
   GrpcFailedPreconditionException,
   GrpcInternalException,
@@ -14,6 +17,8 @@ import {
 } from '~@/exception/grpc_exceptions';
 
 import { IbcTreeStateStore } from '../shared/helpers/ibc-state-root';
+import { epochTimingAtSlot } from '../shared/helpers/epoch-timing';
+import { ogmiosRequest } from '../shared/helpers/ogmios';
 import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
 import { LucidService } from '../shared/modules/lucid/lucid.service';
 import { HostStateDatum } from '../shared/types/host-state-datum';
@@ -26,7 +31,9 @@ type HeartbeatContext = {
   hostStateDatum: HostStateDatum;
   currentEpoch: number;
   hostStateEpoch: number;
-  hostStateTimestamp: number;
+  schedule: HeartbeatSchedule;
+  epochStartTime: number;
+  slotLengthMs: number;
 };
 
 @Injectable()
@@ -56,19 +63,33 @@ export class HostStateHeartbeatService {
       throw new GrpcInvalidArgumentException('HostState heartbeat signer must use a key payment credential');
     }
     const validity = await this.computeTxValidityWindow();
-    const lastHeartbeat = Number(context.hostStateDatum.control.last_heartbeat_time);
-    if (!Number.isSafeInteger(lastHeartbeat) || lastHeartbeat < 0) {
+    const epochEnd = context.epochStartTime + context.schedule.epochLengthMs;
+    if (validity.validFromTime < context.epochStartTime || validity.validFromTime >= epochEnd) {
+      throw new GrpcFailedPreconditionException('Cardano history has not reached the heartbeat validity epoch');
+    }
+    const lastHeartbeat = context.hostStateDatum.control.last_heartbeat_time;
+    let nextHeartbeat: number;
+    try {
+      nextHeartbeat = nextHeartbeatTime(context.schedule, lastHeartbeat, validity.validFromTime);
+    } catch {
       throw new GrpcFailedPreconditionException('Invalid HostState heartbeat clock');
     }
-    // A recent ordinary HostState transaction also provides a proof anchor.
-    // Its block timestamp comes from indexed chain evidence, not datum metadata.
-    if (!Number.isSafeInteger(context.hostStateTimestamp) || context.hostStateTimestamp < 0) {
-      throw new GrpcFailedPreconditionException('Invalid HostState anchor timestamp');
+    const nextMidpoint = epochEnd + Math.floor(context.schedule.epochLengthMs / 2);
+    // Indexed block evidence identifies an ordinary HostState anchor. Datum
+    // monitoring timestamps are caller-written and cannot establish its epoch.
+    if (context.hostStateEpoch === context.currentEpoch) {
+      return this.statusResponse(context, false, nextMidpoint - validity.validFromTime);
     }
-    const lastAnchor = Math.max(lastHeartbeat, context.hostStateTimestamp);
-    const nextHeartbeat = lastAnchor + HOST_STATE_HEARTBEAT_INTERVAL_MS;
-    if (validity.validFromTime < nextHeartbeat) {
+    if (nextHeartbeat > validity.validFromTime) {
       return this.statusResponse(context, false, nextHeartbeat - validity.validFromTime);
+    }
+    validity.validToTime = Math.min(
+      validity.validToTime,
+      validity.validFromTime + HEARTBEAT_MAX_VALIDITY_MS,
+      epochEnd - context.slotLengthMs,
+    );
+    if (!heartbeatWindowAllowed(context.schedule, lastHeartbeat, validity.validFromTime, validity.validToTime)) {
+      return this.statusResponse(context, false, nextMidpoint - validity.validFromTime);
     }
 
     if (context.hostStateDatum.control.shutdown !== 'Active') {
@@ -132,11 +153,7 @@ export class HostStateHeartbeatService {
       `Built HostState heartbeat from epoch ${context.hostStateEpoch} for current epoch ${context.currentEpoch}`,
     );
     return {
-      ...this.statusResponse(
-        context,
-        true,
-        HOST_STATE_HEARTBEAT_INTERVAL_MS + validity.validToTime - validity.validFromTime,
-      ),
+      ...this.statusResponse(context, true, nextMidpoint - validity.validFromTime),
       unsigned_tx: {
         type_url: '',
         value: unsignedTxBytes,
@@ -174,12 +191,38 @@ export class HostStateHeartbeatService {
       );
     }
 
+    let schedule: HeartbeatSchedule;
+    try {
+      schedule = checkedHeartbeatSchedule(this.configService.get('deployment')?.heartbeatSchedule);
+    } catch (error) {
+      throw new GrpcFailedPreconditionException(String(error));
+    }
+    const endpoint = this.configService.get<string>('ogmiosEndpoint');
+    if (!endpoint) throw new GrpcFailedPreconditionException('Cannot schedule HostState heartbeat without Ogmios');
+    const eras = await ogmiosRequest<Parameters<typeof epochTimingAtSlot>[0]>(
+      endpoint,
+      'queryLedgerState/eraSummaries',
+      {},
+    );
+    const timing = epochTimingAtSlot(eras, latestBlock.slotNo, latestBlock.epochNo);
+    const blockTime = Number(latestBlock.timestampUnixNs / 1_000_000n);
+    const epochStartTime = blockTime - Number(latestBlock.slotNo - timing.firstEpochSlot) * timing.slotLengthMs;
+    if (
+      !Number.isSafeInteger(epochStartTime) ||
+      schedule.epochLengthMs !== Number(timing.epochLengthSlots) * timing.slotLengthMs ||
+      epochStartTime < schedule.epochOriginMs ||
+      (epochStartTime - schedule.epochOriginMs) % schedule.epochLengthMs !== 0
+    ) {
+      throw new GrpcFailedPreconditionException('Deployment heartbeat epoch timing does not match Cardano');
+    }
     return {
       hostStateUtxo,
       hostStateDatum: await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state'),
       currentEpoch: latestBlock.epochNo,
       hostStateEpoch: hostStateBlock.epochNo,
-      hostStateTimestamp: Number(hostStateBlock.timestampUnixNs / 1_000_000n),
+      schedule,
+      epochStartTime,
+      slotLengthMs: timing.slotLengthMs,
     };
   }
 

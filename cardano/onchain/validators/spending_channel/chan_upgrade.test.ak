@@ -1,3 +1,4 @@
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use aiken/builtin
 use aiken/cbor
 use aiken/collection/list
@@ -735,6 +736,7 @@ fn run_host(tx: Transaction, redeemer: HostStateRedeemer) -> Bool {
     mock.connection_minting_policy_id,
     mock.channel_minting_policy_id,
     "",
+    HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     redeemer,
     host_input.output_reference,

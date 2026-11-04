@@ -139,6 +139,21 @@ function buildStagedHandlerJsonDeployment() {
 }
 
 describe('bridge manifest normalization', () => {
+  it('retains the applied heartbeat timing through both deployment formats', () => {
+    const heartbeatSchedule = { epochOriginMs: 1_700_000_000_000, epochLengthMs: 432_000_000 };
+    const normalized = normalizeHandlerJsonDeploymentConfig(
+      { ...buildHandlerJsonDeployment(), heartbeatSchedule },
+      { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
+    );
+    const restored = normalizeBridgeManifestConfig(normalized.bridgeManifest);
+    expect(restored.deployment.heartbeatSchedule).toEqual(heartbeatSchedule);
+    expect(restored.bridgeManifest.heartbeat_schedule).toEqual({ epoch_origin_ms: heartbeatSchedule.epochOriginMs, epoch_length_ms: heartbeatSchedule.epochLengthMs });
+    expect(() => normalizeHandlerJsonDeploymentConfig(
+      { ...buildHandlerJsonDeployment(), heartbeatSchedule: { ...heartbeatSchedule, epochLengthMs: 0 } },
+      { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
+    )).toThrow('heartbeat epoch timing');
+  });
+
   it('rejects legacy packet receipt storage rather than interpreting it as history-backed state', () => {
     const deployment = buildHandlerJsonDeployment();
     delete (deployment.packetState as any).receiptStorage;

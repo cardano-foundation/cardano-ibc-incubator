@@ -993,6 +993,8 @@ export type CachedTendermintDeployment = {
 };
 
 export type DeploymentTemplate = {
+  heartbeatSchedule?:
+    import("../../../packages/cardano-ibc-tx-builder-runtime/src/heartbeatSchedule.ts").HeartbeatSchedule;
   cachedTendermint?: CachedTendermintDeployment;
   packetState: {
     acknowledgementBatchSize?: 2;

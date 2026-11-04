@@ -2,6 +2,7 @@ use aiken/collection/dict
 use aiken/collection/list
 use cardano/assets
 use cardano/transaction.{OutputReference, Transaction}
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use ibc/core/ics_025_handler_interface/host_state as host
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, CreateChannel, CreateClient, CreateConnection, HandlePacket,
@@ -12,7 +13,11 @@ use ibc/implementation/host_state_stt
 use ibc/migration/auth as migration
 use ibc/utils/validator_utils
 
-validator host_state(registry_policy: ByteArray, generation: Int) {
+validator host_state(
+  registry_policy: ByteArray,
+  generation: Int,
+  heartbeat_schedule: HeartbeatSchedule,
+) {
   spend(
     _datum: Option<Data>,
     raw: Data,
@@ -259,6 +264,7 @@ validator host_state(registry_policy: ByteArray, generation: Int) {
             old_datum,
             new_datum,
             transaction.validity_range,
+            heartbeat_schedule,
           )
         // Shutdown and finalization belong only to immutable deployments.
         _ -> fail

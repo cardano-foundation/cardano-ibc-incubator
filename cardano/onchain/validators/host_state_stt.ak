@@ -2,6 +2,7 @@ use aiken/collection/list
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use cardano/assets.{PolicyId, quantity_of}
 use cardano/transaction.{OutputReference, Transaction}
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use ibc/core/ics_025_handler_interface/host_state.{
   HostStateDatum, host_state_token_name, validate_bind_port,
   validate_claim_backup, validate_create_channel, validate_create_client,
@@ -33,6 +34,7 @@ validator host_state_stt(
   connection_policy_id: PolicyId,
   channel_policy_id: PolicyId,
   backup_operator: ByteArray,
+  heartbeat_schedule: HeartbeatSchedule,
 ) {
   spend(
     _datum_opt: Option<HostStateDatum>,
@@ -238,7 +240,12 @@ validator host_state_stt(
                 validator_utils.get_tx_valid_to(validity_range),
               ),
             }
-          Heartbeat -> validate_heartbeat(old_datum, new_datum, validity_range)
+          Heartbeat -> validate_heartbeat(
+              old_datum,
+              new_datum,
+              validity_range,
+              heartbeat_schedule,
+            )
           AuthorizeFinalization ->
             validate_transfer_finalization_authorization(
               old_datum,

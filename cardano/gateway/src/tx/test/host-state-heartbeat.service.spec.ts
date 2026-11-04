@@ -1,11 +1,14 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HOST_STATE_HEARTBEAT_INTERVAL_MS as INTERVAL } from '../../config/constant.config';
+import { ogmiosRequest } from '../../shared/helpers/ogmios';
+jest.mock('../../shared/helpers/ogmios', () => ({ ogmiosRequest: jest.fn() }));
 import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { HostStateHeartbeatService } from '../host-state-heartbeat.service';
 
 describe('HostStateHeartbeatService', () => {
-  const now = 100_000_000;
+  const schedule = { epochOriginMs: 1_700_000_000_000, epochLengthMs: 432_000_000 };
+  const epochStart = schedule.epochOriginMs + 8 * schedule.epochLengthMs;
+  const now = epochStart + schedule.epochLengthMs / 2;
   const hostStateUtxo = { txHash: 'host-state-tx', outputIndex: 0, datum: 'host-state-datum' } as any;
   const hostStateDatum = {
     state: {
@@ -52,28 +55,42 @@ describe('HostStateHeartbeatService', () => {
       encode: jest.fn(async (_value: unknown, type: string) => type),
       createUnsignedHostStateHeartbeatTransaction: jest.fn(),
     };
+    (ogmiosRequest as jest.Mock).mockResolvedValue([
+      { start: { slot: 0, epoch: 0 }, parameters: { epochLength: 432_000, slotLength: { milliseconds: 1_000 } } },
+    ]);
     historyService = {
-      findLatestBlock: jest.fn().mockResolvedValue({ epochNo: 8, timestampUnixNs: BigInt(now) * 1_000_000n }),
+      findLatestBlock: jest
+        .fn()
+        .mockResolvedValue({ epochNo: 8, slotNo: 8n * 432_000n + 216_000n, timestampUnixNs: BigInt(now) * 1_000_000n }),
       findTransactionEvidenceByHash: jest.fn().mockResolvedValue({ blockNo: 100 }),
       findBlockByHeight: jest
         .fn()
-        .mockResolvedValue({ epochNo: 8, timestampUnixNs: BigInt(now - INTERVAL - 1) * 1_000_000n }),
+        .mockResolvedValue({ epochNo: 7, timestampUnixNs: BigInt(epochStart - 1_000) * 1_000_000n }),
     };
     runner = { run: jest.fn().mockResolvedValue({ unsignedTxBytes: new Uint8Array([1, 2, 3]) }) };
-    service = new HostStateHeartbeatService(new Logger(), {} as ConfigService, lucidService, historyService, runner, {
-      getAlignedSnapshot: jest
-        .fn()
-        .mockResolvedValue({ root: hostStateDatum.state.ibc_state_root, hostState: hostStateUtxo }),
-      computeRootWithHeartbeatUpdate: jest.fn().mockReturnValue({ commit: jest.fn() }),
-    } as unknown as IbcTreeStateStore);
+    service = new HostStateHeartbeatService(
+      new Logger(),
+      {
+        get: (key: string) => (key === 'deployment' ? { heartbeatSchedule: schedule } : 'http://ogmios'),
+      } as ConfigService,
+      lucidService,
+      historyService,
+      runner,
+      {
+        getAlignedSnapshot: jest
+          .fn()
+          .mockResolvedValue({ root: hostStateDatum.state.ibc_state_root, hostState: hostStateUtxo }),
+        computeRootWithHeartbeatUpdate: jest.fn().mockReturnValue({ commit: jest.fn() }),
+      } as unknown as IbcTreeStateStore,
+    );
     validity = { currentLedgerTime: now, validFromTime: now, validToTime: now + 120_000 };
     jest.spyOn(service as any, 'computeTxValidityWindow').mockImplementation(async () => validity);
   });
 
-  it('lets an independent funded signer heartbeat within the same epoch', async () => {
+  it('lets an independent funded signer heartbeat at the epoch midpoint', async () => {
     const response = await service.buildHeartbeat({ signer: 'addr_test1relayer' });
     expect(response.heartbeat_required).toBe(true);
-    expect(response.next_check_delay_ms).toBe(INTERVAL + 120_000);
+    expect(response.next_check_delay_ms).toBe(schedule.epochLengthMs);
     const encoded = lucidService.encode.mock.calls.find(([, type]: any[]) => type === 'host_state')[0];
     expect(encoded).toEqual({
       ...hostStateDatum,
@@ -98,7 +115,7 @@ describe('HostStateHeartbeatService', () => {
     });
     const result = await service.buildHeartbeat({ signer: 'addr_test1relayer' });
     expect(result.heartbeat_required).toBe(false);
-    expect(result.next_check_delay_ms).toBe(INTERVAL - 1_000);
+    expect(result.next_check_delay_ms).toBe(schedule.epochLengthMs);
     expect(runner.run).not.toHaveBeenCalled();
   });
 
@@ -107,16 +124,46 @@ describe('HostStateHeartbeatService', () => {
       ...hostStateDatum,
       control: { ...hostStateDatum.control, last_heartbeat_time: BigInt(now - 1_000) },
     });
-    expect((await service.buildHeartbeat({ signer: 'addr_test1relayer' })).next_check_delay_ms).toBe(INTERVAL - 1_000);
+    expect((await service.buildHeartbeat({ signer: 'addr_test1relayer' })).next_check_delay_ms).toBe(
+      schedule.epochLengthMs,
+    );
     expect(runner.run).not.toHaveBeenCalled();
   });
 
-  it('allows a heartbeat at the exact cooldown boundary', async () => {
-    lucidService.decodeDatum.mockResolvedValue({
-      ...hostStateDatum,
-      control: { ...hostStateDatum.control, last_heartbeat_time: BigInt(now - INTERVAL) },
-    });
+  it('waits until the midpoint even for a first heartbeat', async () => {
+    validity.validFromTime = now - 1;
+    expect((await service.buildHeartbeat({ signer: 'addr_test1relayer' })).next_check_delay_ms).toBe(1_000);
+    expect(runner.run).not.toHaveBeenCalled();
+  });
+
+  it('allows a late retry after a missed midpoint', async () => {
+    validity.validFromTime = now + 3_600_000;
+    validity.validToTime = validity.validFromTime + 120_000;
     expect((await service.buildHeartbeat({ signer: 'addr_test1relayer' })).heartbeat_required).toBe(true);
+  });
+
+  it('keeps a late validity window inside its epoch', async () => {
+    validity.validFromTime = epochStart + schedule.epochLengthMs - 60_000;
+    validity.validToTime = validity.validFromTime + 120_000;
+    expect((await service.buildHeartbeat({ signer: 'addr_test1relayer' })).heartbeat_required).toBe(true);
+    const builder = { validFrom: jest.fn().mockReturnThis(), validTo: jest.fn().mockReturnThis() };
+    runner.run.mock.calls[0][0].validity.apply(builder);
+    expect(builder.validTo).toHaveBeenCalledWith(epochStart + schedule.epochLengthMs - 1_000);
+  });
+
+  it('waits for the next midpoint when no complete slot remains', async () => {
+    validity.validFromTime = epochStart + schedule.epochLengthMs - 1_000;
+    validity.validToTime = validity.validFromTime + 120_000;
+    expect((await service.buildHeartbeat({ signer: 'addr_test1relayer' })).heartbeat_required).toBe(false);
+    expect(runner.run).not.toHaveBeenCalled();
+  });
+
+  it('rejects deployment timing that differs from the node', async () => {
+    (ogmiosRequest as jest.Mock).mockResolvedValue([
+      { start: { slot: 0, epoch: 0 }, parameters: { epochLength: 86_400, slotLength: { milliseconds: 1_000 } } },
+    ]);
+    await expect(service.buildHeartbeat({ signer: 'addr_test1relayer' })).rejects.toThrow();
+    expect(runner.run).not.toHaveBeenCalled();
   });
 
   it('ignores a caller-written future monitoring timestamp', async () => {

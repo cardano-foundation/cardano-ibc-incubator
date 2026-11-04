@@ -1,3 +1,4 @@
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use aiken/cbor
 use aiken/interval
 use cardano/address.{from_script}
@@ -444,6 +445,7 @@ fn run_conn_open_try_transition(
           fixture.connection_minting_policy_id,
           "unused channel minting policy",
           "",
+          HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
           None,
           fixture.host_redeemer,
           fixture.host_input.output_reference,

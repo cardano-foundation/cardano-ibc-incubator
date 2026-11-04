@@ -1,3 +1,4 @@
+import { deploymentHeartbeatSchedule } from "./heartbeat-schedule.ts";
 import {
   Data,
   fromText,
@@ -307,6 +308,10 @@ export async function verifyAndInstallMigration(
       Data.from(root.datum, TransferModuleDatum).escrow_shard_registry_root
   ) throw new Error("Indexed successor escrow inventory is incomplete");
   const next = structuredClone(deployment);
+  next.heartbeatSchedule = deploymentHeartbeatSchedule(
+    lucid,
+    baseline.inputs.heartbeatSchedule,
+  );
   const references = await lucid.utxosAt(
     bech32Address(network, registry.identity.reference_holder),
   );

@@ -353,6 +353,8 @@ const buildBindPortHostStateUpdate = async (
 };
 
 export type DeploymentOptions = {
+  heartbeatSchedule?:
+    import("../../../packages/cardano-ibc-tx-builder-runtime/src/heartbeatSchedule.ts").HeartbeatSchedule;
   deploymentMode?: "upgradeable" | "legacy";
   migration?: {
     governance: Governance;
@@ -460,6 +462,7 @@ export const createDeployment = async (
       );
     }
     const plan = await loadDeploymentPlan(lucid, {
+      heartbeatSchedule: options.heartbeatSchedule,
       hostStateNonce: buildOutputReference(nonces[0]),
       transferModuleNonce: buildOutputReference(nonces[1]),
       traceDirectoryNonce: buildOutputReference(
@@ -936,6 +939,7 @@ export const createDeployment = async (
     refUtxo: refUtxosInfo[validator.hash],
   });
   const deploymentInfo: DeploymentTemplate = {
+    heartbeatSchedule: plan.inputs.heartbeatSchedule,
     cachedTendermint: {
       format: "authenticated-validator-cache-v1",
       validators: {

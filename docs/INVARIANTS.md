@@ -1149,7 +1149,7 @@ Fixed regressions in `validators/host_state_stt.test.ak` check root-preserving
 heartbeats, independent relayer authorization, missing clock rejection and
 shutdown restrictions. Wire-version-5 heartbeats preserve the IBC root and
 counters. A funded payment-key signer need not be the deployment authority.
-The dedicated ledger-bound heartbeat clock enforces a six-hour minimum interval
+The dedicated ledger-bound heartbeat clock enforces one heartbeat per epoch after its midpoint
 and is preserved by ordinary operations. Gateway schedules idle heartbeats and
 Hermes follows its suggested delay. See the
 [heartbeat rules](probabilistic-light-client.md#permissionless-hoststate-heartbeats).

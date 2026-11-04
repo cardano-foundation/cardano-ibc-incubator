@@ -15,6 +15,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./heartbeatSchedule": { "types": "./dist/heartbeatSchedule.d.ts", "default": "./dist/heartbeatSchedule.js" },
     "./yaciRest": { "types": "./dist/yaciRest.d.ts", "default": "./dist/yaciRest.js" },
     "./yaciRestHistory": { "types": "./dist/yaciRestHistory.d.ts", "default": "./dist/yaciRestHistory.js" },
     "./consensusHistoryRest": { "types": "./dist/consensusHistoryRest.d.ts", "default": "./dist/consensusHistoryRest.js" },
@@ -35,6 +36,7 @@
   },
   "typesVersions": {
     "*": {
+      "heartbeatSchedule": ["dist/heartbeatSchedule.d.ts"],
       "yaciRest": ["dist/yaciRest.d.ts"],
       "yaciRestHistory": ["dist/yaciRestHistory.d.ts"],
       "consensusHistoryRest": ["dist/consensusHistoryRest.d.ts"],
