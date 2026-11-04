@@ -120,7 +120,7 @@ compat_mode = '0.38'
                         if json.load(response).get('status') == 'ready': break
                 except (OSError, ValueError): pass
                 if time.monotonic() >= deadline:
-                    raise RuntimeError('Gateway did not become proof-ready; no command was submitted. Inspect stability, epoch heartbeat, migration phase, and canonical history.')
+                    raise RuntimeError('Gateway did not become proof-ready; no command was submitted. Inspect stability, epoch context, migration phase, and canonical history.')
                 time.sleep(2)
         subprocess.run(command + rest, env=env, check=True)
 

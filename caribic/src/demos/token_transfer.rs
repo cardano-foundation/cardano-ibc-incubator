@@ -24,7 +24,7 @@ pub async fn run_token_transfer_demo(
             project_root_path,
             network.unwrap_or("v8-classic"),
         )?;
-        return start::with_local_heartbeat(project_root_path, || {
+        return start::with_local_proof_readiness(project_root_path, || {
             run_token_transfer_demo_without_daemon(project_root_path, chain, network)
         });
     }

@@ -968,6 +968,69 @@ describe('QueryService Mithril-certified stake', () => {
   });
 });
 
+describe('heartbeat-free packet-proof height', () => {
+  it('builds a fresh ordinary observation after idle epochs and a lane-only write', async () => {
+    const path = resolve(process.cwd(), '../../cosmos/cardano-probabilistic-light-client-core/testdata');
+    const fixture = JSON.parse(gunzipSync(readFileSync(`${path}/native-heartbeat-free.json.gz`)).toString());
+    const client = ClientStateProbabilistic.fromJSON(fixture.Client);
+    const blocks = fixture.Honest.Blocks.map((block: unknown) => ProbabilisticBlock.fromJSON(block));
+    const context = EpochContext.fromJSON(fixture.Honest.Contexts.find((row: any) => row.epoch === 9));
+    const records = blocks.map((block: ProbabilisticBlock) => ({
+      height: Number(block.height!.revision_height), hash: block.hash, prevHash: '',
+      slotNo: block.slot, epochNo: Number(block.epoch), timestampUnixNs: block.timestamp,
+      slotLeader: context.stake_distribution[Number((block.height!.revision_height - 967n) % 11n)].pool_id,
+    }));
+    const trusted = records.find((block: any) => block.height === 1110)!;
+    client.latest_checkpoint_pool_production = productionAtAnchor(client, records.filter((block: any) => block.height < 1110), trusted);
+    // The fixture keeps the same stake weights through both epoch rollovers.
+    client.latest_checkpoint_settlement_credit!.epoch = 9n;
+    client.storage_version = 2;
+    client.current_epoch = 9n;
+    client.epoch_stake_distribution = context.stake_distribution;
+    client.epoch_contexts = [context];
+    client.epoch_nonce = context.epoch_nonce;
+    client.current_epoch_start_slot = context.epoch_start_slot;
+    client.current_epoch_end_slot_exclusive = context.epoch_end_slot_exclusive;
+    client.latest_checkpoint_height = { revision_number: 0n, revision_height: 1110n };
+    client.latest_checkpoint_block_hash = trusted.hash;
+    client.latest_checkpoint_slot = trusted.slotNo;
+    client.latest_checkpoint_timestamp = trusted.timestampUnixNs;
+    client.latest_checkpoint_epoch = 9n;
+    historyServiceMock.findBlockByHeight.mockImplementation(async (height) => records.find((block: any) => BigInt(block.height) === height));
+    historyServiceMock.findBridgeBlocks.mockImplementation(async (from, to) => records.filter((block: any) => BigInt(block.height) > from && BigInt(block.height) < to));
+    historyServiceMock.findDescendantBlocks.mockImplementation(async (height, limit) => records.filter((block: any) => BigInt(block.height) > height).slice(0, limit));
+    historyServiceMock.findEpochContextAtBlock.mockResolvedValue({
+      epoch: 9,
+      stakeDistribution: context.stake_distribution.map((entry) => ({
+        poolId: entry.pool_id, stake: entry.stake, relativeStakeNumerator: entry.relative_stake_numerator,
+        relativeStakeDenominator: entry.relative_stake_denominator, vrfKeyHash: Buffer.from(entry.vrf_key_hash).toString('hex'), firstRegistrationSlot: entry.first_registration_slot,
+      })),
+      verificationContext: {
+        epochNonce: Buffer.from(context.epoch_nonce).toString('hex'), slotsPerKesPeriod: Number(context.slots_per_kes_period),
+        activeSlotCoefficientNumerator: 1n, activeSlotCoefficientDenominator: 2n, maxKesEvolutions: 62,
+        currentEpochStartSlot: context.epoch_start_slot, currentEpochEndSlotExclusive: context.epoch_end_slot_exclusive,
+      },
+    });
+    miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (requested: Array<{ hash: string }>) =>
+      requested.map((block) => Buffer.from(blocks.find((row: ProbabilisticBlock) => row.hash === block.hash)!.block_cbor)));
+    miniProtocalsServiceMock.extractBlockHeaderCbor.mockImplementation((body, hash) => MiniProtocalsService.prototype.extractBlockHeaderCbor(body, hash));
+    const response = await service.queryStabilityIBCHeader({
+      height: 1126n, trusted_height: 1110n, checkpoint_only: false,
+      probabilistic_client_state: ClientStateProbabilistic.encode(client).finish(),
+    });
+    const header = ProbabilisticHeader.decode(response.header!.value);
+    expect(header.anchor_block!.height!.revision_height).toBe(1126n);
+    expect(header.is_checkpoint).toBe(false);
+    expect(header.host_state_tx_hash).toBe('');
+    expect(header.bridge_blocks.find((block) => block.height!.revision_height === 1125n)!.block_cbor.length).toBeGreaterThan(0);
+    expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
+    if (process.env.UPDATE_HEARTBEAT_FREE_FIXTURE === '1') {
+      writeFileSync(`${path}/gateway-heartbeat-free.pb.gz`, gzipSync(response.header!.value));
+    }
+    expect(Buffer.from(response.header!.value)).toEqual(gunzipSync(readFileSync(`${path}/gateway-heartbeat-free.pb.gz`)));
+  });
+});
+
 // These witnesses also run through native verification and both SDK keepers.
 describe('native epoch-boundary catch-up', () => {
   for (const name of ['size', 'count', 'control', 'combined']) {

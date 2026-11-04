@@ -48,7 +48,7 @@ fn run_setup_route(
         if !matches!(to, TransferRouteChainArg::Cosmos) {
             return Err("DevKit token-transfer routes require Cosmos v8-classic, the only fixture with a matching Cardano clock. Select Cosmos v8-classic.".into());
         }
-        let route = start::with_local_heartbeat(project_root_path, || {
+        let route = start::with_local_proof_readiness(project_root_path, || {
             route_setup::setup_transfer_route(
                 project_root_path,
                 RouteEndpoint::new(from.into(), from_network),

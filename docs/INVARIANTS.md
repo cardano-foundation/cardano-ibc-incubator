@@ -1150,8 +1150,10 @@ heartbeats, independent relayer authorization, missing clock rejection and
 shutdown restrictions. Wire-version-5 heartbeats preserve the IBC root and
 counters. A funded payment-key signer need not be the deployment authority.
 The dedicated ledger-bound heartbeat clock enforces one heartbeat per epoch after its midpoint
-and is preserved by ordinary operations. Gateway schedules idle heartbeats and
-Hermes follows its suggested delay. See the
+and is preserved by ordinary operations. Automatic submission is disabled in the
+default profile. Manual heartbeats and the optional Hermes worker still follow
+Gateway's eligibility checks. Snapshot observations can publish fresh packet-proof
+heights without a HostState write. Checkpoint maintenance remains enabled. See the
 [heartbeat rules](probabilistic-light-client.md#permissionless-hoststate-heartbeats).
 
 ### Client Root Updates
