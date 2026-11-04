@@ -1,3 +1,4 @@
+import { nextHeartbeatTime } from "../../../packages/cardano-ibc-tx-builder-runtime/src/heartbeatSchedule.ts";
 import { TransferModuleDatum } from "../types/plutus/TransferModuleDatum.ts";
 import {
   assert,
@@ -448,6 +449,10 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
     return tx;
   };
   let deployment = await createDeployment(lucid, "emulator", {
+    heartbeatSchedule: {
+      epochOriginMs: emulator.now() - 21_600_000,
+      epochLengthMs: 43_200_000,
+    },
     deploymentMode: "upgradeable",
     migration: {
       governance: { signers: [authority], quorum: 1n, delay_ms: 86_400_000n },
@@ -485,8 +490,12 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
       deployment.hostStateNFT!.policyId + deployment.hostStateNFT!.name,
     );
     const host = Data.from(hostUtxo.datum!, HostStateDatum);
-    const next = Number(host.control.last_heartbeat_time) + 21_600_000;
-    if (host.control.last_heartbeat_time > 0n && emulator.now() < next) {
+    const next = nextHeartbeatTime(
+      deployment.heartbeatSchedule!,
+      host.control.last_heartbeat_time,
+      emulator.now(),
+    );
+    if (emulator.now() < next) {
       emulator.awaitSlot(Math.ceil((next - emulator.now()) / 1_000));
       lucid.clearUTxOOverride();
     }
@@ -775,12 +784,15 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
           : `Substituted baseline alias ${field}`,
       );
     }
+    const expectedHeartbeatSchedule = deployment.heartbeatSchedule;
+    delete deployment.heartbeatSchedule;
     const verified = await verifyAndInstallMigration(
       lucid,
       deployment,
       artifact,
     );
     deployment = verified.deployment;
+    assertEquals(deployment.heartbeatSchedule, expectedHeartbeatSchedule);
     assertEquals(deployment.clientRegistrations, [{
       clientType: "07-tendermint",
       implementation: "tendermint",

@@ -542,6 +542,21 @@ try {
     } as any,
   );
 
+  const { result: epochEras } = await queryOgmiosJsonRpc(
+    ogmiosUrl,
+    "queryLedgerState/eraSummaries",
+    {},
+    20_000,
+    3,
+  );
+  const era = epochEras.at(-1);
+  const epochOriginMs = slotConfig.zeroTime +
+    (era.start.slot - slotConfig.zeroSlot) * slotConfig.slotLength;
+  deploymentOptions.heartbeatSchedule = {
+    epochOriginMs,
+    epochLengthMs: era.parameters.epochLength *
+      era.parameters.slotLength.milliseconds,
+  };
   lucid.selectWallet.fromPrivateKey(deployerSk);
 
   console.log("=".repeat(70));

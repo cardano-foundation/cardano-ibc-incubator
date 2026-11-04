@@ -1,3 +1,4 @@
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 // Independent kernel fixtures. These tests call the real validators; they do
 // not claim ledger balance, script dispatch, or populated bridge integration.
 use aiken/builtin
@@ -1590,6 +1591,7 @@ test migration_adversarial_cleanup_control_has_valid_legacy_authority_and_state(
           hash(4),
           hash(5),
           "",
+          HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2 * ready_at },
           Some(host()),
           EnterShutdown {
             grace_period_end: approval_upper + min_shutdown_grace_period_ms,
@@ -1610,6 +1612,7 @@ fn attempt_upgradeable_shutdown(registry: Registry) -> Bool {
   host_wrapper.host_state.spend(
     hash(1),
     1,
+    HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2 * ready_at },
     None,
     raw,
     ref(2),
@@ -2501,6 +2504,7 @@ test graduation_executes_without_deployer_or_governance_signatures() {
     host_wrapper.host_state.spend(
       hash(1),
       1,
+      HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2 * ready_at },
       None,
       raw,
       ref(2),
@@ -2663,6 +2667,7 @@ fn graduated_heartbeat(signer: ByteArray, redeemer: Data) -> Bool {
   host_wrapper.host_state.spend(
     hash(1),
     1,
+    HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2 * ready_at },
     None,
     redeemer,
     ref(2),
@@ -2724,6 +2729,7 @@ fn graduated_bind_port(signer: ByteArray) -> Bool {
   host_wrapper.host_state.spend(
     hash(1),
     1,
+    HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2 * ready_at },
     None,
     redeemer,
     ref(2),

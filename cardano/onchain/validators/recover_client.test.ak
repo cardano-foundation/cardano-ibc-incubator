@@ -1,3 +1,4 @@
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use aiken/cbor
 use aiken/collection/list
 use aiken/collection/pairs
@@ -750,6 +751,7 @@ fn run_atomic_recovery_between(
         "unused connection minting policy",
         "unused channel minting policy",
         "",
+        HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
         Some(old_host_datum),
         host_update_redeemer,
         host_reference,
@@ -1079,6 +1081,7 @@ fn run_atomic_staged_freeze(correct_root: Bool, verify_validators: Bool) -> Bool
         "unused connection minting policy",
         "unused channel minting policy",
         "",
+        HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
         Some(old_host),
         host_redeemer,
         host_reference,

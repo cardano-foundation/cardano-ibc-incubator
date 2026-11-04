@@ -1,3 +1,8 @@
+import {
+  deploymentHeartbeatSchedule,
+  heartbeatScheduleData,
+} from "./heartbeat-schedule.ts";
+import type { HeartbeatSchedule } from "../../../packages/cardano-ibc-tx-builder-runtime/src/heartbeatSchedule.ts";
 import { loadCachedTendermintValidators } from "./tendermint-cache-validators.ts";
 import {
   type ClientRegistration,
@@ -44,6 +49,7 @@ export type PlannedValidator = {
   address: string;
 };
 export type DeploymentPlanInputs = {
+  heartbeatSchedule?: HeartbeatSchedule;
   hostStateNonce: OutputReference;
   transferModuleNonce: OutputReference;
   traceDirectoryNonce: OutputReference;
@@ -116,6 +122,7 @@ export const loadHostStateValidator = (
   connectionMintPolicyId: string,
   channelMintPolicyId: string,
   backupOperatorKeyHash = "",
+  heartbeatSchedule = deploymentHeartbeatSchedule(lucid),
 ) =>
   readValidator(
     "host_state_stt.host_state_stt.spend",
@@ -129,6 +136,7 @@ export const loadHostStateValidator = (
       connectionMintPolicyId,
       channelMintPolicyId,
       backupOperatorKeyHash,
+      heartbeatScheduleData(heartbeatSchedule),
     ],
   );
 
@@ -141,6 +149,11 @@ export const loadDeploymentPlan = async (
   lucid: LucidEvolution,
   inputs: DeploymentPlanInputs,
 ) => {
+  const heartbeatSchedule = deploymentHeartbeatSchedule(
+    lucid,
+    inputs.heartbeatSchedule,
+  );
+  inputs = { ...inputs, heartbeatSchedule };
   const backupOperatorKeyHash =
     inputs.backupOperatorKeyHash?.trim().toLowerCase() ??
       "";
@@ -426,7 +439,8 @@ export const loadDeploymentPlan = async (
     ? load("upgradeable/host_state.host_state.spend", "bootstrap", [
       registryPolicy,
       1n,
-    ], Data.Tuple([Data.Bytes(), Data.Integer()]))
+      heartbeatScheduleData(heartbeatSchedule),
+    ] as Data[])
     : register(
       "host_state_stt.host_state_stt.spend",
       "bootstrap",
@@ -440,6 +454,7 @@ export const loadDeploymentPlan = async (
         mintConnection.hash,
         mintChannel.hash,
         backupOperatorKeyHash,
+        heartbeatSchedule,
       ),
     );
   const packetLaneCount = 16;

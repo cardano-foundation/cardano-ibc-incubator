@@ -1,3 +1,4 @@
+import { nextHeartbeatTime } from "../../../../packages/cardano-ibc-tx-builder-runtime/src/heartbeatSchedule.ts";
 import { initializeValidatorCache } from "../tendermint-cache.ts";
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { createCardanoScalusEvaluator } from "../scalus-evaluator.ts";
@@ -160,6 +161,7 @@ export async function deploymentScenario() {
   Date.now = () => emulator.now();
   try {
     const deployment = await createDeployment(lucid, EMULATOR_ENV, {
+      heartbeatSchedule: { epochOriginMs: 0, epochLengthMs: 3_600_000 },
       deploymentMode: "legacy",
     });
     lucid.overrideUTxOs(await emulator.getUtxos(address));
@@ -514,6 +516,14 @@ export async function deploymentScenario() {
       async topUp(lovelace: bigint) {
         const input = await host();
         const old = await hostDatum();
+        const eligible = nextHeartbeatTime(
+          deployment.heartbeatSchedule!,
+          old.control.last_heartbeat_time,
+          emulator.now(),
+        );
+        if (eligible > emulator.now()) {
+          emulator.awaitSlot(Math.ceil((eligible - emulator.now()) / 1_000));
+        }
         // A heartbeat stamps both clocks with hostTx's upper validity bound.
         const validTo = BigInt(emulator.now() + 60_000);
         await api.submit(

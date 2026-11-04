@@ -1,3 +1,4 @@
+import { checkedHeartbeatSchedule, type HeartbeatSchedule } from '@cardano-ibc/tx-builder-runtime/heartbeatSchedule';
 import { checkedDeploymentMode } from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
 import { requireMigrationConfig, type MigrationRuntimeConfig } from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
 import { requireHistoryBootstrap, type HistoryBootstrap } from '@cardano-ibc/tx-builder-runtime/historyBootstrap';
@@ -124,6 +125,7 @@ type CachedTendermintManifest = {
 };
 
 export type DeploymentConfig = {
+  heartbeatSchedule?: HeartbeatSchedule;
   cachedTendermint?: CachedTendermintConfig;
   packetState: PacketStateDeployment;
   deploymentMode?: 'upgradeable' | 'legacy';
@@ -223,10 +225,13 @@ type BridgeManifestTraceRegistry = {
   directory: BridgeManifestTraceRegistryShard;
 };
 
+type ManifestHeartbeatSchedule = { epoch_origin_ms: number; epoch_length_ms: number };
+
 // The manifest is the public, deployment-stable bootstrap document we expose to
 // external operators. It intentionally uses snake_case and only includes the
 // on-chain facts another Gateway/relayer stack needs to reconnect to this bridge.
 export type BridgeManifest = {
+  heartbeat_schedule?: ManifestHeartbeatSchedule;
   cached_tendermint?: CachedTendermintManifest;
   packet_state: PacketStateManifest;
   deploymentMode?: 'upgradeable' | 'legacy';
@@ -790,6 +795,14 @@ function cachedTendermintFromManifest(value: unknown): CachedTendermintConfig {
   return cachedTendermintConfig({ format: cache.format, validators: Object.fromEntries(CACHED_TENDERMINT_ROLES.map((role) => [role, manifestValidatorToDeployment(requireManifestValidator(validators[role], `cached_tendermint.validators.${role}`))])) });
 }
 
+function heartbeatScheduleToManifest(schedule: HeartbeatSchedule): ManifestHeartbeatSchedule {
+  return { epoch_origin_ms: schedule.epochOriginMs, epoch_length_ms: schedule.epochLengthMs };
+}
+function heartbeatScheduleFromManifest(value: unknown): HeartbeatSchedule {
+  const schedule = requireObject(value, 'heartbeat_schedule');
+  return checkedHeartbeatSchedule({ epochOriginMs: schedule.epoch_origin_ms, epochLengthMs: schedule.epoch_length_ms });
+}
+
 export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfig {
   const deploymentAny = requireObject(deployment, 'deployment');
   const validators = requireObject(deploymentAny.validators, 'validators');
@@ -811,6 +824,7 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
 
   return {
     ...(deploymentAny.cachedTendermint ? { cachedTendermint: cachedTendermintConfig(deploymentAny.cachedTendermint) } : {}),
+    ...(deploymentAny.heartbeatSchedule ? { heartbeatSchedule: checkedHeartbeatSchedule(deploymentAny.heartbeatSchedule) } : {}),
     packetState: requirePacketState(deploymentAny.packetState),
     deploymentMode: checkedDeploymentMode(deploymentAny.deploymentMode, deploymentAny.migration),
     deployedAt: requireIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
@@ -916,6 +930,7 @@ export function normalizeHandlerJsonDeploymentConfig(
       ...(normalizedDeployment.history ? { history: normalizedDeployment.history } : {}),
       ics20_packet_codec: normalizedDeployment.ics20PacketCodec,
       cardano: normalizedCardano,
+      ...(normalizedDeployment.heartbeatSchedule ? { heartbeat_schedule: heartbeatScheduleToManifest(normalizedDeployment.heartbeatSchedule) } : {}),
       host_state_nft: deploymentAuthTokenToManifest(normalizedDeployment.hostStateNFT),
       validators: {
         host_state_stt: deploymentValidatorToManifest(normalizedDeployment.validators.hostStateStt),
@@ -1019,6 +1034,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
         ? ICS20_PACKET_CODEC.LEGACY
         : requireIcs20PacketCodec(manifestAny.ics20_packet_codec, 'ics20_packet_codec'),
     cardano,
+    ...(manifestAny.heartbeat_schedule ? { heartbeat_schedule: heartbeatScheduleToManifest(heartbeatScheduleFromManifest(manifestAny.heartbeat_schedule)) } : {}),
     host_state_nft: requireManifestAuthToken(manifestAny.host_state_nft, 'host_state_nft'),
     validators: {
       host_state_stt: requireManifestValidator(validators.host_state_stt, 'validators.host_state_stt'),
@@ -1101,6 +1117,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       consensusHistoryFormat,
       ...(bridgeManifest.history ? { history: bridgeManifest.history } : {}),
       ics20PacketCodec: bridgeManifest.ics20_packet_codec,
+      ...(bridgeManifest.heartbeat_schedule ? { heartbeatSchedule: heartbeatScheduleFromManifest(bridgeManifest.heartbeat_schedule) } : {}),
       hostStateNFT: manifestAuthTokenToDeployment(bridgeManifest.host_state_nft),
       validators: {
         hostStateStt: manifestValidatorToDeployment(bridgeManifest.validators.host_state_stt),

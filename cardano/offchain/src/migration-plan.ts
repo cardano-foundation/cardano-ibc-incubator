@@ -1,4 +1,8 @@
 import {
+  deploymentHeartbeatSchedule,
+  heartbeatScheduleData,
+} from "./heartbeat-schedule.ts";
+import {
   Data,
   fromText,
   type LucidEvolution,
@@ -231,7 +235,7 @@ export async function loadSuccessorImplementation(
     }
   }
   const validators: PlannedValidator[] = [];
-  const load = (title: string, params: unknown[], schema: unknown) => {
+  const load = (title: string, params: unknown[], schema?: unknown) => {
     const [script, hash, address] = readValidator(
       title,
       lucid,
@@ -244,8 +248,13 @@ export async function loadSuccessorImplementation(
   const base = [registry.token.policy_id, generation];
   load(
     "upgradeable/host_state.host_state.spend",
-    base,
-    Data.Tuple([Data.Bytes(), Data.Integer()]),
+    [
+      ...base,
+      heartbeatScheduleData(
+        deploymentHeartbeatSchedule(lucid, baseline.inputs.heartbeatSchedule),
+      ),
+    ],
+    undefined,
   );
   if (baseline.cacheMint && baseline.cachedUpdateClient) {
     load(

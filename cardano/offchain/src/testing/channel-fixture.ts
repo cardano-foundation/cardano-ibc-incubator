@@ -1,3 +1,4 @@
+import { loadHostStateValidator } from "../deployment-plan.ts";
 import { clientRegistryData } from "../client-registry.ts";
 import {
   applyDoubleCborEncoding,
@@ -340,19 +341,15 @@ export async function channelFixture(
     lucid,
     [hostPolicy],
   );
-  const [hostScript, , hostAddress] = readValidator(
-    "host_state_stt.host_state_stt.spend",
+  const [hostScript, , hostAddress] = loadHostStateValidator(
     lucid,
-    [
-      hostPolicy,
-      clients,
-      hash("66"),
-      channelScripts.base.hash,
-      clientPolicy,
-      connectionPolicy,
-      channelPolicy,
-      "",
-    ],
+    hostPolicy,
+    clients,
+    hash("66"),
+    channelScripts.base.hash,
+    clientPolicy,
+    connectionPolicy,
+    channelPolicy,
   );
   const channelToken = record(
     channelPolicy,

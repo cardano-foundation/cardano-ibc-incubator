@@ -1,3 +1,4 @@
+import { loadHostStateValidator } from "../deployment-plan.ts";
 import { assertRejects } from "@std/assert";
 import { loadCachedTendermintValidators } from "../tendermint-cache-validators.ts";
 import { cacheRecord, cacheRecordData } from "../tendermint-cache.ts";
@@ -308,7 +309,8 @@ export async function shutdownFixture(
       hostPolicy,
     ],
   );
-  const host = validator("host_state_stt.host_state_stt.spend", [
+  const [hostScript, hostHash, hostAddress] = loadHostStateValidator(
+    lucid,
     hostPolicy,
     spendClient.scriptHash,
     spendConnection.scriptHash,
@@ -316,8 +318,14 @@ export async function shutdownFixture(
     mintClientStt.scriptHash,
     mintConnectionStt.scriptHash,
     mintChannelStt.scriptHash,
-    "",
-  ]);
+  );
+  const host = {
+    title: "host_state_stt.host_state_stt.spend",
+    script: hostScript.script,
+    scriptHash: hostHash,
+    address: hostAddress,
+    refUtxo: reference(hostScript),
+  };
   const now = emulator.now();
   const hostDatum = {
     state: {

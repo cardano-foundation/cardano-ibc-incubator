@@ -19,8 +19,8 @@ class Command implements fc.AsyncCommand<Model, Real> {
     if (["client", "channel", "enter"].includes(kind)) {
       return model.phase === "active";
     }
-    // A top-up is a heartbeat. HostState accepts one per six-hour cooldown,
-    // which the active phase's few blocks never span.
+    // A top-up is a heartbeat. The scenario waits for a legal epoch midpoint.
+    // Keep one top-up per generated prefix so its funding effect stays bounded.
     if (kind === "top-up") return model.phase === "active" && !model.heartbeat;
     if (kind === "connection") {
       return model.phase === "active" && model.allocatedClients > 0;

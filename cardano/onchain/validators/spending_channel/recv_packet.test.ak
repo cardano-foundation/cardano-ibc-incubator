@@ -1,3 +1,4 @@
+use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use aiken/builtin
 use aiken/cbor
 use aiken/collection/pairs
@@ -714,6 +715,7 @@ fn check_recv_packet_with_proof(
         mock_data.connection_minting_policy_id,
         mock_data.channel_minting_policy_id,
         "",
+        HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
         None,
         host_state_redeemer,
         host_input.output_reference,
