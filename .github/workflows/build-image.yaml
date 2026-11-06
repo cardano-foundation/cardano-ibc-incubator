@@ -78,9 +78,20 @@ jobs:
           fi
           echo "registries=${selected}" >> "${GITHUB_OUTPUT}"
 
+      - name: Read component version
+        id: version
+        shell: bash
+        env:
+          VERSION_DIRECTORY: ${{ inputs.version-directory }}
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/image-metadata.py" --read-version
+
       - name: Set up trusted publishing credentials
         id: baseline
         uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@2928a2219ebc75071358b2d2981d2aa759b0e192
+        env:
+          # Keep Git metadata in this checkout, outside the relayer submodule.
+          # Read the selected component's version from its manifest instead.
+          GUESSED_ARTIFACT_VERSION: ${{ steps.version.outputs.version }}
         with:
           GITHUB_TOKEN: ${{ github.token }}
           PRIVATE_DOCKER_REGISTRY_URL: ${{ secrets.PRIVATE_DOCKER_REGISTRY_URL }}
@@ -89,7 +100,6 @@ jobs:
           HUB_DOCKER_COM_USER: ${{ secrets.HUB_DOCKER_COM_USER }}
           HUB_DOCKER_COM_PASS: ${{ secrets.HUB_DOCKER_COM_PASS }}
           DOCKER_REGISTRIES: ${{ steps.registries.outputs.registries }}
-          artifact-version-directory: ${{ inputs.version-directory }}
 
       - name: Validate component version
         env:

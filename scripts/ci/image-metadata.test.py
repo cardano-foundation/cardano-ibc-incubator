@@ -120,6 +120,26 @@ echo 'REGISTRIES=${{ inputs.DOCKER_REGISTRIES }}' >> "$GITHUB_OUTPUT"
             with self.subTest(version=version):
                 metadata.rehearse(*self.rehearsal_fixture(), version, root=self.root)
 
+    def test_workflow_supplies_the_declared_version_for_node_and_rust_packages(self):
+        build = metadata.load_yaml((metadata.ROOT / ".github/workflows/build-image.yaml").read_text())
+        version_step = next(step for step in build["jobs"]["build"]["steps"] if step.get("id") == "version")
+        for component, version in (("gateway", "2.0.2"), ("hermes", "1.13.2")):
+            with self.subTest(component=component):
+                if component == "hermes":
+                    (self.directory / "package.json").unlink()
+                    (self.directory / "Cargo.toml").write_text(f'[package]\nversion = "{version}"\n')
+                action, baseline, steps, image = self.rehearsal_fixture()
+                image["component"] = component
+                steps.insert(0, version_step)
+                baseline["env"] = {"GUESSED_ARTIFACT_VERSION": "${{ steps.version.outputs.version }}"}
+                script = action["runs"]["steps"][0]["run"]
+                script = script.replace(
+                    "version=$(jq -r '.version' '${{ inputs.artifact-version-directory }}/package.json')",
+                    'version=${GUESSED_ARTIFACT_VERSION:-0.0.1}',
+                )
+                action["runs"]["steps"][0]["run"] = script
+                metadata.rehearse(action, baseline, steps, image, version, root=self.root)
+
     def test_rehearsal_rejects_wrong_version_and_component_prefixed_docker_tags(self):
         for before, after, expected in [
             ("VERSION=$version", "VERSION=0.0.1", "action discovered"),
