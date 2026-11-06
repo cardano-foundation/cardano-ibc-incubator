@@ -2,12 +2,13 @@ use aiken/builtin
 use aiken/cbor
 use aiken/collection/list
 use aiken/collection/pairs
+use aiken/interval
 use aiken/primitive/bytearray
 use cardano/address.{from_script}
 use cardano/assets
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, Spend,
-  Transaction,
+  Transaction, ValidityRange,
 }
 use host_state_stt
 use ibc/auth.{AuthToken}
@@ -652,7 +653,7 @@ fn transaction(
       Pair(Mint(policy), token_data),
       ..proof_redeemers
     ],
-    validity_range: mock.validity_range,
+    validity_range: interval.between(valid_to() - 60_000, valid_to()),
     extra_signatories: step.signatories,
     mint: assets.merge(assets.from_asset(policy, "", 1), proof_mint),
   }
@@ -773,6 +774,11 @@ fn run_step(step: Step, validate: Bool) -> Bool {
 fn operation_accepts(step: Step) -> Bool {
   let upgrade_redeemer = redeemer(step)
   run_operation(step, transaction(step, upgrade_redeemer))
+}
+
+fn operation_with_validity(step: Step, validity: ValidityRange) -> Bool {
+  let tx = transaction(step, redeemer(step))
+  run_operation(step, Transaction { ..tx, validity_range: validity })
 }
 
 // INIT ======================================================================
@@ -963,6 +969,35 @@ test try_answers_a_crossing_proposal_and_starts_flushing() {
   accepted(try_step(1))
 }
 
+test try_accepts_a_validity_window_as_wide_as_the_timeout_period() {
+  operation_with_validity(
+    try_step(1),
+    interval.between(valid_to() - period, valid_to()),
+  )
+}
+
+test try_rejects_a_validity_window_wider_than_the_timeout_period() fail {
+  operation_with_validity(
+    try_step(1),
+    interval.between(valid_to() - period - 1, valid_to()),
+  )
+}
+
+test try_rejects_an_unbounded_validity_lower_bound() fail {
+  operation_with_validity(try_step(1), interval.before(valid_to()))
+}
+
+test try_rejects_an_empty_validity_window() fail {
+  operation_with_validity(try_step(1), interval.between(valid_to(), valid_to()))
+}
+
+test try_rejects_a_reversed_validity_window() fail {
+  operation_with_validity(
+    try_step(1),
+    interval.between(valid_to() + 1, valid_to()),
+  )
+}
+
 test try_fast_forwards_to_a_higher_counterparty_sequence() {
   accepted(try_step(3))
 }
@@ -1092,6 +1127,24 @@ fn ack_step() -> Step {
 
 test ack_starts_flushing_and_records_the_counterparty_upgrade() {
   accepted(ack_step())
+}
+
+test ack_accepts_a_validity_window_as_wide_as_the_timeout_period() {
+  operation_with_validity(
+    ack_step(),
+    interval.between(valid_to() - period, valid_to()),
+  )
+}
+
+test ack_rejects_a_validity_window_wider_than_the_timeout_period() fail {
+  operation_with_validity(
+    ack_step(),
+    interval.between(valid_to() - period - 1, valid_to()),
+  )
+}
+
+test ack_rejects_an_unbounded_validity_lower_bound() fail {
+  operation_with_validity(ack_step(), interval.before(valid_to()))
 }
 
 test ack_rejects_an_elapsed_counterparty_timeout() fail {
