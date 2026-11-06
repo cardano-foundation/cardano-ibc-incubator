@@ -91,24 +91,13 @@ jobs:
           DOCKER_REGISTRIES: ${{ steps.registries.outputs.registries }}
           artifact-version-directory: ${{ inputs.version-directory }}
 
-      - name: Validate release version
-        if: github.ref_type == 'tag'
+      - name: Validate component version
         env:
           COMPONENT: ${{ inputs.component }}
+          VERSION_DIRECTORY: ${{ inputs.version-directory }}
           COMPONENT_VERSION: ${{ steps.baseline.outputs.GUESSED_ARTIFACT_VERSION }}
         shell: bash
-        run: |
-          expected_tag="${COMPONENT}/v${COMPONENT_VERSION}"
-          if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
-            echo "Release tag '${GITHUB_REF_NAME}' does not match ${COMPONENT} version ${COMPONENT_VERSION}." >&2
-            echo "Expected tag: ${expected_tag}" >&2
-            exit 1
-          fi
-
-          if ! git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main; then
-            echo "Release tags must point to a commit already merged into main." >&2
-            exit 1
-          fi
+        run: python3 scripts/ci/image-metadata.py --check-version
 
       - name: Require unused release image tags
         if: github.ref_type == 'tag'
