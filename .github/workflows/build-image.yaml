@@ -80,7 +80,7 @@ jobs:
 
       - name: Set up trusted publishing credentials
         id: baseline
-        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@9d6fdaf043772b4f9eb1ea4bcc994dc30b515a96
+        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@2928a2219ebc75071358b2d2981d2aa759b0e192
         with:
           GITHUB_TOKEN: ${{ github.token }}
           PRIVATE_DOCKER_REGISTRY_URL: ${{ secrets.PRIVATE_DOCKER_REGISTRY_URL }}
@@ -106,7 +106,7 @@ jobs:
           COMPONENT: ${{ inputs.component }}
           IMAGE_TAG: ${{ steps.baseline.outputs.DOCKER_TAG }}
           REGISTRIES: ${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}
-          EXTRA_TAGS: ${{ steps.baseline.outputs.EARTHLY_DOCKER_IMAGES_EXTRA_TAGS }}
+          EXTRA_TAGS: ${{ steps.baseline.outputs.EARTH_DOCKER_IMAGES_EXTRA_TAGS }}
         run: node scripts/ci/release-image.mjs --preflight-only
 
       - name: Build image without publishing
@@ -115,7 +115,7 @@ jobs:
         env:
           COMPONENT: ${{ inputs.component }}
         run: |
-          earthly "+${COMPONENT}" --PUSH=false
+          earth "+${COMPONENT}" --PUSH=false
           image_id=$(docker image inspect "cardano-ibc-${COMPONENT}:latest" --format '{{.Id}}')
           echo "id=${image_id}" >> "${GITHUB_OUTPUT}"
 
@@ -134,7 +134,7 @@ jobs:
           IMAGE_ID: ${{ steps.image.outputs.id }}
           REGISTRIES: ${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}
           IMAGE_TAG: ${{ steps.baseline.outputs.DOCKER_TAG }}
-          EXTRA_TAGS: ${{ steps.baseline.outputs.EARTHLY_DOCKER_IMAGES_EXTRA_TAGS }}
+          EXTRA_TAGS: ${{ steps.baseline.outputs.EARTH_DOCKER_IMAGES_EXTRA_TAGS }}
           COMMIT_TAG: ${{ steps.baseline.outputs.GIT_SHORT_COMMIT }}
         run: |
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
