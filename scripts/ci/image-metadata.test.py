@@ -53,6 +53,17 @@ class ImageMetadataTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not match"):
             metadata.check_component_version("gateway", self.directory, "2.0.2", "tag", "gateway/v2.0.3")
 
+    def test_normalizes_only_the_selected_component_prefix_on_release_tags(self):
+        self.assertEqual(metadata.normalize_image_tags(
+            "gateway", "gateway/v2.0.2-rc.1", "gateway/v2.0.2-rc.1-abcdef0 gateway/v2.0.2-rc.1", "tag",
+        ), {"IMAGE_TAG": "v2.0.2-rc.1", "EXTRA_TAGS": "v2.0.2-rc.1-abcdef0 v2.0.2-rc.1"})
+        self.assertEqual(metadata.normalize_image_tags(
+            "gateway", "PR995", "2.0.2-PR995-abcdef0 PR995-abcdef0 PR995", "branch",
+        ), {"IMAGE_TAG": "PR995", "EXTRA_TAGS": "2.0.2-PR995-abcdef0 PR995-abcdef0 PR995"})
+        self.assertEqual(metadata.normalize_image_tags(
+            "gateway", "hermes/v2.0.2", "hermes/v2.0.2-abcdef0", "tag",
+        ), {"IMAGE_TAG": "hermes/v2.0.2", "EXTRA_TAGS": "hermes/v2.0.2-abcdef0"})
+
     def test_interface_checks_the_supplied_inputs_and_consumed_outputs(self):
         baseline = {"uses": "example/action/path@" + "a" * 40, "with": {"artifact-version-directory": "component"}}
         action = {"inputs": {"artifact-version-directory": {}}, "outputs": {"DOCKER_TAG": {}}}
@@ -119,6 +130,45 @@ echo 'REGISTRIES=${{ inputs.DOCKER_REGISTRIES }}' >> "$GITHUB_OUTPUT"
         for version in ("2.0.2", "2.0.2-rc.1"):
             with self.subTest(version=version):
                 metadata.rehearse(*self.rehearsal_fixture(), version, root=self.root)
+
+    def test_workflow_supplies_the_declared_version_for_node_and_rust_packages(self):
+        build = metadata.load_yaml((metadata.ROOT / ".github/workflows/build-image.yaml").read_text())
+        version_step = next(step for step in build["jobs"]["build"]["steps"] if step.get("id") == "version")
+        for component, version in (("gateway", "2.0.2"), ("hermes", "1.13.2")):
+            with self.subTest(component=component):
+                if component == "hermes":
+                    (self.directory / "package.json").unlink()
+                    (self.directory / "Cargo.toml").write_text(f'[package]\nversion = "{version}"\n')
+                action, baseline, steps, image = self.rehearsal_fixture()
+                image["component"] = component
+                steps.insert(0, version_step)
+                baseline["env"] = {"GUESSED_ARTIFACT_VERSION": "${{ steps.version.outputs.version }}"}
+                script = action["runs"]["steps"][0]["run"]
+                script = script.replace(
+                    "version=$(jq -r '.version' '${{ inputs.artifact-version-directory }}/package.json')",
+                    'version=${GUESSED_ARTIFACT_VERSION:-0.0.1}',
+                )
+                action["runs"]["steps"][0]["run"] = script
+                metadata.rehearse(action, baseline, steps, image, version, root=self.root)
+
+    def test_workflow_normalizes_the_action_outputs_before_the_real_release_consumers(self):
+        build = metadata.load_yaml((metadata.ROOT / ".github/workflows/build-image.yaml").read_text())
+        tag_step = next(step for step in build["jobs"]["build"]["steps"] if step.get("id") == "image_tags")
+        for version in ("2.0.2", "2.0.2-rc.1"):
+            with self.subTest(version=version):
+                action, baseline, steps, image = self.rehearsal_fixture()
+                action["outputs"]["EARTH_DOCKER_IMAGES_EXTRA_TAGS"] = action["outputs"]["EXTRA_TAGS"]
+                script = action["runs"]["steps"][0]["run"]
+                action["runs"]["steps"][0]["run"] = script.replace("tag=${GITHUB_REF_NAME##*/}", "tag=$GITHUB_REF_NAME")
+                for step in steps:
+                    step["env"]["IMAGE_TAG"] = "${{ steps.image_tags.outputs.IMAGE_TAG }}"
+                    step["env"]["EXTRA_TAGS"] = "${{ steps.image_tags.outputs.EXTRA_TAGS }}"
+                steps.insert(0, tag_step)
+                metadata.rehearse(action, baseline, steps, image, version, root=self.root)
+                # A different component's prefix must still fail release validation.
+                action["runs"]["steps"][0]["run"] = script.replace("tag=${GITHUB_REF_NAME##*/}", "tag=hermes/v2.0.2")
+                with self.assertRaisesRegex(ValueError, "IMAGE_TAG must be a version tag"):
+                    metadata.rehearse(action, baseline, steps, image, version, root=self.root)
 
     def test_rehearsal_rejects_wrong_version_and_component_prefixed_docker_tags(self):
         for before, after, expected in [

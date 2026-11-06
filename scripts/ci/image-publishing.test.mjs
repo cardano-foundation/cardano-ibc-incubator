@@ -45,7 +45,7 @@ test('fork and Dependabot build-only mode supplies no login destinations', () =>
   const result = selectRegistries({ PUBLISH: 'false' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.output, 'registries=');
-  assert.match(build, /earthly "\+\$\{COMPONENT\}" --PUSH=false/);
+  assert.match(build, /earth "\+\$\{COMPONENT\}" --PUSH=false/);
   assert.match(build, /name: Publish tested image\n        if: inputs.publish/);
 });
 
