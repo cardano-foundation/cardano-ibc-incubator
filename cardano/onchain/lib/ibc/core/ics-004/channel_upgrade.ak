@@ -536,6 +536,12 @@ pub fn start_flushing(
   config: PacketConfig,
   pending: PendingUpgrade,
 ) -> PendingUpgrade {
+  let valid_to = valid_to(context)
+  let valid_from =
+    validator_utils.get_tx_valid_from(context.transaction.validity_range)
+  // Ledger inclusion is inside this range, which bounds the timeout anchor.
+  expect
+    valid_from < valid_to && valid_to - valid_from <= pending.timeout_period
   // A transfer channel can upgrade only after its packet lanes were issued.
   let sequencer =
     "cardano-ibc/send-sequencer-token/v1"
@@ -564,7 +570,7 @@ pub fn start_flushing(
       ..pending.upgrade,
       timeout: UpgradeTimeout {
         height: height_mod.zero_height(),
-        timestamp: ( valid_to(context) + pending.timeout_period ) * 1_000_000,
+        timestamp: ( valid_to + pending.timeout_period ) * 1_000_000,
       },
       next_sequence_send,
     },
