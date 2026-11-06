@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the pinned image action and rehearse its release metadata without Docker."""
+"""Prepare image metadata and rehearse the pinned action's releases without Docker."""
 
 import argparse
 import json
@@ -43,6 +43,17 @@ def check_component_version(component, directory, discovered, ref_type="branch",
     if ref_type == "tag" and ref_name != f"{component}/v{version}":
         raise ValueError(f"Release tag {ref_name!r} does not match {component}/v{version}")
     return version
+
+
+def normalize_image_tags(component, image_tag, extra_tags, ref_type):
+    def normalize(tag):
+        # Git tags select a component. Docker tags cannot include that prefix.
+        return tag.removeprefix(f"{component}/") if ref_type == "tag" else tag
+
+    return {
+        "IMAGE_TAG": normalize(image_tag),
+        "EXTRA_TAGS": " ".join(normalize(tag) for tag in extra_tags.split()),
+    }
 
 
 def render(value, context):
@@ -242,6 +253,7 @@ def rehearse(action, baseline, build_steps, image, version, root=ROOT):
             "steps.image.outputs.id": IMAGE_ID,
             **{f"steps.baseline.outputs.{name}": value for name, value in outputs.items()},
         })
+        workflow_metadata_step(build_steps, "image_tags", context, directory, env)
         # Resolve the actual release consumer's wiring, rather than constructing
         # known-good IMAGE_TAG or EXTRA_TAGS values in the test.
         def consumer_env(step_name):
@@ -278,12 +290,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--read-version", action="store_true", help="Export the declared component version to GITHUB_OUTPUT")
+    modes.add_argument("--normalize-tags", action="store_true", help="Remove component prefixes from Docker release tags")
     modes.add_argument("--check-version", action="store_true", help="Check real build outputs against the component manifest")
     parser.add_argument("--build-workflow", type=Path, default=ROOT / ".github/workflows/build-image.yaml")
     parser.add_argument("--publish-workflow", type=Path, default=ROOT / ".github/workflows/publish.yaml")
     args = parser.parse_args()
     if args.read_version:
         write_outputs({"version": component_version(os.environ["VERSION_DIRECTORY"])})
+    elif args.normalize_tags:
+        write_outputs(normalize_image_tags(
+            os.environ["COMPONENT"], os.environ["IMAGE_TAG"], os.environ.get("EXTRA_TAGS", ""),
+            os.environ.get("GITHUB_REF_TYPE", "branch"),
+        ))
     elif args.check_version:
         component = os.environ["COMPONENT"]
         version = check_component_version(

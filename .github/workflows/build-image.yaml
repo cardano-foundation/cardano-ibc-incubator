@@ -109,14 +109,23 @@ jobs:
         shell: bash
         run: python3 scripts/ci/image-metadata.py --check-version
 
+      - name: Normalize image tags
+        id: image_tags
+        shell: bash
+        env:
+          COMPONENT: ${{ inputs.component }}
+          IMAGE_TAG: ${{ steps.baseline.outputs.DOCKER_TAG }}
+          EXTRA_TAGS: ${{ steps.baseline.outputs.EARTH_DOCKER_IMAGES_EXTRA_TAGS }}
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/image-metadata.py" --normalize-tags
+
       - name: Require unused release image tags
         if: github.ref_type == 'tag'
         shell: bash
         env:
           COMPONENT: ${{ inputs.component }}
-          IMAGE_TAG: ${{ steps.baseline.outputs.DOCKER_TAG }}
+          IMAGE_TAG: ${{ steps.image_tags.outputs.IMAGE_TAG }}
           REGISTRIES: ${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}
-          EXTRA_TAGS: ${{ steps.baseline.outputs.EARTH_DOCKER_IMAGES_EXTRA_TAGS }}
+          EXTRA_TAGS: ${{ steps.image_tags.outputs.EXTRA_TAGS }}
         run: node scripts/ci/release-image.mjs --preflight-only
 
       - name: Build image without publishing
@@ -143,8 +152,8 @@ jobs:
           COMPONENT: ${{ inputs.component }}
           IMAGE_ID: ${{ steps.image.outputs.id }}
           REGISTRIES: ${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}
-          IMAGE_TAG: ${{ steps.baseline.outputs.DOCKER_TAG }}
-          EXTRA_TAGS: ${{ steps.baseline.outputs.EARTH_DOCKER_IMAGES_EXTRA_TAGS }}
+          IMAGE_TAG: ${{ steps.image_tags.outputs.IMAGE_TAG }}
+          EXTRA_TAGS: ${{ steps.image_tags.outputs.EXTRA_TAGS }}
           COMMIT_TAG: ${{ steps.baseline.outputs.GIT_SHORT_COMMIT }}
         run: |
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
@@ -166,7 +175,7 @@ jobs:
         shell: bash
         env:
           REGISTRIES: ${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}
-          IMAGE_TAG: ${{ steps.baseline.outputs.DOCKER_TAG }}
+          IMAGE_TAG: ${{ steps.image_tags.outputs.IMAGE_TAG }}
         run: |
           release_dir="${RUNNER_TEMP}/gateway-release"
           mkdir -p "${release_dir}"
