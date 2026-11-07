@@ -110,18 +110,26 @@ export type SwapEstimateResponse = {
   transferChains: string[];
 };
 
-export type PlannerClientConfig = {
+export type TransferPlannerClientConfig = {
   cardanoChainId: string;
   cardanoRestEndpoint?: string;
-  counterpartyChainId?: string;
-  localOsmosisRestEndpoint: string;
+  counterpartyChainId: string;
+  counterpartyRestEndpoint: string;
   routeDiscoveryTimeoutMs?: number;
-  swapRouterAddress?: string;
   preferredChannels?: PreferredChannel[];
   resolveCardanoAssetDenomTrace?: (
     assetId: string,
   ) => Promise<ResolvedCardanoAssetTrace | null>;
   fetchImpl?: typeof fetch;
+};
+
+export type PlannerClientConfig = Omit<
+  TransferPlannerClientConfig,
+  'counterpartyChainId' | 'counterpartyRestEndpoint'
+> & {
+  counterpartyChainId?: string;
+  localOsmosisRestEndpoint: string;
+  swapRouterAddress?: string;
 };
 
 export type PreferredChannel = {
@@ -131,13 +139,16 @@ export type PreferredChannel = {
   srcChannel: string;
 };
 
-export type PlannerClient = {
+export type TransferPlannerClient = {
   checkTransferRouteAvailability: (
     request: TransferRouteAvailabilityRequest,
   ) => Promise<TransferRouteAvailabilityResponse>;
   planTransferRoute: (
     request: TransferPlanRequest,
   ) => Promise<TransferPlanResponse>;
+};
+
+export type PlannerClient = TransferPlannerClient & {
   getLocalOsmosisSwapOptions: () => Promise<SwapOptionsResponse>;
   estimateLocalOsmosisSwap: (
     request: SwapEstimateRequest,
@@ -198,12 +209,12 @@ type SwapRoute = {
 };
 
 type PlannerConfig = Omit<
-  PlannerClientConfig,
-  'counterpartyChainId' | 'fetchImpl' | 'routeDiscoveryTimeoutMs'
+  TransferPlannerClientConfig,
+  'fetchImpl' | 'routeDiscoveryTimeoutMs'
 > & {
-  counterpartyChainId: string;
   fetchImpl: typeof fetch;
   routeDiscoveryTimeoutMs: number;
+  swapRouterAddress?: string;
 };
 
 export class RouteDiscoveryTimeoutError extends Error {
@@ -299,16 +310,21 @@ async function withRouteDiscoveryTimeout<T>(
   }
 }
 
-export function createPlannerClient(config: PlannerClientConfig): PlannerClient {
-  const resolvedConfig: PlannerConfig = {
+function resolvePlannerConfig(config: TransferPlannerClientConfig): PlannerConfig {
+  return {
     ...config,
-    counterpartyChainId:
-      config.counterpartyChainId?.trim() || LOCAL_OSMOSIS_CHAIN_ID,
+    counterpartyChainId: config.counterpartyChainId.trim(),
     fetchImpl: config.fetchImpl || fetch,
     routeDiscoveryTimeoutMs: normalizeRouteDiscoveryTimeoutMs(
       config.routeDiscoveryTimeoutMs,
     ),
   };
+}
+
+export function createTransferPlannerClient(
+  config: TransferPlannerClientConfig,
+): TransferPlannerClient {
+  const resolvedConfig = resolvePlannerConfig(config);
 
   return {
     async checkTransferRouteAvailability(request) {
@@ -517,6 +533,22 @@ export function createPlannerClient(config: PlannerClientConfig): PlannerClient 
 
       return noDirectRoute(fromChainId, toChainId, request.expectedChainPath);
     },
+  };
+}
+
+export function createPlannerClient(config: PlannerClientConfig): PlannerClient {
+  const transferConfig: TransferPlannerClientConfig = {
+    ...config,
+    counterpartyChainId:
+      config.counterpartyChainId?.trim() || LOCAL_OSMOSIS_CHAIN_ID,
+    counterpartyRestEndpoint: config.localOsmosisRestEndpoint,
+  };
+  const resolvedConfig: PlannerConfig = {
+    ...resolvePlannerConfig(transferConfig),
+    swapRouterAddress: config.swapRouterAddress,
+  };
+  return {
+    ...createTransferPlannerClient(transferConfig),
 
     async getLocalOsmosisSwapOptions() {
       const routeMap = await fetchCrossChainSwapRouterState(resolvedConfig);
@@ -702,7 +734,7 @@ async function isMatchingOpenCounterpartyChannel(
   cardanoChannel: QueryChannelResponse,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  const restEndpoint = config.localOsmosisRestEndpoint.trim().replace(/\/+$/, '');
+  const restEndpoint = config.counterpartyRestEndpoint.trim().replace(/\/+$/, '');
   const channelId = encodeURIComponent(cardanoChannel.counterparty.channel_id);
   const portId = encodeURIComponent(cardanoChannel.counterparty.port_id);
   const url = `${restEndpoint}${QUERY_CHANNELS_PREFIX_URL}/${channelId}/ports/${portId}`;
@@ -739,8 +771,8 @@ async function fetchOpenCounterpartyChannels(
   do {
     throwIfAborted(signal);
     const url = nextKey
-      ? `${config.localOsmosisRestEndpoint}${QUERY_ALL_CHANNELS_URL}&pagination.key=${encodeURIComponent(nextKey)}`
-      : `${config.localOsmosisRestEndpoint}${QUERY_ALL_CHANNELS_URL}`;
+      ? `${config.counterpartyRestEndpoint}${QUERY_ALL_CHANNELS_URL}&pagination.key=${encodeURIComponent(nextKey)}`
+      : `${config.counterpartyRestEndpoint}${QUERY_ALL_CHANNELS_URL}`;
     const data: {
       channels?: unknown;
       pagination?: { next_key?: string };
@@ -756,7 +788,7 @@ async function fetchOpenCounterpartyChannels(
       }
       try {
         const clientState = await fetchClientStateFromChannel(
-          config.localOsmosisRestEndpoint,
+          config.counterpartyRestEndpoint,
           channel.channel_id,
           channel.port_id,
           config.fetchImpl,
@@ -766,7 +798,7 @@ async function fetchOpenCounterpartyChannels(
           clientState?.identified_client_state?.client_state?.chain_id;
         if (!clientChainId) {
           throw new RouteDiscoveryResponseError(
-            `${config.localOsmosisRestEndpoint}${QUERY_CHANNELS_PREFIX_URL}/${channel.channel_id}/ports/${channel.port_id}/client_state`,
+            `${config.counterpartyRestEndpoint}${QUERY_CHANNELS_PREFIX_URL}/${channel.channel_id}/ports/${channel.port_id}/client_state`,
             'identified client chain_id is required.',
           );
         }
@@ -915,7 +947,7 @@ async function fetchCrossChainSwapRouterState(
     return [];
   }
 
-  const url = `${config.localOsmosisRestEndpoint}${QUERY_SWAP_ROUTER_STATE.replace(
+  const url = `${config.counterpartyRestEndpoint}${QUERY_SWAP_ROUTER_STATE.replace(
     'SWAP_ROUTER_ADDRESS',
     config.swapRouterAddress,
   )}`;
@@ -971,7 +1003,7 @@ async function estimateSwapViaRest(
   }
 
   const url = new URL(
-    `${config.localOsmosisRestEndpoint}/osmosis/poolmanager/v1beta1/${firstRoute.pool_id}/estimate/swap_exact_amount_in_with_primitive_types`,
+    `${config.counterpartyRestEndpoint}/osmosis/poolmanager/v1beta1/${firstRoute.pool_id}/estimate/swap_exact_amount_in_with_primitive_types`,
   );
   url.searchParams.set('token_in', `${tokenInAmount}${tokenInDenom}`);
   for (const route of routes) {
