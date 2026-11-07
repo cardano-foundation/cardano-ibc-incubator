@@ -1,6 +1,5 @@
 import { TransferProvider } from './TransferContext';
 import { IBCParamsProvider } from './IBCParamsContext';
-import { SwapProvider } from './SwapContext';
 
 export const CustomAppProvider = ({
   children,
@@ -9,9 +8,7 @@ export const CustomAppProvider = ({
 }) => {
   return (
     <IBCParamsProvider>
-      <SwapProvider>
-        <TransferProvider>{children}</TransferProvider>
-      </SwapProvider>
+      <TransferProvider>{children}</TransferProvider>
     </IBCParamsProvider>
   );
 };

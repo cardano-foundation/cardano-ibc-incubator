@@ -61,17 +61,13 @@ export const CARDANO_IBC_CHAIN_ID = runtimeIdentity.ibcChainId;
 export const isCardanoChainRef = (chainId?: string): boolean =>
   chainId === CARDANO_CHAIN_ID || chainId === CARDANO_IBC_CHAIN_ID;
 
-export const LOCAL_OSMOSIS_RPC_ENDPOINT =
-  firstNonEmpty(
-    publicRuntimeValue('NEXT_PUBLIC_LOCALOSMOSIS_RPC_ENDPOINT'),
-    publicRuntimeValue('NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT'),
-  ) || 'http://localhost:26658';
+export const LOCAL_COSMOS_RPC_ENDPOINT =
+  firstNonEmpty(publicRuntimeValue('NEXT_PUBLIC_LOCAL_COSMOS_RPC_ENDPOINT')) ||
+  'http://localhost:26757';
 
-export const LOCAL_OSMOSIS_REST_ENDPOINT =
-  firstNonEmpty(
-    publicRuntimeValue('NEXT_PUBLIC_LOCALOSMOSIS_REST_ENDPOINT'),
-    publicRuntimeValue('NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT'),
-  ) || 'http://localhost:1318';
+export const LOCAL_COSMOS_REST_ENDPOINT =
+  firstNonEmpty(publicRuntimeValue('NEXT_PUBLIC_LOCAL_COSMOS_REST_ENDPOINT')) ||
+  'http://localhost:1327';
 
 export const INJECTIVE_RPC_ENDPOINT =
   firstNonEmpty(publicRuntimeValue('NEXT_PUBLIC_INJECTIVE_RPC_ENDPOINT')) ||
@@ -129,10 +125,6 @@ export const KUPMIOS_AUTH_HEADERS = serverFirstNonEmpty(KUPMIOS_URL)
       ogmiosHeader: authHeader(KUPMIOS_OGMIOS_API_KEY),
     }
   : undefined;
-
-export const CROSSCHAIN_SWAP_ADDRESS = firstNonEmpty(
-  publicRuntimeValue('NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS'),
-);
 
 export const ENABLE_MAINNET_IBC_SWAP =
   publicRuntimeValue('NEXT_PUBLIC_ENABLE_MAINNET_IBC_SWAP') === 'true';

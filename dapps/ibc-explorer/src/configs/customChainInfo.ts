@@ -1,59 +1,68 @@
 import { Chain, AssetList } from '@chain-registry/types';
-import { chains, assets } from 'chain-registry/mainnet';
 
-import UnknownTokenIcon from '@src/assets/images/unknown-token.png';
+import UnknownTokenIcon from '../assets/images/unknown-token.png';
 
 export const CARDANO_MAINNET_MAGIC = '764824073';
 
-const localOsmosisChainConfig: Chain = {
-  chain_name: 'localosmosis',
+const COSMOS_LOGO =
+  'https://raw.githubusercontent.com/cosmos/chain-registry/master/cosmoshub/images/atom.svg';
+const INJECTIVE_LOGO =
+  'https://raw.githubusercontent.com/cosmos/chain-registry/master/injective/images/inj.svg';
+
+const localCosmosChainConfig: Chain = {
+  chain_name: 'v8-classic',
   chain_type: 'cosmos',
   status: 'active',
   network_type: 'testnet',
-  pretty_name: 'Local Osmosis',
-  chain_id: 'localosmosis',
-  bech32_prefix: 'osmo',
+  pretty_name: 'Local Cosmos',
+  chain_id: 'v8-classic-1',
+  bech32_prefix: 'cosmos',
   slip44: 118,
-  fees: {
-    fee_tokens: [
-      {
-        denom: 'uosmo',
-        fixed_min_gas_price: 0.0025,
-        low_gas_price: 0.0025,
-        average_gas_price: 0.025,
-        high_gas_price: 0.04,
-      },
-    ],
-  },
-  staking: {
-    staking_tokens: [
-      {
-        denom: 'uosmo',
-      },
-      {
-        denom: 'osmo',
-      },
-    ],
-  },
+  fees: { fee_tokens: [{ denom: 'stake', fixed_min_gas_price: 0.0025 }] },
+  staking: { staking_tokens: [{ denom: 'stake' }] },
   apis: {
     rpc: [
       {
-        address: process.env.REACT_APP_LOCALOSMOIS_RPC_ENDPOINT || '',
+        address:
+          process.env.REACT_APP_LOCAL_COSMOS_RPC_ENDPOINT ||
+          'http://localhost:26757',
       },
     ],
     rest: [
       {
-        address: process.env.REACT_APP_LOCALOSMOIS_REST_ENDPOINT || '',
+        address:
+          process.env.REACT_APP_LOCAL_COSMOS_REST_ENDPOINT ||
+          'http://localhost:1327',
       },
     ],
   },
-  logo_URIs: {
-    svg: 'https://app.osmosis.zone/tokens/generated/osmo.svg',
-  },
-  keywords: ['ibc-go'], // Assuming features map to keywords
+  logo_URIs: { svg: COSMOS_LOGO },
 };
 
-export const customChains: Chain[] = [localOsmosisChainConfig];
+const injectiveMainnetChain: Chain = {
+  chain_name: 'injective',
+  chain_type: 'cosmos',
+  status: 'active',
+  network_type: 'mainnet',
+  pretty_name: 'Injective',
+  chain_id: 'injective-1',
+  bech32_prefix: 'inj',
+  slip44: 60,
+  logo_URIs: { svg: INJECTIVE_LOGO },
+};
+
+const injectiveTestnetChain: Chain = {
+  ...injectiveMainnetChain,
+  chain_id: 'injective-888',
+  network_type: 'testnet',
+  pretty_name: 'Injective Testnet',
+};
+
+export const customChains: Chain[] = [
+  localCosmosChainConfig,
+  injectiveTestnetChain,
+  injectiveMainnetChain,
+];
 
 export const isCardanoMainnet =
   process.env.REACT_APP_CARDANO_CHAIN_ID === CARDANO_MAINNET_MAGIC;
@@ -83,7 +92,7 @@ const cardanoChain: Chain = {
   },
 };
 
-export const allChains: any[] = [...customChains, cardanoChain, ...chains];
+export const allChains: any[] = [...customChains, cardanoChain];
 
 export const chainsMapping: { [key: string]: any } = allChains.reduce(
   (acc: { [key: string]: any }, chain) => {
@@ -110,50 +119,39 @@ type ChainAssetListLike = {
   assets: ChainAssetEntry[];
 };
 
-const localOsmosisAssetList: AssetList = {
-  chain_name: 'localosmosis',
+const localCosmosAssetList: AssetList = {
+  chain_name: 'v8-classic',
+  assets: ['stake', 'utest'].map((denom) => ({
+    description: `Local Cosmos fixture token ${denom}`,
+    denom_units: [{ denom, exponent: 0 }],
+    base: denom,
+    display: denom,
+    name: denom,
+    symbol: denom,
+    logo_URIs: { svg: COSMOS_LOGO },
+  })),
+};
+
+const injectiveAssetList: AssetList = {
+  chain_name: 'injective',
   assets: [
     {
-      description: 'Registered denom uosmo for localosmosis testing',
+      description: 'Injective native token',
       denom_units: [
-        {
-          denom: 'uosmo',
-          exponent: 0,
-          aliases: [],
-        },
+        { denom: 'inj', exponent: 0 },
+        { denom: 'INJ', exponent: 18 },
       ],
-      base: 'uosmo',
-      display: 'uosmo',
-      name: 'uosmo',
-      symbol: 'uosmo',
-      logo_URIs: {
-        png: 'https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/osmo.png',
-        svg: 'https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/osmo.svg',
-      },
-    },
-    {
-      description: 'Registered denom uosmo for localosmosis testing',
-      denom_units: [
-        {
-          denom: 'osmo',
-          exponent: 6,
-          aliases: [],
-        },
-      ],
-      base: 'osmo',
-      display: 'osmo',
-      name: 'osmo',
-      symbol: 'osmo',
-      logo_URIs: {
-        png: 'https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/osmo.png',
-        svg: 'https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/osmo.svg',
-      },
+      base: 'inj',
+      display: 'INJ',
+      name: 'Injective',
+      symbol: 'INJ',
+      logo_URIs: { svg: INJECTIVE_LOGO },
     },
   ],
 };
 
 const cardanoAssetList: AssetList = {
-  chain_name: process.env.REACT_APP_CARDANO_CHAIN_ID!,
+  chain_name: 'cardano',
   assets: [
     {
       description: 'Lovelace',
@@ -176,8 +174,8 @@ const cardanoAssetList: AssetList = {
 };
 
 const allAssetsAndChain: ChainAssetListLike[] = [
-  ...(assets as unknown as ChainAssetListLike[]),
-  localOsmosisAssetList as ChainAssetListLike,
+  injectiveAssetList,
+  localCosmosAssetList,
   cardanoAssetList as ChainAssetListLike,
 ];
 
@@ -186,7 +184,7 @@ export const findTokenImg = (chainId: string, tokenNameStr: string): string => {
   if (tokenName === CARDANO_LOVELACE_HEX) {
     tokenName = 'lovelace';
   }
-  const chainName = chainId.split('-')[0];
+  const chainName = chainsMapping[chainId]?.chain_name;
   const chainAssets = allAssetsAndChain.find(
     (chain) => chain.chain_name === chainName,
   );
@@ -209,12 +207,6 @@ export const chainsRestEndpoints: { [key: string]: string } = allChains.reduce(
   },
   {},
 );
-// {
-//   chainId: '1',
-//   chainName: 'AXL',
-//   chainLogo:
-//     'https://cdn4.iconfinder.com/data/icons/crypto-currency-and-coin-2/256/cardano_ada-512.png',
-// },
 export const ChainListData = [...customChains, cardanoChain].map((chain) => {
   return {
     chainId: chain.chain_id || chain.chain_name,

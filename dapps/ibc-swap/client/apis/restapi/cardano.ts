@@ -52,31 +52,6 @@ interface SubmitSignedCardanoTxResponse {
 
 export type { CardanoAssetDenomTrace } from '@/types/cardanoTrace';
 
-export interface SwapOptionToken {
-  tokenId: string;
-  tokenName: string;
-  tokenLogo: string | null;
-}
-
-export interface SwapOptions {
-  fromChainId: string;
-  fromChainName: string;
-  toChainId: string;
-  toChainName: string;
-  toTokens: SwapOptionToken[];
-}
-
-export interface SwapEstimateResponse {
-  message: string;
-  tokenOutAmount: string;
-  tokenOutTransferBackAmount: string;
-  tokenSwapAmount: string;
-  outToken: string | null;
-  transferRoutes: string[];
-  transferBackRoutes: string[];
-  transferChains: string[];
-}
-
 export interface TransferPlanResponse {
   foundRoute: boolean;
   mode:
@@ -452,49 +427,6 @@ export async function listCardanoIbcAssets(): Promise<
     const errorMessage = getGatewayErrorMessage(error);
     toast.error(errorMessage, { theme: 'colored' });
     return [];
-  }
-}
-
-export async function getLocalOsmosisSwapOptions(): Promise<SwapOptions | null> {
-  try {
-    const response = await cardanoPlannerClient.getLocalOsmosisSwapOptions();
-    return {
-      fromChainId: response.from_chain_id,
-      fromChainName: response.from_chain_name,
-      toChainId: response.to_chain_id,
-      toChainName: response.to_chain_name,
-      toTokens: response.to_tokens.map((token) => ({
-        tokenId: token.token_id,
-        tokenName: token.token_name,
-        tokenLogo: token.token_logo,
-      })),
-    };
-  } catch (error) {
-    const errorMessage = getGatewayErrorMessage(error);
-    toast.error(errorMessage, { theme: 'colored' });
-    return null;
-  }
-}
-
-export async function estimateLocalOsmosisSwap(params: {
-  fromChainId: string;
-  tokenInDenom: string;
-  tokenInAmount: string;
-  toChainId: string;
-  tokenOutDenom: string;
-}): Promise<SwapEstimateResponse | null> {
-  try {
-    return await cardanoPlannerClient.estimateLocalOsmosisSwap({
-      fromChainId: params.fromChainId,
-      tokenInDenom: params.tokenInDenom,
-      tokenInAmount: params.tokenInAmount,
-      toChainId: params.toChainId,
-      tokenOutDenom: params.tokenOutDenom,
-    });
-  } catch (error) {
-    const errorMessage = getGatewayErrorMessage(error);
-    toast.error(errorMessage, { theme: 'colored' });
-    return null;
   }
 }
 

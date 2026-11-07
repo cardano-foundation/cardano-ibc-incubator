@@ -69,7 +69,6 @@ export const paymentCredToAddress = (
 export const getNumPkgNeeded = (packetDataStr: string) => {
   let numPkgNeeded = 1;
   numPkgNeeded += ((packetDataStr || '').match(/forward/g) || []).length;
-  numPkgNeeded += ((packetDataStr || '').match(/osmosis_swap/g) || []).length;
   return numPkgNeeded;
 };
 

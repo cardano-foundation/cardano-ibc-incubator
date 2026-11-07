@@ -4,18 +4,7 @@ import '@interchain-ui/react/styles';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
-import { GeneratedType, Registry } from '@cosmjs/proto-signing';
-import { AminoTypes } from '@cosmjs/stargate';
-import {
-  cosmosAminoConverters,
-  cosmosProtoRegistry,
-  cosmwasmAminoConverters,
-  cosmwasmProtoRegistry,
-  ibcProtoRegistry,
-  ibcAminoConverters,
-  osmosisAminoConverters,
-  osmosisProtoRegistry,
-} from 'osmojs';
+import { registry, aminoTypes } from '@/configs/cosmosSigning';
 import { useEffect, useMemo, useState } from 'react';
 
 import App, {
@@ -51,21 +40,6 @@ const queryClient = new QueryClient({
   },
 });
 
-const protoRegistry: ReadonlyArray<[string, GeneratedType]> = [
-  ...cosmosProtoRegistry,
-  ...cosmwasmProtoRegistry,
-  ...ibcProtoRegistry,
-  ...osmosisProtoRegistry,
-];
-
-const aminoConverters = {
-  ...cosmosAminoConverters,
-  ...cosmwasmAminoConverters,
-  ...ibcAminoConverters,
-  ...osmosisAminoConverters,
-};
-const registry = new Registry(protoRegistry);
-const aminoTypes = new AminoTypes(aminoConverters);
 const isExtensionWallet = (wallet: any) => {
   // cosmos-kit groups extension and mobile wallets together; keep only the
   // browser-extension variants for this local demo.

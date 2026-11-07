@@ -49,7 +49,6 @@ import {
 } from '@/utils/cardanoAssetPresentation';
 import { useCardanoChain } from '@/hooks/useCardanoChain';
 import { useSafeCardanoAddress } from '@/hooks/useSafeCardanoAddress';
-import SwapContext from '@/contexts/SwapContext';
 import BigNumber from 'bignumber.js';
 import { debounce } from '@/utils/helper';
 import { CARDANO_CHAIN_ID } from '@/configs/runtime';
@@ -418,7 +417,6 @@ const Transfer = () => {
     isProcessingTransfer,
   } = useContext(TransferContext);
   const { getPfmFee } = useContext(IBCParamsContext);
-  const { handleResetData: handleResetSwapData } = useContext(SwapContext);
 
   const {
     isOpen: isOpenNetworkModal,
@@ -1155,7 +1153,6 @@ const Transfer = () => {
   ]);
 
   useEffect(() => {
-    handleResetSwapData();
     fetchNetworkList();
   }, []);
 

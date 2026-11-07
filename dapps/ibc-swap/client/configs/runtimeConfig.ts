@@ -10,8 +10,8 @@ import {
   IBC_SWAP_MODE,
   INJECTIVE_REST_ENDPOINT,
   INJECTIVE_RPC_ENDPOINT,
-  LOCAL_OSMOSIS_REST_ENDPOINT,
-  LOCAL_OSMOSIS_RPC_ENDPOINT,
+  LOCAL_COSMOS_REST_ENDPOINT,
+  LOCAL_COSMOS_RPC_ENDPOINT,
   type CardanoNetwork,
   type IbcSwapMode,
 } from '@/configs/runtime';
@@ -74,15 +74,9 @@ export type RuntimeConfig = {
   pfmFeeChainIds: string[];
   chains: RuntimeChainConfig[];
   routes: RuntimeRouteConfig[];
-  features: {
-    localSwap: {
-      enabled: boolean;
-      toChainId: string;
-    };
-  };
 };
 
-export const LOCAL_OSMOSIS_CHAIN_ID = 'localosmosis';
+export const LOCAL_COSMOS_CHAIN_ID = 'v8-classic-1';
 export const INJECTIVE_TESTNET_CHAIN_ID = 'injective-888';
 export const INJECTIVE_MAINNET_CHAIN_ID = 'injective-1';
 
@@ -129,41 +123,31 @@ const cardanoChain = (
   visibleInSelector: true,
 });
 
-const localOsmosisChain: RuntimeChainConfig = {
-  id: LOCAL_OSMOSIS_CHAIN_ID,
-  ibcChainId: LOCAL_OSMOSIS_CHAIN_ID,
-  chainName: LOCAL_OSMOSIS_CHAIN_ID,
+const localCosmosChain: RuntimeChainConfig = {
+  id: LOCAL_COSMOS_CHAIN_ID,
+  ibcChainId: LOCAL_COSMOS_CHAIN_ID,
+  chainName: 'v8-classic',
   kind: 'cosmos',
   role: 'user',
   networkType: 'local',
-  prettyName: 'Local Osmosis',
-  bech32Prefix: 'osmo',
+  prettyName: 'Local Cosmos',
+  bech32Prefix: 'cosmos',
   slip44: 118,
-  logoUri: 'https://app.osmosis.zone/tokens/generated/osmo.svg',
+  logoUri: DefaultCosmosNetworkIcon.src,
   visibleInSelector: true,
-  rpcEndpoint: LOCAL_OSMOSIS_RPC_ENDPOINT,
-  restEndpoint: LOCAL_OSMOSIS_REST_ENDPOINT,
-  feeDenom: 'uosmo',
+  rpcEndpoint: LOCAL_COSMOS_RPC_ENDPOINT,
+  restEndpoint: LOCAL_COSMOS_REST_ENDPOINT,
+  feeDenom: 'stake',
   fixedMinGasPrice: 0.0025,
   keyAlgos: ['secp256k1'],
-  assets: [
-    {
-      description: 'Registered denom uosmo for localosmosis testing',
-      base: 'uosmo',
-      display: 'uosmo',
-      name: 'uosmo',
-      symbol: 'uosmo',
-      exponent: 0,
-    },
-    {
-      description: 'Registered denom osmo for localosmosis testing',
-      base: 'osmo',
-      display: 'osmo',
-      name: 'osmo',
-      symbol: 'osmo',
-      exponent: 6,
-    },
-  ],
+  assets: ['stake', 'utest'].map((denom) => ({
+    description: `Local Cosmos fixture token ${denom}`,
+    base: denom,
+    display: denom,
+    name: denom,
+    symbol: denom,
+    exponent: 0,
+  })),
 };
 
 const injectiveTestnetChain: RuntimeChainConfig = {
@@ -269,12 +253,6 @@ function buildRuntimeConfig(mode: IbcSwapMode): RuntimeConfig {
         cardanoPrettyName(),
         'Injective Testnet',
       ),
-      features: {
-        localSwap: {
-          enabled: false,
-          toChainId: LOCAL_OSMOSIS_CHAIN_ID,
-        },
-      },
     };
   }
 
@@ -313,41 +291,29 @@ function buildRuntimeConfig(mode: IbcSwapMode): RuntimeConfig {
           disabledReason,
         },
       ),
-      features: {
-        localSwap: {
-          enabled: false,
-          toChainId: LOCAL_OSMOSIS_CHAIN_ID,
-        },
-      },
     };
   }
 
   return {
     mode,
     label: 'Local',
-    description: `${cardanoPrettyName()} demo stack plus Local Osmosis direct-route preview.`,
+    description: `${cardanoPrettyName()} demo stack plus Local Cosmos direct-route preview.`,
     enabled: true,
-    defaultCosmosChainId: LOCAL_OSMOSIS_CHAIN_ID,
+    defaultCosmosChainId: LOCAL_COSMOS_CHAIN_ID,
     cardanoNetwork: CARDANO_NETWORK,
     cardanoChainId: CARDANO_CHAIN_ID,
     cardanoIbcChainId: CARDANO_IBC_CHAIN_ID,
     cardanoBridgeManifestUrl: CARDANO_BRIDGE_MANIFEST_URL,
-    plannerCounterpartyRestEndpoint: LOCAL_OSMOSIS_REST_ENDPOINT,
+    plannerCounterpartyRestEndpoint: LOCAL_COSMOS_REST_ENDPOINT,
     pfmFeeChainIds: [],
-    chains: [cardanoChain(), localOsmosisChain],
+    chains: [cardanoChain(), localCosmosChain],
     routes: bidirectionalRoutes(
       'local',
       CARDANO_CHAIN_ID,
-      LOCAL_OSMOSIS_CHAIN_ID,
+      LOCAL_COSMOS_CHAIN_ID,
       cardanoPrettyName(),
-      'Local Osmosis',
+      'Local Cosmos',
     ),
-    features: {
-      localSwap: {
-        enabled: true,
-        toChainId: LOCAL_OSMOSIS_CHAIN_ID,
-      },
-    },
   };
 }
 
