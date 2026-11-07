@@ -699,12 +699,21 @@ async function fetchDirectChannelPair(
     : null;
 }
 
+function normalizeRestEndpoint(endpoint: string): string {
+  const trimmed = endpoint.trim();
+  let end = trimmed.length;
+  while (end > 0 && trimmed[end - 1] === '/') {
+    end -= 1;
+  }
+  return trimmed.slice(0, end);
+}
+
 async function fetchOpenCardanoChannels(
   config: PlannerConfig,
   signal?: AbortSignal,
 ): Promise<QueryChannelResponse[]> {
   throwIfAborted(signal);
-  const restEndpoint = config.cardanoRestEndpoint!.trim().replace(/\/+$/, '');
+  const restEndpoint = normalizeRestEndpoint(config.cardanoRestEndpoint!);
   let url = `${restEndpoint}${QUERY_CARDANO_CHANNELS_URL}`;
   let data: { channels?: unknown };
   try {
@@ -734,7 +743,7 @@ async function isMatchingOpenCounterpartyChannel(
   cardanoChannel: QueryChannelResponse,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  const restEndpoint = config.counterpartyRestEndpoint.trim().replace(/\/+$/, '');
+  const restEndpoint = normalizeRestEndpoint(config.counterpartyRestEndpoint);
   const channelId = encodeURIComponent(cardanoChannel.counterparty.channel_id);
   const portId = encodeURIComponent(cardanoChannel.counterparty.port_id);
   const url = `${restEndpoint}${QUERY_CHANNELS_PREFIX_URL}/${channelId}/ports/${portId}`;

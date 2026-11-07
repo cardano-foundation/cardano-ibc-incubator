@@ -114,6 +114,57 @@ describe('route planning', () => {
     );
   });
 
+  it('preserves endpoint paths with long slash runs while trimming whitespace and trailing slashes', async () => {
+    const path = `/proxy${'/'.repeat(100_000)}v1`;
+    const cardanoEndpoint = `http://cardano.test${path}`;
+    const counterpartyEndpoint = `http://injective.test${path}`;
+    const requestedUrls: string[] = [];
+    const planner = createTransferPlannerClient({
+      cardanoChainId: 'cardano-preprod',
+      cardanoRestEndpoint: ` \t${cardanoEndpoint}///\n`,
+      counterpartyChainId: 'injective-888',
+      counterpartyRestEndpoint: ` ${counterpartyEndpoint}\t`,
+      fetchImpl: async (url) => {
+        const requestUrl = String(url);
+        requestedUrls.push(requestUrl);
+        return requestUrl.startsWith(cardanoEndpoint)
+          ? jsonResponse({
+              channels: [
+                {
+                  channel_id: 'channel-8',
+                  port_id: 'transfer',
+                  state: 'STATE_OPEN',
+                  counterparty: {
+                    channel_id: 'channel-2',
+                    port_id: 'transfer',
+                  },
+                },
+              ],
+            })
+          : jsonResponse({
+              channel: {
+                state: 'STATE_OPEN',
+                counterparty: {
+                  channel_id: 'channel-8',
+                  port_id: 'transfer',
+                },
+              },
+            });
+      },
+    });
+
+    const result = await planner.checkTransferRouteAvailability({
+      fromChainId: 'cardano-preprod',
+      toChainId: 'injective-888',
+    });
+
+    assert.equal(result.status, 'available');
+    assert.deepEqual(requestedUrls, [
+      `${cardanoEndpoint}/api/cardano/channel-ends?key=&offset=0&limit=10000&countTotal=true&reverse=false`,
+      `${counterpartyEndpoint}/ibc/core/channel/v1/channels/channel-2/ports/transfer`,
+    ]);
+  });
+
   it('falls back to the proof-bearing channel endpoint for an older Gateway', async () => {
     const requestedUrls: string[] = [];
     const fetchImpl: typeof fetch = async (url) => {
