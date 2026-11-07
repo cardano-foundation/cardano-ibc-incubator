@@ -1,12 +1,16 @@
 # Frontends
 
-The IBC Swap UI is started by the default `caribic start`/`caribic start all`
-stack after Gateway and Hermes are ready. It can also be managed independently:
+For public testnets, Caribic starts the IBC Swap UI after Gateway and Hermes
+are ready. It can also be managed independently:
 
 ```bash
 caribic start dapp
 caribic stop dapp
 ```
+
+Local mode uses the `v8-classic` Cosmos fixture (`v8-classic-1`). Public testnet
+and mainnet modes use Injective. The UI supports transfers. Local UI startup
+through Caribic remains disabled. Use the Compose commands below for local mode.
 
 The explorer UI remains optional and is not part of the default Caribic stack.
 
@@ -32,8 +36,8 @@ Default host ports:
 
 Default local endpoints target the host-published bridge services:
 
-- Osmosis RPC: `http://localhost:26658`
-- Osmosis REST: `http://localhost:1318`
+- Local Cosmos RPC: `http://localhost:26757`
+- Local Cosmos REST: `http://localhost:1327`
 - Gateway: `http://localhost:8000` as the default bridge-manifest host for the swap UI
 - GraphQL/SubQuery: `http://localhost:3001/v1/graphql` for explorer only
 - Kupo/Ogmios: `http://localhost:1442,http://localhost:1337`
@@ -50,6 +54,5 @@ starting the service, for example:
 ```bash
 export IBC_EXPLORER_HOST_PORT=18080
 export IBC_SWAP_GATEWAY_ENDPOINT=http://localhost:8000
-export IBC_SWAP_CROSSCHAIN_SWAP_ADDRESS=<osmosis-contract-address>
 docker compose -f dapps/docker-compose.yml up --build ibc-swap-client
 ```

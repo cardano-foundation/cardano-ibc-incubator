@@ -1,8 +1,9 @@
 import { createContext, useMemo, useState, useEffect } from 'react';
 import { fetchPacketForwardFee } from '@/services/CommonCosmosServices';
 import BigNumber from 'bignumber.js';
-import { DEFAULT_PFM_FEE, OSMOSIS_CHAIN_ID } from '@/constants';
+import { DEFAULT_PFM_FEE } from '@/constants';
 import { chainsRestEndpoints } from '@/configs/customChainInfo';
+import { activeRuntimeConfig } from '@/configs/runtimeConfig';
 
 type IBCParamsContextType = {
   getPfmFee: (chainId: string) => BigNumber;
@@ -24,15 +25,11 @@ export const IBCParamsProvider = ({
   };
 
   const fetchPFMs = async () => {
-    const chains = Object.keys(chainsRestEndpoints);
+    const chains = activeRuntimeConfig.pfmFeeChainIds.filter(
+      (chainId) => chainsRestEndpoints[chainId],
+    );
     await Promise.all(
       chains.map((chainId) => {
-        if (chainId === OSMOSIS_CHAIN_ID) {
-          return Promise.resolve({
-            chainId,
-            fee: BigNumber(DEFAULT_PFM_FEE),
-          });
-        }
         return fetchPacketForwardFee(chainsRestEndpoints[chainId]).then(
           (res) => ({ chainId, fee: res }),
         );

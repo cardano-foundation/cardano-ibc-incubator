@@ -1,10 +1,9 @@
 import {
-  createPlannerClient,
+  createTransferPlannerClient,
   type ResolvedCardanoAssetTrace,
 } from '@cardano-ibc/planner';
 import {
   CARDANO_IBC_CHAIN_ID,
-  CROSSCHAIN_SWAP_ADDRESS,
   GATEWAY_TX_BUILDER_ENDPOINT,
   dappApiPath,
 } from '@/configs/runtime';
@@ -40,11 +39,10 @@ async function resolveCardanoAssetTrace(
   }
 }
 
-export const cardanoPlannerClient = createPlannerClient({
+export const cardanoPlannerClient = createTransferPlannerClient({
   cardanoChainId: CARDANO_IBC_CHAIN_ID,
   cardanoRestEndpoint: GATEWAY_TX_BUILDER_ENDPOINT,
   counterpartyChainId: activeRuntimeConfig.defaultCosmosChainId,
-  localOsmosisRestEndpoint: activeRuntimeConfig.plannerCounterpartyRestEndpoint,
-  swapRouterAddress: CROSSCHAIN_SWAP_ADDRESS,
+  counterpartyRestEndpoint: activeRuntimeConfig.plannerCounterpartyRestEndpoint,
   resolveCardanoAssetDenomTrace: resolveCardanoAssetTrace,
 });

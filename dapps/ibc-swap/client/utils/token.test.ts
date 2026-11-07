@@ -1,113 +1,47 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildVoucherUserTokenNameFromFullDenom } from '@cardano-ibc/trace-registry';
-import type { SwapDataType } from '../types/SwapDataType';
-import { swapRequestKey } from './token';
+import type { TokenPresentation } from '../types/token';
+import { tokenAmount } from './token';
 
-const trace = 'transfer/channel-0/uatom';
-const swap: SwapDataType = {
-  fromToken: {
-    tokenId: 'ab'.repeat(28) + buildVoucherUserTokenNameFromFullDenom(trace),
-    tokenTrace: trace,
-    cardanoAssetStatus: 'verified-voucher',
-    tokenName: trace,
-    tokenSymbol: 'ATOM',
-    tokenLogo: '',
-    tokenExponent: 6,
-    balance: '10000000',
-    swapAmount: '1',
-    network: { networkId: 'cardano', ibcChainId: 'cardano-42' },
-  },
-  toToken: {
-    tokenId: 'uosmo',
-    tokenName: 'Osmosis',
-    tokenLogo: '',
-    network: { networkId: 'osmosis-local' },
-  },
-  slippageTolerance: '1',
+const ada: TokenPresentation = {
+  tokenId: 'lovelace',
+  tokenExponent: 6,
+  balance: '2000000',
+  cardanoAssetStatus: 'native',
 };
 
-test('prepared swap identity changes with asset, amount, route, receiver and slippage', () => {
-  const original = swapRequestKey(swap, 'sender', 'receiver');
-  assert.ok(original);
-  const otherTrace = 'transfer/channel-1/uatom';
-  const variants: SwapDataType[] = [
-    {
-      ...swap,
-      fromToken: {
-        ...swap.fromToken,
-        tokenTrace: otherTrace,
-        tokenId:
-          'ab'.repeat(28) + buildVoucherUserTokenNameFromFullDenom(otherTrace),
-      },
-    },
-    { ...swap, fromToken: { ...swap.fromToken, swapAmount: '2' } },
-    { ...swap, toToken: { ...swap.toToken, tokenId: 'uatom' } },
-    { ...swap, toToken: { ...swap.toToken, network: { networkId: 'other' } } },
-    { ...swap, slippageTolerance: '5' },
-  ];
-  variants.forEach((variant) =>
-    assert.notEqual(swapRequestKey(variant, 'sender', 'receiver'), original),
-  );
-  assert.notEqual(swapRequestKey(swap, 'other sender', 'receiver'), original);
-  assert.notEqual(swapRequestKey(swap, 'sender', 'other receiver'), original);
+test('transfer amounts use base units and respect the wallet balance', () => {
+  assert.deepEqual(tokenAmount(ada, '1.25'), {
+    denom: 'lovelace',
+    amount: '1250000',
+  });
+  assert.deepEqual(tokenAmount(ada, '2'), {
+    denom: 'lovelace',
+    amount: '2000000',
+  });
+  ['0', '-1', '2.000001', '1.0000001', 'invalid'].forEach((amount) => {
+    assert.equal(tokenAmount(ada, amount), null);
+  });
 });
 
-test('unresolved or unavailable assets invalidate prepared swaps in either direction', () => {
-  assert.equal(
-    swapRequestKey(
-      {
-        ...swap,
-        fromToken: {
-          ...swap.fromToken,
-          cardanoAssetStatus: 'unresolved-voucher',
-        },
-      },
-      'sender',
-      'receiver',
-    ),
-    undefined,
+test('Injective amounts retain all eighteen decimal places', () => {
+  assert.deepEqual(
+    tokenAmount({ tokenId: 'inj', tokenExponent: 18 }, '1.000000000000000001'),
+    { denom: 'inj', amount: '1000000000000000001' },
   );
-  assert.equal(
-    swapRequestKey(
-      {
-        ...swap,
-        fromToken: {
-          ...swap.fromToken,
-          tokenDisabledReason: 'Verification unavailable',
-        },
-      },
-      'sender',
-      'receiver',
-    ),
-    undefined,
-  );
-  assert.equal(
-    swapRequestKey(
-      { ...swap, toToken: { ...swap.fromToken, tokenTrace: undefined } },
-      'sender',
-      'receiver',
-    ),
-    undefined,
-  );
-  assert.equal(swapRequestKey(swap, 'sender', ''), undefined);
 });
 
-test('decorative metadata and output estimate updates do not change swap identity', () => {
+test('unresolved or unavailable assets cannot produce a transfer amount', () => {
   assert.equal(
-    swapRequestKey(
-      {
-        ...swap,
-        fromToken: {
-          ...swap.fromToken,
-          tokenSymbol: 'OTHER',
-          tokenDisplayName: 'Untrusted display name',
-        },
-        toToken: { ...swap.toToken, swapAmount: '99' },
-      },
-      'sender',
-      'receiver',
-    ),
-    swapRequestKey(swap, 'sender', 'receiver'),
+    tokenAmount({ ...ada, cardanoAssetStatus: 'unresolved-voucher' }, '1'),
+    null,
   );
+  assert.equal(
+    tokenAmount(
+      { ...ada, tokenDisabledReason: 'Verification unavailable' },
+      '1',
+    ),
+    null,
+  );
+  assert.equal(tokenAmount({ ...ada, tokenId: undefined }, '1'), null);
 });

@@ -25,7 +25,6 @@ const OverviewTransfers = ({
   packetsData: { [key: string]: any };
   packetDataMgs: { [key: string]: any };
 }) => {
-  let isSwap = false;
   const firstPacket = packetList?.[0];
   const firstPacketData = packetsData?.[firstPacket] || {};
   let firstPacketDataInfo;
@@ -47,7 +46,6 @@ const OverviewTransfers = ({
   const sendTokenIBC = ibcTokenFromPath(firstPacketData?.srcChain, sendToken);
   const tokenImg = findTokenImg(firstPacketData?.srcChain, sendTokenPath);
   const firstPacketMemoStr = firstPacketDataInfo?.memo || '{}';
-  isSwap = (firstPacketMemoStr.match(/osmosis_swap/g) || []).length > 0;
   let receiveAmount = NO_DATA;
   let receiveToken = NO_DATA;
   let receiveTokenPath = NO_DATA;
@@ -71,7 +69,7 @@ const OverviewTransfers = ({
     }
   }
 
-  const title = `Transfer ${isSwap ? 'and swap' : ''}`;
+  const title = 'Transfer';
   return (
     <Box marginTop="12px" marginBottom="25px">
       <Typography fontWeight="700">{title}</Typography>
