@@ -114,6 +114,8 @@ jobs:
         shell: bash
         env:
           COMPONENT: ${{ inputs.component }}
+          # Avoid registry proxy EOFs when loading large image layers into Docker.
+          EARTHLY_DISABLE_REMOTE_REGISTRY_PROXY: "true"
         run: |
           earthly "+${COMPONENT}" --PUSH=false
           image_id=$(docker image inspect "cardano-ibc-${COMPONENT}:latest" --format '{{.Id}}')
