@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createPlannerClient, RouteDiscoveryTimeoutError } from './index';
+import {
+  createPlannerClient,
+  createTransferPlannerClient,
+  RouteDiscoveryTimeoutError,
+} from './index';
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -40,11 +44,11 @@ describe('route planning', () => {
             },
           });
     };
-    const planner = createPlannerClient({
+    const planner = createTransferPlannerClient({
       cardanoChainId: 'cardano-preprod',
       cardanoRestEndpoint: 'http://cardano.test',
       counterpartyChainId: 'injective-888',
-      localOsmosisRestEndpoint: 'http://injective.test',
+      counterpartyRestEndpoint: 'http://injective.test',
       resolveCardanoAssetDenomTrace: async () => {
         traceResolutionCount += 1;
         return null;
@@ -542,11 +546,11 @@ describe('route planning', () => {
             },
           });
     };
-    const planner = createPlannerClient({
+    const planner = createTransferPlannerClient({
       cardanoChainId: 'cardano-preprod',
       cardanoRestEndpoint: 'http://cardano.test/',
       counterpartyChainId: 'injective-888',
-      localOsmosisRestEndpoint: 'http://injective.test',
+      counterpartyRestEndpoint: 'http://injective.test',
       fetchImpl,
     });
 
