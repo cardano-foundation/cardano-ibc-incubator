@@ -181,7 +181,7 @@ export class PacketLaneService {
     // never inherit another request's wallet selection.
     const result = await this.runner.runChain({
       operationName: name,
-      ...(name !== 'transferIntent'
+      ...(name !== 'transferIntent' && name !== 'cancelTransferIntent'
         ? { reservation: { now: window.validFromTime, expiresAt: window.validToTime } }
         : {}),
       wallet: { mode: 'refresh_from_address', address: signer, context: name },
