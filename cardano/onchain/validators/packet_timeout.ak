@@ -23,9 +23,16 @@ validator packet_timeout(
       packet_batch.authorization(transaction, config.batch_policy)
     expect authorized.channel_token.policy_id == channel_policy
     expect config.state_policy == lane_policy && config.lane_count == lane_count
-    expect Timeout { packet, data, proof_height, proof, lane, liquidity_refs } =
-      authorized.operation
-    let op = Timeout { packet, data, proof_height, proof, lane, liquidity_refs }
+    expect Timeout {
+      packet,
+      data,
+      proof_height,
+      proof_index,
+      lane,
+      liquidity_refs,
+    } = authorized.operation
+    let op =
+      Timeout { packet, data, proof_height, proof_index, lane, liquidity_refs }
     packet_batch.validate_settlement(
       transaction,
       config.batch_policy,

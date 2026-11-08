@@ -27,10 +27,10 @@ validator packet_timeout_on_close(
       packet,
       data,
       proof_height,
-      proof,
+      proof_index,
       lane,
       liquidity_refs,
-      proof_close,
+      proof_close_index,
       counterparty_upgrade_sequence,
     } = authorized.operation
     let op =
@@ -38,10 +38,10 @@ validator packet_timeout_on_close(
         packet,
         data,
         proof_height,
-        proof,
+        proof_index,
         lane,
         liquidity_refs,
-        proof_close,
+        proof_close_index,
         counterparty_upgrade_sequence,
       }
     packet_batch.validate_settlement(

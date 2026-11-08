@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "6a69411e830a46a5e96be30851faa7bb3876e85b",
+  "method": "Complete signed emulator transactions executing the compiled validators. These are fixture measurements, not live-chain savings.",
+  "toolchain": {
+    "aiken": "v1.1.24+bacbeb3",
+    "deno": "2.6.10",
+    "lucid": "0.6.5",
+    "scalusUplc": "0.1.4"
+  },
+  "retainedParameters": {
+    "feePerByteLovelace": 44,
+    "maxTransactionBytes": 16384
+  },
+  "reproduction": {
+    "directory": "cardano/offchain",
+    "build": "aiken build in cardano/onchain using v1.1.24",
+    "baselineTests": "deno test --allow-env --allow-read --filter '/opaque packet proofs|existing vouchers reserve/' src/packet-lane-transactions.test.ts",
+    "updatedTests": "deno task test:packet-lanes"
+  },
+  "scenarios": [
+    {
+      "name": "singleton acknowledgement",
+      "proofPayloadBytes": 314,
+      "before": {
+        "signedBytes": 2975,
+        "feeLovelace": 1480497,
+        "memory": 5270016,
+        "cpu": 2174193552
+      },
+      "after": {
+        "signedBytes": 2662,
+        "feeLovelace": 1469682,
+        "memory": 5270306,
+        "cpu": 2171531984
+      },
+      "change": {
+        "signedBytes": -313,
+        "feeLovelace": -10815,
+        "memory": 290,
+        "cpu": -2661568
+      },
+      "sizeFeeSavingLovelace": 13772,
+      "netFeeSavingLovelace": 10815,
+      "compiledOperationPolicyBytes": {
+        "before": 12206,
+        "after": 12357
+      }
+    },
+    {
+      "name": "existing voucher receive",
+      "proofPayloadBytes": 185,
+      "before": {
+        "signedBytes": 3159,
+        "feeLovelace": 2299029,
+        "memory": 8819139,
+        "cpu": 3487813454
+      },
+      "after": {
+        "signedBytes": 2975,
+        "feeLovelace": 2296537,
+        "memory": 8833427,
+        "cpu": 3490284605
+      },
+      "change": {
+        "signedBytes": -184,
+        "feeLovelace": -2492,
+        "memory": 14288,
+        "cpu": 2471151
+      },
+      "sizeFeeSavingLovelace": 8096,
+      "netFeeSavingLovelace": 2492,
+      "compiledOperationPolicyBytes": {
+        "before": 13299,
+        "after": 13465
+      }
+    }
+  ],
+  "proofVerifier": {
+    "compiledBytes": 15214,
+    "beforeCompiledCodeSha256": "0266ea59cad3be28e53360770d41491038ff3b60cb3eebb5c5560be1354487bb",
+    "afterCompiledCodeSha256": "0266ea59cad3be28e53360770d41491038ff3b60cb3eebb5c5560be1354487bb",
+    "unchanged": true
+  },
+  "interpretation": "The serialized proof is replaced by a one-byte index in the operation. Execution use is close to baseline. Total fees also include the cost of the larger packet policies, so the size-fee saving alone is not the net saving."
+}

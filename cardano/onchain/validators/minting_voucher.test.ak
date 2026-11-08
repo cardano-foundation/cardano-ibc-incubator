@@ -2496,7 +2496,6 @@ fn check_packet_voucher(
       input_ref: channel_input.output_reference,
       updates: [],
     }
-  let empty_proof = MerkleProof { proofs: [] }
   let h = Height { revision_number: 1, revision_height: 1 }
   let (operation, extra_inputs) =
     when requested is {
@@ -2517,7 +2516,7 @@ fn check_packet_voucher(
             packet,
             data,
             proof_height: h,
-            proof: empty_proof,
+            proof_index: 0,
             lane,
             liquidity_refs: [],
           },
@@ -2566,7 +2565,7 @@ fn check_packet_voucher(
             packet,
             data,
             proof_height: h,
-            proof: empty_proof,
+            proof_index: 0,
             lane,
             liquidity_refs: [],
           },

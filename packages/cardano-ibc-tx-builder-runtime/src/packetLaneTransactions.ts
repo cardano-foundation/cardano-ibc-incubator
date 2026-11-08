@@ -245,6 +245,8 @@ async function authorizeOperation(
   deployment: PacketLaneDeployment,
   operation: Constr<Data>,
   mint: Record<string, bigint>,
+  proofs: readonly Data[] = [],
+  proofClose?: Data,
 ) {
   const authorized = encode(
     record(
@@ -268,7 +270,7 @@ async function authorizeOperation(
     }, Data.void());
   }
   if (![0, 3, 4].includes(operation.index)) {
-    const proof = await packetProof(deployment, operation);
+    const proof = await packetProof(deployment, operation, proofs, proofClose);
     tx = tx.readFrom([deployment.proofVerifier.reference]).mintAssets({
       [deployment.proofVerifier.policy]: 1n,
     }, encode(record(proof, variant(1))));
@@ -289,11 +291,13 @@ function mapAtHeight(map: Data, height: Data): Data {
 async function packetProof(
   deployment: PacketLaneDeployment,
   op: Constr<Data>,
+  proofs: readonly Data[],
+  proofClose?: Data,
 ): Promise<Constr<Data>> {
   if (op.index === 9) {
     const members = await Promise.all(
       (op.fields[0] as Constr<Data>[]).map((child) =>
-        packetProof(deployment, child)
+        packetProof(deployment, child, proofs)
       ),
     );
     return variant(2, members);
@@ -302,7 +306,8 @@ async function packetProof(
   const timeout = op.index === 2 || op.index === 7;
   const heightIndex = op.index === 1 ? 1 : op.index === 6 ? 3 : 2;
   const height = op.fields[heightIndex];
-  const proof = op.fields[heightIndex + 1];
+  const proof = proofs[Number(op.fields[heightIndex + 1])];
+  if (proof === undefined) throw new Error("Missing indexed packet proof");
   const client = decode(deployment.client).fields[0] as Constr<Data>;
   const connection = decode(deployment.connection).fields[0] as Constr<Data>;
   const counterparty = connection.fields[3] as Constr<Data>;
@@ -344,6 +349,9 @@ async function packetProof(
     ),
   ]);
   if (op.index === 7) {
+    if (proofClose === undefined) {
+      throw new Error("Missing channel-close proof");
+    }
     const end = (decode(deployment.channel).fields[0] as Constr<Data>)
       .fields[0] as Constr<Data>;
     const counterpart = protobufBytes(1, String(packet.fields[1])) +
@@ -364,7 +372,7 @@ async function packetProof(
       ...common.slice(0, 5),
       0n,
       0n,
-      op.fields[6],
+      proofClose,
       closePath,
       closedChannel,
     );
@@ -846,7 +854,7 @@ async function buildPacketCompletion(
     deployment,
     packet,
   );
-  let operation = variant(1, packet, proofHeight, proof, update);
+  let operation = variant(1, packet, proofHeight, 0n, update);
   const mint: Record<string, bigint> = {
     [deployment.batchPolicy + fromText("acknowledge")]: 1n,
   };
@@ -898,7 +906,7 @@ async function buildPacketCompletion(
       packet,
       fields,
       proofHeight,
-      proof,
+      0n,
       update,
       liquidity.map(outRef),
     );
@@ -910,10 +918,10 @@ async function buildPacketCompletion(
         packet,
         fields,
         proofHeight,
-        proof,
+        0n,
         update,
         liquidity.map(outRef),
-        close.proof,
+        0n,
         close.counterpartyUpgradeSequence,
       );
     }
@@ -925,7 +933,7 @@ async function buildPacketCompletion(
         fields,
         fromText(JSON.stringify(rejection).slice(1, -1)),
         proofHeight,
-        proof,
+        0n,
         update,
         liquidity.map(outRef),
       );
@@ -970,7 +978,14 @@ async function buildPacketCompletion(
     deployment.client,
   ]);
   return {
-    tx: await authorizeOperation(tx, deployment, operation, mint),
+    tx: await authorizeOperation(
+      tx,
+      deployment,
+      operation,
+      mint,
+      [proof],
+      close?.proof,
+    ),
     input,
   };
 }
@@ -1058,7 +1073,7 @@ export async function buildPacketAcknowledgementBatch(
         1,
         request.packet,
         request.proofHeight,
-        request.proof,
+        BigInt(index),
         lanes[index].update,
       )
     ),
@@ -1066,7 +1081,7 @@ export async function buildPacketAcknowledgementBatch(
   return {
     tx: await authorizeOperation(tx, deployment, operation, {
       [deployment.batchPolicy + fromText("acknowledge")]: 1n,
-    }),
+    }, requests.map((request) => request.proof)),
     inputs: lanes.map((lane) => lane.input),
   };
 }
@@ -1394,7 +1409,7 @@ export async function buildPacketReceive(
     packet,
     fields,
     proofHeight,
-    proof,
+    0n,
     record(outRef(input), updates),
     liquidity.map(outRef),
   );
@@ -1453,7 +1468,7 @@ export async function buildPacketReceive(
     deployment.client,
   ]);
   return {
-    tx: await authorizeOperation(tx, deployment, operation, mint),
+    tx: await authorizeOperation(tx, deployment, operation, mint, [proof]),
     input,
   };
 }

@@ -515,12 +515,23 @@ same-lane sequential witnesses, stale completion rebuilding, rollback reload,
 native returns, voucher mint/refund and timeout-on-close. Repeated multi-asset
 round trips check accounting reclamation at capacity.
 
-Packet operations carry opaque ICS-23 proof data. Each operation still binds
-the exact client, height, path, value and payload to the pinned verifier's
-request. That verifier decodes and verifies the proof. The compiled packet
-regression rejects mismatched requests and matching malformed, empty or
-corrupted proofs. Historical checkpoint witnesses remain authenticated against
-the client history root.
+Packet operations carry proof request indexes. Each ICS-23 payload appears
+only in the pinned verifier's redeemer. The operation binds the complete
+statement to its authenticated client and consensus root. This includes the
+proof height, processed metadata, connection delay, request kind, IBC path and
+value. Singleton requests use index zero. Acknowledgement batches use indexes
+zero and one in operation order. Timeout-on-close binds index zero in each of
+the membership and non-membership tables. Table order and length must match.
+
+The verifier still decodes and cryptographically verifies every proof. Compiled
+packet regressions reject changed statements, invalid indexes, reordered valid
+proof requests and malformed or corrupted proofs. Historical checkpoint
+witnesses remain authenticated against the client history root. This changes
+the packet-operation redeemer format. Packet policies and transaction builders
+must be upgraded together.
+
+The [retained signed-transaction comparison](../tests/packet-proof-deduplication/evidence/report.json)
+records byte, fee and execution measurements against `6a69411e`.
 
 Normal lane packet transactions do not spend HostState or the channel datum.
 Their packet policies still authenticate the channel, client, callback and

@@ -16,6 +16,7 @@ import {
   getAddressDetails,
   type LucidEvolution,
   toScriptRef,
+  toText,
   type TxSigned,
   type UTxO,
   validatorToScriptHash,
@@ -784,6 +785,46 @@ Deno.test("two ready acknowledgements share fees with reconciled balances and ex
     "two ready acknowledgements",
   );
   await checkAcknowledgementPolicies(f, wallet, signed);
+  for (const request of requests) assertSingleProofCopy(signed, request.proof);
+  for (const indexes of [[1n, 0n], [0n, 0n], [-1n, 1n], [0n, 2n]]) {
+    const invalid = changeMintRedeemer(signed.toTransaction(), (operation) => {
+      const packets = operation.fields[0] as Constr<Data>[];
+      packets.forEach((packet, i) => packet.fields[2] = indexes[i]);
+    });
+    await assertRejects(
+      () => f.emulator.evaluateTx(invalid),
+      Error,
+      scriptFailureMessage,
+    );
+  }
+  // Both proofs remain cryptographically valid after reordering. The packet
+  // operation must reject their association with different request indexes.
+  const reordered = changeMintRedeemer(
+    signed.toTransaction(),
+    () => {},
+    (request) => {
+      (request.fields[0] as Data[]).reverse();
+    },
+  );
+  await assertRejects(
+    () => f.emulator.evaluateTx(reordered),
+    Error,
+    scriptFailureMessage,
+  );
+  const singleton = changeMintRedeemer(
+    signed.toTransaction(),
+    () => {},
+    (request) => {
+      const [first] = request.fields[0] as Constr<Data>[];
+      request.index = 0;
+      request.fields = first.fields;
+    },
+  );
+  await assertRejects(
+    () => f.emulator.evaluateTx(singleton),
+    Error,
+    scriptFailureMessage,
+  );
   const units = CML.compute_total_ex_units(
     signed.toTransaction().witness_set().redeemers()!,
   );
@@ -1123,6 +1164,21 @@ Deno.test("authenticated timeout drains liquidity, burns its identity and refund
   );
 });
 
+function assertSingleProofCopy(signed: TxSigned, proof: Constr<Data>) {
+  const payload = encode(proof);
+  const redeemers = signed.toTransaction().witness_set().redeemers()!
+    .to_flat_format();
+  let copies = 0;
+  for (let i = 0; i < redeemers.len(); i++) {
+    copies += redeemers.get(i).data().to_cbor_hex().split(payload).length - 1;
+  }
+  assertEquals(
+    copies,
+    1,
+    "the ICS-23 payload must occur in exactly one redeemer",
+  );
+}
+
 function changeMintRedeemer(
   transaction: CML.Transaction,
   mutate: (operation: Constr<Data>, authorized: Constr<Data>) => void,
@@ -1170,7 +1226,7 @@ function changeMintRedeemer(
   ).to_cbor_hex();
 }
 
-Deno.test("opaque packet proofs remain bound to the pinned verifier request", async () => {
+Deno.test("packet proof statements bind the verifier's only copy of each payload", async () => {
   const f = await packetLaneFixture();
   const { intents } = await f.admit(1);
   const wallet = await f.wallet();
@@ -1184,7 +1240,7 @@ Deno.test("opaque packet proofs remain bound to the pinned verifier request", as
   await submitReconciled(
     f,
     wallet,
-    await signMeasured(wallet, sent.tx, "opaque proof source send"),
+    await signMeasured(wallet, sent.tx, "proof-statement source send"),
   );
   const packet = sent.packets[0];
   const proof = f.proofs.get(packet.fields[0] as bigint)!;
@@ -1200,18 +1256,24 @@ Deno.test("opaque packet proofs remain bound to the pinned verifier request", as
   const signed = await signMeasured(
     wallet,
     ack.tx,
-    "opaque proof acknowledgement",
+    "proof-statement acknowledgement",
   );
+  assertSingleProofCopy(signed, proof.proof);
   const transaction = () => CML.Transaction.from_cbor_hex(signed.toCBOR());
   const mutations: Array<(request: Constr<Data>) => void> = [
     (request) => {
       (request.fields[0] as Constr<Data>).fields[0] = fromText("other-chain-1");
     },
+    (request) => {
+      (request.fields[1] as Constr<Data>).fields[2] = record("00".repeat(32));
+    },
     (request) => request.fields[2] = record(1n, 1n),
-    (request) => request.fields[8] = record([]),
+    ...[3, 4, 5, 6].map((field) => (request: Constr<Data>) => {
+      request.fields[field] = (request.fields[field] as bigint) + 1n;
+    }),
     (request) =>
-      request.fields[9] = record([fromText("ibc"), fromText("wrong")]),
-    (request) => request.fields[10] = "00".repeat(32),
+      request.fields[8] = record([fromText("ibc"), fromText("wrong")]),
+    (request) => request.fields[9] = "00".repeat(32),
   ];
   for (const mutate of mutations) {
     const invalid = changeMintRedeemer(transaction(), () => {}, mutate);
@@ -1221,16 +1283,45 @@ Deno.test("opaque packet proofs remain bound to the pinned verifier request", as
       scriptFailureMessage,
     );
   }
+  const ackPath = fromText(
+    `acks/ports/${toText(String(packet.fields[3]))}/channels/${
+      toText(String(packet.fields[4]))
+    }/sequences/${packet.fields[0]}`,
+  );
+  const ackValue = await sha256(fromText('{"result":"AQ=="}'));
+  const otherRoot = await membershipProof(ackPath, ackValue);
+  // This proof is valid for the same path and value under a different root.
+  // Only the authenticated client reference may select the consensus root.
+  const unauthenticated = changeMintRedeemer(
+    transaction(),
+    () => {},
+    (request) => {
+      assertEquals(request.fields[8], record([fromText("ibc"), ackPath]));
+      assertEquals(request.fields[9], ackValue);
+      const consensus = request.fields[1] as Constr<Data>;
+      assert(
+        (consensus.fields[2] as Constr<Data>).fields[0] !== otherRoot.root,
+      );
+      consensus.fields[2] = record(otherRoot.root);
+      request.fields[7] = otherRoot.proof;
+    },
+  );
+  await assertRejects(
+    () => f.emulator.evaluateTx(unauthenticated),
+    Error,
+    scriptFailureMessage,
+  );
   const altered = Data.from(encode(proof.proof)) as Constr<Data>;
   const layers = altered.fields[0] as Constr<Data>[];
   const leaf = (layers[0].fields[0] as Constr<Data>).fields[0] as Constr<Data>;
   leaf.fields[1] = "00".repeat(32);
-  // Matching payloads must still pass the verifier's decoding and ICS-23 checks.
+  // The operation statement is unchanged when only the verifier payload changes.
+  // Malformed and corrupted proofs must still fail cryptographic verification.
   for (const payload of [0n, record([]), altered]) {
     const invalid = changeMintRedeemer(
       transaction(),
-      (operation) => operation.fields[2] = payload,
-      (request) => request.fields[8] = payload,
+      () => {},
+      (request) => request.fields[7] = payload,
     );
     await assertRejects(
       () => f.emulator.evaluateTx(invalid),
@@ -1238,21 +1329,25 @@ Deno.test("opaque packet proofs remain bound to the pinned verifier request", as
       scriptFailureMessage,
     );
   }
-  const mismatched = changeMintRedeemer(
-    transaction(),
-    (operation) => operation.fields[2] = 0n,
-  );
-  await assertRejects(
-    () => f.emulator.evaluateTx(mismatched),
-    Error,
-    scriptFailureMessage,
-  );
+  for (const index of [-1n, 1n, 1000n]) {
+    const mismatched = changeMintRedeemer(
+      transaction(),
+      (operation) => operation.fields[2] = index,
+    );
+    await assertRejects(
+      () => f.emulator.evaluateTx(mismatched),
+      Error,
+      scriptFailureMessage,
+    );
+  }
   const units = CML.compute_total_ex_units(
     transaction().witness_set().redeemers()!,
   );
   const result = await submitReconciled(f, wallet, signed);
   console.log(JSON.stringify({
-    profile: "opaque packet proof acknowledgement",
+    profile: "single-copy packet proof acknowledgement",
+    proofPayloadBytes: encode(proof.proof).length / 2,
+    feePerByteLovelace: wallet.config().protocolParameters!.minFeeA,
     feeLovelace: result.fee.toString(),
     memory: units.mem().toString(),
     cpu: units.steps().toString(),
@@ -1622,6 +1717,7 @@ for (const firstSeen of [false, true]) {
       receive.tx,
       "minimal-reference voucher receive",
     );
+    assertSingleProofCopy(reduced, proof.proof);
     const control = await buildReceive();
     const stateReference = scriptPool.find((u) =>
       u.scriptRef &&
@@ -1654,6 +1750,20 @@ for (const firstSeen of [false, true]) {
       controlCosts.fee,
       reducedCosts.fee,
     );
+    const receiveUnits = CML.compute_total_ex_units(
+      reduced.toTransaction().witness_set().redeemers()!,
+    );
+    console.log(JSON.stringify({
+      profile: firstSeen
+        ? "first-seen voucher receive"
+        : "existing voucher receive",
+      proofPayloadBytes: encode(proof.proof).length / 2,
+      feePerByteLovelace: wallet.config().protocolParameters!.minFeeA,
+      feeLovelace: reducedCosts.fee.toString(),
+      memory: receiveUnits.mem().toString(),
+      cpu: receiveUnits.steps().toString(),
+      signedBytes: reduced.toCBOR().length / 2,
+    }));
     assertEquals(
       (await wallet.wallet().getUtxos()).reduce(
         (sum, u) => sum + (u.assets[unit] ?? 0n),
@@ -1988,6 +2098,18 @@ Deno.test("timeout on close proves closure and receipt absence at the same authe
     f.emulator.now() + 60_000,
   );
   const signed = await signMeasured(wallet, refund.tx, "timeout on close");
+  assertSingleProofCopy(signed, absence);
+  assertSingleProofCopy(signed, membership.proof);
+  for (const field of [3, 6]) {
+    const invalid = changeMintRedeemer(signed.toTransaction(), (operation) => {
+      operation.fields[field] = 1n;
+    });
+    await assertRejects(
+      () => f.emulator.evaluateTx(invalid),
+      Error,
+      scriptFailureMessage,
+    );
+  }
   await signed.submit();
   f.emulator.awaitBlock();
   assertEquals((await wallet.utxosAt(f.deployment.batchAddress)).length, 0);

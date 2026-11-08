@@ -24,15 +24,22 @@ validator packet_receive(
       packet_batch.authorization(transaction, config.batch_policy)
     expect authorized.channel_token.policy_id == channel_policy
     expect config.state_policy == lane_policy && config.lane_count == lane_count
-    expect Receive { packet, data, proof_height, proof, lane, liquidity_refs } =
-      authorized.operation
+    expect Receive {
+      packet,
+      data,
+      proof_height,
+      proof_index,
+      lane,
+      liquidity_refs,
+    } = authorized.operation
     expect
       coin.receiver_chain_is_source(
         packet.source_port,
         packet.source_channel,
         data.denom,
       ) || packet_config.active(transaction, config.host_policy)
-    let op = Receive { packet, data, proof_height, proof, lane, liquidity_refs }
+    let op =
+      Receive { packet, data, proof_height, proof_index, lane, liquidity_refs }
     packet_batch.validate_receive(
       transaction,
       config.batch_policy,
