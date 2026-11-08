@@ -28,12 +28,20 @@ validator packet_reject(
       data,
       err,
       proof_height,
-      proof,
+      proof_index,
       lane,
       liquidity_refs,
     } = authorized.operation
     let op =
-      Reject { packet, data, err, proof_height, proof, lane, liquidity_refs }
+      Reject {
+        packet,
+        data,
+        err,
+        proof_height,
+        proof_index,
+        lane,
+        liquidity_refs,
+      }
     packet_batch.validate_settlement(
       transaction,
       config.batch_policy,

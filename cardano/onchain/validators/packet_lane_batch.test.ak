@@ -8,7 +8,6 @@ use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_004/types/packet.{Packet}
-use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use packet_lane_batch.{OperationPolicies}
 
 const channel_policy =
@@ -42,7 +41,7 @@ fn acknowledgement() -> BatchOperation {
       timeout_timestamp: 1,
     },
     proof_height: Height { revision_number: 1, revision_height: 10 },
-    proof: MerkleProof { proofs: [] },
+    proof_index: 0,
     lane: packet_batch.LaneInputUpdate {
       input_ref: transaction.OutputReference {
         transaction_id: #"0000000000000000000000000000000000000000000000000000000000000000",
@@ -107,13 +106,14 @@ test send_dispatch_still_requires_its_funds_policy() fail {
 }
 
 test receive_dispatch_still_requires_its_funds_policy() fail {
-  expect Acknowledge { packet, proof_height, proof, lane } = acknowledgement()
+  expect Acknowledge { packet, proof_height, proof_index, lane } =
+    acknowledgement()
   expect _ =
     dispatch(
       Receive {
         packet,
         proof_height,
-        proof,
+        proof_index,
         lane,
         data: FungibleTokenPacketData {
           denom: "lovelace",

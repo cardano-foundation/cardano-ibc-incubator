@@ -18,12 +18,10 @@ use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/consensus_history.{Witness}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/core/ics_002_client_semantics/client_view
-use ibc/core/ics_002_client_semantics/types/client.{Active}
-use ibc/core/ics_002_client_semantics/verify_proof_redeemer.{
-  BatchVerifyMembership, BatchVerifyMembershipAndNonMembership, VerifyMembership,
-  VerifyMembershipParams, VerifyNonMembership, VerifyNonMembershipParams,
-  VerifyProofRedeemer,
+use ibc/core/ics_002_client_semantics/proof_statement.{
+  MembershipStatement, NonMembershipStatement,
 }
+use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/verify
 use ibc/core/ics_004/channel_datum
@@ -57,8 +55,8 @@ pub type LaneInputUpdate {
   updates: List<LaneUpdate>,
 }
 
-// Packet policies bind these opaque ICS-23 payloads to the pinned verifier's
-// exact request. The verifier decodes and validates each Merkle proof.
+// Proof indexes address the pinned verifier's request lists. The operation
+// authenticates each statement while the verifier alone carries its ICS-23 proof.
 pub type BatchOperation {
   SendBatch {
     sequencer_ref: OutputReference,
@@ -69,14 +67,14 @@ pub type BatchOperation {
   Acknowledge {
     packet: Packet,
     proof_height: Height,
-    proof: Data,
+    proof_index: Int,
     lane: LaneInputUpdate,
   }
   Timeout {
     packet: Packet,
     data: FungibleTokenPacketData,
     proof_height: Height,
-    proof: Data,
+    proof_index: Int,
     lane: LaneInputUpdate,
     liquidity_refs: List<OutputReference>,
   }
@@ -89,7 +87,7 @@ pub type BatchOperation {
     packet: Packet,
     data: FungibleTokenPacketData,
     proof_height: Height,
-    proof: Data,
+    proof_index: Int,
     lane: LaneInputUpdate,
     liquidity_refs: List<OutputReference>,
   }
@@ -98,7 +96,7 @@ pub type BatchOperation {
     data: FungibleTokenPacketData,
     err: ByteArray,
     proof_height: Height,
-    proof: Data,
+    proof_index: Int,
     lane: LaneInputUpdate,
     liquidity_refs: List<OutputReference>,
   }
@@ -106,10 +104,10 @@ pub type BatchOperation {
     packet: Packet,
     data: FungibleTokenPacketData,
     proof_height: Height,
-    proof: Data,
+    proof_index: Int,
     lane: LaneInputUpdate,
     liquidity_refs: List<OutputReference>,
-    proof_close: Data,
+    proof_close_index: Int,
     // The upgrade sequence of the proven closed counterparty channel.
     counterparty_upgrade_sequence: Int,
   }
@@ -120,12 +118,21 @@ pub type BatchOperation {
 /// Each packet updates an independent lane at one already available proof height.
 pub fn acknowledgements(op: BatchOperation) -> List<BatchOperation> {
   when op is {
-    Acknowledge { .. } -> [op]
+    Acknowledge { proof_index, .. } -> {
+      expect proof_index == 0
+      [op]
+    }
     AcknowledgeBatch { packets } -> {
       expect [
-        Acknowledge { lane: first, proof_height, .. },
-        Acknowledge { lane: second, proof_height: other_height, .. },
+        Acknowledge { lane: first, proof_height, proof_index: first_index, .. },
+        Acknowledge {
+          lane: second,
+          proof_height: other_height,
+          proof_index: second_index,
+          ..
+        },
       ] = packets
+      expect first_index == 0 && second_index == 1
       expect first.input_ref != second.input_ref
       expect proof_height == other_height
       packets
@@ -197,17 +204,10 @@ fn authenticate_lane(
   )
 }
 
-fn require_proof(
-  transaction: Transaction,
-  policy: PolicyId,
-  expected: VerifyProofRedeemer,
-) -> Bool {
+fn verified_request(transaction: Transaction, policy: PolicyId) -> Data {
   expect
     validator_utils.require_exact_marker_mint(transaction.mint, policy, "", 1)
-  validator_utils.proof_matches(
-    validator_utils.verify_proof_envelope(transaction.redeemers, policy).proof,
-    expected,
-  )
+  validator_utils.verify_proof_envelope(transaction.redeemers, policy).proof
 }
 
 fn unique_refs(refs: List<OutputReference>) -> Bool {
@@ -422,17 +422,18 @@ pub fn validate_settlement(
   op: BatchOperation,
   verify_policy: PolicyId,
 ) -> Bool {
-  let (packet, proof_height, proof, lane, timeout) =
+  let (packet, proof_height, proof_index, lane, timeout) =
     when op is {
-      Acknowledge { packet, proof_height, proof, lane } ->
-        (packet, proof_height, proof, lane, False)
-      Timeout { packet, proof_height, proof, lane, .. } |
-      TimeoutOnClose { packet, proof_height, proof, lane, .. } ->
-        (packet, proof_height, proof, lane, True)
-      Reject { packet, proof_height, proof, lane, .. } ->
-        (packet, proof_height, proof, lane, False)
+      Acknowledge { packet, proof_height, proof_index, lane } ->
+        (packet, proof_height, proof_index, lane, False)
+      Timeout { packet, proof_height, proof_index, lane, .. } |
+      TimeoutOnClose { packet, proof_height, proof_index, lane, .. } ->
+        (packet, proof_height, proof_index, lane, True)
+      Reject { packet, proof_height, proof_index, lane, .. } ->
+        (packet, proof_height, proof_index, lane, False)
       _ -> fail
     }
+  expect proof_index == 0
   let channel = channel_reference(transaction, channel_token)
   expect validate_local_packet(packet, channel)
   expect [connection_id] = channel.channel.connection_hops
@@ -477,7 +478,7 @@ pub fn validate_settlement(
       merkle.new_merkle_path([key]),
     )
   let absence =
-    VerifyNonMembershipParams {
+    NonMembershipStatement {
       cs: client.state.client_state,
       cons_state: consensus,
       height: proof_height,
@@ -485,13 +486,14 @@ pub fn validate_settlement(
       processed_height,
       delay_time_period: connection.state.delay_period,
       delay_block_period: verify.get_block_delay(connection.state),
-      proof,
       path,
     }
-  let expected_proof =
+  let actual = verified_request(transaction, verify_policy)
+  let matches_proof =
     if timeout {
       when op is {
-        TimeoutOnClose { proof_close, counterparty_upgrade_sequence, .. } -> {
+        TimeoutOnClose { proof_close_index, counterparty_upgrade_sequence, .. } -> {
+          expect proof_close_index == 0
           let expected_channel =
             Channel {
               state: Closed,
@@ -505,7 +507,7 @@ pub fn validate_settlement(
               upgrade_sequence: counterparty_upgrade_sequence,
             }
           let membership =
-            VerifyMembershipParams {
+            MembershipStatement {
               cs: client.state.client_state,
               cons_state: consensus,
               height: proof_height,
@@ -513,7 +515,6 @@ pub fn validate_settlement(
               processed_height,
               delay_time_period: 0,
               delay_block_period: 0,
-              proof: proof_close,
               path: merkle.apply_prefix(
                 connection.state.counterparty.prefix,
                 merkle.new_merkle_path(
@@ -529,52 +530,42 @@ pub fn validate_settlement(
                 channel.convert_to_channel_proto(expected_channel),
               ).2nd,
             }
-          BatchVerifyMembershipAndNonMembership {
-            memberships: [membership],
-            non_memberships: [absence],
-          }
+          proof_statement.mixed_batch_matches(actual, [membership], [absence])
         }
         _ -> {
           expect Some(timestamp) =
             client_view.timestamp_at_height(client, proof_height)
           expect
             packet.timeout_timestamp > 0 && timestamp >= packet.timeout_timestamp
-          VerifyNonMembership {
-            cs: absence.cs,
-            cons_state: absence.cons_state,
-            height: absence.height,
-            processed_time,
-            processed_height,
-            delay_time_period: absence.delay_time_period,
-            delay_block_period: absence.delay_block_period,
-            proof,
-            path,
-          }
+          proof_statement.non_membership_matches(actual, absence)
         }
       }
     } else {
-      VerifyMembership {
-        cs: absence.cs,
-        cons_state: absence.cons_state,
-        height: absence.height,
-        processed_time,
-        processed_height,
-        delay_time_period: absence.delay_time_period,
-        delay_block_period: absence.delay_block_period,
-        proof,
-        path,
-        value: crypto.sha2_256(
-          when op is {
-            Reject { err, .. } -> {
-              expect bytearray.length(err) > 0
-              bytearray.concat("{\"error\":\"", err) |> bytearray.concat("\"}")
-            }
-            _ -> "{\"result\":\"AQ==\"}"
-          },
-        ),
-      }
+      proof_statement.membership_matches(
+        actual,
+        MembershipStatement {
+          cs: absence.cs,
+          cons_state: absence.cons_state,
+          height: absence.height,
+          processed_time,
+          processed_height,
+          delay_time_period: absence.delay_time_period,
+          delay_block_period: absence.delay_block_period,
+          path,
+          value: crypto.sha2_256(
+            when op is {
+              Reject { err, .. } -> {
+                expect bytearray.length(err) > 0
+                bytearray.concat("{\"error\":\"", err)
+                  |> bytearray.concat("\"}")
+              }
+              _ -> "{\"result\":\"AQ==\"}"
+            },
+          ),
+        },
+      )
     }
-  expect require_proof(transaction, verify_policy, expected_proof)
+  expect matches_proof
   let input = input_at(transaction, lane.input_ref)
   expect datum: PacketLaneDatum = validator_utils.get_inline_datum(input.output)
   expect datum.lane_count == lane_count
@@ -634,7 +625,7 @@ pub fn validate_acknowledgements(
     list.map(
       packets,
       fn(entry) {
-        expect Acknowledge { packet, proof, lane, .. } = entry
+        expect Acknowledge { packet, lane, .. } = entry
         expect validate_local_packet(packet, channel)
         let input = input_at(transaction, lane.input_ref)
         expect datum: PacketLaneDatum =
@@ -645,7 +636,7 @@ pub fn validate_acknowledgements(
             CompletePacket { packet },
           ]
         expect authenticate_lane(transaction, lane.input_ref, lane_policy)
-        VerifyMembershipParams {
+        MembershipStatement {
           cs: client.state.client_state,
           cons_state: consensus,
           height: proof_height,
@@ -653,7 +644,6 @@ pub fn validate_acknowledgements(
           processed_height,
           delay_time_period: connection.state.delay_period,
           delay_block_period: verify.get_block_delay(connection.state),
-          proof,
           path: merkle.apply_prefix(
             connection.state.counterparty.prefix,
             merkle.new_merkle_path(
@@ -670,24 +660,11 @@ pub fn validate_acknowledgements(
         }
       },
     )
-  let expected =
-    when memberships is {
-      [single] ->
-        VerifyMembership {
-          cs: single.cs,
-          cons_state: single.cons_state,
-          height: single.height,
-          processed_time: single.processed_time,
-          processed_height: single.processed_height,
-          delay_time_period: single.delay_time_period,
-          delay_block_period: single.delay_block_period,
-          proof: single.proof,
-          path: single.path,
-          value: single.value,
-        }
-      _ -> BatchVerifyMembership(memberships)
-    }
-  require_proof(transaction, verify_policy, expected)
+  let actual = verified_request(transaction, verify_policy)
+  when memberships is {
+    [single] -> proof_statement.membership_matches(actual, single)
+    _ -> proof_statement.membership_batch_matches(actual, memberships)
+  }
 }
 
 fn validate_release(
@@ -769,7 +746,8 @@ pub fn validate_receive(
   op: BatchOperation,
   verify_policy: PolicyId,
 ) -> Bool {
-  expect Receive { packet, proof_height, proof, lane, .. } = op
+  expect Receive { packet, proof_height, proof_index, lane, .. } = op
+  expect proof_index == 0
   let channel = channel_reference(transaction, channel_token)
   expect
     channel_datum.can_receive(
@@ -817,10 +795,9 @@ pub fn validate_receive(
       packet.sequence,
     )
   expect
-    require_proof(
-      transaction,
-      verify_policy,
-      VerifyMembership {
+    proof_statement.membership_matches(
+      verified_request(transaction, verify_policy),
+      MembershipStatement {
         cs: client.state.client_state,
         cons_state: consensus,
         height: proof_height,
@@ -828,7 +805,6 @@ pub fn validate_receive(
         processed_height,
         delay_time_period: connection.state.delay_period,
         delay_block_period: verify.get_block_delay(connection.state),
-        proof,
         path: merkle.apply_prefix(
           connection.state.counterparty.prefix,
           merkle.new_merkle_path([key]),
