@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "44c50a721c455f7745d44002e310bae026fad957",
+  "method": "Complete signed emulator transactions executing the compiled validators under the retained mainnet protocol parameters. Before and after use the same fixture scenarios. Fixture wallets are generated independently, so exact execution and fee values can vary slightly with input ordering. These are measurements from one comparison, not live-chain fee estimates.",
+  "toolchain": {
+    "aiken": "v1.1.24+bacbeb3",
+    "deno": "2.6.10",
+    "lucid": "0.6.5",
+    "scalusUplc": "0.1.4"
+  },
+  "retainedParameters": {
+    "feePerByteLovelace": 44,
+    "maxTransactionBytes": 16384
+  },
+  "reproduction": {
+    "directory": "cardano/offchain",
+    "build": "aiken build in cardano/onchain using v1.1.24",
+    "comparisonTests": "deno test --allow-env --allow-read --filter '/native ADA send and acknowledgement|existing vouchers/' src/packet-lane-transactions.test.ts",
+    "regressions": "deno task test:packet-lanes",
+    "sendFeeCalculation": "The baseline send fee is the reported combined ADA send-plus-acknowledgement fee minus the reported acknowledgement fee."
+  },
+  "scenarios": [
+    {
+      "name": "singleton native ADA send",
+      "before": {
+        "signedBytes": 2407,
+        "feeLovelace": 1543393,
+        "memory": 7386049,
+        "cpu": 2617978045
+      },
+      "after": {
+        "signedBytes": 2195,
+        "feeLovelace": 1526189,
+        "memory": 7326891,
+        "cpu": 2598282021
+      },
+      "change": {
+        "signedBytes": -212,
+        "feeLovelace": -17204,
+        "memory": -59158,
+        "cpu": -19696024
+      },
+      "sizeFeeSavingLovelace": 9328,
+      "netFeeSavingLovelace": 17204
+    },
+    {
+      "name": "singleton successful acknowledgement",
+      "before": {
+        "signedBytes": 2606,
+        "feeLovelace": 1467218,
+        "memory": 5270306,
+        "cpu": 2171531984
+      },
+      "after": {
+        "signedBytes": 2394,
+        "feeLovelace": 1448756,
+        "memory": 5196946,
+        "cpu": 2142513269
+      },
+      "change": {
+        "signedBytes": -212,
+        "feeLovelace": -18462,
+        "memory": -73360,
+        "cpu": -29018715
+      },
+      "sizeFeeSavingLovelace": 9328,
+      "netFeeSavingLovelace": 18462
+    },
+    {
+      "name": "existing voucher receive",
+      "before": {
+        "signedBytes": 2975,
+        "feeLovelace": 2296537,
+        "memory": 8833427,
+        "cpu": 3490284605
+      },
+      "after": {
+        "signedBytes": 2729,
+        "feeLovelace": 2265129,
+        "memory": 8699615,
+        "cpu": 3453590125
+      },
+      "change": {
+        "signedBytes": -246,
+        "feeLovelace": -31408,
+        "memory": -133812,
+        "cpu": -36694480
+      },
+      "sizeFeeSavingLovelace": 10824,
+      "netFeeSavingLovelace": 31408
+    }
+  ],
+  "compiledValidatorBytes": {
+    "packet_send.packet_send.mint": {
+      "before": 13655,
+      "after": 13657
+    },
+    "packet_acknowledge.packet_acknowledge.mint": {
+      "before": 12357,
+      "after": 12241
+    },
+    "packet_receive.packet_receive.mint": {
+      "before": 13465,
+      "after": 13293
+    },
+    "packet_lane_guard.packet_lane_guard.spend": {
+      "before": 13720,
+      "after": 13809
+    },
+    "packet_lane_batch.packet_lane_batch.mint": {
+      "before": 3231,
+      "after": 3101
+    },
+    "packet_funds.packet_funds.mint": {
+      "before": 13742,
+      "after": 13612
+    },
+    "packet_send_funds.packet_send_funds.mint": {
+      "before": 10007,
+      "after": 9877
+    }
+  },
+  "proofVerifier": {
+    "compiledBytes": 15214,
+    "beforeCompiledCodeSha256": "0266ea59cad3be28e53360770d41491038ff3b60cb3eebb5c5560be1354487bb",
+    "afterCompiledCodeSha256": "0266ea59cad3be28e53360770d41491038ff3b60cb3eebb5c5560be1354487bb",
+    "unchanged": true
+  },
+  "compatibility": {
+    "destinationWireSchemaVersion": 7,
+    "packetLaneDatumUnchanged": true,
+    "packetRedeemerFormatChanged": true
+  },
+  "interpretation": "Each complete packet is serialized once. Lane updates carry a packet index and opaque Merkle witnesses. Receive mutation kind, success acknowledgement hash and proof height are derived. The guard grows by 89 bytes while several referenced policies shrink. The net fee measurements include size fees, execution fees and reference-script fees. Raw ICS-20 JSON and its structured fields remain separate and unchanged."
+}

@@ -533,6 +533,27 @@ must be upgraded together.
 The [retained signed-transaction comparison](../tests/packet-proof-deduplication/evidence/report.json)
 records byte, fee and execution measurements against `6a69411e`.
 
+Each packet is serialized once in its operation. A lane update carries only
+`packet_index` and opaque Merkle witnesses. Send indexes address the batch's
+canonical packet list. Each lane must include exactly its assigned indexes in
+operation order. Single-packet operations and each acknowledgement batch child
+use index zero. The lane guard derives `CommitPacket`, `ReceivePacket` or
+`CompletePacket` from the operation. Receive proof height and the fixed success
+acknowledgement hash are derived too. The existing lane transition still checks
+packet identity, lane routing, commitments, witnesses and the continuation root.
+
+Compiled packet regressions reject swapped lanes, invalid indexes, reordered,
+missing or repeated send updates and legacy full mutations in reference slots.
+They count each complete packet once across the serialized redeemers. History
+replay resolves the same packet references and can still read full mutations
+from earlier deployments. This is another packet redeemer format change.
+The lane guard, packet policies and transaction builders must be deployed
+together. Lane datums and the destination wire schema remain unchanged.
+
+The [retained packet-payload comparison](../tests/packet-payload-deduplication/evidence/report.json)
+records signed bytes, total fees, execution use and validator sizes against
+`44c50a72`. Raw ICS-20 JSON and its separately structured fields are unchanged.
+
 Normal lane packet transactions do not spend HostState or the channel datum.
 Their packet policies still authenticate the channel, client, callback and
 counterparty proofs. Send sequencing is a separate authenticated output.
