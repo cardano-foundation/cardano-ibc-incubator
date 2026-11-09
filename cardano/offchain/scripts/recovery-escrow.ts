@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { Data, fromText, Kupmios, type UTxO } from "@lucid-evolution/lucid";
 import {
   transferEscrowShardTokenName,
