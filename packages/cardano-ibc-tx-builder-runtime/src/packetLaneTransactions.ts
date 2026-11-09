@@ -658,7 +658,7 @@ export async function buildPacketSendBatch(
     const siblings = await lane.tree.getSiblings(key);
     lane.tree.set(key, commitment);
     lane.updates.push(
-      record(variant(0, packet), [compactStateSiblings(siblings)]),
+      record(BigInt(index), [compactStateSiblings(siblings)]),
     );
     (lane.datum.fields[6] as Map<bigint, string>).set(sequence, commitment);
     addLaneBalance(
@@ -830,7 +830,7 @@ async function packetCompletionLane(
   datum.fields[4] = (datum.fields[4] as bigint) + 1n;
   datum.fields[5] = await tree.getRoot();
   const update = record(outRef(input), [
-    record(variant(2, packet), [compactStateSiblings(siblings)]),
+    record(0n, [compactStateSiblings(siblings)]),
   ]);
   return { input, datum, update };
 }
@@ -1381,7 +1381,7 @@ export async function buildPacketReceive(
   const ack = await sha256(fromText('{"result":"AQ=="}'));
   tree.set(ackKey, ack);
   const updates = [
-    record(variant(1, packet, ack, proofHeight), [
+    record(0n, [
       compactStateSiblings(receiptSiblings),
       compactStateSiblings(ackSiblings),
     ]),

@@ -50,9 +50,16 @@ pub type TransferIntent {
   timeout_timestamp: Int,
 }
 
+// Wire updates carry only a canonical packet index and its Merkle witnesses.
+// The operation fixes the mutation kind and all receive-specific values.
+pub type PacketUpdate {
+  packet_index: Int,
+  siblings: Data,
+}
+
 pub type LaneInputUpdate {
   input_ref: OutputReference,
-  updates: List<LaneUpdate>,
+  updates: List<PacketUpdate>,
 }
 
 // Proof indexes address the pinned verifier's request lists. The operation
@@ -113,6 +120,48 @@ pub type BatchOperation {
   }
   RetireLanes
   AcknowledgeBatch { packets: List<BatchOperation> }
+}
+
+/// Resolve wire references before applying the existing lane state transition.
+pub fn lane_updates(
+  op: BatchOperation,
+  updates: List<PacketUpdate>,
+) -> List<LaneUpdate> {
+  when op is {
+    SendBatch { packets, .. } ->
+      list.map(
+        updates,
+        fn(update) {
+          expect update.packet_index >= 0
+          expect Some(packet) = list.at(packets, update.packet_index)
+          LaneUpdate {
+            mutation: CommitPacket { packet },
+            siblings: update.siblings,
+          }
+        },
+      )
+    Receive { packet, proof_height, .. } -> {
+      expect [PacketUpdate { packet_index: 0, siblings }] = updates
+      [
+        LaneUpdate {
+          mutation: ReceivePacket {
+            packet,
+            acknowledgement: crypto.sha2_256("{\"result\":\"AQ==\"}"),
+            proof_height,
+          },
+          siblings,
+        },
+      ]
+    }
+    Acknowledge { packet, .. } |
+    Timeout { packet, .. } |
+    TimeoutOnClose { packet, .. } |
+    Reject { packet, .. } -> {
+      expect [PacketUpdate { packet_index: 0, siblings }] = updates
+      [LaneUpdate { mutation: CompletePacket { packet }, siblings }]
+    }
+    _ -> fail
+  }
 }
 
 /// Each packet updates an independent lane at one already available proof height.
@@ -389,20 +438,21 @@ pub fn validate_send(
           validator_utils.get_inline_datum(input.output)
         expect datum.lane_count == lane_count
         let expected =
-          list.filter(
-            packets,
-            fn(packet) {
-              packet_lanes.packet_lane(
-                packet.source_port,
-                packet.source_channel,
-                packet.sequence,
-                lane_count,
-              ) == datum.lane
-            },
-          )
-            |> list.map(fn(packet) { CommitPacket { packet } })
+          list.indexed_map(packets, fn(index, packet) { (index, packet) })
+            |> list.filter(
+                fn(entry) {
+                  let (_, packet) = entry
+                  packet_lanes.packet_lane(
+                    packet.source_port,
+                    packet.source_channel,
+                    packet.sequence,
+                    lane_count,
+                  ) == datum.lane
+                },
+              )
+            |> list.map(fn(entry) { entry.1st })
         expect
-          list.map(lane.updates, fn(update) { update.mutation }) == expected
+          list.map(lane.updates, fn(update) { update.packet_index }) == expected
         expect authenticate_lane(transaction, lane.input_ref, lane_policy)
         datum.lane
       },
@@ -569,10 +619,7 @@ pub fn validate_settlement(
   let input = input_at(transaction, lane.input_ref)
   expect datum: PacketLaneDatum = validator_utils.get_inline_datum(input.output)
   expect datum.lane_count == lane_count
-  expect
-    list.map(lane.updates, fn(update) { update.mutation }) == [
-      CompletePacket { packet },
-    ]
+  expect list.map(lane.updates, fn(update) { update.packet_index }) == [0]
   expect authenticate_lane(transaction, lane.input_ref, lane_policy)
   True
 }
@@ -631,10 +678,7 @@ pub fn validate_acknowledgements(
         expect datum: PacketLaneDatum =
           validator_utils.get_inline_datum(input.output)
         expect datum.lane_count == lane_count
-        expect
-          list.map(lane.updates, fn(update) { update.mutation }) == [
-            CompletePacket { packet },
-          ]
+        expect list.map(lane.updates, fn(update) { update.packet_index }) == [0]
         expect authenticate_lane(transaction, lane.input_ref, lane_policy)
         MembershipStatement {
           cs: client.state.client_state,
@@ -815,14 +859,7 @@ pub fn validate_receive(
   let input = input_at(transaction, lane.input_ref)
   expect datum: PacketLaneDatum = validator_utils.get_inline_datum(input.output)
   expect datum.lane_count == lane_count
-  expect
-    list.map(lane.updates, fn(update) { update.mutation }) == [
-      ReceivePacket {
-        packet,
-        acknowledgement: crypto.sha2_256("{\"result\":\"AQ==\"}"),
-        proof_height,
-      },
-    ]
+  expect list.map(lane.updates, fn(update) { update.packet_index }) == [0]
   expect authenticate_lane(transaction, lane.input_ref, lane_policy)
   True
 }
