@@ -32,7 +32,7 @@ docker-publish:
 # manifests, and cardano/gateway.
 # ---------------------------------------------------------------------------
 gateway:
-  ARG EARTHLY_TARGET_NAME
+  ARG EARTH_TARGET_NAME
   LET DOCKER_IMAGE_NAME=${DOCKER_IMAGES_PREFIX}-gateway
 
   WAIT
@@ -53,7 +53,7 @@ gateway:
 # only the Hermes runtime. CI checkouts must run with submodules: recursive.
 # ---------------------------------------------------------------------------
 hermes:
-  ARG EARTHLY_TARGET_NAME
+  ARG EARTH_TARGET_NAME
   LET DOCKER_IMAGE_NAME=${DOCKER_IMAGES_PREFIX}-hermes
 
   WAIT
@@ -73,7 +73,7 @@ hermes:
 # copies packages/* alongside dapps/ibc-swap/client.
 # ---------------------------------------------------------------------------
 swap-client:
-  ARG EARTHLY_TARGET_NAME
+  ARG EARTH_TARGET_NAME
   LET DOCKER_IMAGE_NAME=${DOCKER_IMAGES_PREFIX}-swap-client
 
   WAIT

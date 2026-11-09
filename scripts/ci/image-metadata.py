@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the pinned image action and rehearse its release metadata without Docker."""
+"""Prepare image metadata and rehearse the pinned action's releases without Docker."""
 
 import argparse
 import json
@@ -43,6 +43,17 @@ def check_component_version(component, directory, discovered, ref_type="branch",
     if ref_type == "tag" and ref_name != f"{component}/v{version}":
         raise ValueError(f"Release tag {ref_name!r} does not match {component}/v{version}")
     return version
+
+
+def normalize_image_tags(component, image_tag, extra_tags, ref_type):
+    def normalize(tag):
+        # Git tags select a component. Docker tags cannot include that prefix.
+        return tag.removeprefix(f"{component}/") if ref_type == "tag" else tag
+
+    return {
+        "IMAGE_TAG": normalize(image_tag),
+        "EXTRA_TAGS": " ".join(normalize(tag) for tag in extra_tags.split()),
+    }
 
 
 def render(value, context):
@@ -114,6 +125,12 @@ def read_outputs(path):
     return dict(line.split("=", 1) for line in path.read_text().splitlines() if "=" in line)
 
 
+def write_outputs(values):
+    with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
+        for name, value in values.items():
+            output.write(f"{name}={value}\n")
+
+
 def fixture_env(directory, **values):
     # Do not inherit CI tokens, action outputs or the runner's GitHub context.
     return {
@@ -140,8 +157,25 @@ def select_components(publish):
     return images
 
 
-def action_metadata(action, baseline, image, directory, env):
+def workflow_metadata_step(steps, step_id, context, directory, env):
+    step = next((step for step in steps if step.get("id") == step_id), None)
+    if step is None:
+        return
+    if step.get("shell") != "bash" or "run" not in step or step.get("if"):
+        raise ValueError(f"Expected an unconditional Bash workflow step: {step_id}")
+    output = directory / f"{step_id}-output"
+    step_env = {
+        **env,
+        **{name: render(value, context) for name, value in step.get("env", {}).items()},
+        "GITHUB_OUTPUT": str(output),
+    }
+    run(["bash", "-eo", "pipefail", "-c", render(step["run"], context)], directory, step_env)
+    context.update({f"steps.{step_id}.outputs.{name}": value for name, value in read_outputs(output).items()})
+
+
+def action_metadata(action, baseline, image, directory, env, workflow_context=None):
     context = {
+        **(workflow_context or {}),
         "inputs.component": image["component"],
         "inputs.version-directory": image["version_directory"],
         "github.token": "",
@@ -166,7 +200,8 @@ def action_metadata(action, baseline, image, directory, env):
     step = next(step for step in action["runs"]["steps"] if step.get("id") == "metadata")
     if step.get("shell") != "bash" or "run" not in step or step.get("if"):
         raise ValueError("Expected an unconditional Bash metadata step in the pinned baseline action")
-    run(["bash", "-eo", "pipefail", "-c", render(step["run"], context)], directory, env)
+    step_env = {**env, **{name: render(value, context) for name, value in baseline.get("env", {}).items()}}
+    run(["bash", "-eo", "pipefail", "-c", render(step["run"], context)], directory, step_env)
     outputs = read_outputs(directory / "output")
     context.update({f"steps.metadata.outputs.{name}": value for name, value in outputs.items()})
     # GitHub resolves an unwritten step output to the empty string.
@@ -202,17 +237,23 @@ def rehearse(action, baseline, build_steps, image, version, root=ROOT):
              "commit", "-q", "-m", "metadata fixture"], directory)
         sha = run(["git", "rev-parse", "HEAD"], directory).strip()
         run(["git", "-c", "tag.gpgsign=false", "tag", f"{component}/v{version}"], directory)
-        env = fixture_env(directory, GITHUB_SHA=sha, GITHUB_EVENT_NAME="push", GITHUB_REF_TYPE="tag",
+        env = fixture_env(directory, GITHUB_WORKSPACE=str(ROOT), GITHUB_SHA=sha,
+                          GITHUB_EVENT_NAME="push", GITHUB_REF_TYPE="tag",
                           GITHUB_REF_NAME=f"{component}/v{version}",
                           GITHUB_REF=f"refs/tags/{component}/v{version}")
-        outputs = action_metadata(action, baseline, image, directory, env)
-        check_component_version(component, target, outputs["GUESSED_ARTIFACT_VERSION"],
-                                env["GITHUB_REF_TYPE"], env["GITHUB_REF_NAME"])
         context = {
             "inputs.component": component,
+            "inputs.version-directory": image["version_directory"],
+        }
+        workflow_metadata_step(build_steps, "version", context, directory, env)
+        outputs = action_metadata(action, baseline, image, directory, env, context)
+        check_component_version(component, target, outputs["GUESSED_ARTIFACT_VERSION"],
+                                env["GITHUB_REF_TYPE"], env["GITHUB_REF_NAME"])
+        context.update({
             "steps.image.outputs.id": IMAGE_ID,
             **{f"steps.baseline.outputs.{name}": value for name, value in outputs.items()},
-        }
+        })
+        workflow_metadata_step(build_steps, "image_tags", context, directory, env)
         # Resolve the actual release consumer's wiring, rather than constructing
         # known-good IMAGE_TAG or EXTRA_TAGS values in the test.
         def consumer_env(step_name):
@@ -247,11 +288,21 @@ def check_metadata(build_path, publish_path, root=ROOT):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check-version", action="store_true", help="Check real build outputs against the component manifest")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--read-version", action="store_true", help="Export the declared component version to GITHUB_OUTPUT")
+    modes.add_argument("--normalize-tags", action="store_true", help="Remove component prefixes from Docker release tags")
+    modes.add_argument("--check-version", action="store_true", help="Check real build outputs against the component manifest")
     parser.add_argument("--build-workflow", type=Path, default=ROOT / ".github/workflows/build-image.yaml")
     parser.add_argument("--publish-workflow", type=Path, default=ROOT / ".github/workflows/publish.yaml")
     args = parser.parse_args()
-    if args.check_version:
+    if args.read_version:
+        write_outputs({"version": component_version(os.environ["VERSION_DIRECTORY"])})
+    elif args.normalize_tags:
+        write_outputs(normalize_image_tags(
+            os.environ["COMPONENT"], os.environ["IMAGE_TAG"], os.environ.get("EXTRA_TAGS", ""),
+            os.environ.get("GITHUB_REF_TYPE", "branch"),
+        ))
+    elif args.check_version:
         component = os.environ["COMPONENT"]
         version = check_component_version(
             component, os.environ["VERSION_DIRECTORY"], os.environ.get("COMPONENT_VERSION", ""),
