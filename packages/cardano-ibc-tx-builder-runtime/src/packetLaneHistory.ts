@@ -7,6 +7,7 @@ import {
   coreToUtxo,
   Data,
   fromHex,
+  fromText,
   toHex,
   toText,
   type UTxO,
@@ -128,11 +129,18 @@ function constructor(value: Data, fields?: number): Constr<Data> {
   return value;
 }
 
-function laneUpdates(operation: Constr<Data>): Constr<Data>[] {
+function laneUpdates(
+  operation: Constr<Data>,
+): { lane: Constr<Data>; operation: Constr<Data> }[] {
   if (operation.index === 9) {
     return (operation.fields[0] as Constr<Data>[]).flatMap(laneUpdates);
   }
-  if (operation.index === 0) return operation.fields[3] as Constr<Data>[];
+  if (operation.index === 0) {
+    return (operation.fields[3] as Constr<Data>[]).map((lane) => ({
+      lane: constructor(lane, 2),
+      operation,
+    }));
+  }
   const field = operation.index === 1
     ? 3
     : operation.index === 6
@@ -140,7 +148,40 @@ function laneUpdates(operation: Constr<Data>): Constr<Data>[] {
     : [2, 5, 7].includes(operation.index)
     ? 4
     : undefined;
-  return field === undefined ? [] : [constructor(operation.fields[field], 2)];
+  return field === undefined ? [] : [{
+    lane: constructor(operation.fields[field], 2),
+    operation,
+  }];
+}
+
+function laneMutation(operation: Constr<Data>, raw: Data): Constr<Data> {
+  const reference = constructor(raw, 2).fields[0];
+  // Historical deployments serialized the full mutation here. Replay both
+  // formats so an existing lane checkpoint can still be rebuilt from issuance.
+  if (reference instanceof Constr) return reference;
+  if (typeof reference !== "bigint" || reference < 0n) {
+    throw new Error("Invalid packet history packet index");
+  }
+  if (operation.index === 0) {
+    const packets = operation.fields[2] as Data[];
+    if (!Array.isArray(packets) || reference >= BigInt(packets.length)) {
+      throw new Error("Invalid packet history packet index");
+    }
+    return new Constr(0, [constructor(packets[Number(reference)], 8)]);
+  }
+  if (reference !== 0n) throw new Error("Invalid packet history packet index");
+  const packet = constructor(operation.fields[0], 8);
+  if (operation.index === 5) {
+    return new Constr(1, [
+      packet,
+      toHex(sha256(fromHex(fromText('{"result":"AQ=="}')))),
+      operation.fields[2],
+    ]);
+  }
+  if ([1, 2, 6, 7].includes(operation.index)) {
+    return new Constr(2, [packet]);
+  }
+  throw new Error("Unknown packet history operation");
 }
 
 function packetCommitment(packet: Constr<Data>): string {
@@ -295,16 +336,16 @@ export class PacketLaneHistory {
         }
         const authorization = constructor(Data.from(redeemers[0].data), 3);
         const updates = laneUpdates(constructor(authorization.fields[1]))
-          .filter((update) => {
-            const ref = constructor(constructor(update, 2).fields[0], 2);
+          .filter(({ lane }) => {
+            const ref = constructor(lane.fields[0], 2);
             return ref.fields[0] === this.output!.txHash &&
               ref.fields[1] === BigInt(this.output!.outputIndex);
           });
         if (updates.length !== 1) {
           throw new Error("Packet history lacks its exact lane update");
         }
-        for (const raw of updates[0].fields[1] as Data[]) {
-          const mutation = constructor(constructor(raw, 2).fields[0]);
+        for (const raw of updates[0].lane.fields[1] as Data[]) {
+          const mutation = laneMutation(updates[0].operation, raw);
           const packet = constructor(mutation.fields[0], 8);
           const sequence = packet.fields[0];
           const path = `/ports/${toText(String(port))}/channels/${

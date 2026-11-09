@@ -3,8 +3,16 @@ import { test } from "node:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { sha256 } from "@noble/hashes/sha256";
 import { PacketLaneHistoryStore } from "./packetLaneHistoryStore.ts";
-import { Constr, Data, fromText, type UTxO } from "@lucid-evolution/lucid";
+import {
+  Constr,
+  Data,
+  fromHex,
+  fromText,
+  toHex,
+  type UTxO,
+} from "@lucid-evolution/lucid";
 import { packetLaneTokenName } from "@cardano-ibc/tx-builder/dist/packet-lanes";
 import {
   PacketLaneHistory,
@@ -16,7 +24,7 @@ const statePolicy = "11".repeat(28);
 const batchPolicy = "22".repeat(28);
 const unit = statePolicy + packetLaneTokenName("transfer", "channel-0", 0, 1);
 const record = (...fields: Data[]) => new Constr(0, fields);
-const ack = "ab".repeat(32);
+const ack = toHex(sha256(fromHex(fromText('{"result":"AQ=="}'))));
 const key = (kind: string, sequence: bigint) =>
   `${kind}/ports/transfer/channels/channel-0/sequences/${sequence}`;
 
@@ -87,6 +95,7 @@ function receive(
   previous: UTxO,
   tree: PacketLaneTree,
   sequence = version,
+  legacy = false,
 ) {
   tree.set(key("receipts", sequence), "01");
   tree.set(key("acks", sequence), ack);
@@ -100,10 +109,50 @@ function receive(
     record(0n, 0n),
     1n,
   );
-  return transaction(version, tree.getRoot(), previous, [
-    record(new Constr(1, [packet, ack, record(1n, version)]), []),
+  const tx = transaction(version, tree.getRoot(), previous, [
+    record(legacy ? new Constr(1, [packet, ack, record(1n, version)]) : 0n, []),
   ]);
+  const authorization = Data.from(tx.redeemers[0].data) as Constr<Data>;
+  const operation = authorization.fields[1] as Constr<Data>;
+  operation.fields[0] = packet;
+  operation.fields[2] = record(1n, version);
+  tx.redeemers[0].data = Data.to(authorization);
+  return tx;
 }
+
+test("packet history replays both packet references and historical full mutations", () => {
+  const history = new PacketLaneHistory(unit, batchPolicy);
+  const tree = new PacketLaneTree();
+  const initial = transaction(0n, tree.getRoot());
+  history.apply(initial);
+  const legacy = receive(1n, initial.outputs[0], tree, 1n, true);
+  history.apply(legacy);
+  const compact = receive(2n, legacy.outputs[0], tree);
+  history.apply(compact);
+  assert.equal(history.at(compact.outputs[0]).tree.size(), 4);
+});
+
+test("packet history rejects invalid canonical packet indexes without poisoning its checkpoint", () => {
+  const history = new PacketLaneHistory(unit, batchPolicy);
+  const tree = new PacketLaneTree();
+  const initial = transaction(0n, tree.getRoot());
+  history.apply(initial);
+  const tx = receive(1n, initial.outputs[0], tree);
+  for (const index of [-1n, 1n, 9007199254740993n]) {
+    const authorization = Data.from(tx.redeemers[0].data) as Constr<Data>;
+    const operation = authorization.fields[1] as Constr<Data>;
+    const lane = operation.fields[4] as Constr<Data>;
+    (lane.fields[1] as Constr<Data>[])[0].fields[0] = index;
+    assert.throws(() =>
+      history.apply({
+        ...tx,
+        redeemers: [{ ...tx.redeemers[0], data: Data.to(authorization) }],
+      }), /packet index/);
+    assert.equal(history.at(initial.outputs[0]).tree.size(), 0);
+  }
+  history.apply(tx);
+  assert.equal(history.at(tx.outputs[0]).tree.size(), 2);
+});
 
 test("packet history reconstructs more than one lane's former receipt capacity and supports historical forks", () => {
   const history = new PacketLaneHistory(unit, batchPolicy);

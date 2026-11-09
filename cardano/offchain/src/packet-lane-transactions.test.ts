@@ -169,6 +169,38 @@ async function resolveInputs(
 async function signMeasured(...args: Parameters<typeof signFixtureMeasured>) {
   const signed = await signFixtureMeasured(...args);
   const lucid = args[0], body = signed.toTransaction().body();
+  const redeemers = signed.toTransaction().witness_set().redeemers()!
+    .to_flat_format();
+  for (let i = 0; i < redeemers.len(); i++) {
+    const redeemer = redeemers.get(i);
+    const data = Data.from(redeemer.data().to_cbor_hex()) as Constr<Data>;
+    if (redeemer.tag() !== CML.RedeemerTag.Mint || data.fields?.length !== 3) {
+      continue;
+    }
+    const operation = data.fields[1] as Constr<Data>;
+    const packets = operation.index === 0
+      ? operation.fields[2] as Constr<Data>[]
+      : operation.index === 9
+      ? (operation.fields[0] as Constr<Data>[]).map((op) =>
+        op.fields[0] as Constr<Data>
+      )
+      : [1, 2, 5, 6, 7].includes(operation.index)
+      ? [operation.fields[0] as Constr<Data>]
+      : [];
+    for (const packet of packets) {
+      assertSinglePayloadCopy(signed, packet, "packet");
+    }
+  }
+  const units = CML.compute_total_ex_units(
+    signed.toTransaction().witness_set().redeemers()!,
+  );
+  console.log(JSON.stringify({
+    profile: args[2],
+    signedBytes: signed.toCBOR().length / 2,
+    feeLovelace: body.fee().toString(),
+    memory: units.mem().toString(),
+    cpu: units.steps().toString(),
+  }));
   const required = new Set<string>();
   for (const input of await resolveInputs(lucid, body.inputs())) {
     const credential = getAddressDetails(input.address).paymentCredential;
@@ -341,7 +373,10 @@ Deno.test("native ADA send and acknowledgement omit unused references with recon
     changeMintRedeemer(signedAck.toTransaction(), (operation) => {
       assertCompactLaneUpdate(operation.fields[3] as Constr<Data>);
     });
-    if (!control) await checkAcknowledgementPolicies(f, wallet, signedAck);
+    if (!control) {
+      await checkAcknowledgementPolicies(f, wallet, signedAck);
+      await rejectInvalidPacketReferences(f, signedAck, 3);
+    }
     const acknowledged = await submitReconciled(f, wallet, signedAck);
     return {
       sent,
@@ -462,6 +497,7 @@ Deno.test("forty receives on one lane retain bounded live state and rebuild dela
     changeMintRedeemer(signed.toTransaction(), (operation) => {
       assertCompactLaneUpdate(operation.fields[4] as Constr<Data>);
     });
+    if (sequence === 1n) await rejectInvalidPacketReferences(f, signed, 4);
     await submitReconciled(f, wallet, signed);
     const unit = Object.keys(receive.input.assets).find((unit) =>
       unit.startsWith(f.deployment.statePolicy)
@@ -714,11 +750,28 @@ Deno.test("two ready acknowledgements share fees with reconciled balances and ex
     f.emulator.now(),
     f.emulator.now() + 60_000,
   );
-  await submitReconciled(
-    f,
+  const sourceSend = await signMeasured(
     wallet,
-    await signMeasured(wallet, sent.tx, "ready acknowledgement source send"),
+    sent.tx,
+    "ready acknowledgement source send",
   );
+  const wrongLane = changeMintRedeemer(
+    sourceSend.toTransaction(),
+    (operation) => {
+      const lanes = operation.fields[3] as Constr<Data>[];
+      assertEquals(lanes.length, 2);
+      for (const lane of lanes) {
+        const update = (lane.fields[1] as Constr<Data>[])[0];
+        update.fields[0] = 1n - (update.fields[0] as bigint);
+      }
+    },
+  );
+  await assertRejects(
+    () => f.emulator.evaluateTx(wrongLane),
+    Error,
+    scriptFailureMessage,
+  );
+  await submitReconciled(f, wallet, sourceSend);
   const requests = sent.packets.map((packet) => {
     const proof = f.proofs.get(packet.fields[0] as bigint)!;
     return { packet, proofHeight: proof.height, proof: proof.proof };
@@ -861,6 +914,20 @@ Deno.test("same-lane sends use sequential witnesses and stale packet completions
   assertCompactLaneUpdate(lanes[0]);
   assert(encode(updates[0].fields[1]) !== encode(updates[1].fields[1]));
   const signed = await signMeasured(builder, batch.tx, "two sends in one lane");
+  for (const indexes of [[1n, 0n], [0n, 0n], [-1n, 1n], [0n, 2n], [0n], []]) {
+    const invalid = changeMintRedeemer(signed.toTransaction(), (operation) => {
+      const lane = (operation.fields[3] as Constr<Data>[])[0];
+      const updates = lane.fields[1] as Constr<Data>[];
+      lane.fields[1] = indexes.map((index, i) =>
+        record(index, updates[Math.min(i, 1)].fields[1])
+      );
+    });
+    await assertRejects(
+      () => f.emulator.evaluateTx(invalid),
+      Error,
+      scriptFailureMessage,
+    );
+  }
   const corrupted = changeMintRedeemer(signed.toTransaction(), (operation) => {
     const lanes = operation.fields[3] as Constr<Data>[];
     const updates = lanes[0].fields[1] as Constr<Data>[];
@@ -1164,8 +1231,12 @@ Deno.test("authenticated timeout drains liquidity, burns its identity and refund
   );
 });
 
-function assertSingleProofCopy(signed: TxSigned, proof: Constr<Data>) {
-  const payload = encode(proof);
+function assertSinglePayloadCopy(
+  signed: TxSigned,
+  value: Constr<Data>,
+  label: string,
+) {
+  const payload = encode(value);
   const redeemers = signed.toTransaction().witness_set().redeemers()!
     .to_flat_format();
   let copies = 0;
@@ -1175,7 +1246,45 @@ function assertSingleProofCopy(signed: TxSigned, proof: Constr<Data>) {
   assertEquals(
     copies,
     1,
-    "the ICS-23 payload must occur in exactly one redeemer",
+    `${label} must occur in exactly one redeemer`,
+  );
+}
+
+function assertSingleProofCopy(signed: TxSigned, proof: Constr<Data>) {
+  assertSinglePayloadCopy(signed, proof, "ICS-23 payload");
+}
+
+async function rejectInvalidPacketReferences(
+  f: Awaited<ReturnType<typeof packetLaneFixture>>,
+  signed: TxSigned,
+  laneField: number,
+) {
+  for (const indexes of [[-1n], [1n], [], [0n, 0n]]) {
+    const invalid = changeMintRedeemer(signed.toTransaction(), (operation) => {
+      const lane = operation.fields[laneField] as Constr<Data>;
+      const original = (lane.fields[1] as Constr<Data>[])[0];
+      lane.fields[1] = indexes.map((index) =>
+        record(index, original.fields[1])
+      );
+    });
+    await assertRejects(
+      () => f.emulator.evaluateTx(invalid),
+      Error,
+      scriptFailureMessage,
+    );
+  }
+  // A legacy full mutation cannot be smuggled into the compact reference slot.
+  const legacy = changeMintRedeemer(signed.toTransaction(), (operation) => {
+    const lane = operation.fields[laneField] as Constr<Data>;
+    (lane.fields[1] as Constr<Data>[])[0].fields[0] = variant(
+      2,
+      operation.fields[0],
+    );
+  });
+  await assertRejects(
+    () => f.emulator.evaluateTx(legacy),
+    Error,
+    scriptFailureMessage,
   );
 }
 

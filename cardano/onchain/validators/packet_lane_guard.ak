@@ -98,60 +98,28 @@ validator packet_lane_guard(batch_policy: PolicyId, lane_policy: PolicyId) {
             }
             _ -> operation
           }
-        when op is {
-          SendBatch { lanes, .. } -> {
-            expect Some(lane) =
-              list.find(lanes, fn(lane) { lane.input_ref == ref })
-            packet_lane_state.validate_transition_with_balances(
-              transaction,
-              ref,
-              lane_policy,
-              lane.updates,
-              fn(old) { packet_accounting.balance_after(transaction, old, op) },
-            )
+        let lane =
+          when op is {
+            SendBatch { lanes, .. } -> {
+              expect Some(lane) =
+                list.find(lanes, fn(lane) { lane.input_ref == ref })
+              lane
+            }
+            Acknowledge { lane, .. } |
+            Timeout { lane, .. } |
+            TimeoutOnClose { lane, .. } |
+            Receive { lane, .. } |
+            Reject { lane, .. } -> lane
+            _ -> fail
           }
-          Acknowledge { lane, .. } ->
-            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
-              transaction,
-              ref,
-              lane_policy,
-              lane.updates,
-              fn(old) { packet_accounting.balance_after(transaction, old, op) },
-            )
-          Timeout { lane, .. } ->
-            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
-              transaction,
-              ref,
-              lane_policy,
-              lane.updates,
-              fn(old) { packet_accounting.balance_after(transaction, old, op) },
-            )
-          TimeoutOnClose { lane, .. } ->
-            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
-              transaction,
-              ref,
-              lane_policy,
-              lane.updates,
-              fn(old) { packet_accounting.balance_after(transaction, old, op) },
-            )
-          Receive { lane, .. } ->
-            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
-              transaction,
-              ref,
-              lane_policy,
-              lane.updates,
-              fn(old) { packet_accounting.balance_after(transaction, old, op) },
-            )
-          Reject { lane, .. } ->
-            action == Lane && lane.input_ref == ref && packet_lane_state.validate_transition_with_balances(
-              transaction,
-              ref,
-              lane_policy,
-              lane.updates,
-              fn(old) { packet_accounting.balance_after(transaction, old, op) },
-            )
-          _ -> False
-        }
+        expect lane.input_ref == ref
+        packet_lane_state.validate_transition_with_balances(
+          transaction,
+          ref,
+          lane_policy,
+          packet_batch.lane_updates(op, lane.updates),
+          fn(old) { packet_accounting.balance_after(transaction, old, op) },
+        )
       }
     }
   }
