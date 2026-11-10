@@ -104,12 +104,8 @@ fn inner_hash_validated(left: ByteArray, right: ByteArray) -> ByteArray {
   // Special-case an entirely empty subtree.
   //
   // If both children are empty, the parent is empty too.
-  // Both children are known 32-byte hashes. Integer zero identifies exactly
-  // the all-zero digest without repeating its 32-byte literal in the script.
-  if builtin.bytearray_to_integer(True, left) == 0 && builtin.bytearray_to_integer(
-    True,
-    right,
-  ) == 0 {
+  // Both children are known 32-byte hashes. Compare their exact bytes.
+  if left == empty_hash && right == empty_hash {
     builtin.integer_to_bytearray(True, 32, 0)
   } else {
     builtin.cons_bytearray(1, builtin.append_bytearray(left, right))
