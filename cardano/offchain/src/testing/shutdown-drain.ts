@@ -342,6 +342,14 @@ export async function checkShutdownDrain(
         policy: v.verifyProof.scriptHash,
         reference: v.verifyProof.refUtxo,
       },
+      ...(v.verifyMembership
+        ? {
+          membershipVerifier: {
+            policy: v.verifyMembership.scriptHash,
+            reference: v.verifyMembership.refUtxo,
+          },
+        }
+        : {}),
       channel: channelUtxo,
       connection: connectionUtxo,
       client: clientUtxo,

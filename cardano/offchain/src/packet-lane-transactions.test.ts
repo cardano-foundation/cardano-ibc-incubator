@@ -80,7 +80,7 @@ async function checkAcknowledgementPolicies(
     [
       f.deployment.batchPolicy,
       f.deployment.operations.acknowledge.policy,
-      f.deployment.proofVerifier.policy,
+      (f.deployment.membershipVerifier ?? f.deployment.proofVerifier).policy,
     ].sort(),
   );
   const references = await resolveInputs(
@@ -194,15 +194,29 @@ async function signMeasured(...args: Parameters<typeof signFixtureMeasured>) {
   const units = CML.compute_total_ex_units(
     signed.toTransaction().witness_set().redeemers()!,
   );
+  const inputs = await resolveInputs(lucid, body.inputs());
+  const references = await resolveInputs(lucid, body.reference_inputs());
+  const scriptBytes = (utxos: UTxO[]) =>
+    utxos.reduce(
+      (sum, input) =>
+        sum + (input.scriptRef
+          ? toScriptRef(input.scriptRef).as_plutus_v3()!.to_raw_bytes().length
+          : 0),
+      0,
+    );
   console.log(JSON.stringify({
     profile: args[2],
+    totalReferencedScriptBytes: scriptBytes([...inputs, ...references]),
+    spentInputScriptBytes: scriptBytes(inputs),
+    referenceInputCount: references.length,
+    referenceScriptCount: references.filter((input) => input.scriptRef).length,
     signedBytes: signed.toCBOR().length / 2,
     feeLovelace: body.fee().toString(),
     memory: units.mem().toString(),
     cpu: units.steps().toString(),
   }));
   const required = new Set<string>();
-  for (const input of await resolveInputs(lucid, body.inputs())) {
+  for (const input of inputs) {
     const credential = getAddressDetails(input.address).paymentCredential;
     if (credential?.type === "Script") required.add(credential.hash);
   }
@@ -210,7 +224,7 @@ async function signMeasured(...args: Parameters<typeof signFixtureMeasured>) {
   for (let i = 0; mint && i < mint.len(); i++) {
     required.add(mint.get(i).to_hex());
   }
-  for (const reference of await resolveInputs(lucid, body.reference_inputs())) {
+  for (const reference of references) {
     if (
       !reference.scriptRef ||
       Object.entries(reference.assets).some(([unit, amount]) =>
@@ -1362,6 +1376,22 @@ Deno.test("packet proof statements bind the verifier's only copy of each payload
     f.emulator.now(),
     f.emulator.now() + 60_000,
   );
+  if (f.deployment.membershipVerifier) {
+    const wrongRoute = await buildPacketAcknowledgement(
+      wallet,
+      { ...f.deployment, membershipVerifier: f.deployment.proofVerifier },
+      packet,
+      proof.height,
+      proof.proof,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    await assertRejects(
+      () => wrongRoute.tx.complete(),
+      Error,
+      scriptFailureMessage,
+    );
+  }
   const signed = await signMeasured(
     wallet,
     ack.tx,
@@ -1788,10 +1818,10 @@ for (const firstSeen of [false, true]) {
     );
     const height = record(1n, 19n);
     checkpoint(f, height, proof.root);
-    const buildReceive = async () => {
+    const buildReceive = async (deployment = f.deployment) => {
       const receive = await buildPacketReceive(
         wallet,
-        f.deployment,
+        deployment,
         packet,
         height,
         proof.proof,
@@ -1820,6 +1850,17 @@ for (const firstSeen of [false, true]) {
       }
       return receive;
     };
+    if (!firstSeen && f.deployment.membershipVerifier) {
+      const wrongRoute = await buildReceive({
+        ...f.deployment,
+        membershipVerifier: f.deployment.proofVerifier,
+      });
+      await assertRejects(
+        () => wrongRoute.tx.complete(),
+        Error,
+        scriptFailureMessage,
+      );
+    }
     const receive = await buildReceive();
     const reduced = await signMeasured(
       wallet,
@@ -2461,5 +2502,39 @@ Deno.test("full accounting maps reserve pending sends then swap assets after set
   }
   await (await signMeasured(wallet, compact.tx, "full-map redistribution"))
     .submit();
+  f.emulator.awaitBlock();
+});
+
+Deno.test("existing packet deployments keep the general proof verifier route", async () => {
+  const f = await packetLaneFixture(16, 8, false);
+  const { intents } = await f.admit(1);
+  const wallet = await f.wallet();
+  assertEquals(f.deployment.membershipVerifier, undefined);
+  const sent = await buildPacketSendBatch(
+    wallet,
+    f.deployment,
+    intents,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await (await signMeasured(wallet, sent.tx, "legacy verifier send")).submit();
+  f.emulator.awaitBlock();
+  const proof = f.proofs.get(1n)!;
+  const ack = await buildPacketAcknowledgement(
+    wallet,
+    f.deployment,
+    sent.packets[0],
+    proof.height,
+    proof.proof,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  const signed = await signMeasured(
+    wallet,
+    ack.tx,
+    "legacy verifier acknowledgement",
+  );
+  await checkAcknowledgementPolicies(f, wallet, signed);
+  await signed.submit();
   f.emulator.awaitBlock();
 });

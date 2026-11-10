@@ -124,6 +124,7 @@ type DeploymentConfig = {
     spendTransferModule: DeploymentValidator;
     mintIdentifier: DeploymentValidator;
     verifyProof: DeploymentValidator;
+    verifyMembership?: DeploymentValidator;
     mintClientStt: DeploymentValidator;
     mintConnectionStt: DeploymentValidator;
     mintChannelStt: DeploymentValidator;
@@ -246,6 +247,11 @@ type BridgeManifest = {
       ref_utxo: { tx_hash: string; output_index: number };
     };
     verify_proof: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
+    verify_membership?: {
       script_hash: string;
       address: string;
       ref_utxo: { tx_hash: string; output_index: number };
@@ -582,6 +588,9 @@ export function normalizeBridgeManifest(manifest: BridgeManifest): {
         spendTransferModule: mapValidator(manifest.validators.spend_transfer_module),
         mintIdentifier: mapValidator(manifest.validators.mint_identifier),
         verifyProof: mapValidator(manifest.validators.verify_proof),
+        ...(manifest.validators.verify_membership
+          ? { verifyMembership: mapValidator(manifest.validators.verify_membership) }
+          : {}),
         mintClientStt: mapValidator(manifest.validators.mint_client_stt),
         mintConnectionStt: mapValidator(manifest.validators.mint_connection_stt),
         mintChannelStt: mapValidator(manifest.validators.mint_channel_stt),

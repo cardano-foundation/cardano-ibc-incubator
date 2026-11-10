@@ -61,9 +61,13 @@ export async function assertBaselineAliases(plan: DeploymentPlan) {
     mockToken: "minting_mock_token.mint_mock_token.mint",
     benchmarkVoucher:
       "minting_trace_registry_benchmark_voucher.mint_trace_registry_benchmark_voucher.mint",
+    verifyMembership: "verifying_membership.verify_membership.mint",
   };
   for (const [name, title] of Object.entries(expectedAliases)) {
     const alias = plan[name as keyof DeploymentPlan] as PlannedValidator | null;
+    if (
+      name === "verifyMembership" && !byTitle.has(title) && alias === undefined
+    ) continue;
     if (
       name === "benchmarkVoucher" && !plan.inputs.benchmarkVoucherEnabled &&
       alias === null
@@ -104,6 +108,7 @@ export async function assertRetainedManifest(
     voucherMetadata: plan.voucherMetadata,
     mintTraceRegistryBenchmarkVoucher: plan.benchmarkVoucher,
     verifyProof: plan.verifyProof,
+    verifyMembership: plan.verifyMembership ?? null,
     mintClientStt: plan.mintClient,
     mintConnectionStt: plan.mintConnection,
     mintChannelStt: plan.mintChannel,

@@ -1,3 +1,4 @@
+import { readValidator } from "./utils.ts";
 import { loadCachedTendermintValidators } from "./tendermint-cache-validators.ts";
 import {
   assert,
@@ -6,6 +7,7 @@ import {
   assertRejects,
 } from "@std/assert";
 import {
+  Constr,
   Lucid,
   type LucidEvolution,
   PROTOCOL_PARAMETERS_DEFAULT,
@@ -333,4 +335,42 @@ Deno.test("channel upgrade deployment fixture pins its applied validators", asyn
     Object.fromEntries(validators.map(({ title, hash }) => [title, hash])),
     pins.validators,
   );
+});
+
+Deno.test("packet proof routes pin membership separately and publish both references", async () => {
+  const plan = await loadDeploymentPlan(lucidLoader, inputs);
+  assertNotEquals(plan.verifyMembership.hash, plan.verifyProof.hash);
+  assert(plan.referenceValidators.includes(plan.verifyMembership));
+  assert(plan.referenceValidators.includes(plan.verifyProof));
+  for (
+    const name of [
+      "acknowledge",
+      "receive",
+      "timeout",
+      "reject",
+      "timeout_on_close",
+    ]
+  ) {
+    const params = [
+      new Constr(0, [
+        plan.packetConfigToken.policy_id,
+        plan.packetConfigToken.name,
+      ]),
+      plan.mintChannel.hash,
+      plan.packetState.hash,
+      plan.mintClient.hash,
+      plan.mintConnection.hash,
+      BigInt(plan.packetLaneCount),
+      plan.mintVoucher.hash,
+      ["acknowledge", "receive"].includes(name)
+        ? plan.verifyMembership.hash
+        : plan.verifyProof.hash,
+    ];
+    const [, hash] = readValidator(
+      `packet_${name}.packet_${name}.mint`,
+      lucidLoader,
+      params,
+    );
+    assertEquals(plan.packetOperations[name].hash, hash, name);
+  }
 });

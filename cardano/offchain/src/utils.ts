@@ -1188,6 +1188,7 @@ export type DeploymentTemplate = {
       address: string;
       refUtxo: UTxO;
     };
+    verifyMembership?: DeployedScriptReference;
     verifyProof: {
       title: string;
       script: string;

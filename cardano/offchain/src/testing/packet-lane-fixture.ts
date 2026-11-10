@@ -53,6 +53,7 @@ function unsignedVarintHex(value: number): string {
 export async function packetLaneFixture(
   laneCount = 16,
   acknowledgementLeaves = 8,
+  splitVerifier = Deno.env.get("PACKET_MEMBERSHIP_VERIFIER") !== "false",
 ) {
   if (
     !Number.isInteger(acknowledgementLeaves) || acknowledgementLeaves < 1 ||
@@ -62,7 +63,10 @@ export async function packetLaneFixture(
     throw new Error("acknowledgementLeaves must be a power of two up to 64");
   }
   const node = Deno.env.get("PACKET_LANE_NODE_URL");
-  let clock: { time: number; slot: number } | undefined;
+  const fixedBenchmark = Deno.env.get("PACKET_FIXED_BENCHMARK") === "true";
+  let clock: { time: number; slot: number } | undefined = fixedBenchmark
+    ? { time: 1_800_000_000_000, slot: 0 }
+    : undefined;
   if (node) {
     const start = await nodeRpc(node, "queryNetwork/startTime", {});
     const tip = await nodeRpc(node, "queryLedgerState/tip", {});
@@ -129,6 +133,10 @@ export async function packetLaneFixture(
       "93".repeat(28),
     ],
   );
+  const [membershipScript, membershipPolicy] = readValidator(
+    "verifying_membership.verify_membership.mint",
+    fixture.lucid,
+  );
   const operations: PacketLaneDeployment["operations"] = {};
   for (
     const name of [
@@ -153,7 +161,13 @@ export async function packetLaneFixture(
         "22".repeat(28),
         BigInt(laneCount),
         voucherPolicy,
-        ...(!["send", "retire"].includes(name) ? [context.verifyPolicy] : []),
+        ...(!["send", "retire"].includes(name)
+          ? [
+            splitVerifier && ["receive", "acknowledge"].includes(name)
+              ? membershipPolicy
+              : context.verifyPolicy,
+          ]
+          : []),
       ];
     const [script, policy] = readValidator(
       `packet_${name}.packet_${name}.mint`,
@@ -196,6 +210,13 @@ export async function packetLaneFixture(
       script: applyDoubleCborEncoding(context.verifyScript.script),
     }),
   };
+  const membershipVerifier = {
+    policy: membershipPolicy,
+    reference: seed(locked, { lovelace: 100_000_000n }, Data.void(), {
+      ...membershipScript,
+      script: applyDoubleCborEncoding(membershipScript.script),
+    }),
+  };
   const channelUnit = String(channelToken.fields[0]) +
     String(channelToken.fields[1]);
   const channel =
@@ -231,6 +252,7 @@ export async function packetLaneFixture(
   const deployment: PacketLaneDeployment = {
     operations,
     proofVerifier,
+    ...(splitVerifier ? { membershipVerifier } : {}),
     voucherPolicy,
     batchPolicy,
     batchAddress,
@@ -321,6 +343,7 @@ export async function packetLaneFixture(
   state.fields[3] = new Map([[height, 0n]]);
   context.client.datum = encode(client);
 
+  let benchmarkAccount = 0;
   async function wallet(enterprise = false) {
     const account = generateEmulatorAccount({ lovelace: 300_000_000n });
     const clock = { ...SLOT_CONFIG_NETWORK.Custom };
@@ -329,8 +352,13 @@ export async function packetLaneFixture(
     });
     SLOT_CONFIG_NETWORK.Custom = clock;
     lucid.selectWallet.fromSeed(
-      account.seedPhrase,
-      enterprise ? { addressType: "Enterprise" } : {},
+      fixedBenchmark
+        ? "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        : account.seedPhrase,
+      {
+        ...(enterprise ? { addressType: "Enterprise" as const } : {}),
+        ...(fixedBenchmark ? { accountIndex: benchmarkAccount++ } : {}),
+      },
     );
     const address = await lucid.wallet().address();
     seed(address, account.assets, Data.void());

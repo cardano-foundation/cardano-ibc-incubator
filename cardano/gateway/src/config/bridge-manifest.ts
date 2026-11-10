@@ -151,6 +151,7 @@ export type DeploymentConfig = {
     spendTransferModule: DeploymentValidator;
     mintIdentifier: DeploymentValidator;
     verifyProof: DeploymentValidator;
+    verifyMembership?: DeploymentValidator;
     mintClientStt: DeploymentValidator;
     mintConnectionStt: DeploymentValidator;
     mintChannelStt: DeploymentValidator;
@@ -263,6 +264,7 @@ export type BridgeManifest = {
     spend_transfer_module: BridgeManifestValidator;
     mint_identifier: BridgeManifestValidator;
     verify_proof: BridgeManifestValidator;
+    verify_membership?: BridgeManifestValidator;
     mint_client_stt: BridgeManifestValidator;
     mint_connection_stt: BridgeManifestValidator;
     mint_channel_stt: BridgeManifestValidator;
@@ -875,6 +877,9 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
       spendTransferModule: requireDeploymentValidator(validators.spendTransferModule, 'validators.spendTransferModule'),
       mintIdentifier: requireDeploymentValidator(validators.mintIdentifier, 'validators.mintIdentifier'),
       verifyProof: requireDeploymentValidator(validators.verifyProof, 'validators.verifyProof'),
+      ...(validators.verifyMembership !== undefined
+        ? { verifyMembership: requireDeploymentValidator(validators.verifyMembership, 'validators.verifyMembership') }
+        : {}),
       mintClientStt: requireDeploymentValidator(validators.mintClientStt, 'validators.mintClientStt'),
       mintConnectionStt: requireDeploymentValidator(validators.mintConnectionStt, 'validators.mintConnectionStt'),
       mintChannelStt: requireDeploymentValidator(validators.mintChannelStt, 'validators.mintChannelStt'),
@@ -965,6 +970,9 @@ export function normalizeHandlerJsonDeploymentConfig(
         spend_transfer_module: deploymentValidatorToManifest(normalizedDeployment.validators.spendTransferModule),
         mint_identifier: deploymentValidatorToManifest(normalizedDeployment.validators.mintIdentifier),
         verify_proof: deploymentValidatorToManifest(normalizedDeployment.validators.verifyProof),
+        ...(normalizedDeployment.validators.verifyMembership
+          ? { verify_membership: deploymentValidatorToManifest(normalizedDeployment.validators.verifyMembership) }
+          : {}),
         mint_client_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintClientStt),
         mint_connection_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintConnectionStt),
         mint_channel_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintChannelStt),
@@ -1076,6 +1084,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       ),
       mint_identifier: requireManifestValidator(validators.mint_identifier, 'validators.mint_identifier'),
       verify_proof: requireManifestValidator(validators.verify_proof, 'validators.verify_proof'),
+      ...(validators.verify_membership !== undefined
+        ? { verify_membership: requireManifestValidator(validators.verify_membership, 'validators.verify_membership') }
+        : {}),
       mint_client_stt: requireManifestValidator(validators.mint_client_stt, 'validators.mint_client_stt'),
       mint_connection_stt: requireManifestValidator(validators.mint_connection_stt, 'validators.mint_connection_stt'),
       mint_channel_stt: requireManifestValidator(validators.mint_channel_stt, 'validators.mint_channel_stt'),
@@ -1152,6 +1163,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
         spendTransferModule: manifestValidatorToDeployment(bridgeManifest.validators.spend_transfer_module),
         mintIdentifier: manifestValidatorToDeployment(bridgeManifest.validators.mint_identifier),
         verifyProof: manifestValidatorToDeployment(bridgeManifest.validators.verify_proof),
+        ...(bridgeManifest.validators.verify_membership
+          ? { verifyMembership: manifestValidatorToDeployment(bridgeManifest.validators.verify_membership) }
+          : {}),
         mintClientStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_client_stt),
         mintConnectionStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_connection_stt),
         mintChannelStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_channel_stt),

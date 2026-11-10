@@ -754,6 +754,7 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
         "mintVoucher",
         "spendTendermintUpdateSession",
         "verifyProof",
+        "verifyMembership",
       ] as const
     ) {
       const substituted = structuredClone(deployment);
