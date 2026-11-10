@@ -315,14 +315,13 @@ fn asset_and_amount(
   data: FungibleTokenPacketData,
   voucher_policy: PolicyId,
 ) -> (ByteArray, ByteArray, Int) {
-  expect fungible_token_packet_data.validate_basic(data)
+  expect Some(amount) = fungible_token_packet_data.validated_amount(data)
   let (policy, name) =
     when hex.decode(data.denom) is {
       Some(unit) -> validator_utils.extract_token_unit(unit)
       None ->
         (voucher_policy, voucher_asset_name.voucher_user_token_name(data.denom))
     }
-  expect Some(amount) = int.from_utf8(data.amount)
   (policy, name, amount)
 }
 
