@@ -1,0 +1,600 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "a952ba9a169eb447f144c9e614a906c03286c245",
+  "method": "Complete signed emulator transactions execute the compiled validators with the retained mainnet protocol parameters. Both runs use the general proof verifier from main. PACKET_FIXED_BENCHMARK fixes the clock and packet-wallet seed. Funding-account generation and input ordering can still cause small variations. These are measurements from one comparison rather than live-chain fee estimates.",
+  "toolchain": {
+    "aiken": "v1.1.24+bacbeb3",
+    "deno": "2.9.6",
+    "lucid": "0.6.5",
+    "scalusUplc": "0.1.4"
+  },
+  "retainedParameters": {
+    "file": "cardano/offchain/scripts/fixtures/mainnet-protocol-parameters.json",
+    "sha256": "95bef260c463f2b8f456fa3c455ded9adb19b6c7154813ff6c6ef83ee593c6f6",
+    "feePerByteLovelace": 44,
+    "maxTransactionBytes": 16384
+  },
+  "reproduction": {
+    "before": "Apply only the test files and fixture changes from this PR to baselineCommit. Build its validators and run the comparison tests.",
+    "after": "Build the validators from this PR and run the same comparison tests.",
+    "buildDirectory": "cardano/onchain",
+    "build": "aiken build --deny --trace-level silent",
+    "primitiveBenchmark": "aiken check --deny -m 'zero_handling_benchmark.{..}' -m 'zero_handling_collision.{..}'",
+    "signedBenchmarkDirectory": "cardano/offchain",
+    "signedBenchmark": "PACKET_FIXED_BENCHMARK=true deno test --allow-env --allow-read --filter '/native ADA send and acknowledgement|existing vouchers/' src/packet-lane-transactions.test.ts"
+  },
+  "signedTransactions": [
+    {
+      "profile": "minimal-reference send",
+      "before": {
+        "signedBytes": 2195,
+        "totalReferencedScriptBytes": 41153,
+        "referenceScriptCount": 4,
+        "spentInputScriptBytes": 0,
+        "feeLovelace": 1524033,
+        "memory": 7305921,
+        "cpu": 2585154636
+      },
+      "after": {
+        "signedBytes": 2195,
+        "totalReferencedScriptBytes": 41184,
+        "referenceScriptCount": 4,
+        "spentInputScriptBytes": 0,
+        "feeLovelace": 1512440,
+        "memory": 7260581,
+        "cpu": 2452912358
+      },
+      "netFeeSavingLovelace": 11593,
+      "savingPercent": 0.7607
+    },
+    {
+      "profile": "minimal-reference acknowledgement",
+      "before": {
+        "signedBytes": 2394,
+        "totalReferencedScriptBytes": 45018,
+        "referenceScriptCount": 4,
+        "spentInputScriptBytes": 0,
+        "feeLovelace": 1448756,
+        "memory": 5196946,
+        "cpu": 2142513269
+      },
+      "after": {
+        "signedBytes": 2394,
+        "totalReferencedScriptBytes": 45114,
+        "referenceScriptCount": 4,
+        "spentInputScriptBytes": 0,
+        "feeLovelace": 1425179,
+        "memory": 5113984,
+        "cpu": 1857928859
+      },
+      "netFeeSavingLovelace": 23577,
+      "savingPercent": 1.6274
+    },
+    {
+      "profile": "minimal-reference voucher receive",
+      "before": {
+        "signedBytes": 2729,
+        "totalReferencedScriptBytes": 69428,
+        "referenceScriptCount": 6,
+        "spentInputScriptBytes": 0,
+        "feeLovelace": 2265129,
+        "memory": 8699615,
+        "cpu": 3453590125
+      },
+      "after": {
+        "signedBytes": 2729,
+        "totalReferencedScriptBytes": 69524,
+        "referenceScriptCount": 6,
+        "spentInputScriptBytes": 0,
+        "feeLovelace": 2232618,
+        "memory": 8593839,
+        "cpu": 3058551723
+      },
+      "netFeeSavingLovelace": 32511,
+      "savingPercent": 1.4353
+    },
+    {
+      "profile": "voucher return burn",
+      "before": {
+        "signedBytes": 2766,
+        "totalReferencedScriptBytes": 50808,
+        "referenceScriptCount": 5,
+        "spentInputScriptBytes": 0,
+        "feeLovelace": 1777747,
+        "memory": 7775519,
+        "cpu": 2969406762
+      },
+      "after": {
+        "signedBytes": 2766,
+        "totalReferencedScriptBytes": 50839,
+        "referenceScriptCount": 5,
+        "spentInputScriptBytes": 0,
+        "feeLovelace": 1754319,
+        "memory": 7706977,
+        "cpu": 2691575714
+      },
+      "netFeeSavingLovelace": 23428,
+      "savingPercent": 1.3178
+    },
+    {
+      "profile": "voucher success acknowledgement without voucher policy",
+      "before": {
+        "signedBytes": 2799,
+        "totalReferencedScriptBytes": 45018,
+        "referenceScriptCount": 4,
+        "spentInputScriptBytes": 0,
+        "feeLovelace": 1453663,
+        "memory": 5051638,
+        "cpu": 2079700014
+      },
+      "after": {
+        "signedBytes": 2799,
+        "totalReferencedScriptBytes": 45114,
+        "referenceScriptCount": 4,
+        "spentInputScriptBytes": 0,
+        "feeLovelace": 1430546,
+        "memory": 4970292,
+        "cpu": 1800202912
+      },
+      "netFeeSavingLovelace": 23117,
+      "savingPercent": 1.5903
+    },
+    {
+      "profile": "full-capacity voucher refund",
+      "before": {
+        "signedBytes": 3315,
+        "totalReferencedScriptBytes": 71195,
+        "referenceScriptCount": 6,
+        "spentInputScriptBytes": 0,
+        "feeLovelace": 2247239,
+        "memory": 7815944,
+        "cpu": 3025652048
+      },
+      "after": {
+        "signedBytes": 3315,
+        "totalReferencedScriptBytes": 71291,
+        "referenceScriptCount": 6,
+        "spentInputScriptBytes": 0,
+        "feeLovelace": 2224996,
+        "memory": 7743586,
+        "cpu": 2746309204
+      },
+      "netFeeSavingLovelace": 22243,
+      "savingPercent": 0.9898
+    }
+  ],
+  "primitiveExecution": [
+    {
+      "test": "benchmark_compact_insert",
+      "before": {
+        "mem": 939165,
+        "cpu": 709247454
+      },
+      "after": {
+        "mem": 846853,
+        "cpu": 419238898
+      },
+      "cpuSavingPercent": 40.8896
+    },
+    {
+      "test": "benchmark_compact_replace",
+      "before": {
+        "mem": 975330,
+        "cpu": 630011833
+      },
+      "after": {
+        "mem": 934130,
+        "cpu": 381982433
+      },
+      "cpuSavingPercent": 39.369
+    },
+    {
+      "test": "benchmark_compact_delete",
+      "before": {
+        "mem": 939165,
+        "cpu": 709247454
+      },
+      "after": {
+        "mem": 846853,
+        "cpu": 419238898
+      },
+      "cpuSavingPercent": 40.8896
+    },
+    {
+      "test": "benchmark_compact_empty_noop",
+      "before": {
+        "mem": 903000,
+        "cpu": 788483075
+      },
+      "after": {
+        "mem": 799176,
+        "cpu": 462831363
+      },
+      "cpuSavingPercent": 41.301
+    },
+    {
+      "test": "benchmark_full_insert",
+      "before": {
+        "mem": 1010077,
+        "cpu": 645610206
+      },
+      "after": {
+        "mem": 917765,
+        "cpu": 355601650
+      },
+      "cpuSavingPercent": 44.9201
+    },
+    {
+      "test": "benchmark_full_replace",
+      "before": {
+        "mem": 1046242,
+        "cpu": 566374585
+      },
+      "after": {
+        "mem": 1005042,
+        "cpu": 318345185
+      },
+      "cpuSavingPercent": 43.7925
+    },
+    {
+      "test": "benchmark_full_delete",
+      "before": {
+        "mem": 1010077,
+        "cpu": 645610206
+      },
+      "after": {
+        "mem": 917765,
+        "cpu": 355601650
+      },
+      "cpuSavingPercent": 44.9201
+    },
+    {
+      "test": "benchmark_full_empty_noop",
+      "before": {
+        "mem": 973912,
+        "cpu": 724845827
+      },
+      "after": {
+        "mem": 870088,
+        "cpu": 399194115
+      },
+      "cpuSavingPercent": 44.927
+    },
+    {
+      "test": "benchmark_mixed_insert",
+      "before": {
+        "mem": 947910,
+        "cpu": 681472336
+      },
+      "after": {
+        "mem": 903242,
+        "cpu": 412365877
+      },
+      "cpuSavingPercent": 39.489
+    },
+    {
+      "test": "benchmark_mixed_replace",
+      "before": {
+        "mem": 979354,
+        "cpu": 611394121
+      },
+      "after": {
+        "mem": 939786,
+        "cpu": 373283337
+      },
+      "cpuSavingPercent": 38.9455
+    },
+    {
+      "test": "benchmark_mixed_delete",
+      "before": {
+        "mem": 947910,
+        "cpu": 681472336
+      },
+      "after": {
+        "mem": 903242,
+        "cpu": 412365877
+      },
+      "cpuSavingPercent": 39.489
+    },
+    {
+      "test": "benchmark_mixed_empty_noop",
+      "before": {
+        "mem": 916466,
+        "cpu": 751550551
+      },
+      "after": {
+        "mem": 866698,
+        "cpu": 451448417
+      },
+      "cpuSavingPercent": 39.9311
+    },
+    {
+      "test": "benchmark_dense_insert",
+      "before": {
+        "mem": 1002470,
+        "cpu": 472384808
+      },
+      "after": {
+        "mem": 975754,
+        "cpu": 312383125
+      },
+      "cpuSavingPercent": 33.871
+    },
+    {
+      "test": "benchmark_dense_replace",
+      "before": {
+        "mem": 1002682,
+        "cpu": 470407081
+      },
+      "after": {
+        "mem": 976170,
+        "cpu": 311645225
+      },
+      "cpuSavingPercent": 33.7499
+    },
+    {
+      "test": "benchmark_dense_delete",
+      "before": {
+        "mem": 1002470,
+        "cpu": 472384808
+      },
+      "after": {
+        "mem": 975754,
+        "cpu": 312383125
+      },
+      "cpuSavingPercent": 33.871
+    },
+    {
+      "test": "benchmark_dense_empty_noop",
+      "before": {
+        "mem": 1002258,
+        "cpu": 474362535
+      },
+      "after": {
+        "mem": 975338,
+        "cpu": 313121025
+      },
+      "cpuSavingPercent": 33.9912
+    },
+    {
+      "test": "benchmark_compact_authenticate",
+      "before": {
+        "mem": 634006,
+        "cpu": 400227450
+      },
+      "after": {
+        "mem": 613206,
+        "cpu": 276180750
+      },
+      "cpuSavingPercent": 30.9941
+    },
+    {
+      "test": "benchmark_full_authenticate",
+      "before": {
+        "mem": 704918,
+        "cpu": 336590202
+      },
+      "after": {
+        "mem": 684118,
+        "cpu": 212543502
+      },
+      "cpuSavingPercent": 36.8539
+    },
+    {
+      "test": "benchmark_mixed_authenticate",
+      "before": {
+        "mem": 640450,
+        "cpu": 386941266
+      },
+      "after": {
+        "mem": 620466,
+        "cpu": 267853874
+      },
+      "cpuSavingPercent": 30.7766
+    },
+    {
+      "test": "benchmark_dense_authenticate",
+      "before": {
+        "mem": 683138,
+        "cpu": 288606450
+      },
+      "after": {
+        "mem": 669682,
+        "cpu": 209193522
+      },
+      "cpuSavingPercent": 27.516
+    }
+  ],
+  "compiledValidatorBytes": {
+    "governance_recover_client.governance_recover_client.withdraw": {
+      "before": 15539,
+      "after": 15581
+    },
+    "host_state_stt.host_state_stt.spend": {
+      "before": 15477,
+      "after": 15542
+    },
+    "implementation_registry.implementation_registry.spend": {
+      "before": 14821,
+      "after": 14842
+    },
+    "minting_channel_stt.mint_channel_stt.mint": {
+      "before": 15260,
+      "after": 15256
+    },
+    "minting_connection_stt.mint_connection_stt.mint": {
+      "before": 14645,
+      "after": 14640
+    },
+    "minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint": {
+      "before": 8158,
+      "after": 8223
+    },
+    "packet_acknowledge.packet_acknowledge.mint": {
+      "before": 12241,
+      "after": 12306
+    },
+    "packet_lane_guard.packet_lane_guard.spend": {
+      "before": 13809,
+      "after": 13775
+    },
+    "packet_receive.packet_receive.mint": {
+      "before": 13293,
+      "after": 13358
+    },
+    "packet_reject.packet_reject.mint": {
+      "before": 15099,
+      "after": 15164
+    },
+    "packet_send.packet_send.mint": {
+      "before": 13657,
+      "after": 13722
+    },
+    "packet_timeout.packet_timeout.mint": {
+      "before": 15060,
+      "after": 15125
+    },
+    "packet_timeout_on_close.packet_timeout_on_close.mint": {
+      "before": 15119,
+      "after": 15184
+    },
+    "recover_client.recover_client.withdraw": {
+      "before": 14642,
+      "after": 14673
+    },
+    "spending_channel/acknowledge_packet.acknowledge_packet.mint": {
+      "before": 12124,
+      "after": 12189
+    },
+    "spending_channel/chan_close_confirm.chan_close_confirm.mint": {
+      "before": 12028,
+      "after": 12093
+    },
+    "spending_channel/chan_close_init.chan_close_init.mint": {
+      "before": 9747,
+      "after": 9812
+    },
+    "spending_channel/chan_open_ack.chan_open_ack.mint": {
+      "before": 12618,
+      "after": 12682
+    },
+    "spending_channel/chan_open_confirm.chan_open_confirm.mint": {
+      "before": 12195,
+      "after": 12259
+    },
+    "spending_channel/chan_upgrade.chan_upgrade.mint": {
+      "before": 11612,
+      "after": 11677
+    },
+    "spending_channel/chan_upgrade_finish.chan_upgrade_finish.mint": {
+      "before": 14837,
+      "after": 14902
+    },
+    "spending_channel/chan_upgrade_handshake.chan_upgrade_handshake.mint": {
+      "before": 15410,
+      "after": 15475
+    },
+    "spending_channel/prune_packet_history.prune_packet_history.mint": {
+      "before": 9592,
+      "after": 9656
+    },
+    "spending_channel/recv_packet.recv_packet.mint": {
+      "before": 13231,
+      "after": 13295
+    },
+    "spending_channel/send_packet.send_packet.mint": {
+      "before": 11471,
+      "after": 11536
+    },
+    "spending_channel/timeout_packet.timeout_packet.mint": {
+      "before": 14948,
+      "after": 15013
+    },
+    "spending_connection.spend_connection.spend": {
+      "before": 11456,
+      "after": 11521
+    },
+    "update_staged_client.update_staged_client.withdraw": {
+      "before": 13250,
+      "after": 13315
+    },
+    "upgradeable/connection.connection.spend": {
+      "before": 12030,
+      "after": 12095
+    },
+    "upgradeable/host_state.host_state.spend": {
+      "before": 15734,
+      "after": 15799
+    },
+    "upgradeable/mint_channel.mint_channel.mint": {
+      "before": 14571,
+      "after": 14635
+    },
+    "upgradeable/mint_connection.mint_connection.mint": {
+      "before": 12573,
+      "after": 12638
+    },
+    "verify_cached_client.verify_cached_client.withdraw": {
+      "before": 15446,
+      "after": 15510
+    },
+    "verify_general_cached_client.verify_general_cached_client.withdraw": {
+      "before": 14860,
+      "after": 14913
+    },
+    "verifying_proof.verify_proof.mint": {
+      "before": 15214,
+      "after": 15279
+    }
+  },
+  "compatibility": {
+    "before": {
+      "total": 28,
+      "passed": 28,
+      "failed": 0,
+      "kind": {
+        "unit": 28,
+        "property": 0
+      }
+    },
+    "after": {
+      "total": 28,
+      "passed": 28,
+      "failed": 0,
+      "kind": {
+        "unit": 28,
+        "property": 0
+      }
+    },
+    "coverage": "Twenty fixed-root cases cover insertion, replacement, deletion, absent-to-absent updates and root authentication on compact, full-zero, mixed and dense 64-level paths. Seven published transitions from collision-buckets.json are checked with both sibling encodings. The public inner_hash function must still reject a compact empty byte array.",
+    "existingChecks": {
+      "total": 577,
+      "passed": 577,
+      "failed": 0,
+      "kind": {
+        "unit": 554,
+        "property": 23
+      }
+    },
+    "existingCheckLogSummary": "Summary 2854 checks, 0 errors, 0 warnings",
+    "existingCheckCommand": "aiken check -m 'ibc/core' -m 'consensus_history_commitment.{..}' -m 'budget_equivalence.{..}' -m 'chan_upgrade.{..}' -m 'verifying_proof_contract.{..}'"
+  },
+  "generatedCode": "The packet guard has two static byteStringToInteger nodes before the change and none afterwards. Its static zero-digest literal count falls from two to one after compiler optimization. Those counts are not per-level execution counts. This PR changes only the two zero comparisons and leaves zero construction, empty-value hashing and sibling representation unchanged.",
+  "deployment": {
+    "command": "deno task test:deployment",
+    "result": "ok | 52 passed (101 steps) | 0 failed (43s)",
+    "largestSignedPublication": {
+      "validator": "host_state_stt.host_state_stt.spend",
+      "signedBytes": 16133
+    },
+    "publicationHeadroomBytes": 251,
+    "pins": "The channel-upgrade deployment fixture contains the hashes from the rebuilt validators."
+  },
+  "checks": [
+    "aiken fmt --check",
+    "deno fmt --check on both changed TypeScript files",
+    "deno lint on both changed TypeScript files",
+    "Aiken wire schema version 7 with 44 definitions",
+    "Aiken layering and fuzz-import checks"
+  ]
+}
