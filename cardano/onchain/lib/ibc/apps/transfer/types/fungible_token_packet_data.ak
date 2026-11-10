@@ -43,14 +43,31 @@ pub fn fields_within_limits(ftpd: FungibleTokenPacketData) -> Bool {
 }
 
 pub fn validate_basic(ftpd: FungibleTokenPacketData) -> Bool {
-  packet_fields_valid(ftpd) && when int.from_utf8(ftpd.amount) is {
-    Some(amount) -> and {
-        amount > 0,
-        text_bytes.trim_ascii_spaces(ftpd.sender) != "",
-        text_bytes.trim_ascii_spaces(ftpd.receiver) != "",
-        ibc_trace.validate_prefixed_denom(ftpd.denom),
-      }
+  when validated_amount(ftpd) is {
+    Some(_) -> True
     None -> False
+  }
+}
+
+/// Validate the same packet fields and retain its parsed positive amount.
+pub fn validated_amount(ftpd: FungibleTokenPacketData) -> Option<Int> {
+  if packet_fields_valid(ftpd) {
+    when int.from_utf8(ftpd.amount) is {
+      Some(amount) ->
+        if and {
+          amount > 0,
+          text_bytes.trim_ascii_spaces(ftpd.sender) != "",
+          text_bytes.trim_ascii_spaces(ftpd.receiver) != "",
+          ibc_trace.validate_prefixed_denom(ftpd.denom),
+        } {
+          Some(amount)
+        } else {
+          None
+        }
+      None -> None
+    }
+  } else {
+    None
   }
 }
 
