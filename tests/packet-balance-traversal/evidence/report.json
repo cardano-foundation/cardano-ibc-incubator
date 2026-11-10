@@ -1,0 +1,598 @@
+{
+  "schemaVersion": 1,
+  "title": "Update a sorted balance map in one traversal",
+  "baselineCommit": "a952ba9a169eb447f144c9e614a906c03286c245",
+  "baselineContext": "Main at a952ba9a. Neither membership-only verification #1004 nor sparse-tree equality #1005 is included. Both experiments use the same test-only fixed-clock and packet-wallet instrumentation.",
+  "toolchain": {
+    "aiken": "v1.1.24+bacbeb3",
+    "deno": "2.9.6",
+    "lucid": "0.6.5",
+    "scalusUplc": "0.1.4"
+  },
+  "method": "A single ordered update replaces get_first, delete_first and insert_by_ascending_key. It stops at the matching key or insertion position. The existing pending-send decision and final zero-removal filter are unchanged.",
+  "unitBenchmarkScope": "The local benchmark calls balance_after on a receive and includes amount parsing and denomination hashing. It covers insertion and replacement at the beginning, middle and end of canonical maps with up to eight entries. Zero cancellation is checked with and without outstanding commitments.",
+  "signedTransactionMethod": "Balanced and signed emulator transactions execute compiled validators with the retained mainnet protocol parameters. The clock and packet-wallet seed are fixed. Setup funding accounts and transaction input ordering can still cause small differences. These are single-pair measurements rather than live-chain fee estimates.",
+  "protocolParameters": {
+    "file": "cardano/offchain/scripts/fixtures/mainnet-protocol-parameters.json",
+    "sha256": "95bef260c463f2b8f456fa3c455ded9adb19b6c7154813ff6c6ef83ee593c6f6",
+    "feePerByteLovelace": 44,
+    "maxTxSize": 16384
+  },
+  "reproduction": {
+    "build": "aiken build --deny --trace-level silent in cardano/onchain",
+    "signedTransactions": "PACKET_FIXED_BENCHMARK=true deno test --allow-env --allow-read --filter '/native ADA send and acknowledgement|existing vouchers|full accounting maps reserve/' src/packet-lane-transactions.test.ts in cardano/offchain",
+    "before": "Build baselineCommit with the same test-only fixture instrumentation. The amount microbenchmark also changes its local read helper from validate_basic followed by int.from_utf8 to validated_amount.",
+    "after": "Build the candidate and rerun the same fixture cases."
+  },
+  "productionSources": [
+    {
+      "file": "cardano/onchain/lib/ibc/apps/transfer/packet_accounting.ak",
+      "beforeSha256": "55a1370cd2507920a81266fababe542eeca4508972687470a1dd3210afd8dfff",
+      "afterSha256": "12d069ebcf255a482ff2eb0525e1323ae827867db04fdab943fdaddb49c6c822"
+    }
+  ],
+  "primitiveExecution": [
+    {
+      "test": "benchmark_empty_insert",
+      "before": {
+        "mem": 105018,
+        "cpu": 33261278
+      },
+      "after": {
+        "mem": 99086,
+        "cpu": 31671217
+      },
+      "cpuSavingPercent": 4.7805,
+      "memorySavingPercent": 5.6486
+    },
+    {
+      "test": "benchmark_1_hit_0",
+      "before": {
+        "mem": 111870,
+        "cpu": 35574502
+      },
+      "after": {
+        "mem": 106752,
+        "cpu": 34079706
+      },
+      "cpuSavingPercent": 4.2019,
+      "memorySavingPercent": 4.575
+    },
+    {
+      "test": "benchmark_4_hit_0",
+      "before": {
+        "mem": 115370,
+        "cpu": 38616227
+      },
+      "after": {
+        "mem": 106752,
+        "cpu": 35143587
+      },
+      "cpuSavingPercent": 8.9927,
+      "memorySavingPercent": 7.4699
+    },
+    {
+      "test": "benchmark_4_hit_2",
+      "before": {
+        "mem": 147482,
+        "cpu": 49842885
+      },
+      "after": {
+        "mem": 120800,
+        "cpu": 39477889
+      },
+      "cpuSavingPercent": 20.7953,
+      "memorySavingPercent": 18.0917
+    },
+    {
+      "test": "benchmark_4_hit_3",
+      "before": {
+        "mem": 160038,
+        "cpu": 53478370
+      },
+      "after": {
+        "mem": 127824,
+        "cpu": 41645040
+      },
+      "cpuSavingPercent": 22.1273,
+      "memorySavingPercent": 20.129
+    },
+    {
+      "test": "benchmark_8_hit_0",
+      "before": {
+        "mem": 115370,
+        "cpu": 40034735
+      },
+      "after": {
+        "mem": 106752,
+        "cpu": 36562095
+      },
+      "cpuSavingPercent": 8.6741,
+      "memorySavingPercent": 7.4699
+    },
+    {
+      "test": "benchmark_8_hit_4",
+      "before": {
+        "mem": 179594,
+        "cpu": 62488051
+      },
+      "after": {
+        "mem": 134848,
+        "cpu": 45230699
+      },
+      "cpuSavingPercent": 27.617,
+      "memorySavingPercent": 24.9151
+    },
+    {
+      "test": "benchmark_8_hit_7",
+      "before": {
+        "mem": 224262,
+        "cpu": 77350194
+      },
+      "after": {
+        "mem": 155920,
+        "cpu": 51732152
+      },
+      "cpuSavingPercent": 33.1196,
+      "memorySavingPercent": 30.4742
+    },
+    {
+      "test": "benchmark_1_insert_0",
+      "before": {
+        "mem": 116874,
+        "cpu": 38076007
+      },
+      "after": {
+        "mem": 106782,
+        "cpu": 34405487
+      },
+      "cpuSavingPercent": 9.64,
+      "memorySavingPercent": 8.6349
+    },
+    {
+      "test": "benchmark_1_insert_1",
+      "before": {
+        "mem": 121074,
+        "cpu": 39229234
+      },
+      "after": {
+        "mem": 106110,
+        "cpu": 34192995
+      },
+      "cpuSavingPercent": 12.838,
+      "memorySavingPercent": 12.3594
+    },
+    {
+      "test": "benchmark_4_insert_0",
+      "before": {
+        "mem": 141942,
+        "cpu": 46586662
+      },
+      "after": {
+        "mem": 106782,
+        "cpu": 35469368
+      },
+      "cpuSavingPercent": 23.8637,
+      "memorySavingPercent": 24.7707
+    },
+    {
+      "test": "benchmark_4_insert_2",
+      "before": {
+        "mem": 157342,
+        "cpu": 52848804
+      },
+      "after": {
+        "mem": 120830,
+        "cpu": 39803670
+      },
+      "cpuSavingPercent": 24.6839,
+      "memorySavingPercent": 23.2055
+    },
+    {
+      "test": "benchmark_4_insert_4",
+      "before": {
+        "mem": 169242,
+        "cpu": 57133102
+      },
+      "after": {
+        "mem": 127182,
+        "cpu": 41758329
+      },
+      "cpuSavingPercent": 26.9104,
+      "memorySavingPercent": 24.852
+    },
+    {
+      "test": "benchmark_7_insert_0",
+      "before": {
+        "mem": 167010,
+        "cpu": 55097317
+      },
+      "after": {
+        "mem": 106782,
+        "cpu": 36533249
+      },
+      "cpuSavingPercent": 33.6932,
+      "memorySavingPercent": 36.0625
+    },
+    {
+      "test": "benchmark_7_insert_3",
+      "before": {
+        "mem": 190110,
+        "cpu": 64490530
+      },
+      "after": {
+        "mem": 127854,
+        "cpu": 43034702
+      },
+      "cpuSavingPercent": 33.2697,
+      "memorySavingPercent": 32.7474
+    },
+    {
+      "test": "benchmark_7_insert_7",
+      "before": {
+        "mem": 217410,
+        "cpu": 75036970
+      },
+      "after": {
+        "mem": 148254,
+        "cpu": 49323663
+      },
+      "cpuSavingPercent": 34.2675,
+      "memorySavingPercent": 31.809
+    },
+    {
+      "test": "benchmark_reserved_zero",
+      "before": {
+        "mem": 179594,
+        "cpu": 62488051
+      },
+      "after": {
+        "mem": 134848,
+        "cpu": 45230699
+      },
+      "cpuSavingPercent": 27.617,
+      "memorySavingPercent": 24.9151
+    },
+    {
+      "test": "benchmark_released_zero",
+      "before": {
+        "mem": 218354,
+        "cpu": 74044744
+      },
+      "after": {
+        "mem": 173608,
+        "cpu": 56787392
+      },
+      "cpuSavingPercent": 23.3067,
+      "memorySavingPercent": 20.4924
+    }
+  ],
+  "compiledValidatorBytes": {
+    "packet_lane_guard.packet_lane_guard.spend": {
+      "before": 13809,
+      "after": 13689,
+      "change": -120
+    }
+  },
+  "signedTransactions": [
+    {
+      "profile": "minimal-reference send",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 2195,
+        "feeLovelace": 1524033,
+        "memory": 7305921,
+        "cpu": 2585154636,
+        "totalReferencedScriptBytes": 41153,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4
+      },
+      "after": {
+        "signedBytes": 2195,
+        "feeLovelace": 1521250,
+        "memory": 7297589,
+        "cpu": 2583180575,
+        "totalReferencedScriptBytes": 41033,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4
+      },
+      "feeSavingLovelace": 2783,
+      "feeSavingPercent": 0.1826
+    },
+    {
+      "profile": "minimal-reference acknowledgement",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 2394,
+        "feeLovelace": 1448756,
+        "memory": 5196946,
+        "cpu": 2142513269,
+        "totalReferencedScriptBytes": 45018,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4
+      },
+      "after": {
+        "signedBytes": 2394,
+        "feeLovelace": 1446555,
+        "memory": 5196346,
+        "cpu": 2142417269,
+        "totalReferencedScriptBytes": 44898,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4
+      },
+      "feeSavingLovelace": 2201,
+      "feeSavingPercent": 0.1519
+    },
+    {
+      "profile": "minimal-reference voucher receive",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 2729,
+        "feeLovelace": 2265129,
+        "memory": 8699615,
+        "cpu": 3453590125,
+        "totalReferencedScriptBytes": 69428,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 12,
+        "referenceScriptCount": 6
+      },
+      "after": {
+        "signedBytes": 2729,
+        "feeLovelace": 2261997,
+        "memory": 8692483,
+        "cpu": 3451808064,
+        "totalReferencedScriptBytes": 69308,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 12,
+        "referenceScriptCount": 6
+      },
+      "feeSavingLovelace": 3132,
+      "feeSavingPercent": 0.1383
+    },
+    {
+      "profile": "voucher return burn",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 2766,
+        "feeLovelace": 1777747,
+        "memory": 7775519,
+        "cpu": 2969406762,
+        "totalReferencedScriptBytes": 50808,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 11,
+        "referenceScriptCount": 5
+      },
+      "after": {
+        "signedBytes": 2766,
+        "feeLovelace": 1774984,
+        "memory": 7765013,
+        "cpu": 2969447674,
+        "totalReferencedScriptBytes": 50688,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 11,
+        "referenceScriptCount": 5
+      },
+      "feeSavingLovelace": 2763,
+      "feeSavingPercent": 0.1554
+    },
+    {
+      "profile": "voucher success acknowledgement without voucher policy",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 2799,
+        "feeLovelace": 1453663,
+        "memory": 5051638,
+        "cpu": 2079700014,
+        "totalReferencedScriptBytes": 45018,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 10,
+        "referenceScriptCount": 4
+      },
+      "after": {
+        "signedBytes": 2799,
+        "feeLovelace": 1451462,
+        "memory": 5051038,
+        "cpu": 2079604014,
+        "totalReferencedScriptBytes": 44898,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 10,
+        "referenceScriptCount": 4
+      },
+      "feeSavingLovelace": 2201,
+      "feeSavingPercent": 0.1514
+    },
+    {
+      "profile": "full-capacity voucher refund",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 3315,
+        "feeLovelace": 2247239,
+        "memory": 7815944,
+        "cpu": 3025652048,
+        "totalReferencedScriptBytes": 71195,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 12,
+        "referenceScriptCount": 6
+      },
+      "after": {
+        "signedBytes": 3315,
+        "feeLovelace": 2242319,
+        "memory": 7788662,
+        "cpu": 3015191052,
+        "totalReferencedScriptBytes": 71075,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 12,
+        "referenceScriptCount": 6
+      },
+      "feeSavingLovelace": 4920,
+      "feeSavingPercent": 0.2189
+    },
+    {
+      "profile": "full-map send 0",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 2386,
+        "feeLovelace": 1523911,
+        "memory": 7216480,
+        "cpu": 2538489249,
+        "totalReferencedScriptBytes": 41153,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4
+      },
+      "after": {
+        "signedBytes": 2386,
+        "feeLovelace": 1521128,
+        "memory": 7208148,
+        "cpu": 2536515188,
+        "totalReferencedScriptBytes": 41033,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4
+      },
+      "feeSavingLovelace": 2783,
+      "feeSavingPercent": 0.1826
+    },
+    {
+      "profile": "full-map send 7",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 2766,
+        "feeLovelace": 1575809,
+        "memory": 7469947,
+        "cpu": 2823538966,
+        "totalReferencedScriptBytes": 41153,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4
+      },
+      "after": {
+        "signedBytes": 2766,
+        "feeLovelace": 1569191,
+        "memory": 7420273,
+        "cpu": 2801472545,
+        "totalReferencedScriptBytes": 41033,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4
+      },
+      "feeSavingLovelace": 6618,
+      "feeSavingPercent": 0.42
+    },
+    {
+      "profile": "full-map send 15",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 3046,
+        "feeLovelace": 1612603,
+        "memory": 7764221,
+        "cpu": 2927490486,
+        "totalReferencedScriptBytes": 41153,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4
+      },
+      "after": {
+        "signedBytes": 3046,
+        "feeLovelace": 1603807,
+        "memory": 7688231,
+        "cpu": 2896262387,
+        "totalReferencedScriptBytes": 41033,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4
+      },
+      "feeSavingLovelace": 8796,
+      "feeSavingPercent": 0.5455
+    },
+    {
+      "profile": "full-map redistribution",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 1902,
+        "feeLovelace": 1307148,
+        "memory": 10764320,
+        "cpu": 3309731320,
+        "totalReferencedScriptBytes": 13878,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 1,
+        "referenceScriptCount": 1
+      },
+      "after": {
+        "signedBytes": 1902,
+        "feeLovelace": 1301198,
+        "memory": 10700308,
+        "cpu": 3303398274,
+        "totalReferencedScriptBytes": 13758,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 1,
+        "referenceScriptCount": 1
+      },
+      "feeSavingLovelace": 5950,
+      "feeSavingPercent": 0.4552
+    }
+  ],
+  "orderingInvariant": "The lane policy creates exactly empty lane datums. Existing packet callbacks preserve unique ascending denomination hashes by construction. Balance compaction requires valid canonical outputs. The ordered update relies on that authenticated state invariant. One pre-existing unit fixture seeded unsorted hash keys and was corrected before both baseline and candidate runs.",
+  "compatibility": {
+    "seed": 2103226375,
+    "property": {
+      "title": "sorted_updates_match_reference",
+      "status": "pass",
+      "on_failure": "fail_immediately",
+      "iterations": 1000,
+      "labels": {
+        "fuzz.unit.transfer.balance_update.existing_key": 405,
+        "fuzz.unit.transfer.balance_update.new_key": 595,
+        "fuzz.unit.transfer.balance_update.ordinary_delta": 809,
+        "fuzz.unit.transfer.balance_update.released_zero": 69,
+        "fuzz.unit.transfer.balance_update.reserved_zero": 122
+      },
+      "counterexample": null
+    },
+    "summary": {
+      "total": 24,
+      "passed": 24,
+      "failed": 0,
+      "kind": {
+        "unit": 23,
+        "property": 1
+      }
+    },
+    "note": "The property compares with the frozen original validation or accounting code. Its coverage labels are included in the standard CI property inventory."
+  },
+  "broaderTests": {
+    "summary": {
+      "total": 191,
+      "passed": 191,
+      "failed": 0,
+      "kind": {
+        "unit": 190,
+        "property": 1
+      }
+    },
+    "logSummary": "Summary 290 checks, 0 errors, 0 warnings"
+  },
+  "deployment": {
+    "testResult": "ok | 52 passed (101 steps) | 0 failed (43s)",
+    "largestSignedPublication": {
+      "validator": "host_state_stt.host_state_stt.spend",
+      "signedBytes": 16068
+    },
+    "headroomBytes": 316
+  },
+  "signedTransactionTestResult": "ok | 3 passed | 0 failed | 16 filtered out (2m26s)",
+  "checks": [
+    "Aiken format",
+    "Aiken wire schema version 7 with 44 definitions",
+    "Aiken layering",
+    "Aiken fuzz imports",
+    "git diff --check",
+    "New property discovered by the CI property inventory with valid coverage labels"
+  ],
+  "independentChange": true,
+  "validationReuse": "The rebuilt blueprint exactly matches the prototype blueprint used by the retained signed-transaction, broader transfer and deployment tests. The final PR reruns the focused tests with coverage labels. Production code and benchmark fixtures are unchanged."
+}
