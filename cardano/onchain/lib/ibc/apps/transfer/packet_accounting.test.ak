@@ -1,6 +1,7 @@
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto
+use aiken/primitive/bytearray
 use cardano/address
 use cardano/assets
 use cardano/transaction.{InlineDatum, Input, Output, OutputReference}
@@ -57,6 +58,7 @@ fn burned() -> PacketLaneDatum {
       ["A", "B", "C", "D", "E", "F", "G", denom],
       fn(d) { Pair(crypto.sha2_256(d), 10) },
     )
+      |> list.sort(fn(a, b) { bytearray.compare(a.1st, b.1st) })
   let intent =
     TransferIntent {
       port_id: "transfer",

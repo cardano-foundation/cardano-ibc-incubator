@@ -1,5 +1,4 @@
 use aiken/collection/list
-use aiken/collection/pairs
 use aiken/crypto
 use aiken/primitive/bytearray
 use aiken/primitive/int
@@ -17,19 +16,22 @@ fn add(
   denom: ByteArray,
   amount: Int,
 ) -> Pairs<ByteArray, Int> {
-  let denom = crypto.sha2_256(denom)
-  let previous =
-    when pairs.get_first(balances, denom) is {
-      None -> 0
-      Some(value) -> value
-    }
-  let rest = pairs.delete_first(balances, denom)
-  pairs.insert_by_ascending_key(
-    rest,
-    denom,
-    previous + amount,
-    bytearray.compare,
-  )
+  update_sorted(balances, crypto.sha2_256(denom), amount)
+}
+
+// Authenticated lanes start empty. Packet callbacks and balance compaction
+// preserve unique keys in ascending order. Keep zero reservations until the
+// existing settlement filter below releases them.
+fn update_sorted(balances, denom, amount) {
+  when balances is {
+    [] -> [Pair(denom, amount)]
+    [Pair(key, previous) as entry, ..rest] ->
+      when bytearray.compare(key, denom) is {
+        Less -> [entry, ..update_sorted(rest, denom, amount)]
+        Equal -> [Pair(key, previous + amount), ..rest]
+        Greater -> [Pair(denom, amount), entry, ..rest]
+      }
+  }
 }
 
 pub fn balance_after(
