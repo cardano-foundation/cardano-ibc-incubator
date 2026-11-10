@@ -34,6 +34,7 @@ use ibc/core/ics_023_vector_commitments/merkle.{
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
 use recover_client
+use verifying_membership
 use verifying_proof
 
 const now = 101_000_000_000
@@ -505,4 +506,9 @@ test upgrade_withdrawal_rejects_output_substitution() fail {
       address.Script("recovery"),
       forged,
     )
+}
+
+test membership_only_cannot_replace_client_upgrade_verifier() {
+  let (tx, envelope) = transaction_fixture()
+  !verifying_membership.verify_membership.mint(envelope, "proof", tx)
 }

@@ -212,6 +212,10 @@ export const loadDeploymentPlan = async (
     name: fromText("ibc_packet_config"),
   };
   const verifyProof = load("verifying_proof.verify_proof.mint", "runtime");
+  const verifyMembership = load(
+    "verifying_membership.verify_membership.mint",
+    "runtime",
+  );
   const mintPort = load(
     "minting_port.mint_port.mint",
     "bootstrap",
@@ -525,7 +529,13 @@ export const loadDeploymentPlan = async (
         mintConnection.hash,
         BigInt(packetLaneCount),
         mintVoucher.hash,
-        ...(proofs ? [verifyProof.hash] : []),
+        ...(proofs
+          ? [
+            ["receive", "acknowledge"].includes(name)
+              ? verifyMembership.hash
+              : verifyProof.hash,
+          ]
+          : []),
       ],
       Data.Tuple([
         AuthTokenSchema,
@@ -679,6 +689,7 @@ export const loadDeploymentPlan = async (
     packetOperations,
     packetLaneCount,
     verifyProof,
+    verifyMembership,
     mintPort,
     recoverClient,
     updateClient,

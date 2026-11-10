@@ -32,14 +32,15 @@ class Datum {
 }
 
 describe('packet reference collection', () => {
-  function fixture() {
+  function fixture(split = false) {
     const ref = (name: string) => ({ txHash: name, outputIndex: 0 });
     const validator = (name: string) => ({ scriptHash: name, address: name, refUtxo: ref(name) });
     const state = validator('state'), batch = validator('batch'), guard = validator('guard');
     const voucher = validator('voucher'), proof = validator('proof'), operation = validator('send');
+    const membership = validator('membership');
     const manifest = {
       packetState: { state, batch, guard, laneCount: 16, configToken: { policyId: 'config', name: 'token' }, operations: { send: operation } },
-      validators: { mintVoucher: voucher, verifyProof: proof },
+      validators: { mintVoucher: voucher, verifyProof: proof, ...(split ? { verifyMembership: membership } : {}) },
       hostStateNFT: { policyId: 'host', name: 'token' },
     };
     const data = (unit: string) => ({ ...ref(unit), address: 'data', assets: { lovelace: 5_000_000n, [unit]: 1n }, datum: unit });
@@ -55,7 +56,7 @@ describe('packet reference collection', () => {
       lucid: { utxosByOutRef: jest.fn(async (refs: Array<{ txHash: string; outputIndex: number }>) => refs.map((entry) => ({ ...entry, address: 'reference', assets: { lovelace: 5_000_000n } }))) },
     };
     const service = new PacketLaneService({ getOrThrow: () => manifest } as any, lucid as any, {} as any, {} as any, {} as any, {} as any);
-    return { service, lucid, state, batch, guard, voucher, proof, operation };
+    return { service, lucid, state, batch, guard, voucher, proof, membership, operation };
   }
 
   it('fetches common scripts only when the builder requests their identities', async () => {
@@ -63,12 +64,34 @@ describe('packet reference collection', () => {
     const deployment = await f.service.deployment('channel-0');
     expect(f.lucid.lucid.utxosByOutRef.mock.calls).toEqual([[[f.operation.refUtxo]], [[f.proof.refUtxo]]]);
     expect(deployment.scripts.map((u) => u.datum)).toEqual(['configtoken', 'hosttoken']);
+    expect(deployment.membershipVerifier).toBeUndefined();
+    expect(deployment.proofVerifier.policy).toBe(f.proof.scriptHash);
     await deployment.resolveScriptReferences!([f.batch.scriptHash, f.guard.scriptHash]);
     expect(f.lucid.lucid.utxosByOutRef).toHaveBeenLastCalledWith([f.batch.refUtxo, f.guard.refUtxo]);
     await deployment.resolveScriptReferences!([f.voucher.scriptHash]);
     expect(f.lucid.lucid.utxosByOutRef).toHaveBeenLastCalledWith([f.voucher.refUtxo]);
     await deployment.resolveScriptReferences!([f.state.scriptHash]);
     expect(f.lucid.lucid.utxosByOutRef).toHaveBeenLastCalledWith([f.state.refUtxo]);
+  });
+
+  it('loads both pinned verifiers without adding them to the common script pool', async () => {
+    const f = fixture(true);
+    const deployment = await f.service.deployment('channel-0');
+    expect(deployment.membershipVerifier).toEqual({
+      policy: f.membership.scriptHash,
+      reference: expect.objectContaining(f.membership.refUtxo),
+    });
+    expect(deployment.proofVerifier.policy).toBe(f.proof.scriptHash);
+    expect(deployment.scripts.map((u) => u.datum)).toEqual(['configtoken', 'hosttoken']);
+    expect(f.lucid.lucid.utxosByOutRef).toHaveBeenCalledWith([f.membership.refUtxo]);
+  });
+
+  it('fails when an advertised membership reference is unavailable', async () => {
+    const f = fixture(true);
+    f.lucid.lucid.utxosByOutRef.mockImplementation(async (refs) =>
+      refs[0].txHash === f.membership.refUtxo.txHash ? [] : refs.map((ref) => ({ ...ref, address: 'reference', assets: { lovelace: 5_000_000n } })),
+    );
+    await expect(f.service.deployment('channel-0')).rejects.toThrow('Missing packet membership verifier reference');
   });
 
   it('rejects a request for a script outside the pinned deployment', async () => {

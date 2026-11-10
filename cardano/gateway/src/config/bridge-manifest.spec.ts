@@ -139,6 +139,26 @@ function buildStagedHandlerJsonDeployment() {
 }
 
 describe('bridge manifest normalization', () => {
+  it('retains an optional membership verifier through both manifest formats', () => {
+    const source = buildHandlerJsonDeployment();
+    const membership = buildValidator('verifyMembership');
+    const deployment = { ...source, validators: { ...source.validators, verifyMembership: membership } };
+    const normalized = normalizeHandlerJsonDeploymentConfig(deployment, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' });
+    expect(normalized.deployment.validators.verifyMembership).toEqual(expect.objectContaining({ scriptHash: membership.scriptHash, refUtxo: membership.refUtxo }));
+    expect(normalized.bridgeManifest.validators.verify_membership).toEqual(expect.objectContaining({ script_hash: membership.scriptHash }));
+    expect(normalizeBridgeManifestConfig(normalized.bridgeManifest).deployment.validators.verifyMembership).toEqual(normalized.deployment.validators.verifyMembership);
+    const legacy = normalizeHandlerJsonDeploymentConfig(source, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' });
+    expect(legacy.bridgeManifest.validators.verify_membership).toBeUndefined();
+    expect(normalizeBridgeManifestConfig(legacy.bridgeManifest).deployment.validators.verifyMembership).toBeUndefined();
+  });
+
+  it('rejects malformed membership verifier entries in either format', () => {
+    const source = buildHandlerJsonDeployment();
+    expect(() => normalizeHandlerJsonDeploymentConfig({ ...source, validators: { ...source.validators, verifyMembership: null } }, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' })).toThrow('validators.verifyMembership');
+    const normalized = normalizeHandlerJsonDeploymentConfig(source, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' });
+    expect(() => normalizeBridgeManifestConfig({ ...normalized.bridgeManifest, validators: { ...normalized.bridgeManifest.validators, verify_membership: {} } })).toThrow('validators.verify_membership');
+  });
+
   it('retains the applied heartbeat timing through both deployment formats', () => {
     const heartbeatSchedule = { epochOriginMs: 1_700_000_000_000, epochLengthMs: 432_000_000 };
     const normalized = normalizeHandlerJsonDeploymentConfig(

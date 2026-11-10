@@ -1128,6 +1128,13 @@ export const createDeployment = async (
           },
         }
         : {}),
+      verifyMembership: {
+        title: plan.verifyMembership.title,
+        script: plan.verifyMembership.script.script,
+        scriptHash: plan.verifyMembership.hash,
+        address: "",
+        refUtxo: refUtxosInfo[plan.verifyMembership.hash],
+      },
       verifyProof: {
         title: "verifying_proof.verify_proof.mint",
         script: verifyProofValidator.script,

@@ -51,6 +51,7 @@ export const sha256 = async (hex: string) =>
 export interface PacketLaneDeployment {
   operations: Record<string, { policy: string; reference: UTxO }>;
   proofVerifier: { policy: string; reference: UTxO };
+  membershipVerifier?: { policy: string; reference: UTxO };
   batchPolicy: string;
   batchAddress: string;
   guardAddress: string;
@@ -271,8 +272,11 @@ async function authorizeOperation(
   }
   if (![0, 3, 4].includes(operation.index)) {
     const proof = await packetProof(deployment, operation, proofs, proofClose);
-    tx = tx.readFrom([deployment.proofVerifier.reference]).mintAssets({
-      [deployment.proofVerifier.policy]: 1n,
+    const verifier = [1, 5, 9].includes(operation.index)
+      ? deployment.membershipVerifier ?? deployment.proofVerifier
+      : deployment.proofVerifier;
+    tx = tx.readFrom([verifier.reference]).mintAssets({
+      [verifier.policy]: 1n,
     }, encode(record(proof, variant(1))));
   }
   return tx;

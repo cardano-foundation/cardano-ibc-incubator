@@ -23,6 +23,7 @@ use ibc/core/ics_023_vector_commitments/merkle.{
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/testing/fuzz_dsl
+use verifying_membership
 use verifying_proof
 
 const proof_policy_id =
@@ -559,4 +560,73 @@ test regression_proof_nonmembership_rejects_existing_key() fail {
   existing_left_neighbor_path()
     |> nonmembership_redeemer
     |> verify
+}
+
+fn verify_membership_only(redeemer: VerifyProofRedeemer) -> Bool {
+  verifying_membership.verify_membership.mint(
+    VerifyProofEnvelope { proof: redeemer, history_witness: None },
+    proof_policy_id,
+    proof_marker_tx(proof_policy_id),
+  )
+}
+
+test membership_only_accepts_singleton() {
+  valid_membership_params() |> membership_redeemer |> verify_membership_only
+}
+
+test membership_only_accepts_batch() {
+  let item = valid_membership_params()
+  verify_membership_only(BatchVerifyMembership([item, item]))
+}
+
+test membership_only_rejects_wrong_root() fail {
+  valid_membership_params()
+    |> wrong_membership_root
+    |> membership_redeemer
+    |> verify_membership_only
+}
+
+test membership_only_rejects_wrong_path() fail {
+  valid_membership_params()
+    |> wrong_membership_path
+    |> membership_redeemer
+    |> verify_membership_only
+}
+
+test membership_only_rejects_wrong_value() fail {
+  valid_membership_params()
+    |> wrong_membership_value
+    |> membership_redeemer
+    |> verify_membership_only
+}
+
+test membership_only_rejects_empty_batch() {
+  !verify_membership_only(BatchVerifyMembership([]))
+}
+
+test membership_only_rejects_nonmembership() {
+  !verify_membership_only(nonmembership_redeemer(receipt_path(1)))
+}
+
+test membership_only_rejects_mixed_batch() {
+  !verify_membership_only(
+    BatchVerifyMembershipAndNonMembership {
+      memberships: [valid_membership_params()],
+      non_memberships: [valid_nonmembership_params(receipt_path(1))],
+    },
+  )
+}
+
+test membership_only_requires_exact_marker() fail {
+  verifying_membership.verify_membership.mint(
+    VerifyProofEnvelope {
+      proof: membership_redeemer(valid_membership_params()),
+      history_witness: None,
+    },
+    proof_policy_id,
+    Transaction {
+      ..proof_marker_tx(proof_policy_id),
+      mint: from_asset(proof_policy_id, "", 2),
+    },
+  )
 }
