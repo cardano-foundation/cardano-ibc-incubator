@@ -194,15 +194,29 @@ async function signMeasured(...args: Parameters<typeof signFixtureMeasured>) {
   const units = CML.compute_total_ex_units(
     signed.toTransaction().witness_set().redeemers()!,
   );
+  const inputs = await resolveInputs(lucid, body.inputs());
+  const references = await resolveInputs(lucid, body.reference_inputs());
+  const scriptBytes = (utxos: UTxO[]) =>
+    utxos.reduce(
+      (sum, input) =>
+        sum + (input.scriptRef
+          ? toScriptRef(input.scriptRef).as_plutus_v3()!.to_raw_bytes().length
+          : 0),
+      0,
+    );
   console.log(JSON.stringify({
     profile: args[2],
+    totalReferencedScriptBytes: scriptBytes([...inputs, ...references]),
+    spentInputScriptBytes: scriptBytes(inputs),
+    referenceInputCount: references.length,
+    referenceScriptCount: references.filter((input) => input.scriptRef).length,
     signedBytes: signed.toCBOR().length / 2,
     feeLovelace: body.fee().toString(),
     memory: units.mem().toString(),
     cpu: units.steps().toString(),
   }));
   const required = new Set<string>();
-  for (const input of await resolveInputs(lucid, body.inputs())) {
+  for (const input of inputs) {
     const credential = getAddressDetails(input.address).paymentCredential;
     if (credential?.type === "Script") required.add(credential.hash);
   }
@@ -210,7 +224,7 @@ async function signMeasured(...args: Parameters<typeof signFixtureMeasured>) {
   for (let i = 0; mint && i < mint.len(); i++) {
     required.add(mint.get(i).to_hex());
   }
-  for (const reference of await resolveInputs(lucid, body.reference_inputs())) {
+  for (const reference of references) {
     if (
       !reference.scriptRef ||
       Object.entries(reference.assets).some(([unit, amount]) =>

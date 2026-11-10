@@ -1,0 +1,333 @@
+{
+  "schemaVersion": 1,
+  "title": "Parse a validated transfer amount once",
+  "baselineCommit": "a952ba9a169eb447f144c9e614a906c03286c245",
+  "baselineContext": "Main at a952ba9a. Neither membership-only verification #1004 nor sparse-tree equality #1005 is included. Both experiments use the same test-only fixed-clock and packet-wallet instrumentation.",
+  "toolchain": {
+    "aiken": "v1.1.24+bacbeb3",
+    "deno": "2.9.6",
+    "lucid": "0.6.5",
+    "scalusUplc": "0.1.4"
+  },
+  "method": "A helper returns the same validated positive amount as Option<Int>. validate_basic remains a Bool wrapper. Only asset_and_amount reuses the parsed result. Other policies and lane accounting continue their own independent validation.",
+  "unitBenchmarkScope": "The local benchmark validates packet fields and returns the amount. It excludes denomination-to-asset conversion. Values of one, six, twenty and seventy-eight digits show parsing-cost sensitivity. The longest value is a parser bound rather than a claim that a corresponding Cardano asset amount can be transacted.",
+  "signedTransactionMethod": "Balanced and signed emulator transactions execute compiled validators with the retained mainnet protocol parameters. The clock and packet-wallet seed are fixed. Setup funding accounts and transaction input ordering can still cause small differences. These are single-pair measurements rather than live-chain fee estimates.",
+  "protocolParameters": {
+    "file": "cardano/offchain/scripts/fixtures/mainnet-protocol-parameters.json",
+    "sha256": "95bef260c463f2b8f456fa3c455ded9adb19b6c7154813ff6c6ef83ee593c6f6",
+    "feePerByteLovelace": 44,
+    "maxTxSize": 16384
+  },
+  "reproduction": {
+    "build": "aiken build --deny --trace-level silent in cardano/onchain",
+    "signedTransactions": "PACKET_FIXED_BENCHMARK=true deno test --allow-env --allow-read --filter '/native ADA send and acknowledgement|existing vouchers/' src/packet-lane-transactions.test.ts in cardano/offchain",
+    "before": "Build baselineCommit with the same test-only fixture instrumentation. The amount microbenchmark also changes its local read helper from validate_basic followed by int.from_utf8 to validated_amount.",
+    "after": "Build the candidate and rerun the same fixture cases."
+  },
+  "productionSources": [
+    {
+      "file": "cardano/onchain/lib/ibc/apps/transfer/types/fungible_token_packet_data.ak",
+      "beforeSha256": "d21e6bd46c69fcdcfeff159230f89c43784e60595da20b38bdb86daa87b287eb",
+      "afterSha256": "3aa2ebb97ba3bb439065633e5e1ea3c40946130a4733b913ebfbfa50f67c78e9"
+    },
+    {
+      "file": "cardano/onchain/lib/ibc/apps/transfer/packet_batch.ak",
+      "beforeSha256": "81ddca706452254fb084d0f15bb49777b13d4fd290a938aab4d513fae5794c55",
+      "afterSha256": "6dae2be6da197aaa7a4d56831c6c2a546e90f2905e453eb57e234db5488a4af5"
+    }
+  ],
+  "primitiveExecution": [
+    {
+      "test": "benchmark_one_digit",
+      "before": {
+        "mem": 146063,
+        "cpu": 43271656
+      },
+      "after": {
+        "mem": 122391,
+        "cpu": 35997398
+      },
+      "cpuSavingPercent": 16.8107,
+      "memorySavingPercent": 16.2067
+    },
+    {
+      "test": "benchmark_six_digits",
+      "before": {
+        "mem": 429779,
+        "cpu": 130565116
+      },
+      "after": {
+        "mem": 264449,
+        "cpu": 79676128
+      },
+      "cpuSavingPercent": 38.9759,
+      "memorySavingPercent": 38.4686
+    },
+    {
+      "test": "benchmark_uint64",
+      "before": {
+        "mem": 1506915,
+        "cpu": 465184866
+      },
+      "after": {
+        "mem": 803017,
+        "cpu": 246986003
+      },
+      "cpuSavingPercent": 46.9058,
+      "memorySavingPercent": 46.7112
+    },
+    {
+      "test": "benchmark_uint256",
+      "before": {
+        "mem": 7113717,
+        "cpu": 2216676456
+      },
+      "after": {
+        "mem": 3606418,
+        "cpu": 1122732635
+      },
+      "cpuSavingPercent": 49.3506,
+      "memorySavingPercent": 49.3033
+    }
+  ],
+  "compiledValidatorBytes": {
+    "minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint": {
+      "before": 8158,
+      "after": 8211,
+      "change": 53
+    },
+    "packet_funds.packet_funds.mint": {
+      "before": 13612,
+      "after": 13632,
+      "change": 20
+    },
+    "packet_send_funds.packet_send_funds.mint": {
+      "before": 9877,
+      "after": 9897,
+      "change": 20
+    },
+    "spending_transfer_module.spend_transfer_module.spend": {
+      "before": 14994,
+      "after": 15050,
+      "change": 56
+    },
+    "upgradeable/transfer.transfer.spend": {
+      "before": 15609,
+      "after": 15670,
+      "change": 61
+    }
+  },
+  "signedTransactions": [
+    {
+      "profile": "minimal-reference send",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 2195,
+        "feeLovelace": 1524033,
+        "memory": 7305921,
+        "cpu": 2585154636,
+        "totalReferencedScriptBytes": 41153,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4
+      },
+      "after": {
+        "signedBytes": 2195,
+        "feeLovelace": 1510233,
+        "memory": 7124467,
+        "cpu": 2533982361,
+        "totalReferencedScriptBytes": 41173,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4
+      },
+      "feeSavingLovelace": 13800,
+      "feeSavingPercent": 0.9055
+    },
+    {
+      "profile": "minimal-reference acknowledgement",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 2394,
+        "feeLovelace": 1448756,
+        "memory": 5196946,
+        "cpu": 2142513269,
+        "totalReferencedScriptBytes": 45018,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4
+      },
+      "after": {
+        "signedBytes": 2394,
+        "feeLovelace": 1448756,
+        "memory": 5196946,
+        "cpu": 2142513269,
+        "totalReferencedScriptBytes": 45018,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4
+      },
+      "feeSavingLovelace": 0,
+      "feeSavingPercent": 0.0
+    },
+    {
+      "profile": "minimal-reference voucher receive",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 2729,
+        "feeLovelace": 2265129,
+        "memory": 8699615,
+        "cpu": 3453590125,
+        "totalReferencedScriptBytes": 69428,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 12,
+        "referenceScriptCount": 6
+      },
+      "after": {
+        "signedBytes": 2729,
+        "feeLovelace": 2261801,
+        "memory": 8666911,
+        "cpu": 3427609478,
+        "totalReferencedScriptBytes": 69448,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 12,
+        "referenceScriptCount": 6
+      },
+      "feeSavingLovelace": 3328,
+      "feeSavingPercent": 0.1469
+    },
+    {
+      "profile": "voucher return burn",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 2766,
+        "feeLovelace": 1777747,
+        "memory": 7775519,
+        "cpu": 2969406762,
+        "totalReferencedScriptBytes": 50808,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 11,
+        "referenceScriptCount": 5
+      },
+      "after": {
+        "signedBytes": 2766,
+        "feeLovelace": 1770805,
+        "memory": 7681929,
+        "cpu": 2943026573,
+        "totalReferencedScriptBytes": 50828,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 11,
+        "referenceScriptCount": 5
+      },
+      "feeSavingLovelace": 6942,
+      "feeSavingPercent": 0.3905
+    },
+    {
+      "profile": "voucher success acknowledgement without voucher policy",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 2799,
+        "feeLovelace": 1453663,
+        "memory": 5051638,
+        "cpu": 2079700014,
+        "totalReferencedScriptBytes": 45018,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 10,
+        "referenceScriptCount": 4
+      },
+      "after": {
+        "signedBytes": 2799,
+        "feeLovelace": 1453663,
+        "memory": 5051638,
+        "cpu": 2079700014,
+        "totalReferencedScriptBytes": 45018,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 10,
+        "referenceScriptCount": 4
+      },
+      "feeSavingLovelace": 0,
+      "feeSavingPercent": 0.0
+    },
+    {
+      "profile": "full-capacity voucher refund",
+      "occurrence": 0,
+      "before": {
+        "signedBytes": 3315,
+        "feeLovelace": 2247239,
+        "memory": 7815944,
+        "cpu": 3025652048,
+        "totalReferencedScriptBytes": 71195,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 12,
+        "referenceScriptCount": 6
+      },
+      "after": {
+        "signedBytes": 3315,
+        "feeLovelace": 2245405,
+        "memory": 7796428,
+        "cpu": 3009844448,
+        "totalReferencedScriptBytes": 71215,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 12,
+        "referenceScriptCount": 6
+      },
+      "feeSavingLovelace": 1834,
+      "feeSavingPercent": 0.0816
+    }
+  ],
+  "compatibility": {
+    "seed": 2888485607,
+    "property": {
+      "title": "parser_equivalence",
+      "status": "pass",
+      "on_failure": "fail_immediately",
+      "iterations": 1000,
+      "labels": {
+        "fuzz.unit.transfer.amount_parsing.accepted": 315,
+        "fuzz.unit.transfer.amount_parsing.rejected": 685
+      },
+      "counterexample": null
+    },
+    "summary": {
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "kind": {
+        "unit": 6,
+        "property": 1
+      }
+    },
+    "note": "The property compares with the frozen original validation or accounting code. Its coverage labels are included in the standard CI property inventory."
+  },
+  "broaderTests": {
+    "summary": {
+      "total": 234,
+      "passed": 234,
+      "failed": 0,
+      "kind": {
+        "unit": 225,
+        "property": 9
+      }
+    },
+    "logSummary": "Summary 1125 checks, 0 errors, 0 warnings"
+  },
+  "deployment": {
+    "testResult": "ok | 52 passed (101 steps) | 0 failed (43s)",
+    "largestSignedPublication": {
+      "validator": "host_state_stt.host_state_stt.spend",
+      "signedBytes": 16068
+    },
+    "headroomBytes": 316
+  },
+  "signedTransactionTestResult": "ok | 2 passed | 0 failed | 17 filtered out (45s)",
+  "checks": [
+    "Aiken format",
+    "Aiken wire schema version 7 with 44 definitions",
+    "Aiken layering",
+    "Aiken fuzz imports",
+    "git diff --check",
+    "New property discovered by the CI property inventory with valid coverage labels"
+  ],
+  "independentChange": true,
+  "validationReuse": "The rebuilt blueprint exactly matches the prototype blueprint used by the retained signed-transaction, broader transfer and deployment tests. The final PR reruns the focused tests with coverage labels. Production code and benchmark fixtures are unchanged."
+}
