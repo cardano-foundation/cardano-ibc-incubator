@@ -568,6 +568,8 @@ reference. The Gateway loads both advertised references and the shared builder
 attaches only the verifier needed by its operation. Older manifests omit this
 entry and continue using the general verifier. Deployment publication,
 migration checks and shutdown inventory include the membership reference.
+The relayer signing policy also requires the membership policy and its exact
+reference from the operator-pinned manifest.
 The packet policies and their dependent router and lane guard must be deployed
 together. This changes their policy graph without changing datums or redeemers.
 

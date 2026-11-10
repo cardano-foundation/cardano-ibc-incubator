@@ -269,7 +269,12 @@
       "historical consensus checkpoint acknowledgements remain valid"
     ],
     "destinationWireSchemaVersion": 7,
-    "destinationWireSchemaDefinitions": 44
+    "destinationWireSchemaDefinitions": 44,
+    "relayerSigningPolicyTests": {
+      "passed": 74,
+      "ignored": 1,
+      "failed": 0
+    }
   },
   "reproduction": {
     "build": "aiken build in cardano/onchain with v1.1.24",
@@ -284,6 +289,7 @@
     "manifest": "verify_membership is optional for compatibility. Older manifests keep their existing general-verifier route.",
     "gateway": "Loads both advertised references and attaches only the route selected by the packet operation.",
     "migrationAndShutdown": "The membership reference is retained in the committed inventory, checked during manifest installation and included in reference reclamation.",
-    "compatibility": "Packet and proof redeemer encodings and lane datums are unchanged. The changed packet policy graph must be deployed together."
+    "compatibility": "Packet and proof redeemer encodings and lane datums are unchanged. The changed packet policy graph must be deployed together.",
+    "relayer": "The pinned relayer accepts the optional membership verifier only with its exact manifest reference. The general verifier remains available. Both manifest field naming conventions and older manifests are covered."
   }
 }
