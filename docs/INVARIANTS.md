@@ -554,6 +554,26 @@ The [retained packet-payload comparison](../tests/packet-payload-deduplication/e
 records signed bytes, total fees, execution use and validator sizes against
 `44c50a72`. Raw ICS-20 JSON and its separately structured fields are unchanged.
 
+New deployments publish a membership verifier alongside the existing general
+verifier. Receive and successful acknowledgement policies pin the membership
+verifier through their existing `verify_policy` parameter. That script accepts
+single membership requests and nonempty membership batches. Timeouts,
+timeout-on-close, error acknowledgements, client upgrades and existing channel
+operations retain the general verifier. Statement authentication and proof
+request encodings are unchanged. A valid marker from another verifier cannot
+satisfy the policy's pinned route.
+
+The optional manifest entry `validators.verify_membership` identifies the new
+reference. The Gateway loads both advertised references and the shared builder
+attaches only the verifier needed by its operation. Older manifests omit this
+entry and continue using the general verifier. Deployment publication,
+migration checks and shutdown inventory include the membership reference.
+The packet policies and their dependent router and lane guard must be deployed
+together. This changes their policy graph without changing datums or redeemers.
+
+The [retained verifier comparison](../tests/membership-verifier-split/evidence/report.json)
+records complete signed transaction fees and all referenced script bytes.
+
 Normal lane packet transactions do not spend HostState or the channel datum.
 Their packet policies still authenticate the channel, client, callback and
 counterparty proofs. Send sequencing is a separate authenticated output.

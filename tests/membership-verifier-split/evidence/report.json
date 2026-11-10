@@ -1,0 +1,289 @@
+{
+  "schemaVersion": 1,
+  "status": "Retained feasibility measurements for the production membership-verifier split.",
+  "baselineCommit": "a952ba9a169eb447f144c9e614a906c03286c245",
+  "observedDate": "2026-11-10",
+  "method": "Complete signed emulator transactions use the shared builders and execute compiled validators. Wallets and time are fixed. Both variants seed the same reference inventory, but only the split variant pins and selects the membership verifier for receive and successful acknowledgement operations. The measurements include every reference script on spent inputs and reference inputs. No additional dispatcher, marker mint or per-transaction reference is introduced.",
+  "toolchain": {
+    "aiken": "v1.1.24+bacbeb3",
+    "deno": "2.9.6",
+    "lucid": "0.6.5",
+    "scalusUplc": "0.1.4"
+  },
+  "retainedParameters": {
+    "source": "cardano/offchain/scripts/fixtures/mainnet-protocol-parameters.json",
+    "minFeeA": 44,
+    "minFeeB": 155381,
+    "minFeeRefScriptCostPerByte": 15,
+    "priceMem": 0.0577,
+    "priceStep": 7.21e-05,
+    "maxTransactionBytes": 16384
+  },
+  "compiledVerifier": {
+    "generalBytes": 15214,
+    "membershipBytes": 6757,
+    "reductionBytes": 8457,
+    "generalBeforeSha256": "0266ea59cad3be28e53360770d41491038ff3b60cb3eebb5c5560be1354487bb",
+    "generalAfterSha256": "0266ea59cad3be28e53360770d41491038ff3b60cb3eebb5c5560be1354487bb",
+    "membershipSha256": "5358ab8d51ee05f3c41cfb4350ceb88638f0b0d08f6d3d19ecc4e5873bea67d7",
+    "allExistingUnappliedCompiledValidatorsUnchanged": true
+  },
+  "scenarios": [
+    {
+      "name": "singleton successful acknowledgement",
+      "before": {
+        "signedBytes": 2394,
+        "feeLovelace": 1448756,
+        "totalReferencedScriptBytes": 45018,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4,
+        "memory": 5196946,
+        "cpu": 2142513269
+      },
+      "after": {
+        "signedBytes": 2394,
+        "feeLovelace": 1295214,
+        "totalReferencedScriptBytes": 36561,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 9,
+        "referenceScriptCount": 4,
+        "memory": 5176274,
+        "cpu": 2140798134
+      },
+      "change": {
+        "signedBytes": 0,
+        "feeLovelace": -153542,
+        "totalReferencedScriptBytes": -8457,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 0,
+        "referenceScriptCount": 0,
+        "memory": -20672,
+        "cpu": -1715135
+      },
+      "netFeeSavingLovelace": 153542,
+      "feeSavingPercent": 10.5982
+    },
+    {
+      "name": "existing voucher receive",
+      "before": {
+        "signedBytes": 2729,
+        "feeLovelace": 2265129,
+        "totalReferencedScriptBytes": 69428,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 12,
+        "referenceScriptCount": 6,
+        "memory": 8699615,
+        "cpu": 3453590125
+      },
+      "after": {
+        "signedBytes": 2729,
+        "feeLovelace": 2078655,
+        "totalReferencedScriptBytes": 60971,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 12,
+        "referenceScriptCount": 6,
+        "memory": 8658521,
+        "cpu": 3433722774
+      },
+      "change": {
+        "signedBytes": 0,
+        "feeLovelace": -186474,
+        "totalReferencedScriptBytes": -8457,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 0,
+        "referenceScriptCount": 0,
+        "memory": -41094,
+        "cpu": -19867351
+      },
+      "netFeeSavingLovelace": 186474,
+      "feeSavingPercent": 8.2324
+    },
+    {
+      "name": "first-seen voucher receive",
+      "before": {
+        "signedBytes": 3599,
+        "feeLovelace": 2636534,
+        "totalReferencedScriptBytes": 78339,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 13,
+        "referenceScriptCount": 7,
+        "memory": 10262863,
+        "cpu": 4061077532
+      },
+      "after": {
+        "signedBytes": 3599,
+        "feeLovelace": 2443786,
+        "totalReferencedScriptBytes": 69882,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 13,
+        "referenceScriptCount": 7,
+        "memory": 10226735,
+        "cpu": 4042420754
+      },
+      "change": {
+        "signedBytes": 0,
+        "feeLovelace": -192748,
+        "totalReferencedScriptBytes": -8457,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 0,
+        "referenceScriptCount": 0,
+        "memory": -36128,
+        "cpu": -18656778
+      },
+      "netFeeSavingLovelace": 192748,
+      "feeSavingPercent": 7.3107
+    },
+    {
+      "name": "native return receive with partial liquidity release",
+      "before": {
+        "signedBytes": 3162,
+        "feeLovelace": 2113129,
+        "totalReferencedScriptBytes": 59773,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 10,
+        "referenceScriptCount": 5,
+        "memory": 8951497,
+        "cpu": 3772070482
+      },
+      "after": {
+        "signedBytes": 3162,
+        "feeLovelace": 1925867,
+        "totalReferencedScriptBytes": 51316,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 10,
+        "referenceScriptCount": 5,
+        "memory": 8899655,
+        "cpu": 3749884124
+      },
+      "change": {
+        "signedBytes": 0,
+        "feeLovelace": -187262,
+        "totalReferencedScriptBytes": -8457,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 0,
+        "referenceScriptCount": 0,
+        "memory": -51842,
+        "cpu": -22186358
+      },
+      "netFeeSavingLovelace": 187262,
+      "feeSavingPercent": 8.8618
+    },
+    {
+      "name": "native return receive with full liquidity release",
+      "before": {
+        "signedBytes": 3140,
+        "feeLovelace": 2085589,
+        "totalReferencedScriptBytes": 59773,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 10,
+        "referenceScriptCount": 5,
+        "memory": 8801336,
+        "cpu": 3523689222
+      },
+      "after": {
+        "signedBytes": 3140,
+        "feeLovelace": 1899780,
+        "totalReferencedScriptBytes": 51316,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 10,
+        "referenceScriptCount": 5,
+        "memory": 8762908,
+        "cpu": 3510927584
+      },
+      "change": {
+        "signedBytes": 0,
+        "feeLovelace": -185809,
+        "totalReferencedScriptBytes": -8457,
+        "spentInputScriptBytes": 0,
+        "referenceInputCount": 0,
+        "referenceScriptCount": 0,
+        "memory": -38428,
+        "cpu": -12761638
+      },
+      "netFeeSavingLovelace": 185809,
+      "feeSavingPercent": 8.9092
+    }
+  ],
+  "sendControl": {
+    "name": "singleton native ADA send",
+    "before": {
+      "signedBytes": 2195,
+      "feeLovelace": 1524402,
+      "totalReferencedScriptBytes": 41153,
+      "spentInputScriptBytes": 0,
+      "referenceInputCount": 9,
+      "referenceScriptCount": 4,
+      "memory": 7309215,
+      "cpu": 2587636113
+    },
+    "after": {
+      "signedBytes": 2195,
+      "feeLovelace": 1527031,
+      "totalReferencedScriptBytes": 41153,
+      "spentInputScriptBytes": 0,
+      "referenceInputCount": 9,
+      "referenceScriptCount": 4,
+      "memory": 7334979,
+      "cpu": 2603484975
+    },
+    "change": {
+      "signedBytes": 0,
+      "feeLovelace": 2629,
+      "totalReferencedScriptBytes": 0,
+      "spentInputScriptBytes": 0,
+      "referenceInputCount": 0,
+      "referenceScriptCount": 0,
+      "memory": 25764,
+      "cpu": 15848862
+    },
+    "netFeeSavingLovelace": -2629,
+    "feeSavingPercent": -0.1725
+  },
+  "controlExplanation": "Changing the pinned membership policy changes the dependent router and guard hashes. Policy ordering and transaction data therefore change even on paths that retain the general verifier. The send control has unchanged script bytes and transaction size but costs 2629 lovelace more in this comparison. Its small execution increase is included rather than assumed away.",
+  "standalonePublication": {
+    "profile": "standalone membership verifier reference publication",
+    "signedBytes": 7033,
+    "feeLovelace": 465009,
+    "outputLovelace": 30027770,
+    "referenceAddress": "The existing reference_validator.refer_only holder, parameterized by the fixture host policy.",
+    "note": "This is a separate signed publication using the production reference batch builder. The output lovelace is a deposit held in the reference output, not a fee. Production batch packing has not been measured. The holder permits reclamation only through its authorized shutdown path."
+  },
+  "verification": {
+    "focusedOnchainChecks": 94,
+    "signedPacketScenarios": 9,
+    "standaloneReferencePublicationScenarios": 1,
+    "aikenChecks": [
+      "verifying_proof_contract.{..}",
+      "client_upgrade.{..}",
+      "client_upgrade_sdk.{..}"
+    ],
+    "coverage": [
+      "singleton and batch membership verification",
+      "wrong root, path, value and marker quantity rejected",
+      "non-membership, mixed batches and upgrades rejected by the membership-only verifier",
+      "a valid general verifier cannot replace the membership verifier pinned by an acknowledgement policy",
+      "existing client, consensus, height, delay, path, value, request kind and index binding regressions execute against the membership route",
+      "authenticated timeout and timeout-on-close still use the general verifier",
+      "existing client upgrade proof and withdrawal checks remain valid",
+      "historical consensus checkpoint acknowledgements remain valid"
+    ],
+    "destinationWireSchemaVersion": 7,
+    "destinationWireSchemaDefinitions": 44
+  },
+  "reproduction": {
+    "build": "aiken build in cardano/onchain with v1.1.24",
+    "baseline": "PACKET_FIXED_BENCHMARK=true PACKET_MEMBERSHIP_VERIFIER=false deno test --allow-env --allow-read --filter \"/native ADA send and acknowledgement|returning native packets|existing vouchers|first-seen vouchers/\" src/packet-lane-transactions.test.ts",
+    "split": "PACKET_FIXED_BENCHMARK=true PACKET_MEMBERSHIP_VERIFIER=true deno test --allow-env --allow-read --filter \"/native ADA send and acknowledgement|two ready acknowledgements|authenticated timeout drains|packet proof statements|returning native packets|existing vouchers|first-seen vouchers|older consensus checkpoint|timeout on close/\" src/packet-lane-transactions.test.ts",
+    "publication": "PACKET_FIXED_BENCHMARK=true PACKET_MEMBERSHIP_VERIFIER=true deno test --allow-env --allow-read src/membership-verifier-cost.test.ts",
+    "testDirectory": "cardano/offchain"
+  },
+  "feeModelSource": "https://developers.cardano.org/docs/learn/core-concepts/fees/",
+  "integration": {
+    "deployment": "Both verifiers are published. Receive and successful acknowledgement policies pin verifyMembership. Other existing users keep verifyProof.",
+    "manifest": "verify_membership is optional for compatibility. Older manifests keep their existing general-verifier route.",
+    "gateway": "Loads both advertised references and attaches only the route selected by the packet operation.",
+    "migrationAndShutdown": "The membership reference is retained in the committed inventory, checked during manifest installation and included in reference reclamation.",
+    "compatibility": "Packet and proof redeemer encodings and lane datums are unchanged. The changed packet policy graph must be deployed together."
+  }
+}
