@@ -62,3 +62,5 @@ UPDATE_HEARTBEAT_FREE_FIXTURE=1 npm test -- --runInBand --coverage=false --runTe
 
 Finally run `go test . -run '^TestRouteContinuesWithoutHostStateHeartbeats$' -count=1`
 in the v8 module. Normal tests read both saved fixtures without regenerating them.
+
+`preview-block-4846910.cbor.gz` is Preview block `4,846,910` at slot `127751193` in epoch `1478`. Its hash is `ecea5dca941ec52645d41bc8f6a161793511c6323c50e32bf24b236c50117684`. The raw block came from a fully synchronized Preview node through Yaci Store. Its height and hash were also checked against Blockfrost. It contains nested CBOR that exceeds the fallback decoder's former limit of 32. The test uses epoch nonce `25e7ec25915768e9f511635286ab9b7bfc4b66c0ca64cd674a10a8e5d54b7ee2` to check native verification and rejects a changed body under the same signed header.

@@ -19,6 +19,16 @@ import (
 
 const maxSupportedKesEvolutions = uint64(1 << 6)
 
+// RawMessage decoding still checks nested CBOR before retaining the bytes.
+// Use the ledger decoder's limit so the fallback accepts the same block data.
+var rawBlockDecMode = func() fxcbor.DecMode {
+	mode, err := (fxcbor.DecOptions{MaxNestedLevels: cbor.MaxNestedLevels}).DecMode()
+	if err != nil {
+		panic(err)
+	}
+	return mode
+}()
+
 // ErrDecodePanicked marks a panic while decoding relayer-supplied Cardano
 // CBOR. gouroboros decoders panicked on malformed blocks before v0.205.4
 // (#687), so the entry points that decode such bytes return this error
@@ -593,7 +603,7 @@ func extractRawBlockBodyFields(blockCbor []byte) (rawBlockBodyFields, error) {
 
 func rawBlockFields(blockCbor []byte) ([]fxcbor.RawMessage, rawBlockBodyFields, error) {
 	var fields []fxcbor.RawMessage
-	if err := fxcbor.Unmarshal(blockCbor, &fields); err != nil {
+	if err := rawBlockDecMode.Unmarshal(blockCbor, &fields); err != nil {
 		return nil, rawBlockBodyFields{}, err
 	}
 	if len(fields) != 5 {
@@ -656,27 +666,27 @@ func decodeRawBabbageBlock(
 
 func extractLegacyInlineDatums(rawBodies []byte) [][]*common.Datum {
 	var bodyMessages []fxcbor.RawMessage
-	if err := fxcbor.Unmarshal(rawBodies, &bodyMessages); err != nil {
+	if err := rawBlockDecMode.Unmarshal(rawBodies, &bodyMessages); err != nil {
 		return nil
 	}
 	result := make([][]*common.Datum, len(bodyMessages))
 	for txIndex, bodyMessage := range bodyMessages {
 		var bodyFields map[uint]fxcbor.RawMessage
-		if fxcbor.Unmarshal(bodyMessage, &bodyFields) != nil {
+		if rawBlockDecMode.Unmarshal(bodyMessage, &bodyFields) != nil {
 			continue
 		}
 		var outputs []fxcbor.RawMessage
-		if fxcbor.Unmarshal(bodyFields[1], &outputs) != nil {
+		if rawBlockDecMode.Unmarshal(bodyFields[1], &outputs) != nil {
 			continue
 		}
 		result[txIndex] = make([]*common.Datum, len(outputs))
 		for outputIndex, outputMessage := range outputs {
 			var outputFields map[uint]fxcbor.RawMessage
-			if fxcbor.Unmarshal(outputMessage, &outputFields) != nil {
+			if rawBlockDecMode.Unmarshal(outputMessage, &outputFields) != nil {
 				continue
 			}
 			var datumOption []fxcbor.RawMessage
-			if fxcbor.Unmarshal(outputFields[2], &datumOption) != nil || len(datumOption) != 2 {
+			if rawBlockDecMode.Unmarshal(outputFields[2], &datumOption) != nil || len(datumOption) != 2 {
 				continue
 			}
 			var wrapped cbor.WrappedCbor
@@ -693,21 +703,21 @@ func extractLegacyInlineDatums(rawBodies []byte) [][]*common.Datum {
 
 func extractLegacyCollateralDatums(rawBodies []byte) []*common.Datum {
 	var bodyMessages []fxcbor.RawMessage
-	if err := fxcbor.Unmarshal(rawBodies, &bodyMessages); err != nil {
+	if err := rawBlockDecMode.Unmarshal(rawBodies, &bodyMessages); err != nil {
 		return nil
 	}
 	result := make([]*common.Datum, len(bodyMessages))
 	for txIndex, bodyMessage := range bodyMessages {
 		var bodyFields map[uint]fxcbor.RawMessage
-		if fxcbor.Unmarshal(bodyMessage, &bodyFields) != nil {
+		if rawBlockDecMode.Unmarshal(bodyMessage, &bodyFields) != nil {
 			continue
 		}
 		var outputFields map[uint]fxcbor.RawMessage
-		if fxcbor.Unmarshal(bodyFields[16], &outputFields) != nil {
+		if rawBlockDecMode.Unmarshal(bodyFields[16], &outputFields) != nil {
 			continue
 		}
 		var datumOption []fxcbor.RawMessage
-		if fxcbor.Unmarshal(outputFields[2], &datumOption) != nil || len(datumOption) != 2 {
+		if rawBlockDecMode.Unmarshal(outputFields[2], &datumOption) != nil || len(datumOption) != 2 {
 			continue
 		}
 		var wrapped cbor.WrappedCbor
@@ -763,7 +773,7 @@ func decodeRawConwayBlock(
 
 func decodeBabbageTransactionBodies(rawBodies []byte) ([]ledger.BabbageTransactionBody, error) {
 	var bodyMessages []fxcbor.RawMessage
-	if err := fxcbor.Unmarshal(rawBodies, &bodyMessages); err != nil {
+	if err := rawBlockDecMode.Unmarshal(rawBodies, &bodyMessages); err != nil {
 		return nil, err
 	}
 
@@ -788,18 +798,18 @@ func decodeBabbageTransactionBodies(rawBodies []byte) ([]ledger.BabbageTransacti
 
 func stripInlineDatumOptions(bodyCbor []byte) ([]byte, bool) {
 	var bodyFields map[uint]fxcbor.RawMessage
-	if err := fxcbor.Unmarshal(bodyCbor, &bodyFields); err != nil {
+	if err := rawBlockDecMode.Unmarshal(bodyCbor, &bodyFields); err != nil {
 		return nil, false
 	}
 	changed := false
 	for _, field := range []uint{1} {
 		var outputs []fxcbor.RawMessage
-		if err := fxcbor.Unmarshal(bodyFields[field], &outputs); err != nil {
+		if err := rawBlockDecMode.Unmarshal(bodyFields[field], &outputs); err != nil {
 			continue
 		}
 		for idx, outputCbor := range outputs {
 			var outputFields map[uint]fxcbor.RawMessage
-			if err := fxcbor.Unmarshal(outputCbor, &outputFields); err != nil {
+			if err := rawBlockDecMode.Unmarshal(outputCbor, &outputFields); err != nil {
 				continue
 			}
 			if _, ok := outputFields[2]; ok {
@@ -822,7 +832,7 @@ func stripInlineDatumOptions(bodyCbor []byte) ([]byte, bool) {
 	}
 	if collateralReturn, ok := bodyFields[16]; ok {
 		var outputFields map[uint]fxcbor.RawMessage
-		if err := fxcbor.Unmarshal(collateralReturn, &outputFields); err == nil {
+		if err := rawBlockDecMode.Unmarshal(collateralReturn, &outputFields); err == nil {
 			if _, ok := outputFields[2]; ok {
 				delete(outputFields, 2)
 				stripped, err := fxcbor.Marshal(outputFields)
@@ -846,7 +856,7 @@ func stripInlineDatumOptions(bodyCbor []byte) ([]byte, bool) {
 
 func decodeConwayTransactionBodies(rawBodies []byte) ([]ledger.ConwayTransactionBody, error) {
 	var bodyMessages []fxcbor.RawMessage
-	if err := fxcbor.Unmarshal(rawBodies, &bodyMessages); err != nil {
+	if err := rawBlockDecMode.Unmarshal(rawBodies, &bodyMessages); err != nil {
 		return nil, err
 	}
 
@@ -875,7 +885,7 @@ func decodeBabbageWitnessSets(rawWitnessSets []byte, txCount int) ([]ledger.Babb
 
 func decodeConwayWitnessSets(rawWitnessSets []byte, txCount int) ([]ledger.ConwayTransactionWitnessSet, error) {
 	var witnessMessages []fxcbor.RawMessage
-	if err := fxcbor.Unmarshal(rawWitnessSets, &witnessMessages); err == nil {
+	if err := rawBlockDecMode.Unmarshal(rawWitnessSets, &witnessMessages); err == nil {
 		if len(witnessMessages) != txCount {
 			return nil, fmt.Errorf("witness array length %d does not match tx count %d", len(witnessMessages), txCount)
 		}
@@ -887,7 +897,7 @@ func decodeConwayWitnessSets(rawWitnessSets []byte, txCount int) ([]ledger.Conwa
 	}
 
 	var witnessMap map[uint]fxcbor.RawMessage
-	if err := fxcbor.Unmarshal(rawWitnessSets, &witnessMap); err != nil {
+	if err := rawBlockDecMode.Unmarshal(rawWitnessSets, &witnessMap); err != nil {
 		return nil, err
 	}
 	witnessSets := make([]ledger.ConwayTransactionWitnessSet, txCount)
@@ -905,7 +915,7 @@ func decodeConwayWitnessSets(rawWitnessSets []byte, txCount int) ([]ledger.Conwa
 
 func decodeBabbageWitnessSetArray(rawWitnessSets []byte, txCount int) ([]ledger.BabbageTransactionWitnessSet, error) {
 	var witnessMessages []fxcbor.RawMessage
-	if err := fxcbor.Unmarshal(rawWitnessSets, &witnessMessages); err != nil {
+	if err := rawBlockDecMode.Unmarshal(rawWitnessSets, &witnessMessages); err != nil {
 		return nil, err
 	}
 	if len(witnessMessages) != txCount {
@@ -925,7 +935,7 @@ func decodeBabbageWitnessSetArray(rawWitnessSets []byte, txCount int) ([]ledger.
 
 func decodeBabbageWitnessSetMap(rawWitnessSets []byte, txCount int) ([]ledger.BabbageTransactionWitnessSet, error) {
 	var witnessMessages map[uint]fxcbor.RawMessage
-	if err := fxcbor.Unmarshal(rawWitnessSets, &witnessMessages); err != nil {
+	if err := rawBlockDecMode.Unmarshal(rawWitnessSets, &witnessMessages); err != nil {
 		return nil, err
 	}
 
@@ -977,7 +987,7 @@ func transactionMetadataValues(metadataSet common.TransactionMetadataSet, txCoun
 
 func decodeLegacyTransactionMetadataSet(rawMetadataSet []byte) (map[uint]*cbor.LazyValue, error) {
 	var metadataMessages map[uint]fxcbor.RawMessage
-	if err := fxcbor.Unmarshal(rawMetadataSet, &metadataMessages); err == nil {
+	if err := rawBlockDecMode.Unmarshal(rawMetadataSet, &metadataMessages); err == nil {
 		metadataSet := make(map[uint]*cbor.LazyValue, len(metadataMessages))
 		for txIndex, metadataMessage := range metadataMessages {
 			metadata, err := decodeMetadataValue(txIndex, metadataMessage)
@@ -992,7 +1002,7 @@ func decodeLegacyTransactionMetadataSet(rawMetadataSet []byte) (map[uint]*cbor.L
 	}
 
 	var metadataArray []fxcbor.RawMessage
-	if err := fxcbor.Unmarshal(rawMetadataSet, &metadataArray); err != nil {
+	if err := rawBlockDecMode.Unmarshal(rawMetadataSet, &metadataArray); err != nil {
 		return nil, err
 	}
 	metadataSet := make(map[uint]*cbor.LazyValue, len(metadataArray))
@@ -1021,7 +1031,7 @@ func decodeMetadataValue(txIndex uint, metadataMessage []byte) (*cbor.LazyValue,
 
 func decodeInvalidTransactions(rawInvalidTransactions []byte) ([]uint, error) {
 	var invalidTransactions []uint
-	if err := fxcbor.Unmarshal(rawInvalidTransactions, &invalidTransactions); err != nil {
+	if err := rawBlockDecMode.Unmarshal(rawInvalidTransactions, &invalidTransactions); err != nil {
 		return nil, err
 	}
 	return invalidTransactions, nil
