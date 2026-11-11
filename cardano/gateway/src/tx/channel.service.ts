@@ -272,17 +272,14 @@ export class ChannelService {
       }
     }
   }
-  /* istanbul ignore next */
   async channelOpenTry(data: MsgChannelOpenTry): Promise<MsgChannelOpenTryResponse> {
     try {
       this.logger.log('Channel Open Try is processing');
       const { constructedAddress, channelOpenTryOperator } = validateAndFormatChannelOpenTryParams(data);
       await this.refreshWalletContext(constructedAddress, 'channelOpenTryBuilder');
       // Build and complete the unsigned transaction
-      const unsignedChannelOpenTryTx: TxBuilder = await this.buildUnsignedChannelOpenTryTx(
-        channelOpenTryOperator,
-        constructedAddress,
-      );
+      const { unsignedTx: unsignedChannelOpenTryTx, channelId, pendingTreeUpdate } =
+        await this.buildUnsignedChannelOpenTryTx(channelOpenTryOperator, constructedAddress);
       const { validFromTime, validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'channelOpenTry',
@@ -299,6 +296,19 @@ export class ChannelService {
           localUPLCEval: false,
           setCollateral: TRANSACTION_SET_COLLATERAL,
         },
+        pendingTreeUpdate,
+        syntheticEvents: [
+          {
+            type: 'channel_open_try',
+            attributes: [
+              { key: 'port_id', value: channelOpenTryOperator.port_id },
+              { key: 'channel_id', value: channelId },
+              { key: 'connection_id', value: channelOpenTryOperator.connectionId },
+              { key: 'counterparty_port_id', value: channelOpenTryOperator.counterparty.port_id },
+              { key: 'counterparty_channel_id', value: channelOpenTryOperator.counterparty.channel_id },
+            ],
+          },
+        ],
       });
 
       this.logger.log('Returning unsigned tx for channel open try');
@@ -669,11 +679,10 @@ export class ChannelService {
       pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
     };
   }
-  /* istanbul ignore next */
   async buildUnsignedChannelOpenTryTx(
     channelOpenTryOperator: ChannelOpenTryOperator,
     _constructedAddress: string,
-  ): Promise<TxBuilder> {
+  ): Promise<{ unsignedTx: TxBuilder; channelId: string; pendingTreeUpdate: PendingTreeUpdate }> {
     // STT Architecture: Query the HostState UTXO via its unique NFT.
     const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
     if (!hostStateUtxo.datum) {
@@ -815,7 +824,7 @@ export class ChannelService {
       historyWitnesses[0] ?? null,
     );
 
-    const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings } =
+    const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings, commit } =
       await this.computeRootWithCreateChannelUpdate(
         hostStateDatum.state.ibc_state_root,
         channelOpenTryOperator.port_id,
@@ -867,7 +876,7 @@ export class ChannelService {
       ],
     };
     const encodedSpendModuleRedeemer: string = await this.lucidService.encode(spendModuleRedeemer, 'iBCModuleRedeemer');
-    return this.lucidService.createUnsignedChannelOpenTryTransaction({
+    const unsignedTx = await this.lucidService.createUnsignedChannelOpenTryTransaction({
       moduleKey: moduleConfig.key,
       hostStateUtxo,
       encodedHostStateRedeemer,
@@ -882,6 +891,7 @@ export class ChannelService {
       encodedUpdatedHostStateDatum,
       encodedChannelDatum,
     });
+    return { unsignedTx, channelId, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }
   async buildUnsignedChannelOpenAckTx(
     channelOpenAckOperator: ChannelOpenAckOperator,
