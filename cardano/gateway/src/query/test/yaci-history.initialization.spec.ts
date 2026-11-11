@@ -77,6 +77,48 @@ it('loads earlier pool metadata from the configured provider while bridge histor
   expect(registry.effective[0]).toMatchObject({ vrf_key_hash: Buffer.alloc(32, 1), first_registration_slot: 400n });
 });
 
+it.each(['deregistered', 'retired'])('replays provider retirement action %s during initialization', async (action) => {
+  jest.mocked(queryInitialPoolParametersAtPoint).mockResolvedValue({ current: [], genesis: [] });
+  const history = service('https://operator-history.example/api/v0');
+  const registration = '01'.repeat(32);
+  const retirement = '02'.repeat(32);
+  const readArray = jest.spyOn(history as any, 'fetchBlockfrostArray').mockImplementation(async (url: URL) => {
+    if (url.pathname.endsWith('/updates')) {
+      return [
+        { action: 'registered', tx_hash: registration, cert_index: 0 },
+        { action, tx_hash: retirement, cert_index: 1 },
+      ];
+    }
+    if (url.pathname.endsWith('/pool_updates')) {
+      return [{ cert_index: 0, pool_id: pool, vrf_key: '01'.repeat(32) }];
+    }
+    if (url.pathname.endsWith('/pool_retires')) {
+      return [{ cert_index: 1, pool_id: pool, retiring_epoch: 5 }];
+    }
+    throw new Error(`Unexpected provider path ${url.pathname}`);
+  });
+  jest.spyOn(history as any, 'fetchBlockfrostJson').mockImplementation(async (url: URL) => {
+    const registering = url.pathname.endsWith(registration);
+    return url.pathname.includes('/txs/')
+      ? { slot: registering ? 300 : 400, index: 0, block: registering ? registration : retirement }
+      : { height: registering ? 30 : 40, epoch: registering ? 3 : 4 };
+  });
+
+  const registry = await history.findInitialPoolRegistryAtBlock(block);
+  expect(registry.pools).toHaveLength(1);
+  expect(registry.pools[0]).toMatchObject({
+    registered: false,
+    retirement_epoch: 0n,
+    registration: { pool_id: pool, first_registration_slot: 300n },
+  });
+  expect(registry.mark).toEqual([]);
+  expect(registry.effective).toEqual([]);
+  expect(readArray).toHaveBeenCalledWith(
+    new URL(`https://operator-history.example/api/v0/txs/${retirement}/pool_retires`),
+    'initial pool certificates',
+  );
+});
+
 it('rejects incomplete initialization history instead of inventing a registration age or key', async () => {
   jest.mocked(queryInitialPoolParametersAtPoint).mockResolvedValue({ current: [binding(1)], genesis: [] });
   await expect(service().findInitialPoolRegistryAtBlock(block)).rejects.toThrow('does not match the node registry');
