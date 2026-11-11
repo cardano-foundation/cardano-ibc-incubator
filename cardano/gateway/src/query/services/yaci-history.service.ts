@@ -561,7 +561,7 @@ export class YaciHistoryService implements HistoryService {
           url.search = new URLSearchParams({ order: 'asc', count: '100', page: String(page) }).toString();
           const rows = await this.fetchBlockfrostArray(url, 'initial pool history') as any[];
           for (const row of rows) {
-            if (!['registered', 'retired'].includes(row.action) || !/^[0-9a-f]{64}$/.test(row.tx_hash))
+            if (!['registered', 'deregistered', 'retired'].includes(row.action) || !/^[0-9a-f]{64}$/.test(row.tx_hash))
               throw new Error('Invalid initial pool history event');
             const { tx, block } = await transaction(row.tx_hash);
             if (![tx.slot, tx.index, block.height, block.epoch, row.cert_index].every((n) => Number.isSafeInteger(n) && n >= 0))
