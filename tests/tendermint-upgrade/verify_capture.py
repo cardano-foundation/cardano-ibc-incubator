@@ -16,7 +16,7 @@ def verify(path):
         source.write_text(Path(__file__).with_name('verify-capture.go.tmpl').read_text())
         return json.loads(subprocess.check_output(['go', 'run', '-mod=readonly', str(source), str(path.resolve())],
             cwd=ROOT/'cosmos/cardano-probabilistic-light-client-v8',
-            env=dict(os.environ, GOTOOLCHAIN='go1.26.9', GOWORK='off'), text=True))
+            env=dict(os.environ, GOTOOLCHAIN='go1.26.11', GOWORK='off'), text=True))
 
 
 if __name__ == '__main__':
