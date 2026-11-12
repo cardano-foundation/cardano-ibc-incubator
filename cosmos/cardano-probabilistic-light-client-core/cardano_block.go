@@ -134,18 +134,20 @@ func attachLegacyDatums(transactions []ledger.Transaction, datums [][]*common.Da
 
 func DecodeLedgerBlock(blockCbor []byte) (block ledger.Block, err error) {
 	defer recoverDecodePanic(&block, &err)
-	blockType, err := ledger.DetermineBlockType(blockCbor)
+	blockType, err := determineBlockType(blockCbor)
 	if err == nil {
 		decodedBlock, decodeErr := ledger.NewBlockFromCbor(blockType, blockCbor)
-		if decodeErr != nil {
-			return nil, decodeErr
-		}
-		if bodyFields, rawErr := extractRawBlockBodyFields(blockCbor); rawErr == nil {
+		if decodeErr == nil {
+			bodyFields, rawErr := extractRawBlockBodyFields(blockCbor)
+			if rawErr != nil {
+				return nil, rawErr
+			}
 			if wrappedBlock := wrapRawBodyFields(decodedBlock, bodyFields); wrappedBlock != nil {
 				return wrappedBlock, nil
 			}
+			return decodedBlock, nil
 		}
-		return decodedBlock, nil
+		err = decodeErr
 	}
 
 	decodedBlock, fallbackErr := decodeRawBodyBlock(blockCbor)
@@ -154,6 +156,20 @@ func DecodeLedgerBlock(blockCbor []byte) (block ledger.Block, err error) {
 	}
 
 	return nil, fmt.Errorf("%w; raw block fallback failed: %v", err, fallbackErr)
+}
+
+func determineBlockType(blockCbor []byte) (uint, error) {
+	count, headerSize, indefinite := cbor.ArrayInfo(blockCbor)
+	if count < 0 || (!indefinite && count == 0) {
+		return 0, errors.New("expected a nonempty block array")
+	}
+	// DetermineBlockType expects only the header. Read the first array item
+	// without decoding transaction data to identify the block's era.
+	var headerCbor cbor.RawMessage
+	if _, err := cbor.Decode(blockCbor[headerSize:], &headerCbor); err != nil {
+		return 0, err
+	}
+	return ledger.DetermineBlockType(headerCbor)
 }
 
 // DecodeLedgerHeader decodes the exact signed Praos header used by both
@@ -593,8 +609,12 @@ func extractRawBlockBodyFields(blockCbor []byte) (rawBlockBodyFields, error) {
 
 func rawBlockFields(blockCbor []byte) ([]fxcbor.RawMessage, rawBlockBodyFields, error) {
 	var fields []fxcbor.RawMessage
-	if err := fxcbor.Unmarshal(blockCbor, &fields); err != nil {
+	decodedBytes, err := cbor.Decode(blockCbor, &fields)
+	if err != nil {
 		return nil, rawBlockBodyFields{}, err
+	}
+	if decodedBytes != len(blockCbor) {
+		return nil, rawBlockBodyFields{}, errors.New("unexpected trailing block data")
 	}
 	if len(fields) != 5 {
 		return nil, rawBlockBodyFields{}, fmt.Errorf("expected 5 block fields, got %d", len(fields))
