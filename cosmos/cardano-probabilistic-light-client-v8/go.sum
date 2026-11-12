@@ -150,8 +150,8 @@ github.com/bgentry/speakeasy v0.1.1-0.20220910012023-760eaf8b6816 h1:41iFGWnSlI2
 github.com/bgentry/speakeasy v0.1.1-0.20220910012023-760eaf8b6816/go.mod h1:+zsyZBPWlz7T6j88CTgSN5bM796AkVf0kBD4zp0CCIs=
 github.com/bits-and-blooms/bitset v1.24.6 h1:qcrftZUVBIwfs+m+nhoCBAPT+ZPZZjti8SbHbDQQkZ4=
 github.com/bits-and-blooms/bitset v1.24.6/go.mod h1:7hO7Gc7Pp1vODcmWvKMRA9BNmbv6a/7QIWpPxHddWR8=
-github.com/blinklabs-io/gouroboros v0.205.4 h1:vtwVgDjr2zS4aYX/IfihT0Acf0mHb2uJYlpf+6d3N3Q=
-github.com/blinklabs-io/gouroboros v0.205.4/go.mod h1:ilhqukWbLnmLFzwB0v7wI0G49u8CI9r23pVd4Lb3X+A=
+github.com/blinklabs-io/gouroboros v0.205.5 h1:qFonApyD5kO5UmatfOm3S6zMZO0saPd2p6RYk440BE4=
+github.com/blinklabs-io/gouroboros v0.205.5/go.mod h1:ilhqukWbLnmLFzwB0v7wI0G49u8CI9r23pVd4Lb3X+A=
 github.com/blinklabs-io/ouroboros-mock v0.20.1 h1:W3BsFwWkNhmGyWyGFcQfWTCp0exX64evnI4VtXGjpRU=
 github.com/blinklabs-io/ouroboros-mock v0.20.1/go.mod h1:UqITUSH8u9y6Hx3IvqrCoQmu7poWPW8hUT+lJCQauFI=
 github.com/blinklabs-io/plutigo v0.7.1 h1:dLjbqeIw8o0/5N6WY3lIM3RDaDuZDbi4x8/L8ekVjAo=
