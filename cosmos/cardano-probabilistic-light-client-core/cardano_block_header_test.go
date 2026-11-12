@@ -100,3 +100,37 @@ func TestHeaderDetectionRejectsTrailingBlockBytes(t *testing.T) {
 		t.Fatal("accepted trailing bytes after a complete block")
 	}
 }
+
+func TestOrdinaryBlocksUseGouroborosDecoder(t *testing.T) {
+	for _, fixture := range []string{"testdata/babbage_block.hex", "testdata/conway_block.hex"} {
+		t.Run(fixture, func(t *testing.T) {
+			block, err := DecodeLedgerBlock(readBlockFixture(t, fixture))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cause := BlockDecodeFallbackCause(block); cause != nil {
+				t.Fatalf("ordinary block unexpectedly required the legacy parser: %v", cause)
+			}
+		})
+	}
+	block, err := DecodeLedgerBlock(previewBlockForHeaderDetection(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cause := BlockDecodeFallbackCause(block); cause != nil {
+		t.Fatalf("Preview block unexpectedly required the legacy parser: %v", cause)
+	}
+}
+
+func TestLegacyBlockPreservesPrimaryDecodeFailure(t *testing.T) {
+	block, err := DecodeLedgerBlock(readBlockFixture(t, "testdata/babbage_host_state_tx_validity_block.hex"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cause := BlockDecodeFallbackCause(block); cause == nil || cause.Error() == "" {
+		t.Fatal("successful fallback discarded the primary decoder error")
+	}
+	if BlockDecodeFallbackCause(nil) != nil {
+		t.Fatal("nil block has a fallback cause")
+	}
+}

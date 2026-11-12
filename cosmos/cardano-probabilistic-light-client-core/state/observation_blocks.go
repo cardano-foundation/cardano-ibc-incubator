@@ -215,6 +215,9 @@ func appendObservationBlock(ctx Context, store storetypes.KVStore, cs *ClientSta
 	if !bytes.Equal(vrf, binding.VrfKeyHash) {
 		return fmt.Errorf("verified VRF key does not match the independent registration")
 	}
+	if decoded != nil {
+		emitBlockDecodeFallback(ctx, decoded)
+	}
 	counterMap := NewSnapshotMap(store, session.Working.Scope, snapshotCounters)
 	saved, exists, err := counterMap.Lookup(session.Working.Counters, key)
 	if err != nil {
