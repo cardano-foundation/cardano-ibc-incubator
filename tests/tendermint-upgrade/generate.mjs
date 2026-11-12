@@ -47,7 +47,7 @@ function generate(profile) {
     writeFileSync(sourcePath, source)
     const output = execFileSync('go', ['run', '-mod=readonly', sourcePath, casesPath], {
       cwd: path.join(root, `cosmos/cardano-probabilistic-light-client-${profile.name}`),
-      env: { ...process.env, GOTOOLCHAIN: 'go1.26.9', GOWORK: 'off' },
+      env: { ...process.env, GOTOOLCHAIN: 'go1.26.11', GOWORK: 'off' },
       encoding: 'utf8', maxBuffer: 20 * 1024 * 1024,
     })
     const result = JSON.parse(output)
