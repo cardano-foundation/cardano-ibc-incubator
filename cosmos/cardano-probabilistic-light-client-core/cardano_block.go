@@ -74,6 +74,7 @@ type rawBabbageBlock struct {
 	bodyFields             rawBlockBodyFields
 	legacyDatums           [][]*common.Datum
 	legacyCollateralDatums []*common.Datum
+	primaryDecodeErr       error
 }
 
 func (b *rawBabbageBlock) rawBlockBodyFields() rawBlockBodyFields {
@@ -86,8 +87,9 @@ func (b *rawBabbageBlock) Transactions() []ledger.Transaction {
 
 type rawConwayBlock struct {
 	*ledger.ConwayBlock
-	bodyFields   rawBlockBodyFields
-	legacyDatums [][]*common.Datum
+	bodyFields       rawBlockBodyFields
+	legacyDatums     [][]*common.Datum
+	primaryDecodeErr error
 }
 
 func (b *rawConwayBlock) rawBlockBodyFields() rawBlockBodyFields {
@@ -162,10 +164,30 @@ func DecodeLedgerBlock(blockCbor []byte) (block ledger.Block, err error) {
 
 	decodedBlock, fallbackErr := decodeRawBodyBlock(blockCbor)
 	if fallbackErr == nil {
+		switch block := decodedBlock.(type) {
+		case *rawBabbageBlock:
+			block.primaryDecodeErr = err
+		case *rawConwayBlock:
+			block.primaryDecodeErr = err
+		}
 		return decodedBlock, nil
 	}
 
 	return nil, fmt.Errorf("%w; raw block fallback failed: %v", err, fallbackErr)
+}
+
+// BlockDecodeFallbackCause returns the gouroboros error recovered by the raw
+// decoder. It is nil when ordinary decoding succeeded. It does not indicate
+// whether the block has passed cryptographic verification.
+func BlockDecodeFallbackCause(block ledger.Block) error {
+	switch block := block.(type) {
+	case *rawBabbageBlock:
+		return block.primaryDecodeErr
+	case *rawConwayBlock:
+		return block.primaryDecodeErr
+	default:
+		return nil
+	}
 }
 
 func determineBlockType(blockCbor []byte) (uint, error) {
