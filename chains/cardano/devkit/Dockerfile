@@ -55,5 +55,5 @@ RUN chmod +x /profile/cardano_node.py /profile/cardano_submit_api.py
 COPY devkit/node.properties /app/config/node.properties
 COPY config/protocol-parameters.json /config/protocol-parameters.json
 
-FROM bloxbean/yaci-store:2.0.2.1@sha256:9a75cb006db1710a9de02b566de158d8d561058328b8e1219531d2c2c79778e9 AS history
+FROM bloxbean/yaci-store:2.0.7@sha256:fff8354934a9967da4611cfaf30e0c09097ad9d17f69ff7c50946dafba91e0cd AS history
 COPY yaci/config/application.properties /app/config/application.properties

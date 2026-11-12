@@ -54,9 +54,8 @@ services:
         max-file: "10"
 
   yaci-store:
-    # 2.0.2.1 fixes CBOR parsing of post-protocol-11 preprod blocks
-    # (2.0.0 dies with "CborException: Reserved additional information").
-    image: bloxbean/yaci-store:2.0.2.1
+    # Keep this version aligned with the devkit history image.
+    image: bloxbean/yaci-store:2.0.7
     ports:
       - ${YACI_STORE_PORT:-8081}:8080
     depends_on:
