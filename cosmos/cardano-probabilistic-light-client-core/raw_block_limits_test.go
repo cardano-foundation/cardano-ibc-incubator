@@ -95,7 +95,7 @@ func TestPoolCertificatesAcceptNestedWitnessDataAndCheckSignatures(t *testing.T)
 			require.NoError(t, err)
 			bodyFields := rawBlockBodyFields{fields[1], fields[2], fields[3], fields[4]}
 			bodyHash := rawBodyHash(bodyFields)
-			header := &ledger.ConwayBlockHeader{}
+			header := fixtureHeader()
 			header.Body.BlockBodyHash = ledger.NewBlake2b256(bodyHash[:])
 			fields[0], err = ledgercbor.Encode(header)
 			require.NoError(t, err)

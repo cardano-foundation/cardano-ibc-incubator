@@ -14,9 +14,9 @@ RUN find injective-chain/modules/cardano-probabilistic-light-client/readinesspro
     -exec sed -i 's#github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core#github.com/InjectiveLabs/injective-core/injective-chain/modules/cardano-probabilistic-light-client/internal/core#g' {} +
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-    GOTOOLCHAIN=go1.26.9 GOWORK=off GOMEMLIMIT=2GiB go mod tidy && \
-    GOTOOLCHAIN=go1.26.9 GOWORK=off GOMEMLIMIT=2GiB go build -p 2 -mod=readonly -o /usr/local/bin/injectived ./cmd/injectived && \
-    GOTOOLCHAIN=go1.26.9 GOWORK=off GOMEMLIMIT=2GiB go build -p 2 -mod=readonly -o /usr/local/bin/cardano-release-probe ./injective-chain/modules/cardano-probabilistic-light-client/readinessprobe
+    GOTOOLCHAIN=go1.26.11 GOWORK=off GOMEMLIMIT=2GiB go mod tidy && \
+    GOTOOLCHAIN=go1.26.11 GOWORK=off GOMEMLIMIT=2GiB go build -p 2 -mod=readonly -o /usr/local/bin/injectived ./cmd/injectived && \
+    GOTOOLCHAIN=go1.26.11 GOWORK=off GOMEMLIMIT=2GiB go build -p 2 -mod=readonly -o /usr/local/bin/cardano-release-probe ./injective-chain/modules/cardano-probabilistic-light-client/readinessprobe
 FROM ${INJECTIVE_IMAGE} AS node
 COPY --from=builder /usr/local/bin/injectived /usr/local/bin/injectived
 FROM node AS probe

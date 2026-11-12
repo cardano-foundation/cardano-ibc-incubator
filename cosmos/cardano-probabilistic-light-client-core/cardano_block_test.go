@@ -491,7 +491,7 @@ func TestConwayHostStateTargetRespectsInvalidTransactionIndex(t *testing.T) {
 	body.TxFee = 1
 	encodeBlock := func(invalidTransactions []uint) []byte {
 		blockCbor, err := cbor.Encode(&ledger.ConwayBlock{
-			BlockHeader:            &ledger.ConwayBlockHeader{},
+			BlockHeader:            &ledger.ConwayBlockHeader{BabbageBlockHeader: *fixtureHeader()},
 			TransactionBodies:      []ledger.ConwayTransactionBody{body},
 			TransactionWitnessSets: []ledger.ConwayTransactionWitnessSet{{}},
 			TransactionMetadataSet: common.TransactionMetadataSet{},
@@ -537,7 +537,7 @@ func TestConwayHostStateTargetRespectsInvalidTransactionIndex(t *testing.T) {
 }
 
 func TestDecodeLedgerHeaderRequiresExactInput(t *testing.T) {
-	original := &ledger.BabbageBlockHeader{}
+	original := fixtureHeader()
 	original.Body.BlockNumber = 42
 	original.Body.Slot = 84
 

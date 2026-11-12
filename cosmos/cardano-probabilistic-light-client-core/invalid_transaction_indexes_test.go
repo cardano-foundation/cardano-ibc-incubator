@@ -50,9 +50,11 @@ func TestFallbackRejectsOutOfRangeInvalidTransactionIndexes(t *testing.T) {
 			raw, err := cbor.Encode(fields)
 			require.NoError(t, err)
 			// The index must be rejected structurally, before body authentication.
-			typ, err := determineBlockType(raw)
-			require.NoError(t, err)
-			_, err = ledger.NewBlockFromCbor(typ, raw)
+			blockType := uint(ledger.BlockTypeConway)
+			if era == "babbage" {
+				blockType = ledger.BlockTypeBabbage
+			}
+			_, err = ledger.NewBlockFromCbor(blockType, raw)
 			require.ErrorContains(t, err, "outside transaction list length")
 			rawFields, bodyFields, err := rawBlockFields(raw)
 			require.NoError(t, err)

@@ -171,6 +171,13 @@ func makeTestProbabilisticBlock(t testing.TB, blockNumber, slot uint64, prevHash
 	block := ledger.BabbageBlock{
 		BlockHeader: &ledger.BabbageBlockHeader{},
 	}
+	// Wire-valid placeholders for tests that do not verify header signatures.
+	block.BlockHeader.Signature = make([]byte, 448)
+	block.BlockHeader.Body.VrfKey = make([]byte, 32)
+	block.BlockHeader.Body.VrfResult.Output = make([]byte, 64)
+	block.BlockHeader.Body.VrfResult.Proof = make([]byte, 80)
+	block.BlockHeader.Body.OpCert.HotVkey = make([]byte, 32)
+	block.BlockHeader.Body.OpCert.Signature = make([]byte, 64)
 	block.BlockHeader.Body.BlockNumber = blockNumber
 	block.BlockHeader.Body.Slot = slot
 	if prevHashHex != "" {

@@ -146,20 +146,16 @@ func attachLegacyDatums(transactions []ledger.Transaction, datums [][]*common.Da
 
 func DecodeLedgerBlock(blockCbor []byte) (block ledger.Block, err error) {
 	defer recoverDecodePanic(&block, &err)
-	blockType, err := determineBlockType(blockCbor)
+	decodedBlock, err := decodePrimaryBlock(blockCbor)
 	if err == nil {
-		decodedBlock, decodeErr := ledger.NewBlockFromCbor(blockType, blockCbor)
-		if decodeErr == nil {
-			bodyFields, rawErr := extractRawBlockBodyFields(blockCbor)
-			if rawErr != nil {
-				return nil, rawErr
-			}
-			if wrappedBlock := wrapRawBodyFields(decodedBlock, bodyFields); wrappedBlock != nil {
-				return wrappedBlock, nil
-			}
-			return decodedBlock, nil
+		bodyFields, rawErr := extractRawBlockBodyFields(blockCbor)
+		if rawErr != nil {
+			return nil, rawErr
 		}
-		err = decodeErr
+		if wrappedBlock := wrapRawBodyFields(decodedBlock, bodyFields); wrappedBlock != nil {
+			return wrappedBlock, nil
+		}
+		return decodedBlock, nil
 	}
 
 	decodedBlock, fallbackErr := decodeRawBodyBlock(blockCbor)
@@ -190,18 +186,20 @@ func BlockDecodeFallbackCause(block ledger.Block) error {
 	}
 }
 
-func determineBlockType(blockCbor []byte) (uint, error) {
-	count, headerSize, indefinite := cbor.ArrayInfo(blockCbor)
-	if count < 0 || (!indefinite && count == 0) {
-		return 0, errors.New("expected a nonempty block array")
+// decodePrimaryBlock accepts the two supported block layouts, just as the raw
+// fallback does. An unwrapped header does not identify Babbage versus Conway:
+// its protocol version describes the producer's capabilities, not the era.
+// Try the typed decoders rather than treating this ambiguity as a decoder failure.
+func decodePrimaryBlock(blockCbor []byte) (ledger.Block, error) {
+	block, conwayErr := ledger.NewBlockFromCbor(ledger.BlockTypeConway, blockCbor)
+	if conwayErr == nil {
+		return block, nil
 	}
-	// DetermineBlockType expects only the header. Read the first array item
-	// without decoding transaction data to identify the block's era.
-	var headerCbor cbor.RawMessage
-	if _, err := cbor.Decode(blockCbor[headerSize:], &headerCbor); err != nil {
-		return 0, err
+	block, babbageErr := ledger.NewBlockFromCbor(ledger.BlockTypeBabbage, blockCbor)
+	if babbageErr == nil {
+		return block, nil
 	}
-	return ledger.DetermineBlockType(headerCbor)
+	return nil, fmt.Errorf("Conway decoding: %v, Babbage decoding: %w", conwayErr, babbageErr)
 }
 
 // DecodeLedgerHeader decodes the exact signed Praos header used by both

@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/blinklabs-io/gouroboros/cbor"
-	"github.com/blinklabs-io/gouroboros/ledger"
 )
 
 func previewBlockForHeaderDetection(t *testing.T) []byte {
@@ -30,7 +29,7 @@ func previewBlockForHeaderDetection(t *testing.T) []byte {
 	return raw
 }
 
-func TestDecodeLedgerBlockDetectsTypeFromPreviewHeader(t *testing.T) {
+func TestDecodeLedgerBlockAcceptsNestedPreviewRedeemer(t *testing.T) {
 	block, err := DecodeLedgerBlock(previewBlockForHeaderDetection(t))
 	if err != nil {
 		t.Fatalf("decode Preview block with nested redeemer map: %v", err)
@@ -48,18 +47,16 @@ func TestDecodeLedgerBlockDetectsTypeFromPreviewHeader(t *testing.T) {
 	}
 }
 
-func TestBlockTypeDetectionDoesNotReadTransactions(t *testing.T) {
+func TestPrimaryDecoderRejectsMalformedTransactions(t *testing.T) {
 	var fields []cbor.RawMessage
 	if _, err := cbor.Decode(previewBlockForHeaderDetection(t), &fields); err != nil {
 		t.Fatal(err)
 	}
-	// A valid header followed by invalid transaction data must still identify
-	// the era. Decoding the complete block must reject the malformed body.
+	// A valid header must not hide malformed transaction data.
 	raw := append([]byte{0x85}, fields[0]...)
 	raw = append(raw, 0xff)
-	blockType, err := determineBlockType(raw)
-	if err != nil || blockType != ledger.BlockTypeConway {
-		t.Fatalf("header-only detection: type=%d err=%v", blockType, err)
+	if _, err := decodePrimaryBlock(raw); err == nil {
+		t.Fatal("primary decoder accepted malformed transaction data")
 	}
 	if _, err := DecodeLedgerBlock(raw); err == nil {
 		t.Fatal("accepted a block with malformed transaction data")
@@ -132,5 +129,43 @@ func TestLegacyBlockPreservesPrimaryDecodeFailure(t *testing.T) {
 	}
 	if BlockDecodeFallbackCause(nil) != nil {
 		t.Fatal("nil block has a fallback cause")
+	}
+}
+
+func TestPrimaryDecoderDoesNotInferEraFromProducerVersion(t *testing.T) {
+	for _, era := range []string{"babbage", "conway"} {
+		t.Run(era, func(t *testing.T) {
+			for _, major := range []uint64{7, 9, 12} {
+				var fields, header, body []cbor.RawMessage
+				if _, err := cbor.Decode(readBlockFixture(t, "testdata/"+era+"_block.hex"), &fields); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := cbor.Decode(fields[0], &header); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := cbor.Decode(header[0], &body); err != nil {
+					t.Fatal(err)
+				}
+				encode := func(v any) cbor.RawMessage {
+					raw, err := cbor.Encode(v)
+					if err != nil {
+						t.Fatal(err)
+					}
+					return raw
+				}
+				// Change only the producer capability. This tests decoding, not the
+				// signature on the modified header or the network's hard-fork schedule.
+				body[9] = encode([]uint64{major, 0})
+				header[0] = encode(body)
+				fields[0] = encode(header)
+				block, err := DecodeLedgerBlock(encode(fields))
+				if err != nil {
+					t.Fatalf("producer major %d: %v", major, err)
+				}
+				if cause := BlockDecodeFallbackCause(block); cause != nil {
+					t.Fatalf("producer major %d unexpectedly needed the legacy parser: %v", major, cause)
+				}
+			}
+		})
 	}
 }
