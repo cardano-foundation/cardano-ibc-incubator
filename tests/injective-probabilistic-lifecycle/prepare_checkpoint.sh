@@ -16,8 +16,8 @@ OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 git clone --depth 1 --branch "$SOURCE_TAG" https://github.com/InjectiveFoundation/injective-core.git "$OUTPUT_DIR/injective-source"
 test "$(git -C "$OUTPUT_DIR/injective-source" rev-parse HEAD)" = "$SOURCE_COMMIT"
 sh "$REPO_DIR/chains/cosmos/patch_cardano_probabilistic_light_client.sh" "$OUTPUT_DIR/injective-source" "$REPO_DIR"
-docker build --build-arg GO_VERSION=1.26.9 -f "$REPO_DIR/chains/injective/configuration/Dockerfile" -t "$BASE_IMAGE" "$OUTPUT_DIR/injective-source"
-docker build --target builder --build-arg GO_VERSION=1.26.9 -f "$REPO_DIR/chains/injective/configuration/Dockerfile" -t "$BUILDER_IMAGE" "$OUTPUT_DIR/injective-source"
+docker build --build-arg GO_VERSION=1.26.11 -f "$REPO_DIR/chains/injective/configuration/Dockerfile" -t "$BASE_IMAGE" "$OUTPUT_DIR/injective-source"
+docker build --target builder --build-arg GO_VERSION=1.26.11 -f "$REPO_DIR/chains/injective/configuration/Dockerfile" -t "$BUILDER_IMAGE" "$OUTPUT_DIR/injective-source"
 docker build --target node --build-arg "INJECTIVE_BUILDER_IMAGE=$BUILDER_IMAGE" --build-arg "INJECTIVE_IMAGE=$BASE_IMAGE" \
   -f "$REPO_DIR/tests/injective-probabilistic-lifecycle/Dockerfile.checkpoint" -t local/injective-checkpoint-expiry "$REPO_DIR"
 docker build --target probe --build-arg "INJECTIVE_BUILDER_IMAGE=$BUILDER_IMAGE" --build-arg "INJECTIVE_IMAGE=$BASE_IMAGE" \

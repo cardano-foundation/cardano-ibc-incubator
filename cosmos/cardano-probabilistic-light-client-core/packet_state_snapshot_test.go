@@ -29,7 +29,7 @@ func snapshotBlock(t *testing.T, previous PacketStateSnapshot, txs []cbor.RawMes
 		hashes = append(hashes, hash[:]...)
 	}
 	bodyHash := blake2b.Sum256(hashes)
-	header := &ledger.ConwayBlockHeader{}
+	header := fixtureHeader()
 	header.Body.BlockNumber = previous.Height + 1
 	parent, _ := hex.DecodeString(previous.BlockHash)
 	header.Body.PrevHash = ledger.NewBlake2b256(parent)

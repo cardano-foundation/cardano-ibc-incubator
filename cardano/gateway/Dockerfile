@@ -1,4 +1,4 @@
-FROM golang:1.26.9 AS client-preparation
+FROM golang:1.26.11 AS client-preparation
 WORKDIR /src/cosmos/cardano-probabilistic-light-client-v8
 COPY ./cosmos/cardano-probabilistic-light-client-core /src/cosmos/cardano-probabilistic-light-client-core
 COPY ./cosmos/cardano-probabilistic-light-client-v8 /src/cosmos/cardano-probabilistic-light-client-v8

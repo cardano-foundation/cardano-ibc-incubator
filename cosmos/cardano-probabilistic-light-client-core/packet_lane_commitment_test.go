@@ -122,7 +122,7 @@ func laneBlockFixture(t *testing.T, invalid []uint, spentLater bool) ([]byte, st
 		bodies = append(bodies, laterRaw)
 		witnesses = append(witnesses, map[uint64]any{})
 	}
-	header := &ledger.ConwayBlockHeader{}
+	header := fixtureHeader()
 	header.Body.BlockNumber = 42
 	headerRaw, err := ledgercbor.Encode(header)
 	if err != nil {

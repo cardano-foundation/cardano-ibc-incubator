@@ -77,8 +77,10 @@ func TestBlockDecodersAcceptDeepMetadata(t *testing.T) {
 			require.NoError(t, err)
 			raw, err := cbor.Encode(fields)
 			require.NoError(t, err)
-			blockType, err := determineBlockType(raw)
-			require.NoError(t, err)
+			blockType := uint(ledger.BlockTypeConway)
+			if era == "babbage" {
+				blockType = ledger.BlockTypeBabbage
+			}
 			primary, err := ledger.NewBlockFromCbor(blockType, raw)
 			require.NoError(t, err)
 			rawFields, rawBody, err := rawBlockFields(raw)

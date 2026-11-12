@@ -26,7 +26,11 @@ func poolCertificateBlock(t *testing.T, certificates []any, signers []ed25519.Pr
 	if invalid {
 		invalidIndices = append(invalidIndices, 0)
 	}
-	fields := []any{[]cbor.RawMessage{body}, []any{map[uint64]any{0: cbor.Tag{Number: 258, Content: witnesses}}}, map[uint64]any{}, invalidIndices}
+	witnessSet := map[uint64]any{}
+	if len(witnesses) > 0 {
+		witnessSet[0] = cbor.Tag{Number: 258, Content: witnesses}
+	}
+	fields := []any{[]cbor.RawMessage{body}, []any{witnessSet}, map[uint64]any{}, invalidIndices}
 	encoded := make([]cbor.RawMessage, len(fields))
 	hashes := []byte{}
 	for i, field := range fields {
@@ -36,7 +40,7 @@ func poolCertificateBlock(t *testing.T, certificates []any, signers []ed25519.Pr
 		hashes = append(hashes, hash[:]...)
 	}
 	hash := blake2b.Sum256(hashes)
-	header := &ledger.ConwayBlockHeader{}
+	header := fixtureHeader()
 	header.Body.BlockBodyHash = ledger.NewBlake2b256(hash[:])
 	rawHeader, err := ledgercbor.Encode(header)
 	require.NoError(t, err)

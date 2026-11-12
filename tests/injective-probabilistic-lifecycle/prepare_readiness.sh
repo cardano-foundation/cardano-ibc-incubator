@@ -23,10 +23,10 @@ git -C "$OUTPUT_DIR/injective-source" archive --format=tar --output="$OUTPUT_DIR
 # These images provide the native build dependencies and runtime libraries.
 # The readiness Dockerfile discards their source and rebuilds the application.
 if ! docker image inspect "$BUILDER_IMAGE" >/dev/null 2>&1; then
-  docker build --target builder --build-arg GO_VERSION=1.26.9 -f "$REPO_DIR/chains/injective/configuration/Dockerfile" -t "$BUILDER_IMAGE" "$OUTPUT_DIR/injective-source"
+  docker build --target builder --build-arg GO_VERSION=1.26.11 -f "$REPO_DIR/chains/injective/configuration/Dockerfile" -t "$BUILDER_IMAGE" "$OUTPUT_DIR/injective-source"
 fi
 if ! docker image inspect "$RUNTIME_IMAGE" >/dev/null 2>&1; then
-  docker build --build-arg GO_VERSION=1.26.9 -f "$REPO_DIR/chains/injective/configuration/Dockerfile" -t "$RUNTIME_IMAGE" "$OUTPUT_DIR/injective-source"
+  docker build --build-arg GO_VERSION=1.26.11 -f "$REPO_DIR/chains/injective/configuration/Dockerfile" -t "$RUNTIME_IMAGE" "$OUTPUT_DIR/injective-source"
 fi
 mkdir -p "$OUTPUT_DIR/build/cosmos"
 cp -R "$REPO_DIR/cosmos/cardano-probabilistic-light-client-core" "$OUTPUT_DIR/build/cosmos/"
