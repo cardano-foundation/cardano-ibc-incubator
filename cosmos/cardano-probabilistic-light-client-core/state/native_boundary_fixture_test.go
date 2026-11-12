@@ -201,6 +201,12 @@ func makeNativeBoundaryFixtureWithProducers(t *testing.T, countStall bool, paddi
 			require.NoError(t, err)
 			padding, err := cbor.Encode(map[uint64]any{0: map[uint64]any{1: bytes.Repeat([]byte{0x5a}, paddingBytes)}})
 			require.NoError(t, err)
+			// The padding belongs to transaction zero, so include its body and
+			// witness set rather than referencing a nonexistent transaction.
+			fields[1], err = cbor.Encode([]any{map[uint64]any{0: []any{}, 1: []any{}, 2: uint64(0)}})
+			require.NoError(t, err)
+			fields[2], err = cbor.Encode([]any{map[uint64]any{}})
+			require.NoError(t, err)
 			fields[3] = padding
 			bodyHashes := []byte{}
 			for _, field := range fields[1:] {
@@ -218,6 +224,7 @@ func makeNativeBoundaryFixtureWithProducers(t *testing.T, countStall bool, paddi
 			encoded, err = cbor.Encode(fields)
 			require.NoError(t, err)
 			_, err = cbor.Decode(encoded, &block)
+			require.NoError(t, err)
 			timestamp, err := cs.DeriveTimestampFromSlot(slot)
 			require.NoError(t, err)
 			b := &ProbabilisticBlock{Height: NewHeight(0, n), Hash: block.Hash().String(), Slot: slot, Epoch: epoch, Timestamp: timestamp}
