@@ -3,7 +3,7 @@ module github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probab
 go 1.26.9
 
 require (
-	github.com/blinklabs-io/gouroboros v0.205.4
+	github.com/blinklabs-io/gouroboros v0.205.5
 	github.com/cosmos/ics23/go v0.11.0
 	github.com/fxamacker/cbor/v2 v2.9.3
 	github.com/supranational/blst v0.3.16-0.20250831170142-f48500c1fdbe

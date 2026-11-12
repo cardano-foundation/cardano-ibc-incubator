@@ -10,7 +10,7 @@ require (
 	cosmossdk.io/log v1.6.1
 	cosmossdk.io/math v1.5.3
 	cosmossdk.io/store v1.1.2
-	github.com/blinklabs-io/gouroboros v0.205.4
+	github.com/blinklabs-io/gouroboros v0.205.5
 	github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.6
 	github.com/cometbft/cometbft v0.38.21
 	github.com/cometbft/cometbft-db v0.14.1
