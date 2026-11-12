@@ -683,7 +683,7 @@ func decodeRawBabbageBlock(
 	if err != nil {
 		return nil, fmt.Errorf("decode Babbage metadata set: %w", err)
 	}
-	invalidTransactions, err := decodeInvalidTransactions(fields[4])
+	invalidTransactions, err := decodeInvalidTransactions(fields[4], len(transactionBodies))
 	if err != nil {
 		return nil, fmt.Errorf("decode Babbage invalid transactions: %w", err)
 	}
@@ -794,7 +794,7 @@ func decodeRawConwayBlock(
 	if err != nil {
 		return nil, fmt.Errorf("decode Conway metadata set: %w", err)
 	}
-	invalidTransactions, err := decodeInvalidTransactions(fields[4])
+	invalidTransactions, err := decodeInvalidTransactions(fields[4], len(transactionBodies))
 	if err != nil {
 		return nil, fmt.Errorf("decode Conway invalid transactions: %w", err)
 	}
@@ -1071,10 +1071,15 @@ func decodeMetadataValue(txIndex uint, metadataMessage []byte) (*cbor.LazyValue,
 	return &metadata, nil
 }
 
-func decodeInvalidTransactions(rawInvalidTransactions []byte) ([]uint, error) {
+func decodeInvalidTransactions(rawInvalidTransactions []byte, txCount int) ([]uint, error) {
 	var invalidTransactions []uint
 	if err := rawBlockDecMode.Unmarshal(rawInvalidTransactions, &invalidTransactions); err != nil {
 		return nil, err
+	}
+	for _, index := range invalidTransactions {
+		if index >= uint(txCount) {
+			return nil, fmt.Errorf("invalid transaction index %d outside transaction list length %d", index, txCount)
+		}
 	}
 	return invalidTransactions, nil
 }
