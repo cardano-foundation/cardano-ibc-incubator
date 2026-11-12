@@ -78,8 +78,19 @@ func TestHeaderDetectionStillRejectsChangedPreviewBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := DecodeLedgerBlock(raw); err == nil {
-		t.Fatal("accepted a block with a changed body")
+	block, err := DecodeLedgerBlock(raw)
+	if err != nil {
+		return
+	}
+	// The raw fallback can decode the changed body. It must still fail
+	// authentication against the original signed header.
+	bodyHash, err := BlockBodyHash(block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := verifyNativeBlockBody(block, bodyHash)
+	if err != nil || valid {
+		t.Fatalf("changed body verification: valid=%v err=%v", valid, err)
 	}
 }
 

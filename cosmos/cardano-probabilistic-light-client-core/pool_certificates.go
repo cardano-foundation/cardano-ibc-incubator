@@ -71,7 +71,7 @@ func AuthenticatedPoolCertificates(block ledger.Block) ([]PoolCertificate, error
 					return nil, fmt.Errorf("pool certificate raw witnesses are unavailable")
 				}
 				var fields map[uint64]cbor.RawMessage
-				if err := cbor.Unmarshal(rawWitness.Cbor(), &fields); err != nil {
+				if err := rawBlockDecMode.Unmarshal(rawWitness.Cbor(), &fields); err != nil {
 					return nil, fmt.Errorf("pool certificate witnesses cannot be decoded: %w", err)
 				}
 				var witnesses ledgercbor.SetType[common.VkeyWitness]
