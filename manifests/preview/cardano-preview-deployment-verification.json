@@ -1,57 +1,86 @@
 {
   "schemaVersion": 1,
   "build": {
-    "sourceCommit": "03d65c65a088b5543e5b4045c70fc52e30535a9a",
-    "mainCommit": "a1fc564d04aa8edc6326037a707fb86c72f7ecde",
-    "aikenVersion": "aiken v1.1.21+42babe5",
-    "blueprintSha256": "f48d817ec403ec1fb4cd2721da15cb45bf1e2d9d9a5a5d25d3857d734af59c95",
+    "sourceCommit": "32cc32c0f5a68a8bcadef1ee53e903c34fbb990a",
+    "hermesCommit": "db90623ed1cdb8710df0af0f108c81db78d457a4",
+    "aikenVersion": "v1.1.24",
     "traceLevel": "silent",
+    "blueprintSha256": "7a5d0339f204b4899594e214bb709976f8af812c3a79426b907fd18c5503255e",
     "network": "preview",
-    "networkMagic": 2
+    "networkMagic": 2,
+    "gatewaySourceCommit": "3bc6a99878bda0cab72ad6f35033afb04759386a",
+    "gatewayImage": "sha256:955133aab4c5da326115c94873ae809255b2539a877ee627a791d38fa003dbe5",
+    "mainCommit": "32cc32c0f5a68a8bcadef1ee53e903c34fbb990a",
+    "gatewayFixPullRequest": "https://github.com/cardano-foundation/cardano-ibc-incubator/pull/1008"
   },
-  "deploymentId": "cardano-preview:24a08cbc729b4c7b8135ec311f67aecedbc740ed498da9e25db638ef.6962635f686f73745f7374617465",
-  "deployedAt": "2026-09-16T19:01:33.574Z",
+  "deploymentId": "cardano-preview:34bc905ba9499aaeb83edcee7afa91ad0c605cd681ab8b49a3c5be0e.6962635f686f73745f7374617465",
+  "deployedAt": "2026-11-11T01:56:24.154Z",
   "history": {
     "format": "cardano-history-v1",
     "start": {
-      "slot": 122688023,
-      "block_hash": "23ac79723aff7715a4619a651b0e7dd5986ff79251ec820bb09e6e06c2390fbf",
-      "block_height": 4660299
+      "slot": 127643158,
+      "block_hash": "c77525c2d7e54fc6ca2350cc13f11b26326047c374e4b06adc977dcebb296f20",
+      "block_height": 4842869
     },
     "host_state_nft_mint": {
-      "tx_hash": "2bf6634c3ed1c9a5bdeea21092eddfdfaca5bfdc853b5f3fd93229e643bc3245",
-      "output_index": 0
+      "tx_hash": "35ea28b59e85b02d971c7e6726fb6e4f036554a1f8a4e147275d94bdd44153ae",
+      "output_index": 2
     }
   },
   "referenceScripts": {
     "verifiedAgainstRebuiltBlueprint": true,
-    "count": 28,
-    "verifiedAt": "2026-09-16T19:03:47.419Z"
+    "count": 52,
+    "manifestReferenceCount": 49,
+    "verifiedAt": "2026-11-11T02:46:19.232724+00:00"
   },
   "bootstrap": {
-    "canonicalDeploymentTransactions": 55,
+    "canonicalDeploymentTransactions": 76,
     "traceRegistryOutputs": 17,
-    "deploymentId": "cardano-preview:24a08cbc729b4c7b8135ec311f67aecedbc740ed498da9e25db638ef.6962635f686f73745f7374617465",
+    "deploymentId": "cardano-preview:34bc905ba9499aaeb83edcee7afa91ad0c605cd681ab8b49a3c5be0e.6962635f686f73745f7374617465",
     "historyVerified": true,
-    "treeRebuiltWithoutCache": true,
-    "root": "1f35e52c4d1ce1a472974e7acdffee318f14dc327e129c8fe335f470fe56c10d",
+    "root": "6795a9cd87b454c6861c68da1c4879a24b01aa620b674d916ff55c221b545a0d",
     "hostState": {
-      "txHash": "05b3e62984fd479df01ba078dc2eac6d8e3f3e93d4d91258c4904deeb2b19259",
+      "txHash": "97d496ae555a9fa238e0e24d0f38edea65601e5e2e1dc27319df1ea212665c61",
       "outputIndex": 0
     },
     "portCount": 3,
     "stateCounts": {
-      "clients": 0,
-      "connections": 0,
+      "clients": 1,
+      "connections": 1,
       "channels": 0
     },
-    "verifiedAt": "2026-09-16T19:04:15.680Z"
+    "verifiedAt": "2026-11-11T03:08:05.486Z"
   },
   "costSummary": {
-    "transactionCount": 55,
-    "totalFeesLovelace": "26632642",
-    "totalReferenceScriptOutputLovelace": "1185103460",
-    "largestSignedTransactionBytes": 15555
+    "transactionCount": 76,
+    "totalFeesLovelace": "49981774",
+    "totalReferenceScriptOutputLovelace": "2452769280",
+    "largestSignedTransactionBytes": 16204
   },
-  "scope": "Fresh Preview deployment and read-only reconstruction from the public manifest. No original handler or tree cache was used for bootstrap verification. No counterparty route or month-old bridge replay was exercised."
+  "topology": {
+    "cardano": {
+      "chainId": "cardano-preview",
+      "clientId": "07-tendermint-0",
+      "connectionId": "connection-0",
+      "connectionState": "OPEN"
+    },
+    "injective": {
+      "chainId": "injective-888",
+      "clientId": "08-cardano-probabilistic-531",
+      "connectionId": "connection-436",
+      "connectionState": "OPEN",
+      "storageVersion": 2,
+      "bootstrapPending": false,
+      "epochUsability": {
+        "status": "usable",
+        "epoch": 1478,
+        "generation": 1,
+        "revision": 888,
+        "height": 148016290,
+        "timestamp": 1794366544318649805
+      }
+    },
+    "verifiedAt": "2026-11-11T03:09:02.285292+00:00"
+  },
+  "scope": "Fresh Cardano Preview bridge deployment and completed ICS-03 connection to Injective testnet."
 }
