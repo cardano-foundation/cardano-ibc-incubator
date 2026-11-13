@@ -1353,8 +1353,8 @@ export class ConnectionService {
       connectionDatum.state.counterparty.connection_id.length % 2 === 0
         ? convertHex2String(connectionDatum.state.counterparty.connection_id)
         : connectionDatum.state.counterparty.connection_id;
-    if (connectionDatum.state.state !== State.Init) {
-      throw new Error('ConnOpenAck to a Connection not in Init state');
+    if (connectionDatum.state.state !== State.TryOpen) {
+      throw new Error('ConnOpenConfirm requires a connection in TryOpen state');
     }
     const clientSequence = parseClientSequence(convertHex2String(connectionDatum.state.client_id));
     const updatedConnectionDatum: ConnectionDatum = {
