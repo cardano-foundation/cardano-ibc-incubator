@@ -391,12 +391,12 @@ export class ConnectionService {
         connectionId,
         pendingTreeUpdate,
       } = await this.buildUnsignedConnectionOpenTryTx(connectionOpenTryOperator, constructedAddress);
-      const { validToTime } = await this.computeTxValidityWindow();
+      const { validFromTime, validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'connectionOpenTry',
         unsignedTx: unsignedConnectionOpenTryTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -607,12 +607,12 @@ export class ConnectionService {
         counterpartyConnectionId,
         pendingTreeUpdate,
       } = await this.buildUnsignedConnectionOpenConfirmTx(connectionOpenConfirmOperator, constructedAddress);
-      const { validToTime } = await this.computeTxValidityWindow();
+      const { validFromTime, validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'connectionOpenConfirm',
         unsignedTx: unsignedConnectionOpenConfirmTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
         },
         wallet: {
           mode: 'refresh_from_address',
