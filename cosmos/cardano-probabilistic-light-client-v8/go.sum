@@ -166,6 +166,8 @@ github.com/btcsuite/btcd/chainhash/v2 v2.0.0 h1:PMLlSloHJuEeB80XG9EjpXWNEKAZAMLl
 github.com/btcsuite/btcd/chainhash/v2 v2.0.0/go.mod h1:mKxcZ7oGTXE7IRV+sS9hP4EVBwc/SzfNR+52IsOP9j8=
 github.com/bufbuild/protocompile v0.6.0 h1:Uu7WiSQ6Yj9DbkdnOe7U4mNKp58y9WDMKDn28/ZlunY=
 github.com/bufbuild/protocompile v0.6.0/go.mod h1:YNP35qEYoYGme7QMtz5SBCoN4kL4g12jTtjuzRNdjpE=
+github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.7 h1:Kzmai3+bZp2dHDDca16p6ZjeuWnarpWeeHRiekZM8TA=
+github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.7/go.mod h1:blQW6bTZkQh3PRYj+MQXn5NLyF++0XExjGVSD5XDlOg=
 github.com/casbin/casbin/v2 v2.1.2/go.mod h1:YcPU1XXisHhLzuxH9coDNf2FbKpjGlbCg3n9yuLkIJQ=
 github.com/cenkalti/backoff v2.2.1+incompatible h1:tNowT99t7UNflLxfYYSlKYsBpXdEet03Pg2g16Swow4=
 github.com/cenkalti/backoff v2.2.1+incompatible/go.mod h1:90ReRw6GdpyfrHakVjL/QHaoyV4aDUVVkXQJJJ3NXXM=
