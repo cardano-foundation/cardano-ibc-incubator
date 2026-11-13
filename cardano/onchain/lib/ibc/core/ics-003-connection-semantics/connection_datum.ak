@@ -132,7 +132,7 @@ pub fn is_connection_open_confirm_valid(
   input_datum: ConnectionDatum,
   output_datum: ConnectionDatum,
 ) -> Bool {
-  // input's ConnectionEnd is Init state
+  // input's ConnectionEnd is TryOpen state
   expect input_datum.state.state == connection_state.TryOpen
 
   // NOTE: Avoid relying on derived equality for nested records that contain lists
