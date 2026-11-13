@@ -30,7 +30,7 @@ The repository builds against the local core through `replace` directives. Publi
 Release tags for this nested module use the module directory prefix, for example:
 
 ```text
-cosmos/cardano-probabilistic-light-client-core/v0.1.6
+cosmos/cardano-probabilistic-light-client-core/v0.1.7
 ```
 
 Hermes stages logical evidence from Gateway against pinned destination checkpoints. A completed observation produces an immutable receipt. Challenges submit two verified receipt references. They never reverify two full observations in one transaction. Snapshot-backed proofs reject discarded recovery generations immediately.
