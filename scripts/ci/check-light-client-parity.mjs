@@ -456,7 +456,7 @@ function assertModuleTargets() {
     ],
     [
       v8Mod,
-      "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.6",
+      "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.7",
     ],
     [v8Mod, "github.com/cosmos/ibc-go/v8 v8.7.0"],
     [
@@ -465,7 +465,7 @@ function assertModuleTargets() {
     ],
     [
       v10Mod,
-      "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.6",
+      "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.7",
     ],
     [v10Mod, "github.com/cosmos/ibc-go/v10 v10.2.0"],
   ];
