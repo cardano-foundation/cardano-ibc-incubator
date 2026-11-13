@@ -174,3 +174,47 @@ func TestBoundedTrustedBootstrapImport4000Pools(t *testing.T) {
 	require.Equal(t, uint64(4000), cp.Stake.Root.Rows)
 	require.Equal(t, compact.CheckpointReference, fresh.CheckpointReference)
 }
+
+func TestBootstrapImportsSharedChildrenAfterAllParents(t *testing.T) {
+	client, consensus := compactTrustedFixture(t, 256)
+	registry := client.LatestCheckpointPoolRegistry
+	// Two registrations changed since the effective snapshot. Only the first
+	// change is also present in the mark snapshot, so the snapshots share most
+	// of their pages without sharing their roots.
+	for i := 0; i < 2; i++ {
+		binding := *registry.Pools[i].Registration
+		binding.VrfKeyHash = bytes.Clone(binding.VrfKeyHash)
+		binding.VrfKeyHash[0] ^= 1
+		registry.Pools[i].Registration = &binding
+		if i == 0 {
+			for j, mark := range registry.Mark {
+				if mark.PoolId == binding.PoolId {
+					registry.Mark[j] = &binding
+				}
+			}
+		}
+	}
+	consensus.PoolRegistry = clonePoolRegistry(registry)
+	compact, initial, steps, err := buildTrustedBootstrap(t, dbadapter.Store{DB: dbm.NewMemDB()}, client, consensus)
+	require.NoError(t, err)
+	var manifest bootstrapManifest
+	_, err = cbor.Decode(compact.BootstrapObjects, &manifest)
+	require.NoError(t, err)
+	require.True(t, manifest.Checkpoint.Registry.Mark.Bindings)
+	require.True(t, manifest.Checkpoint.Registry.Effective.Bindings)
+	require.NotEqual(t, manifest.Checkpoint.Registry.Mark.Root, manifest.Checkpoint.Registry.Effective.Root)
+	shared := dbadapter.Store{DB: dbm.NewMemDB()}
+	private := dbadapter.Store{DB: dbm.NewMemDB()}
+	ctx := bootstrapContext(initial, shared)
+	cdc := jsonTestCodec{}
+	require.NoError(t, compact.Initialize(ctx, cdc, private, initial))
+	fresh, found := GetClientState(private, cdc)
+	require.True(t, found)
+	for _, step := range steps {
+		runObservationStep(t, ctx, cdc, private, fresh, step)
+	}
+	require.False(t, fresh.BootstrapPending)
+	checkpoint, _, err := currentVerificationCheckpoint(ctx, fresh)
+	require.NoError(t, err)
+	require.Equal(t, manifest.Checkpoint.Registry, checkpoint.Registry)
+}

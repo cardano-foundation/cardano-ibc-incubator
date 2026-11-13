@@ -374,7 +374,7 @@ func BuildBootstrap(store storetypes.KVStore, client *ClientState, consensus *Co
 	thin := referenceClientState(client, make([]byte, 32), cp, ref)
 	thin.BootstrapPending = true
 	compact := referenceConsensusState(consensus, cp, ref, 1)
-	var pages []bootstrapPage
+	var pagesByDepth [SnapshotMaxDepth + 1][]bootstrapPage
 	seen := map[string]bool{}
 	var visit func(byte, SnapshotRoot, int) error
 	visit = func(kind byte, root SnapshotRoot, depth int) error {
@@ -395,7 +395,7 @@ func BuildBootstrap(store storetypes.KVStore, client *ClientState, consensus *Co
 		if err != nil {
 			return err
 		}
-		pages = append(pages, bootstrapPage{kind, raw})
+		pagesByDepth[depth] = append(pagesByDepth[depth], bootstrapPage{kind, raw})
 		if page.Children != nil {
 			for _, child := range page.Children {
 				if child.Rows > 0 {
@@ -414,6 +414,12 @@ func BuildBootstrap(store storetypes.KVStore, client *ClientState, consensus *Co
 		if err := visit(root.Kind, root.Root, 0); err != nil {
 			return nil, nil, nil, err
 		}
+	}
+	// Import every parent before its children. Another root can share a child
+	// that a depth-first walk would import before discovering its other parent.
+	var pages []bootstrapPage
+	for _, level := range pagesByDepth {
+		pages = append(pages, level...)
 	}
 	var steps []*ProbabilisticHeader
 	seq := uint32(0)
