@@ -90,7 +90,7 @@ test('aggregate requires budgets without fuzz and rejects failed required jobs',
     const needs = Object.fromEntries([
       'docs-update', 'aiken-changes', 'aiken-static', 'generated-artifacts', 'tx-budgets',
       'aiken-smoke', 'aiken-fuzz', 'aiken-mutations', 'deno-offchain',
-      'migration-assurance', 'migration-packet-model', 'deno-funds',
+      'migration-assurance', 'migration-guard-report', 'migration-packet-model', 'deno-funds',
     ].map((name) => [name, { result: !fuzz && ['aiken-smoke', 'aiken-fuzz', 'aiken-mutations'].includes(name) ? 'skipped' : 'success' }]));
     for (const [name, result] of Object.entries(overrides)) {
       if (result === null) delete needs[name];
@@ -115,7 +115,7 @@ test('aggregate requires budgets without fuzz and rejects failed required jobs',
   };
   const suites = {
     OFFCHAIN_CHANGED: ['deno-offchain'],
-    MIGRATION_CHANGED: ['migration-assurance', 'migration-packet-model'],
+    MIGRATION_CHANGED: ['migration-assurance', 'migration-guard-report', 'migration-packet-model'],
     FUNDS_CHANGED: ['deno-funds'],
   };
   const disabled = Object.fromEntries(Object.keys(suites).map((flag) => [flag, 'false']));
@@ -555,7 +555,8 @@ test('workflow wires each suite condition and aggregate to the same output', () 
   const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   for (const [job, flag] of [
     ['deno-offchain', 'offchain'], ['migration-assurance', 'migration'],
-    ['migration-packet-model', 'migration'], ['deno-funds', 'funds'],
+    ['migration-packet-model', 'migration'], ['migration-guards', 'migration'],
+    ['migration-guard-report', 'migration'], ['deno-funds', 'funds'],
   ]) {
     const block = workflow.split(`  ${job}:\n`)[1].split('\n    needs:')[0];
     assert.ok(block.includes(`needs.aiken-changes.outputs.${flag}_changed == 'true'`), job);
@@ -621,5 +622,19 @@ test('workflow detector uses full PR flags and runs suites when classification i
     }
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('migration guard report requires a successful matrix before merging evidence', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const reportJob = workflow.split('  migration-guard-report:\n')[1].split('\n  migration-assurance:')[0];
+  assert.ok(reportJob.includes('needs: [docs-update, aiken-changes, migration-guards]'));
+  const gate = reportJob.match(/        run: (test .*SHARD_RESULT.*)/)[1];
+  for (const result of ['success', 'failure', 'cancelled', 'skipped', '']) {
+    const run = () => execFileSync('bash', ['-c', gate], {
+      env: { ...process.env, SHARD_RESULT: result }, stdio: 'pipe',
+    });
+    if (result === 'success') assert.doesNotThrow(run);
+    else assert.throws(run);
   }
 });
