@@ -7,7 +7,7 @@ fixture and still requires a successful cold restore before publishing it.
 """
 import argparse
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
-SCHEMA = 1
+SCHEMA = 2
 
 
 def digest(path):
@@ -37,6 +37,7 @@ def cache_identity(distribution, root=ROOT):
     paths = {root / name for name in tracked if name}
     paths.update([root / "cardano/onchain/plutus.json",
                   root / "scripts/ci/yano-deployment.ts",
+                  root / "scripts/ci/yano-shutdown.ts",
                   root / "scripts/ci/yano_snapshot.py"])
     inputs = {str(p.relative_to(root)): digest(p) for p in sorted(paths) if p.is_file()}
     runtime = {str(p.relative_to(distribution)): digest(p)
@@ -77,6 +78,22 @@ def inventory(base, addresses):
     return result
 
 
+def configure_genesis(work):
+    timestamp = int(time.time()) * 1000
+    if (work / "chainstate").exists():
+        genesis = json.loads((work / "config/network/devnet/shelley-genesis.json").read_text())
+        timestamp = int(datetime.fromisoformat(genesis["systemStart"].replace("Z", "+00:00")).timestamp() * 1000)
+    else:
+        genesis_path = work / "config/network/devnet/shelley-genesis.json"
+        genesis = json.loads(genesis_path.read_text())
+        # The production shutdown builder uses a ten-minute validity window.
+        # Keep it inside the devnet forecast horizon (200 ms slots).
+        genesis["epochLength"] = max(genesis["epochLength"], 18000)
+        genesis["systemStart"] = datetime.fromtimestamp(timestamp / 1000, timezone.utc).isoformat().replace("+00:00", "Z")
+        genesis_path.write_text(json.dumps(genesis, indent=2))
+    return timestamp
+
+
 @contextmanager
 def node(distribution, work):
     http_port, peer_port = free_port(), free_port()
@@ -85,10 +102,10 @@ def node(distribution, work):
     args = [str(distribution / "yano"), "-Dquarkus.profile=devnet",
             "-Dquarkus.http.host=127.0.0.1", f"-Dquarkus.http.port={http_port}",
             f"-Dyano.server.port={peer_port}", "-Dyano.block-producer.script-evaluator=scalus"]
-    if (work / "chainstate").exists():
-        genesis = json.loads((work / "config/network/devnet/shelley-genesis.json").read_text())
-        timestamp = int(datetime.fromisoformat(genesis["systemStart"].replace("Z", "+00:00")).timestamp() * 1000)
-        args.append(f"-Dyano.block-producer.genesis-timestamp={timestamp}")
+    timestamp = configure_genesis(work)
+    # Yano persists systemStart at whole-second precision. Pin that same
+    # timestamp before startup so script evaluation and Lucid agree exactly.
+    args.append(f"-Dyano.block-producer.genesis-timestamp={timestamp}")
     base = f"http://127.0.0.1:{http_port}/api/v1"
     with (work / "node.log").open("w") as log:
         process = subprocess.Popen(args, cwd=work, stdout=log, stderr=subprocess.STDOUT)
@@ -117,7 +134,7 @@ def node(distribution, work):
                 process.wait()
 
 
-def run_deployment(work, base, action):
+def run_deployment(work, base, action, log_label=None):
     env = dict(os.environ, YANO_URL=base, YANO_ACTION=action,
                YANO_EVALUATION_ADAPTER="1", YANO_QUERY_ADAPTER="1", YANO_TIMED_SMOKE="1",
                YANO_GENESIS=str(work / "config/network/devnet/shelley-genesis.json"))
@@ -125,10 +142,25 @@ def run_deployment(work, base, action):
     for name in list(env):
         if name.startswith(("DEPLOYER_", "DEPLOYMENT_", "MIGRATION_", "YACI_", "KUPO_", "OGMIOS_")):
             env.pop(name)
-    with (work / f"{action}.log").open("w") as log:
+    with (work / f"{log_label or action}.log").open("w") as log:
         subprocess.run(["deno", "run", "--config", str(ROOT / "cardano/offchain/deno.json"),
                         "--frozen", "-A", str(ROOT / "scripts/ci/yano-deployment.ts")],
                        cwd=work, env=env, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=300)
+
+
+class IntegrationFailure(RuntimeError):
+    """A test failure must fail CI, never be hidden by rebuilding the cache."""
+
+
+def run_integration(work, base, label="integration"):
+    try:
+        run_deployment(work, base, "integration", label)
+        result = json.loads((work / f"{label}.log").read_text().strip().splitlines()[-1])
+        if result.get("passed") is not True:
+            raise ValueError("Bridge integration suite did not pass")
+        return result
+    except Exception as error:
+        raise IntegrationFailure(f"Bridge integration failed. See {work / (label + '.log')}") from error
 
 
 def seal_fixture(fixture, key, identity):
@@ -146,7 +178,7 @@ def validate_fixture(fixture, key):
     if observed != manifest["files"]:
         raise ValueError("Snapshot file checksum mismatch")
     for name in ["checkpoint/CURRENT", "config/network/devnet/shelley-genesis.json",
-                 "deployments/handler.json", "wallet.key", "inventory.json", "scripts.json"]:
+                 "deployments/handler.json", "wallet.key", "inventory.json", "scripts.json", "provider-state.json"]:
         if not (fixture / name).is_file():
             raise ValueError(f"Incomplete snapshot: {name}")
 
@@ -171,8 +203,12 @@ def build_fixture(distribution, work, fixture, key, identity):
         shutil.copy2(work / "wallet.key", fixture / "wallet.key")
         (fixture / "inventory.json").write_text(json.dumps(expected))
         (fixture / "scripts.json").write_text(json.dumps(scripts))
+        shutil.copy2(work / "provider-state.json", fixture / "provider-state.json")
         seal_fixture(fixture, key, identity)
-    return time.monotonic() - started
+        ready_seconds = time.monotonic() - started
+        integration = run_integration(work, base)
+        (work / "integration-result.json").write_text(json.dumps(integration))
+    return ready_seconds
 
 
 def verify_fixture(distribution, fixture, work, key):
@@ -184,6 +220,7 @@ def verify_fixture(distribution, fixture, work, key):
     shutil.copytree(fixture / "config", work / "config")
     shutil.copytree(fixture / "deployments", work / "deployments")
     shutil.copy2(fixture / "wallet.key", work / "wallet.key")
+    shutil.copy2(fixture / "provider-state.json", work / "provider-state.json")
     expected = json.loads((fixture / "inventory.json").read_text())
     scripts = json.loads((fixture / "scripts.json").read_text())
     with node(distribution, work) as base:
@@ -199,7 +236,13 @@ def verify_fixture(distribution, fixture, work, key):
         request(base, "/devnet/restore/ci-baseline", {})
         if inventory(base, expected) != expected:
             raise RuntimeError("Reset did not remove the script mint")
-    return {"readySeconds": ready_seconds, "totalSeconds": time.monotonic() - started,
+        integration = run_integration(work, base)
+        request(base, "/devnet/restore/ci-baseline", {})
+        if inventory(base, expected) != expected:
+            raise IntegrationFailure("Reset did not restore the active bridge deployment")
+        # Rerun against the reset state, not just the first cold restore.
+        repeated = run_integration(work, base, "integration-reset")
+    return {"integration": integration, "resetIntegration": repeated, "readySeconds": ready_seconds, "totalSeconds": time.monotonic() - started,
             "utxoCount": sum(map(len, expected.values())), "referenceScriptCount": len(scripts), "smoke": smoke}
 
 
@@ -213,13 +256,16 @@ def run(distribution, cache, output, force_fresh=False):
                 result["verification"] = verify_fixture(distribution, cache, output / "cached-restore", key)
                 result["cache"] = "hit"
                 return result
+            except IntegrationFailure:
+                raise
             except Exception as error:
                 result.update(cache="rebuild", cacheError=str(error))
                 print(f"Cached fixture failed verification, rebuilding: {error}", flush=True)
         candidate = output / "fixture"
         result["freshSeconds"] = build_fixture(distribution, output / "fresh", candidate, key, identity)
+        result["freshIntegration"] = json.loads((output / "fresh/integration-result.json").read_text())
         result["verification"] = verify_fixture(distribution, candidate, output / "fresh-restore", key)
-        # Publish only a fixture that has passed a cold restore and script smoke.
+        # Publish only a fixture that has passed a cold restore and bridge integration tests.
         if cache.exists():
             shutil.rmtree(cache)
         cache.parent.mkdir(parents=True, exist_ok=True)
