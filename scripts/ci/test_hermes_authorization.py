@@ -118,6 +118,43 @@ mod policy {
         with self.assertRaises(ValueError):
             helper.authorize(self.archive, self.evidence)
 
+    def test_dependency_download_retries_are_bounded(self):
+        workflow = (helper.ROOT / '.github/workflows/ci.yml').read_text()
+        step = workflow.split('      - name: Download Hermes fixture dependencies\n')[1].split('      - name: Execute signed client operations')[0]
+        script = step.split('        run: |\n')[1]
+        script = '\n'.join(line.removeprefix('          ') for line in script.splitlines())
+        bin_dir = self.root / 'bin'
+        bin_dir.mkdir()
+        go = bin_dir / 'go'
+        go.write_text('''#!/bin/bash
+set -eu
+[ "$1" = -C ] && [ "$3" = mod ] && [ "$4" = download ]
+module="${2##*-}"
+count_file="$COUNTERS/$module"
+count=0
+if [ -f "$count_file" ]; then read -r count < "$count_file"; fi
+count=$((count + 1))
+echo "$count" > "$count_file"
+[ "$count" -gt "$FAILURES" ]
+''')
+        go.chmod(0o755)
+        sleep = bin_dir / 'sleep'
+        sleep.write_text('#!/bin/bash\nexit 0\n')
+        sleep.chmod(0o755)
+        for failures in [0, 1, 2, 3]:
+            counters = self.root / f'counts-{failures}'
+            counters.mkdir()
+            result = subprocess.run(['/bin/bash', '-e', '-c', script],
+                                    env={**os.environ, 'PATH': str(bin_dir), 'COUNTERS': str(counters), 'FAILURES': str(failures)},
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1 if failures == 3 else 0, result.stderr)
+            self.assertEqual(int((counters / 'core').read_text()), min(failures + 1, 3))
+            for module in ['v8', 'v10']:
+                if failures < 3:
+                    self.assertEqual(int((counters / module).read_text()), failures + 1)
+                else:
+                    self.assertFalse((counters / module).exists())
+
     def test_workflow_overlaps_checks_and_preserves_final_gate(self):
         workflow = (helper.ROOT / '.github/workflows/ci.yml').read_text()
         checks, final = workflow.split('  hermes-checks:\n')[1].split('  hermes-relayer:\n')

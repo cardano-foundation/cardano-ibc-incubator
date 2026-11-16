@@ -1526,6 +1526,21 @@ jobs:
             cosmos/cardano-probabilistic-light-client-v8/go.sum
             cosmos/cardano-probabilistic-light-client-v10/go.sum
 
+      - name: Download Hermes fixture dependencies
+        run: |
+          for module in core v8 v10; do
+            for attempt in 1 2 3; do
+              if go -C "cosmos/cardano-probabilistic-light-client-$module" mod download; then
+                break
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "Go dependency download failed for $module after $attempt attempts."
+                exit 1
+              fi
+              sleep "$((attempt * 5))"
+            done
+          done
+
       - name: Execute signed client operations and export keeper events
         run: |
           fixture="${RUNNER_TEMP}/probabilistic-operation-events.json"
