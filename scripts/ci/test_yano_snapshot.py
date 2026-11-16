@@ -13,9 +13,21 @@ class SnapshotCacheTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name)
 
+    def test_fresh_and_restored_nodes_use_the_same_exact_genesis_time(self):
+        genesis = self.root / "config/network/devnet/shelley-genesis.json"
+        genesis.parent.mkdir(parents=True)
+        genesis.write_text(json.dumps({"systemStart": "2024-01-01T00:00:00Z", "epochLength": 1200}))
+        with patch.object(snapshot.time, "time", return_value=1794855351.573):
+            fresh = snapshot.configure_genesis(self.root)
+        self.assertEqual(fresh, 1794855351000)
+        self.assertEqual(json.loads(genesis.read_text())["epochLength"], 18000)
+        (self.root / "chainstate").mkdir()
+        with patch.object(snapshot.time, "time", return_value=1794855999.999):
+            self.assertEqual(snapshot.configure_genesis(self.root), fresh)
+
     def test_identity_changes_with_blueprint_runtime_and_deployment_inputs(self):
         files = ["cardano/onchain/plutus.json", "cardano/offchain/src/deployment.ts",
-                 "scripts/ci/yano-deployment.ts", "scripts/ci/yano_snapshot.py",
+                 "scripts/ci/yano-deployment.ts", "scripts/ci/yano-shutdown.ts", "scripts/ci/yano_snapshot.py",
                  "distribution/yano", "distribution/config/genesis.json"]
         for name in files:
             path = self.root / name
@@ -42,7 +54,7 @@ class SnapshotCacheTests(unittest.TestCase):
     def test_corrupted_or_incomplete_fixture_is_rejected(self):
         fixture = self.root / "fixture"
         for name in ["checkpoint/CURRENT", "config/network/devnet/shelley-genesis.json",
-                     "deployments/handler.json", "wallet.key", "inventory.json", "scripts.json"]:
+                     "deployments/handler.json", "wallet.key", "inventory.json", "scripts.json", "provider-state.json"]:
             path = fixture / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("original")
@@ -69,6 +81,17 @@ class SnapshotCacheTests(unittest.TestCase):
         self.assertFalse(result["saved"])
         build.assert_not_called()
 
+    def test_integration_failure_does_not_rebuild_or_publish(self):
+        cache = self.root / "cache"
+        cache.mkdir()
+        with patch.object(snapshot, "cache_identity", return_value=("key", {})), \
+                patch.object(snapshot, "verify_fixture", side_effect=snapshot.IntegrationFailure("test failed")), \
+                patch.object(snapshot, "build_fixture") as build:
+            with self.assertRaises(snapshot.IntegrationFailure):
+                snapshot.run(self.root, cache, self.root / "output")
+        build.assert_not_called()
+        self.assertFalse(json.loads((self.root / "output/result.json").read_text())["saved"])
+
     def test_invalid_cache_rebuilds_but_failed_candidate_is_not_published(self):
         cache = self.root / "cache"
         cache.mkdir()
@@ -77,6 +100,8 @@ class SnapshotCacheTests(unittest.TestCase):
         def build(distribution, work, fixture, key, identity):
             fixture.mkdir()
             (fixture / "marker").write_text("new")
+            (work.parent / "fresh").mkdir(exist_ok=True)
+            (work.parent / "fresh/integration-result.json").write_text('{"passed": true}')
             return 1.0
 
         with patch.object(snapshot, "cache_identity", return_value=("key", {})), \
@@ -96,6 +121,8 @@ class SnapshotCacheTests(unittest.TestCase):
         def build(distribution, work, fixture, key, identity):
             fixture.mkdir()
             (fixture / "marker").write_text("verified")
+            (work.parent / "fresh").mkdir(exist_ok=True)
+            (work.parent / "fresh/integration-result.json").write_text('{"passed": true}')
             return 1.0
 
         with patch.object(snapshot, "cache_identity", return_value=("key", {})), \

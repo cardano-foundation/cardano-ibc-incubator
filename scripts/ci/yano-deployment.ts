@@ -33,8 +33,20 @@ provider.submitTx = async (tx) => {
   }
   return result;
 };
-const knownAddresses = new Set<string>();
-const knownScripts = new Map<string, any>();
+let metadata: { addresses: string[]; scripts: [string, any][] } = {
+  addresses: [],
+  scripts: [],
+};
+try {
+  metadata = JSON.parse(await Deno.readTextFile("provider-state.json"));
+} catch (error) {
+  if (
+    !(error instanceof Deno.errors.NotFound) ||
+    Deno.env.get("YANO_ACTION") !== "deploy"
+  ) throw error;
+}
+const knownAddresses = new Set<string>(metadata.addresses);
+const knownScripts = new Map<string, any>(metadata.scripts);
 if (Deno.env.get("YANO_QUERY_ADAPTER") === "1") {
   const submit = provider.submitTx.bind(provider);
   provider.submitTx = async (cbor) => {
@@ -56,6 +68,13 @@ if (Deno.env.get("YANO_QUERY_ADAPTER") === "1") {
     await Deno.writeTextFile(
       "known-addresses.json",
       JSON.stringify([...knownAddresses]),
+    );
+    await Deno.writeTextFile(
+      "provider-state.json",
+      JSON.stringify({
+        addresses: [...knownAddresses],
+        scripts: [...knownScripts],
+      }),
     );
     return await submit(cbor);
   };
@@ -171,6 +190,11 @@ try {
 lucid.selectWallet.fromPrivateKey(key);
 const address = await lucid.wallet().address();
 await Deno.writeTextFile("address.txt", address);
+if (Deno.env.get("YANO_ACTION") === "integration") {
+  const { testShutdown } = await import("./yano-shutdown.ts");
+  await testShutdown(lucid, base, key);
+  Deno.exit(0);
+}
 if (Deno.env.get("YANO_ACTION") === "smoke") {
   const started = performance.now();
   const manifest = JSON.parse(

@@ -1,4 +1,4 @@
-name: Yano deployment snapshot
+name: Yano bridge integration
 
 on:
   pull_request:
@@ -90,7 +90,7 @@ jobs:
           path: .deployment-smoke/yano-fixture
           key: yano-fixture-${{ steps.identity.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: yano-fixture-${{ steps.identity.outputs.key }}-
-      - name: Restore or deploy, then verify the snapshot
+      - name: Run bridge integration against the deployment snapshot
         id: verify
         shell: bash
         run: |
@@ -133,4 +133,6 @@ jobs:
             .deployment-smoke/yano-ci/**/node.log
             .deployment-smoke/yano-ci/**/deploy.log
             .deployment-smoke/yano-ci/**/smoke.log
+            .deployment-smoke/yano-ci/**/integration*.log
+            .deployment-smoke/yano-ci/**/integration-result.json
             .deployment-smoke/yano-ci/**/timing.json
