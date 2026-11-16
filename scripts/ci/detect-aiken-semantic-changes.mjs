@@ -104,6 +104,30 @@ export function classifyCiWorkflowChange(before, after) {
   return { relevant, fuzz: false };
 }
 
+// These suites share compiled validators, transaction builders and fixtures.
+// Keep directory-level inputs conservative until narrower dependencies are proven.
+export function classifyCardanoSuiteChanges(files) {
+  const shared = files.some((path) => [
+    'cardano/onchain/',
+    'cardano/offchain/',
+    'cardano/gateway/',
+    'packages/',
+    'proto-types/',
+    'tests/',
+    'chains/cardano/config/',
+    '.github/',
+  ].some((prefix) => path.startsWith(prefix)) ||
+    (path.startsWith('scripts/ci/') && !path.startsWith('scripts/ci/aiken-contract-migration/')) ||
+    ['deno.json', 'deno.jsonc', 'deno.lock', 'package.json', 'package-lock.json',
+      '.npmrc', '.tool-versions', '.gitmodules'].includes(path));
+  return {
+    offchainChanged: shared,
+    migrationChanged: shared || files.some((path) =>
+      path.startsWith('scripts/ci/aiken-contract-migration/')),
+    fundsChanged: shared,
+  };
+}
+
 function runGit(repoRoot, args, encoding = 'utf8') {
   return execFileSync('git', args, {
     cwd: repoRoot,
@@ -296,6 +320,7 @@ export function classifyAikenChanges(repoRoot, baseRef, headRef) {
   }
 
   return {
+    ...classifyCardanoSuiteChanges(files),
     aikenFilesChanged,
     aikenRelevantChanged: reasons.length > 0,
     aikenFuzzChanged,
