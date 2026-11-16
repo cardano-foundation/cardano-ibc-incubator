@@ -52,6 +52,9 @@ jobs:
       aiken_pr_changed: ${{ steps.detect.outputs.aiken_pr_changed }}
       hermes_changed: ${{ steps.hermes.outputs.changed }}
       aiken_fuzz_changed: ${{ steps.detect.outputs.aiken_fuzz_changed }}
+      offchain_changed: ${{ steps.detect.outputs.offchain_changed }}
+      migration_changed: ${{ steps.detect.outputs.migration_changed }}
+      funds_changed: ${{ steps.detect.outputs.funds_changed }}
       property_matrix: ${{ steps.properties.outputs.matrix }}
 
     steps:
@@ -117,6 +120,9 @@ jobs:
               echo "aiken_files_changed=$2"
               echo "aiken_pr_changed=$3"
               echo "aiken_fuzz_changed=${4:-true}"
+              echo "offchain_changed=${5:-true}"
+              echo "migration_changed=${6:-true}"
+              echo "funds_changed=${7:-true}"
             } >> "$GITHUB_OUTPUT"
           }
 
@@ -126,6 +132,9 @@ jobs:
               (.aikenFilesChanged | type == "boolean") and
               (.aikenRelevantChanged | type == "boolean") and
               (.aikenFuzzChanged | type == "boolean") and
+              (.offchainChanged | type == "boolean") and
+              (.migrationChanged | type == "boolean") and
+              (.fundsChanged | type == "boolean") and
               (.changedFiles | type == "array" and all(.[]; type == "string")) and
               (.reasons | type == "array" and all(.[]; type == "string"))
             ' >/dev/null <<<"$1"
@@ -291,7 +300,12 @@ jobs:
               fi
           fi
 
-          set_outputs "${aiken_changed}" "${aiken_files_changed}" "${aiken_pr_changed}" "${aiken_fuzz_changed}"
+          # Suite flags always describe the full PR, even on synchronize events.
+          # A later unrelated commit must not hide an earlier suite input change.
+          set_outputs "${aiken_changed}" "${aiken_files_changed}" "${aiken_pr_changed}" "${aiken_fuzz_changed}" \
+            "$(jq -r '.offchainChanged' <<<"${full_pr}")" \
+            "$(jq -r '.migrationChanged' <<<"${full_pr}")" \
+            "$(jq -r '.fundsChanged' <<<"${full_pr}")"
           if [ "${aiken_changed}" = "true" ]; then
             echo "Aiken-relevant changes detected."
           else
@@ -637,7 +651,7 @@ jobs:
 
   deno-offchain:
     name: Cardano Offchain Deno (${{ matrix.suite }})
-    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && needs.aiken-changes.outputs.offchain_changed == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
     needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
     # The channel fuzz suite alone takes about 21 minutes on a hosted runner.
@@ -732,7 +746,7 @@ jobs:
 
   migration-assurance:
     name: Cardano Migration Assurance
-    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && needs.aiken-changes.outputs.migration_changed == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
     needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -795,7 +809,7 @@ jobs:
 
   migration-packet-model:
     name: Cardano Migration Packet Model
-    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && needs.aiken-changes.outputs.migration_changed == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
     needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -827,7 +841,7 @@ jobs:
 
   deno-funds:
     name: Cardano Compiled Funds (${{ matrix.suite }})
-    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && needs.aiken-changes.outputs.funds_changed == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
     needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -1032,6 +1046,9 @@ jobs:
           AIKEN_FILES_CHANGED: ${{ needs.aiken-changes.outputs.aiken_files_changed }}
           AIKEN_PR_CHANGED: ${{ needs.aiken-changes.outputs.aiken_pr_changed }}
           AIKEN_FUZZ_CHANGED: ${{ needs.aiken-changes.outputs.aiken_fuzz_changed }}
+          OFFCHAIN_CHANGED: ${{ needs.aiken-changes.outputs.offchain_changed }}
+          MIGRATION_CHANGED: ${{ needs.aiken-changes.outputs.migration_changed }}
+          FUNDS_CHANGED: ${{ needs.aiken-changes.outputs.funds_changed }}
           RUN_JOBS: ${{ needs.docs-update.outputs.run_jobs }}
           NEEDS_JSON: ${{ toJson(needs) }}
         run: |
@@ -1054,6 +1071,9 @@ jobs:
             'AIKEN_FILES_CHANGED',
             'AIKEN_PR_CHANGED',
             'AIKEN_FUZZ_CHANGED',
+            'OFFCHAIN_CHANGED',
+            'MIGRATION_CHANGED',
+            'FUNDS_CHANGED',
           ]) {
             if (!['true', 'false'].includes(process.env[name])) {
               console.error(`${name} has invalid value ${JSON.stringify(process.env[name])}.`);
@@ -1075,7 +1095,11 @@ jobs:
           if (process.env.AIKEN_FUZZ_CHANGED === 'true') {
             required.push('aiken-static', 'aiken-smoke', 'aiken-fuzz', 'aiken-mutations');
           }
-          required.push('deno-offchain', 'migration-assurance', 'migration-packet-model', 'deno-funds');
+          if (process.env.OFFCHAIN_CHANGED === 'true') required.push('deno-offchain');
+          if (process.env.MIGRATION_CHANGED === 'true') {
+            required.push('migration-assurance', 'migration-packet-model');
+          }
+          if (process.env.FUNDS_CHANGED === 'true') required.push('deno-funds');
           const failed = required
             .filter((name) => needs[name]?.result !== 'success')
             .map((name) => [name, needs[name]])

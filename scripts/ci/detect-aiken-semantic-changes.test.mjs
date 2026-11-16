@@ -7,6 +7,7 @@ import test from 'node:test';
 import {
   aikenSemanticSignature,
   classifyAikenChanges,
+  classifyCardanoSuiteChanges,
   classifyCiWorkflowChange,
 } from './detect-aiken-semantic-changes.mjs';
 
@@ -85,13 +86,16 @@ test('aggregate requires budgets without fuzz and rejects failed required jobs',
   const aggregate = workflow.slice(workflow.indexOf('  aiken:\n'), workflow.indexOf('  tx-budgets:\n'));
   const script = aggregate.match(/node - <<'NODE'\n([\s\S]*?)\n          NODE/)[1]
     .replace(/^          /gm, '');
-  const run = (fuzz, overrides = {}, changed = 'true', runJobs = 'true') => {
+  const run = (fuzz, overrides = {}, changed = 'true', runJobs = 'true', flags = {}) => {
     const needs = Object.fromEntries([
       'docs-update', 'aiken-changes', 'aiken-static', 'generated-artifacts', 'tx-budgets',
       'aiken-smoke', 'aiken-fuzz', 'aiken-mutations', 'deno-offchain',
       'migration-assurance', 'migration-packet-model', 'deno-funds',
     ].map((name) => [name, { result: !fuzz && ['aiken-smoke', 'aiken-fuzz', 'aiken-mutations'].includes(name) ? 'skipped' : 'success' }]));
-    for (const [name, result] of Object.entries(overrides)) needs[name] = { result };
+    for (const [name, result] of Object.entries(overrides)) {
+      if (result === null) delete needs[name];
+      else needs[name] = { result };
+    }
     return execFileSync(process.execPath, ['-e', script], {
       env: {
         ...process.env,
@@ -100,11 +104,37 @@ test('aggregate requires budgets without fuzz and rejects failed required jobs',
         AIKEN_FILES_CHANGED: 'false',
         AIKEN_PR_CHANGED: changed,
         AIKEN_FUZZ_CHANGED: String(fuzz),
+        OFFCHAIN_CHANGED: 'true',
+        MIGRATION_CHANGED: 'true',
+        FUNDS_CHANGED: 'true',
+        ...flags,
         NEEDS_JSON: JSON.stringify(needs),
       },
       stdio: 'pipe',
     });
   };
+  const suites = {
+    OFFCHAIN_CHANGED: ['deno-offchain'],
+    MIGRATION_CHANGED: ['migration-assurance', 'migration-packet-model'],
+    FUNDS_CHANGED: ['deno-funds'],
+  };
+  const disabled = Object.fromEntries(Object.keys(suites).map((flag) => [flag, 'false']));
+  const skipped = Object.fromEntries(Object.values(suites).flat().map((job) => [job, 'skipped']));
+  assert.doesNotThrow(() => run(false, skipped, 'false', 'true', disabled));
+  for (const [flag, jobs] of Object.entries(suites)) {
+    for (const value of ['', 'invalid']) {
+      assert.throws(() => run(false, skipped, 'false', 'true', { ...disabled, [flag]: value }));
+    }
+    const requiredJobs = Object.fromEntries(jobs.map((job) => [job, 'success']));
+    const enabled = { ...disabled, [flag]: 'true' };
+    assert.doesNotThrow(() => run(false, { ...skipped, ...requiredJobs }, 'false', 'true', enabled));
+    for (const job of jobs) {
+      for (const result of ['failure', 'cancelled', 'skipped', null]) {
+        assert.throws(() => run(false, { ...skipped, ...requiredJobs, [job]: result }, 'false', 'true', enabled));
+      }
+    }
+  }
+  assert.throws(() => run(false, { ...skipped, 'aiken-changes': 'failure' }, 'false', 'true', disabled));
   assert.doesNotThrow(() => run(false));
   assert.throws(() => run(false, { 'docs-update': 'failure' }));
   assert.throws(() => run(false, {}, 'true', 'invalid'));
@@ -253,6 +283,9 @@ const sourcePath = join(sourceDir, 'example.ak');
       encoding: 'utf8',
     }).trim();
     assert.deepEqual(classifyAikenChanges(repo, base, comments), {
+      offchainChanged: true,
+      migrationChanged: true,
+      fundsChanged: true,
       aikenFilesChanged: true,
       aikenRelevantChanged: false,
       aikenFuzzChanged: false,
@@ -480,6 +513,111 @@ test('reruns the budget gate when only applied deployment inputs change', () => 
       assert.equal(result.aikenFilesChanged, false, path);
       assert.equal(result.aikenRelevantChanged, true, path);
       assert.equal(result.aikenFuzzChanged, false, path);
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+
+test('Cardano suites cover shared inputs and migration-only tooling', () => {
+  const all = { offchainChanged: true, migrationChanged: true, fundsChanged: true };
+  const none = { offchainChanged: false, migrationChanged: false, fundsChanged: false };
+  for (const path of [
+    'cardano/onchain/aiken.lock', 'cardano/onchain/validators/channel.ak',
+    'cardano/offchain/deno.lock', 'cardano/offchain/src/migration.test.ts',
+    'packages/cardano-ibc-tx-builder-runtime/src/migration.ts',
+    'packages/cardano-ibc-tx-builder/src/packet-lanes.ts',
+    'proto-types/protos/ibc.proto',
+    'chains/cardano/config/protocol-parameters.json',
+    'tests/ibc-state-commitment/collision-buckets.json',
+    'cardano/gateway/src/scripts/test/fixtures/tendermint-update-capacity/normalized.json',
+    '.github/workflows/ci.yml', '.github/actions/setup/action.yml',
+    'scripts/ci/check-aiken-fuzz-coverage.mjs',
+    'scripts/ci/detect-aiken-semantic-changes.mjs',
+    'scripts/ci/detect-aiken-semantic-changes.test.mjs',
+    'deno.json', 'deno.lock', '.tool-versions',
+  ]) assert.deepEqual(classifyCardanoSuiteChanges([path]), all, path);
+  for (const path of [
+    'cosmos/cardano-probabilistic-light-client-core/go.mod',
+    'cosmos/cardano-probabilistic-light-client-v8/go.sum',
+    'cosmos/cardano-probabilistic-light-client-v10/go.mod',
+    'relayer', 'docs/development.md', 'README.md',
+  ]) assert.deepEqual(classifyCardanoSuiteChanges([path]), none, path);
+  assert.deepEqual(classifyCardanoSuiteChanges([]), none);
+  for (const path of [
+    'scripts/ci/aiken-contract-migration/build-migration-successor.py',
+    'scripts/ci/aiken-contract-migration/aiken-migration-required-labels.json',
+  ]) assert.deepEqual(classifyCardanoSuiteChanges([path]), { ...none, migrationChanged: true });
+});
+
+test('workflow wires each suite condition and aggregate to the same output', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  for (const [job, flag] of [
+    ['deno-offchain', 'offchain'], ['migration-assurance', 'migration'],
+    ['migration-packet-model', 'migration'], ['deno-funds', 'funds'],
+  ]) {
+    const block = workflow.split(`  ${job}:\n`)[1].split('\n    needs:')[0];
+    assert.ok(block.includes(`needs.aiken-changes.outputs.${flag}_changed == 'true'`), job);
+    assert.ok(workflow.includes(`${flag}_changed: \${{ steps.detect.outputs.${flag}_changed }}`));
+    assert.ok(workflow.includes(`${flag.toUpperCase()}_CHANGED: \${{ needs.aiken-changes.outputs.${flag}_changed }}`));
+  }
+});
+
+test('workflow detector uses full PR flags and runs suites when classification is unavailable', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const detector = workflow.split('      - name: Detect Aiken-relevant changes\n')[1]
+    .split('\n  docs-branch-guard:')[0].split('        run: |\n')[1]
+    .replace(/^          /gm, '');
+  const repo = mkdtempSync(join(tmpdir(), 'cardano-workflow-detector-'));
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+  const commit = (path, content) => {
+    mkdirSync(join(repo, path, '..'), { recursive: true });
+    writeFileSync(join(repo, path), content);
+    git('add', '.');
+    git('commit', '-qm', path);
+    return git('rev-parse', 'HEAD');
+  };
+  try {
+    git('init', '-q');
+    git('config', 'user.email', 'ci@example.com');
+    git('config', 'user.name', 'CI');
+    const base = commit('scripts/ci/detect-aiken-semantic-changes.mjs',
+      readFileSync(new URL('./detect-aiken-semantic-changes.mjs', import.meta.url), 'utf8'));
+    const go = commit('cosmos/cardano-probabilistic-light-client-core/go.mod', 'module test\n');
+    const migration = commit('scripts/ci/aiken-contract-migration/build-migration-successor.py', '# change\n');
+    const updated = commit('cosmos/cardano-probabilistic-light-client-core/go.sum', '// update\n');
+    const run = (event, head = updated, overrides = {}) => {
+      const output = join(repo, 'outputs');
+      writeFileSync(output, '');
+      execFileSync('bash', ['-e', '-o', 'pipefail', '-c', detector.replaceAll('${{ github.event_name }}', event)], {
+        cwd: repo,
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: output,
+          EVENT_ACTION: 'synchronize',
+          EVENT_BEFORE_SHA: migration,
+          EVENT_AFTER_SHA: head,
+          PR_BASE_SHA: base,
+          PR_HEAD_SHA: head,
+          ...overrides,
+        },
+        stdio: 'pipe',
+      });
+      const result = Object.fromEntries(readFileSync(output, 'utf8').trim().split('\n').map((line) => line.split('=')));
+      return ['offchain_changed', 'migration_changed', 'funds_changed'].map((flag) => result[flag]);
+    };
+    assert.deepEqual(run('pull_request', go, { EVENT_ACTION: 'opened' }), ['false', 'false', 'false']);
+    assert.deepEqual(run('pull_request'), ['false', 'true', 'false']);
+    for (const event of ['push', 'workflow_dispatch']) {
+      assert.deepEqual(run(event, go), ['true', 'true', 'true']);
+    }
+    assert.deepEqual(run('pull_request', updated, { PR_BASE_SHA: 'missing' }), ['true', 'true', 'true']);
+    assert.deepEqual(run('pull_request', updated, { EVENT_BEFORE_SHA: 'missing' }), ['true', 'true', 'true']);
+    // Both a failing detector and an incomplete JSON result must enable all suites.
+    for (const source of ['process.exit(1)', 'console.log(JSON.stringify({ aikenFilesChanged: false }))']) {
+      writeFileSync(join(repo, 'scripts/ci/detect-aiken-semantic-changes.mjs'), source);
+      assert.deepEqual(run('pull_request'), ['true', 'true', 'true']);
     }
   } finally {
     rmSync(repo, { recursive: true, force: true });
