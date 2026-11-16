@@ -745,6 +745,66 @@ jobs:
         working-directory: cardano/offchain
         run: deno task test:recovery-escrow
 
+  migration-guards:
+    name: Cardano Migration Guards (${{ matrix.shard }})
+    if: ${{ needs.docs-update.outputs.run_jobs == 'true' && needs.aiken-changes.outputs.migration_changed == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: [docs-update, aiken-changes]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.24
+      - name: Test guard sharding and report validation
+        run: python3 -m unittest discover -s scripts/ci/aiken-contract-migration -p test_migration_guards.py
+      - name: Verify full-validator migration guard controls
+        run: |
+          python3 scripts/ci/aiken-contract-migration/test-migration-guards.py \
+            --shard-index ${{ matrix.shard }} --shard-count 5 \
+            --report migration-guard-shard-${{ matrix.shard }}.json \
+            | tee migration-guard-shard-${{ matrix.shard }}.log
+      - name: Upload guard shard evidence
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: migration-guard-shard-${{ matrix.shard }}
+          path: |
+            migration-guard-shard-${{ matrix.shard }}.json
+            migration-guard-shard-${{ matrix.shard }}.log
+
+  migration-guard-report:
+    name: Cardano Migration Guard Report
+    if: ${{ always() && needs.docs-update.outputs.run_jobs == 'true' && needs.aiken-changes.outputs.migration_changed == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: [docs-update, aiken-changes, migration-guards]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every guard shard to succeed
+        env:
+          SHARD_RESULT: ${{ needs.migration-guards.result }}
+        run: test "$SHARD_RESULT" = success
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: migration-guard-shard-*
+          path: migration-guard-shards
+          merge-multiple: true
+      - name: Verify complete guard coverage and matching sources
+        run: |
+          python3 scripts/ci/aiken-contract-migration/test-migration-guards.py \
+            --merge migration-guard-shards/*.json --shard-count 5 \
+            --report migration-guard-controls.json
+      - name: Upload combined guard evidence
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: migration-guard-controls
+          path: migration-guard-controls.json
+
   migration-assurance:
     name: Cardano Migration Assurance
     if: ${{ needs.docs-update.outputs.run_jobs == 'true' && needs.aiken-changes.outputs.migration_changed == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
@@ -782,9 +842,6 @@ jobs:
           MIGRATION_SUCCESSOR_V3_BLUEPRINT: ${{ runner.temp }}/migration-v3/plutus.json
         run: deno task test:migration
 
-      - name: Verify full-validator migration guard controls
-        run: python3 scripts/ci/aiken-contract-migration/test-migration-guards.py --report migration-guard-controls.json
-
       - name: Measure compiled migration steps at retained protocol-11 parameters
         run: >-
           deno run --allow-read --allow-env --allow-write
@@ -798,13 +855,12 @@ jobs:
           --config cardano/offchain/deno.json scripts/ci/aiken-contract-migration/measure-migration-operator.ts
           migration-operator-scaling.json
 
-      - name: Upload migration guard evidence
+      - name: Upload migration scaling evidence
         if: always()
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: migration-guard-controls
+          name: migration-scaling
           path: |
-            migration-guard-controls.json
             migration-scaling.json
             migration-operator-scaling.json
 
@@ -1036,7 +1092,7 @@ jobs:
     name: Cardano Onchain Aiken
     if: ${{ always() && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
     needs:
-      [docs-update, aiken-changes, aiken-static, aiken-smoke, aiken-fuzz, tx-budgets, generated-artifacts, deno-offchain, migration-assurance, migration-packet-model, deno-funds, aiken-mutations]
+      [docs-update, aiken-changes, aiken-static, aiken-smoke, aiken-fuzz, tx-budgets, generated-artifacts, deno-offchain, migration-assurance, migration-guard-report, migration-packet-model, deno-funds, aiken-mutations]
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -1098,7 +1154,7 @@ jobs:
           }
           if (process.env.OFFCHAIN_CHANGED === 'true') required.push('deno-offchain');
           if (process.env.MIGRATION_CHANGED === 'true') {
-            required.push('migration-assurance', 'migration-packet-model');
+            required.push('migration-assurance', 'migration-guard-report', 'migration-packet-model');
           }
           if (process.env.FUNDS_CHANGED === 'true') required.push('deno-funds');
           const failed = required

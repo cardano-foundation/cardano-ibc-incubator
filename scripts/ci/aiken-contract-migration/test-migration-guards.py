@@ -14,6 +14,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / 'cardano/onchain'
@@ -91,14 +92,61 @@ def replace_once(text, old, new):
     if text.count(old) != 1: raise RuntimeError(f'Fixture/source changed; expected one exact match: {old!r}')
     return text.replace(old, new)
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--report', type=Path, required=True)
-    args = parser.parse_args()
+SCOPE = 'Production Aiken execution; per-case scope distinguishes full validators from the Merkle function. Not a ledger-balanced populated migration rehearsal.'
+COMMAND = ['aiken', 'check', '--seed', '462', '-m', 'mutation_control_', '--max-success', '1']
+
+
+def select_cases(index, count):
+    if not 1 <= count <= len(CASES) or not 0 <= index < count:
+        raise ValueError('Shard count must be between 1 and the case count, with a zero-based index below the count')
+    return CASES[index::count]
+
+
+def runner_digest():
+    return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+
+
+def validate_results(results, cases):
+    expected = {(case[0], mutant): case for case in cases for mutant in [False, True]}
+    seen = set()
+    for result in results:
+        if type(result.get('mutant')) is not bool:
+            raise ValueError('Missing or invalid mutant flag')
+        key = (result.get('case'), result['mutant'])
+        if key not in expected or key in seen:
+            raise ValueError(f'Unexpected or duplicate case result: {key}')
+        seen.add(key)
+        case = expected[key]
+        label, file, guard, positive, attack, *_ = case
+        mutant = result['mutant']
+        scope = 'production Merkle function' if label == 'merkle-update-sibling-size' else 'full Aiken validator'
+        if (result.get('guardFile') != file or
+                result.get('removedGuard') != (guard if mutant else None) or
+                result.get('executionScope') != scope or
+                result.get('attackAccepted') is not mutant or
+                result.get('positiveControlAccepted') is not True or
+                result.get('positiveFixture') != positive or
+                result.get('adversarialFixture') != attack or
+                result.get('command') != COMMAND):
+            raise ValueError(f'Incorrect guard or fixture metadata: {key}')
+        report = result['aiken']
+        tests = [test for module in report['modules'] for test in module['tests']]
+        if (report['summary']['total'] != 2 or report['summary']['passed'] != 2 or
+                sorted(test['title'] for test in tests) != ['mutation_control_attack', 'mutation_control_valid'] or
+                any(test['status'] != 'pass' for test in tests)):
+            raise ValueError(f'Incomplete or unsuccessful fixtures: {key}')
+    if seen != set(expected):
+        raise ValueError(f'Missing case results: {sorted(set(expected) - seen)}')
+
+
+def run_shard(index, count):
+    cases = select_cases(index, count)
     original = digest()
+    compiler = subprocess.check_output(['aiken', '--version'], text=True).strip()
+    started = time.monotonic()
     reports = []
     with tempfile.TemporaryDirectory(prefix='cardano-ibc-migration-guards-') as temporary:
-        for case in CASES:
+        for case in cases:
             label, file, guard, positive, attack, *fixture_file = case
             for mutant in [False, True]:
                 directory = Path(temporary) / f'{label}-{mutant}'
@@ -111,18 +159,68 @@ def main():
                 if mutant:
                     target = directory / file
                     target.write_text(replace_once(target.read_text(), guard, fixture_file[1] if len(fixture_file) > 1 else ''))
-                command = ['aiken', 'check', '--seed', '462', '-m', 'mutation_control_', '--max-success', '1']
-                run = subprocess.run(command, cwd=directory, text=True, capture_output=True)
+                invocation_started = time.monotonic()
+                run = subprocess.run(COMMAND, cwd=directory, text=True, capture_output=True)
                 try: report = json.loads(run.stdout)
                 except Exception as error: raise RuntimeError(f'{label}: invalid Aiken report\n{run.stderr}\n{run.stdout}') from error
                 if run.returncode or report['summary']['total'] != 2 or report['summary']['passed'] != 2:
                     raise RuntimeError(f'{label} mutant={mutant}: expected both fixtures to satisfy their declared outcomes\n{run.stderr}\n{run.stdout}')
                 reports.append({'case':label, 'mutant':mutant, 'guardFile':file, 'removedGuard':guard if mutant else None,
                                 'executionScope':'production Merkle function' if label == 'merkle-update-sibling-size' else 'full Aiken validator',
-                                'attackAccepted':mutant, 'positiveControlAccepted':True, 'command':command, 'aiken':report})
+                                'attackAccepted':mutant, 'positiveControlAccepted':True,
+                                'positiveFixture':positive, 'adversarialFixture':attack,
+                                'command':COMMAND, 'aiken':report,
+                                'seconds':time.monotonic() - invocation_started})
                 print(f'{label}: valid control accepted; attack {"accepted with guard removed" if mutant else "rejected by production"}',flush=True)
     if digest() != original: raise RuntimeError('Production source changed during the guard-control run')
+    validate_results(reports, cases)
+    return {'sourceSha256':original, 'runnerSha256':runner_digest(), 'compilerVersion':compiler,
+            'scope':SCOPE, 'shardIndex':index, 'shardCount':count,
+            'seconds':time.monotonic() - started, 'results':reports}
+
+
+def merge_reports(paths, count):
+    select_cases(0, count)
+    if len(paths) != count:
+        raise ValueError(f'Expected {count} shard reports, got {len(paths)}')
+    original = digest()
+    runner = runner_digest()
+    shards = {}
+    compiler = None
+    for path in paths:
+        report = json.loads(path.read_text())
+        index = report.get('shardIndex')
+        if (type(index) is not int or type(report.get('shardCount')) is not int or
+                report['shardCount'] != count or not 0 <= index < count or index in shards):
+            raise ValueError(f'Invalid or duplicate shard: {path}')
+        if report.get('sourceSha256') != original or report.get('runnerSha256') != runner:
+            raise ValueError(f'Shard was not run against the current sources and runner: {path}')
+        version = report.get('compilerVersion')
+        if not isinstance(version, str) or not version or (compiler is not None and compiler != version):
+            raise ValueError(f'Missing or mismatched Aiken version: {path}')
+        compiler = version
+        validate_results(report['results'], select_cases(index, count))
+        shards[index] = report
+    results = [result for index in sorted(shards) for result in shards[index]['results']]
+    validate_results(results, CASES)
+    return {'sourceSha256':original, 'runnerSha256':runner, 'compilerVersion':compiler,
+            'scope':SCOPE, 'shardCount':count, 'results':results,
+            'shardSeconds':{str(index):shards[index]['seconds'] for index in sorted(shards)}}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--report', type=Path, required=True)
+    parser.add_argument('--shard-index', type=int)
+    parser.add_argument('--shard-count', type=int, default=1)
+    parser.add_argument('--merge', type=Path, nargs='+', help='Validate and combine completed shard reports')
+    args = parser.parse_args()
+    if args.merge and args.shard_index is not None:
+        parser.error('--merge cannot be combined with --shard-index')
+    report = merge_reports(args.merge, args.shard_count) if args.merge else run_shard(
+        args.shard_index if args.shard_index is not None else 0, args.shard_count)
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps({'sourceSha256':original, 'scope':'Production Aiken execution; per-case scope distinguishes full validators from the Merkle function. Not a ledger-balanced populated migration rehearsal.', 'results':reports},indent=2)+'\n')
+    args.report.write_text(json.dumps(report, indent=2)+'\n')
+
 
 if __name__ == '__main__': main()
