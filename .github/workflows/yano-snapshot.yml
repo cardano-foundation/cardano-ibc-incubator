@@ -1,0 +1,136 @@
+name: Yano deployment snapshot
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/yano-snapshot.yml
+      - scripts/ci/yano*
+      - scripts/ci/test_yano_snapshot.py
+      - cardano/onchain/**
+      - cardano/offchain/**
+      - packages/**
+      - proto-types/**
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/yano-snapshot.yml
+      - scripts/ci/yano*
+      - scripts/ci/test_yano_snapshot.py
+      - cardano/onchain/**
+      - cardano/offchain/**
+      - packages/**
+      - proto-types/**
+  schedule:
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      force_fresh:
+        description: Deploy fresh even when a matching snapshot exists
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yano-snapshot-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    env:
+      YANO_VERSION: 0.1.0-pre19
+      YANO_SHA256: 3720ddde467fad711a4e8508e4726819e739c601d669531d0bbd6edcfb3ddaa1
+      YANO_DISTRIBUTION: ${{ github.workspace }}/.deployment-smoke/yano-distribution/yano-native-0.1.0-pre19-linux-arm64
+      FORCE_FRESH: ${{ github.event_name == 'schedule' || inputs.force_fresh == true }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.6
+      - uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.24
+      - name: Test snapshot cache handling
+        run: python3 -m unittest discover -s scripts/ci -p test_yano_snapshot.py
+      - name: Compile current contracts
+        working-directory: cardano/onchain
+        run: aiken build --deny --trace-level silent
+      - name: Check deployment adapter
+        run: deno check --frozen --config cardano/offchain/deno.json scripts/ci/yano-deployment.ts
+      - uses: actions/cache@v6
+        with:
+          path: .deployment-smoke/yano-download
+          key: yano-linux-arm64-${{ env.YANO_SHA256 }}
+      - name: Download and verify the pinned Yano binary
+        shell: bash
+        run: |
+          mkdir -p .deployment-smoke/yano-download .deployment-smoke/yano-distribution
+          archive=".deployment-smoke/yano-download/yano-native-${YANO_VERSION}-linux-arm64.zip"
+          if [ ! -f "$archive" ]; then
+            curl --fail --location --retry 3 \
+              "https://github.com/bloxbean/yano/releases/download/v${YANO_VERSION}/yano-native-${YANO_VERSION}-linux-arm64.zip" \
+              --output "$archive"
+          fi
+          echo "$YANO_SHA256  $archive" | sha256sum --check
+          unzip -q "$archive" -d .deployment-smoke/yano-distribution
+          chmod +x "$YANO_DISTRIBUTION/yano"
+      - name: Compute snapshot inputs
+        id: identity
+        run: |
+          key=$(python3 scripts/ci/yano_snapshot.py --distribution "$YANO_DISTRIBUTION" --print-key)
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v6
+        with:
+          path: .deployment-smoke/yano-fixture
+          key: yano-fixture-${{ steps.identity.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: yano-fixture-${{ steps.identity.outputs.key }}-
+      - name: Restore or deploy, then verify the snapshot
+        id: verify
+        shell: bash
+        run: |
+          extra=()
+          if [ "$FORCE_FRESH" = true ]; then
+            extra+=(--force-fresh)
+          fi
+          python3 scripts/ci/yano_snapshot.py \
+            --distribution "$YANO_DISTRIBUTION" \
+            --cache .deployment-smoke/yano-fixture \
+            --output .deployment-smoke/yano-ci "${extra[@]}"
+      - uses: actions/cache/save@v6
+        if: steps.verify.outputs.saved == 'true'
+        with:
+          path: .deployment-smoke/yano-fixture
+          key: yano-fixture-${{ steps.identity.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Report cache outcome and timing
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path('.deployment-smoke/yano-ci/result.json')
+          if path.exists():
+              result = json.loads(path.read_text())
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
+                  stream.write('Yano deployment fixture: ' + result['cache'] + '.\n\n')
+                  if 'cacheError' in result:
+                      stream.write('The cached fixture failed verification and required a fresh deployment.\n\n')
+                  stream.write('```json\n' + json.dumps(result, indent=2) + '\n```\n')
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: yano-snapshot-evidence
+          if-no-files-found: ignore
+          include-hidden-files: true
+          path: |
+            .deployment-smoke/yano-ci/result.json
+            .deployment-smoke/yano-ci/**/node.log
+            .deployment-smoke/yano-ci/**/deploy.log
+            .deployment-smoke/yano-ci/**/smoke.log
+            .deployment-smoke/yano-ci/**/timing.json
