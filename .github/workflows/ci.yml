@@ -71,6 +71,7 @@ jobs:
              git diff --quiet --ignore-submodules=none --no-ext-diff \
                "${PR_BASE_SHA}...${PR_HEAD_SHA}" -- \
                relayer .gitmodules .github/workflows/ci.yml \
+               scripts/ci/hermes-authorization.py scripts/ci/test_hermes_authorization.py \
                cosmos/cardano-probabilistic-light-client-core \
                cosmos/cardano-probabilistic-light-client-v8 \
                cosmos/cardano-probabilistic-light-client-v10; then
@@ -1498,10 +1499,10 @@ jobs:
       - name: Test
         run: cargo test --manifest-path caribic/Cargo.toml --locked
 
-  hermes-relayer:
-    name: Hermes Relayer
+  hermes-checks:
+    name: Hermes Independent Checks
     if: ${{ !cancelled() && needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.hermes_changed != 'false' }}
-    needs: [docs-update, aiken-changes, gateway]
+    needs: [docs-update, aiken-changes]
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -1567,6 +1568,52 @@ jobs:
       - name: Test
         run: cargo test --manifest-path relayer/Cargo.toml -p ibc-relayer --lib --locked -- --test-threads=1
 
+      - name: Test authorization artifact transfer
+        run: python3 -m unittest discover -s scripts/ci -p test_hermes_authorization.py
+
+      - name: Package the compiled authorization test
+        run: |
+          cargo test --manifest-path relayer/Cargo.toml -p ibc-relayer --lib --locked \
+            --no-run --message-format=json > "$RUNNER_TEMP/hermes-test-build.jsonl"
+          python3 scripts/ci/hermes-authorization.py pack \
+            --build-report "$RUNNER_TEMP/hermes-test-build.jsonl" \
+            --archive "$RUNNER_TEMP/hermes-authorization.tar.gz"
+
+      - name: Upload compiled authorization test
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: hermes-authorization-test
+          path: ${{ runner.temp }}/hermes-authorization.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+
+  hermes-relayer:
+    name: Hermes Relayer
+    if: ${{ always() && needs.docs-update.outputs.run_jobs == 'true' && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.hermes_changed != 'false' }}
+    needs: [docs-update, aiken-changes, hermes-checks, gateway]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require independent checks and Gateway to succeed
+        env:
+          DOCS_RESULT: ${{ needs.docs-update.result }}
+          DETECTOR_RESULT: ${{ needs.aiken-changes.result }}
+          HERMES_RESULT: ${{ needs.hermes-checks.result }}
+          GATEWAY_RESULT: ${{ needs.gateway.result }}
+        run: |
+          test "$DOCS_RESULT" = success
+          test "$DETECTOR_RESULT" = success
+          test "$HERMES_RESULT" = success
+          test "$GATEWAY_RESULT" = success
+
+      - uses: actions/checkout@v7.0.1
+
+      - name: Download compiled authorization test
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: hermes-authorization-test
+          path: ${{ runner.temp }}/hermes-authorization
+
       - name: Download native Gateway cache transactions
         uses: actions/download-artifact@v8.0.2
         with:
@@ -1574,6 +1621,7 @@ jobs:
           path: ${{ runner.temp }}/tendermint-cache-signing
 
       - name: Authorize actual direct and staged Gateway updates independently
-        env:
-          IBC_CACHE_SIGNING_EVIDENCE: ${{ runner.temp }}/tendermint-cache-signing/tendermint-cache-signing.json
-        run: cargo test --manifest-path relayer/Cargo.toml -p ibc-relayer --lib --locked production_gateway_transactions_pass_independent_policy -- --ignored --test-threads=1
+        run: |
+          python3 scripts/ci/hermes-authorization.py run \
+            --archive "$RUNNER_TEMP/hermes-authorization/hermes-authorization.tar.gz" \
+            --evidence "$RUNNER_TEMP/tendermint-cache-signing/tendermint-cache-signing.json"
