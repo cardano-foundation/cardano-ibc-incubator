@@ -126,9 +126,17 @@ async function main() {
   assert(
     Array.from({ length: refs.len() }, (_, i) => refs.get(i).transaction_id().to_hex()).includes(clientBefore.txHash),
   );
-  fixture.deployment.client = await rpc('replaceClientReference');
-  // The ordinary inputs are untouched and the two-minute validity window has
-  // not expired. Only disappearance of the reference can release this lease.
+  const replacement = await rpc('replaceClientReference');
+  fixture.deployment.client = replacement.client ?? replacement;
+  if (replacement.scripts) fixture.deployment.scripts = replacement.scripts;
+  const ordinary = abandonedBody.inputs();
+  const ordinaryRefs = Array.from({ length: ordinary.len() }, (_, i) => ({
+    txHash: ordinary.get(i).transaction_id().to_hex(), outputIndex: Number(ordinary.get(i).index()),
+  }));
+  assert.equal((await lucid.utxosByOutRef(ordinaryRefs)).length, ordinaryRefs.length);
+  assert(BigInt((await rpc('queryNetwork/tip')).slot) < abandonedBody.ttl(), 'lease expired before reference replacement');
+  // The ordinary inputs are untouched and the validity window has not expired.
+  // Only disappearance of the reference can release this lease.
   assert(
     (await lucid.utxosByOutRef([{ txHash: clientBefore.txHash, outputIndex: clientBefore.outputIndex }])).length === 0,
   );
@@ -192,7 +200,7 @@ async function main() {
         timeout_height: { revision_number: f[6].fields[0], revision_height: f[6].fields[1] },
         timeout_timestamp: f[7],
       },
-      proof_height: { revision_number: 1n, revision_height: 18n },
+      proof_height: fixture.proofHeight ?? { revision_number: 1n, revision_height: 18n },
       proof_acked: MerkleProof.encode({ proofs }).finish(),
       acknowledgement: bytes(lib.fromText('{"result":"AQ=="}')),
     };

@@ -70,7 +70,7 @@ try {
   await createDeployment(
     lucid,
     "yano",
-    Deno.env.get("YANO_SUITE") === "gateway"
+    ["gateway", "packets"].includes(Deno.env.get("YANO_SUITE") ?? "")
       ? {
         deploymentMode: "upgradeable",
         migration: {

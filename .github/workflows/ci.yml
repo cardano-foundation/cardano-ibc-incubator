@@ -505,10 +505,6 @@ jobs:
         # Aiken hides build errors without a terminal. Preserve diagnostics and exit status.
         run: script --quiet --return --command 'aiken build --deny --trace-level silent' /dev/null
 
-      - name: Exercise production Gateway backlog and fee reservations
-        working-directory: cardano/offchain
-        run: deno run --allow-env --allow-read --allow-net --allow-run scripts/test-gateway-packet-backlog.ts
-
       - name: Setup Python for Gateway snapshots
         uses: actions/setup-python@v6
         with:
@@ -535,6 +531,67 @@ jobs:
           distribution="$GITHUB_WORKSPACE/.deployment-smoke/yano-distribution/yano-native-0.1.0-pre19-linux-x64"
           chmod +x "$distribution/yano"
           echo "YANO_DISTRIBUTION=$distribution" >> "$GITHUB_ENV"
+
+      - name: Compute packet snapshot inputs
+        id: packet-snapshot-key
+        run: |
+          key=$(python3 scripts/ci/yano_snapshot.py --suite packets --distribution "$YANO_DISTRIBUTION" --print-key)
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: .deployment-smoke/yano-packets-fixture
+          key: yano-packets-${{ steps.packet-snapshot-key.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: yano-packets-${{ steps.packet-snapshot-key.outputs.key }}-
+
+      - name: Exercise production Gateway backlog and fee reservations
+        id: packet-snapshot
+        run: |
+          python3 scripts/ci/yano_snapshot.py --suite packets \
+            --distribution "$YANO_DISTRIBUTION" \
+            --cache .deployment-smoke/yano-packets-fixture \
+            --output .deployment-smoke/yano-packets-ci
+
+      - uses: actions/cache/save@v6
+        if: steps.packet-snapshot.outputs.saved == 'true'
+        with:
+          path: .deployment-smoke/yano-packets-fixture
+          key: yano-packets-${{ steps.packet-snapshot-key.outputs.key }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Report packet snapshot timing
+        if: always()
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          path = Path('.deployment-smoke/yano-packets-ci/result.json')
+          if path.exists():
+              result = json.loads(path.read_text())
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
+                  stream.write('Packet Yano snapshot: ' + result['cache'] + '.\n\n')
+                  for label, seconds in [
+                      ('Fresh setup', result.get('freshSeconds')),
+                      ('Restored setup', result.get('verification', {}).get('readySeconds')),
+                      ('Full restored verification', result.get('verification', {}).get('totalSeconds')),
+                  ]:
+                      if seconds is not None:
+                          stream.write(f'{label}: {seconds:.1f} seconds.\n\n')
+          PYTHON
+
+      - name: Retain packet snapshot results
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: yano-packets-results
+          if-no-files-found: ignore
+          include-hidden-files: true
+          path: |
+            .deployment-smoke/yano-packets-ci/result.json
+            .deployment-smoke/yano-packets-ci/**/node.log
+            .deployment-smoke/yano-packets-ci/**/deploy.log
+            .deployment-smoke/yano-packets-ci/**/prepare.log
+            .deployment-smoke/yano-packets-ci/**/integration*.log
+            .deployment-smoke/yano-packets-ci/**/integration-result.json
 
       - name: Compute Gateway snapshot inputs
         id: gateway-snapshot-key

@@ -211,6 +211,12 @@ public endpoints behind a proxy with authentication and per-client limits. The o
 
 ## Test
 
+CI runs the packet backlog check against a restored Yano snapshot. The snapshot contains a deployed bridge with a client, an open connection and channel, and initialized packet lanes. Production Gateway builders create that state through signed transactions. Counterparty commitments and proofs are generated fixtures. This check does not run a counterparty chain or Hermes relay.
+
+Each run funds disposable wallets and submits five valid transfer intents plus seven unusable deposits. It exercises backlog draining, concurrent acknowledgements and wallet reservations. A real client update consumes the reference used by an abandoned transaction while its spending inputs remain available. Reset verification checks that the original snapshot state returns and newly created outputs disappear.
+
+After building the contracts, shared TypeScript packages and Gateway, run `python3 scripts/ci/yano_snapshot.py --suite packets --distribution /path/to/yano-native-distribution --cache .deployment-smoke/yano-packets-fixture --output .deployment-smoke/yano-packets-run` from the repository root. Choose a new output directory each time. Add `--compare-fresh` to run the same assertions before and after restore. CI retains timings and logs in `yano-packets-results`. Packet snapshots expire after one day so the saved client checkpoint remains within its trusting period. Changes to the fixture inputs or Yano runtime also invalidate the cache.
+
 ```bash
 # unit tests
 $ npm run test

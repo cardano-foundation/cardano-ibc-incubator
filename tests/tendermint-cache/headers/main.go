@@ -30,6 +30,7 @@ func mustJSON(message proto.Message) json.RawMessage {
 
 func main() {
 	base := flag.Int64("time-ns", 0, "fixture clock in nanoseconds")
+	appHashHex := flag.String("app-hash", "", "optional 32-byte application root for packet fixtures")
 	verify := flag.Bool("verify", false, "verify a recovered event header on stdin")
 	flag.Parse()
 	if *verify {
@@ -81,6 +82,14 @@ func main() {
 	if *base <= 0 {
 		panic("a fixture clock is required")
 	}
+	appHash := make([]byte, 32)
+	if *appHashHex != "" {
+		var err error
+		appHash, err = hex.DecodeString(*appHashHex)
+		if err != nil || len(appHash) != 32 {
+			panic("app-hash must contain 32 bytes")
+		}
+	}
 	output := make([]any, 0, 3)
 	for _, count := range []int{1, 45, 65, 100, 256} {
 		keys := make(map[string]ed25519.PrivKey)
@@ -126,7 +135,7 @@ func main() {
 				Version: tmversion.Consensus{Block: 11}, ChainID: "cache-test-1", Height: height, Time: when,
 				LastBlockID:    types.BlockID{Hash: make([]byte, 32), PartSetHeader: types.PartSetHeader{Total: 1, Hash: make([]byte, 32)}},
 				LastCommitHash: make([]byte, 32), DataHash: make([]byte, 32), ValidatorsHash: set.Hash(),
-				NextValidatorsHash: set.Hash(), ConsensusHash: make([]byte, 32), AppHash: make([]byte, 32),
+				NextValidatorsHash: set.Hash(), ConsensusHash: make([]byte, 32), AppHash: appHash,
 				LastResultsHash: make([]byte, 32), EvidenceHash: make([]byte, 32), ProposerAddress: set.Proposer.Address,
 			}
 			id := types.BlockID{Hash: h.Hash(), PartSetHeader: types.PartSetHeader{Total: 1, Hash: make([]byte, 32)}}
