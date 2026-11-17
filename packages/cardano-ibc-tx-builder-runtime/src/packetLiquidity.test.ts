@@ -5,10 +5,11 @@ import { fromText } from "@lucid-evolution/lucid";
 import { liquidityTokenName } from "@cardano-ibc/tx-builder/dist/packet-lanes";
 import {
   encode,
-  record,
-  variant,
-  selectPacketLiquidity,
+  FragmentedPacketLiquidityError,
   type PacketLaneDeployment,
+  record,
+  selectPacketLiquidity,
+  variant,
 } from "./packetLaneTransactions";
 
 const deployment = {
@@ -19,8 +20,7 @@ const denom = fromText("lovelace");
 function deposits(principals: bigint[]): UTxO[] {
   return principals.map((principal, index) => {
     const hash = index.toString(16).padStart(64, "0");
-    const identity =
-      deployment.batchPolicy +
+    const identity = deployment.batchPolicy +
       liquidityTokenName("transfer", "channel-0", denom, hash, 0);
     return {
       txHash: hash,
@@ -72,7 +72,10 @@ test("honors the five-input bound and rejects unauthenticated large deposits", (
   );
   const inputs = deposits([2n, 100n]);
   const counterfeit = { ...inputs[1], assets: { lovelace: 103_000_000n } };
-  assert.throws(() => select([inputs[0], counterfeit], 20n), /input limit/);
+  assert.throws(
+    () => select([inputs[0], counterfeit], 20n),
+    /Insufficient total packet liquidity/,
+  );
 });
 
 test("rotates equally sufficient inputs and equal-size combinations deterministically", () => {
@@ -87,8 +90,9 @@ test("rotates equally sufficient inputs and equal-size combinations deterministi
 
 test("finds a bounded selection whenever the five largest authenticated principals cover it", () => {
   for (let seed = 1; seed <= 40; seed++) {
-    const amounts = Array.from({ length: 9 }, (_, i) =>
-      BigInt(((seed * (i + 3) * 17) % 29) + 1),
+    const amounts = Array.from(
+      { length: 9 },
+      (_, i) => BigInt(((seed * (i + 3) * 17) % 29) + 1),
     );
     const inputs = deposits(amounts);
     const maximum = [...amounts]
@@ -96,12 +100,12 @@ test("finds a bounded selection whenever the five largest authenticated principa
       .slice(0, 5)
       .reduce((a, b) => a + b);
     for (const amount of [1n, maximum / 2n, maximum, maximum + 1n]) {
-      if (amount > maximum)
+      if (amount > maximum) {
         assert.throws(
           () => select(inputs, amount, BigInt(seed)),
           /input limit/,
         );
-      else {
+      } else {
         const selected = select(inputs, amount, BigInt(seed));
         assert.ok(selected.length <= 5);
         assert.ok(
@@ -112,5 +116,25 @@ test("finds a bounded selection whenever the five largest authenticated principa
         );
       }
     }
+  }
+});
+
+test("distinguishes fragmented backing from a true shortfall without counting duplicate inputs", () => {
+  const inputs = deposits(Array(6).fill(10_000_000n));
+  assert.equal(select(inputs, 50_000_000n).length, 5);
+  assert.throws(() => select(inputs, 60_000_000n), (error: unknown) => {
+    assert.ok(error instanceof FragmentedPacketLiquidityError);
+    assert.deepEqual(error.inputs, inputs.slice(0, 5));
+    assert.equal(error.available, 60_000_000n);
+    assert.equal(error.requested, 60_000_000n);
+    return true;
+  });
+  for (const candidates of [inputs, [...inputs, ...inputs]]) {
+    assert.throws(() => select(candidates, 70_000_000n), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.ok(!(error instanceof FragmentedPacketLiquidityError));
+      assert.equal(error.message, "Insufficient total packet liquidity");
+      return true;
+    });
   }
 });

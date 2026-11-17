@@ -5,7 +5,7 @@ import {
 import { readValidator } from "./utils.ts";
 import { membershipProof } from "./testing/channel-fixture.ts";
 import { absenceProof } from "./testing/packet-budget-fixture.ts";
-import { assert, assertEquals, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import {
   applyDoubleCborEncoding,
   CML,
@@ -34,6 +34,7 @@ import {
   buildTransferIntent,
   buildTransferIntentCancellation,
   encode,
+  FragmentedPacketLiquidityError,
   PacketLaneAccountingCapacityError,
   PacketLaneHistory,
   record,
@@ -1041,6 +1042,195 @@ Deno.test("competing batch builders and rollback reload included sequences and f
     .submit();
   f.emulator.awaitBlock();
   assertEquals((await first.utxosByOutRef([intents[0]])).length, 1);
+});
+
+Deno.test("fragmented backing consolidates before a full native return settles", async () => {
+  const f = await packetLaneFixture();
+  const { intents, users } = await f.admit(6);
+  const wallet = await f.wallet(true);
+  for (let i = 0; i < intents.length; i += 2) {
+    const batch = await buildPacketSendBatch(
+      wallet,
+      f.deployment,
+      intents.slice(i, i + 2),
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    await (await signMeasured(wallet, batch.tx, "fragmented deposits"))
+      .submit();
+    f.emulator.awaitBlock();
+  }
+  const inputs = await wallet.utxosAt(f.deployment.batchAddress);
+  const select = (amount: bigint, candidates = inputs) =>
+    selectPacketLiquidity(
+      candidates,
+      f.deployment,
+      "transfer",
+      "channel-0",
+      fromText("lovelace"),
+      amount,
+      1n,
+    );
+  assertEquals(select(10_000_000n).length, 5);
+  assertThrows(
+    () => select(14_000_000n),
+    Error,
+    "Insufficient total packet liquidity",
+  );
+  assertThrows(
+    () => select(14_000_000n, [...inputs, ...inputs]),
+    Error,
+    "Insufficient total packet liquidity",
+  );
+  const fragmented = assertThrows(
+    () => select(12_000_000n),
+    FragmentedPacketLiquidityError,
+  );
+  assertEquals(fragmented.available, 12_000_000n);
+  assertEquals(fragmented.inputs.length, 5);
+  const ownerAddresses = await Promise.all(
+    users.map(async (user) =>
+      credentialToAddress("Custom", {
+        type: "Key",
+        hash:
+          getAddressDetails(await user.wallet().address()).paymentCredential!
+            .hash,
+      })
+    ),
+  );
+  const balances = await Promise.all(
+    ownerAddresses.map(async (address) =>
+      (await wallet.utxosAt(address)).reduce(
+        (sum, input) => sum + input.assets.lovelace,
+        0n,
+      )
+    ),
+  );
+  const operatorBefore = (await wallet.wallet().getUtxos()).reduce(
+    (sum, input) => sum + input.assets.lovelace,
+    0n,
+  );
+  const consolidation = await buildLiquidityRetirement(
+    wallet,
+    f.deployment,
+    fragmented.inputs,
+    true,
+  );
+  const signed = await signMeasured(
+    wallet,
+    consolidation.validFrom(f.emulator.now()).validTo(
+      f.emulator.now() + 60_000,
+    ),
+    "five deposit consolidation",
+  );
+  const artifact = Deno.env.get("PACKET_CONSOLIDATION_EVIDENCE");
+  if (artifact) {
+    const body = signed.toTransaction().body();
+    const resolve = async (list: CML.TransactionInputList) => {
+      const refs = Array.from(
+        { length: list.len() },
+        (_, i) => ({
+          txHash: list.get(i).transaction_id().to_hex(),
+          outputIndex: Number(list.get(i).index()),
+        }),
+      );
+      return await wallet.utxosByOutRef(refs);
+    };
+    const { writeConsolidationEvidence } = await import(
+      "./testing/packet-consolidation-evidence.ts"
+    );
+    await writeConsolidationEvidence(artifact, {
+      cbor: signed.toCBOR(),
+      signer: await wallet.wallet().address(),
+      regular: await resolve(body.inputs()),
+      collateral: await resolve(body.collateral_inputs()!),
+      deployment: f.deployment,
+      hostPolicy: f.packetContext.hostPolicy,
+    });
+  }
+  await signed.submit();
+  f.emulator.awaitBlock();
+  const remaining = await wallet.utxosAt(f.deployment.batchAddress);
+  assertEquals(remaining.length, 2);
+  assertEquals(
+    remaining.reduce(
+      (sum, input) =>
+        sum + ((Data.from(input.datum!) as Constr<Data>).fields[6] as bigint),
+      0n,
+    ),
+    12_000_000n,
+  );
+  const donorOwners = fragmented.inputs.slice(1).map((input) => {
+    const owner = (Data.from(input.datum!) as Constr<Data>).fields[7] as Constr<
+      Data
+    >;
+    return (owner.fields[0] as Constr<Data>).fields[0];
+  });
+  for (const [i, user] of users.entries()) {
+    const address = ownerAddresses[i];
+    const after = (await user.utxosAt(address)).reduce(
+      (sum, input) => sum + input.assets.lovelace,
+      0n,
+    );
+    assertEquals(
+      after - balances[i],
+      donorOwners.includes(getAddressDetails(address).paymentCredential!.hash)
+        ? 3_000_000n
+        : 0n,
+    );
+  }
+  const operatorAfter = (await wallet.utxosAt(await wallet.wallet().address()))
+    .reduce((sum, input) => sum + input.assets.lovelace, 0n);
+  assertEquals(
+    operatorBefore - operatorAfter,
+    signed.toTransaction().body().fee(),
+  );
+  const receiver =
+    getAddressDetails(await wallet.wallet().address()).paymentCredential!.hash;
+  const timeout = BigInt(f.emulator.now() + 3_600_000) * 1_000_000n;
+  const payload = fromText(
+    JSON.stringify({
+      denom: `transfer/channel-7/${fromText("lovelace")}`,
+      amount: "12000000",
+      sender: "cosmos1sender",
+      receiver,
+      memo: "",
+    }),
+  );
+  const packet = record(
+    1n,
+    fromText("transfer"),
+    fromText("channel-7"),
+    fromText("transfer"),
+    fromText("channel-0"),
+    payload,
+    record(0n, 0n),
+    timeout,
+  );
+  const commitment = await sha256(
+    timeout.toString(16).padStart(16, "0") + "00".repeat(16) +
+      await sha256(payload),
+  );
+  const proof = await membershipProof(
+    fromText("commitments/ports/transfer/channels/channel-7/sequences/1"),
+    commitment,
+  );
+  const height = record(1n, 19n);
+  checkpoint(f, height, proof.root);
+  const received = await buildPacketReceive(
+    wallet,
+    f.deployment,
+    packet,
+    height,
+    proof.proof,
+    select(12_000_000n, remaining),
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await (await signMeasured(wallet, received.tx, "consolidated return"))
+    .submit();
+  f.emulator.awaitBlock();
+  assertEquals((await wallet.utxosAt(f.deployment.batchAddress)).length, 0);
 });
 
 Deno.test("funded liquidity consolidates with a burn and donor reserve reimbursement", async () => {
