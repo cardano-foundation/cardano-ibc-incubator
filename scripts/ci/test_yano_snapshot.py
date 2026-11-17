@@ -27,7 +27,7 @@ class SnapshotCacheTests(unittest.TestCase):
 
     def test_identity_changes_with_blueprint_runtime_and_deployment_inputs(self):
         files = ["cardano/onchain/plutus.json", "cardano/offchain/src/deployment.ts",
-                 "scripts/ci/yano-deployment.ts", "scripts/ci/yano-shutdown.ts", "scripts/ci/yano_snapshot.py",
+                 "scripts/ci/yano-deployment.ts", "scripts/ci/yano-provider.ts", "scripts/ci/yano-shutdown.ts", "scripts/ci/yano_snapshot.py",
                  "distribution/yano", "distribution/config/genesis.json"]
         for name in files:
             path = self.root / name
@@ -41,6 +41,7 @@ class SnapshotCacheTests(unittest.TestCase):
 
         with patch.object(snapshot.subprocess, "check_output", side_effect=command):
             key = snapshot.cache_identity(self.root / "distribution", self.root)[0]
+            self.assertNotEqual(key, snapshot.cache_identity(self.root / "distribution", self.root, suite="gateway")[0])
             comment = self.root / "cardano/onchain/source.ak"
             comment.write_text("// An unchanged compiled blueprint should keep its cache")
             self.assertEqual(key, snapshot.cache_identity(self.root / "distribution", self.root)[0])
@@ -97,7 +98,7 @@ class SnapshotCacheTests(unittest.TestCase):
         cache.mkdir()
         (cache / "marker").write_text("old")
 
-        def build(distribution, work, fixture, key, identity):
+        def build(distribution, work, fixture, key, identity, suite="shutdown", compare_fresh=False):
             fixture.mkdir()
             (fixture / "marker").write_text("new")
             (work.parent / "fresh").mkdir(exist_ok=True)
@@ -118,7 +119,7 @@ class SnapshotCacheTests(unittest.TestCase):
         cache = self.root / "cache"
         cache.mkdir()
 
-        def build(distribution, work, fixture, key, identity):
+        def build(distribution, work, fixture, key, identity, suite="shutdown", compare_fresh=False):
             fixture.mkdir()
             (fixture / "marker").write_text("verified")
             (work.parent / "fresh").mkdir(exist_ok=True)

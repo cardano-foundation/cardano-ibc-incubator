@@ -10,7 +10,6 @@ import {
   type TxBuilder,
   type UTxO,
 } from "@lucid-evolution/lucid";
-import type { Emulator } from "@lucid-evolution/provider";
 
 export interface EvaluationRequest {
   tx: string;
@@ -28,18 +27,18 @@ const isolated = new WeakSet<Provider>();
 // entire runtime after each call, including failures.
 export function isolateEvaluation(
   lucid: LucidEvolution,
-  emulator: Emulator,
+  provider: Provider,
   evaluationCostModels?: Uint8Array,
 ) {
   const config = lucid.config();
   if (
-    config.provider !== emulator || !config.costModels ||
+    config.provider !== provider || !config.costModels ||
     !config.protocolParameters || !config.network
   ) {
-    throw new Error("Isolated evaluation requires an initialized emulator");
+    throw new Error("Isolated evaluation requires the initialized provider");
   }
   const slotConfig = config.slotConfig ?? SLOT_CONFIG_NETWORK[config.network];
-  emulator.evaluateTx = async (tx, additional = []) => {
+  provider.evaluateTx = async (tx, additional = []) => {
     const body = CML.Transaction.from_cbor_hex(tx).body();
     const refs = [];
     for (const inputs of [body.inputs(), body.reference_inputs()]) {
@@ -53,7 +52,7 @@ export function isolateEvaluation(
       }
     }
     const available = new Map(
-      [...await emulator.getUtxosByOutRef(refs), ...additional]
+      [...await provider.getUtxosByOutRef(refs), ...additional]
         .map((u) => [`${u.txHash}#${u.outputIndex}`, u]),
     );
     const utxos = refs.map((ref) => {
@@ -98,7 +97,7 @@ export function isolateEvaluation(
       worker.terminate();
     }
   };
-  isolated.add(emulator);
+  isolated.add(provider);
 }
 
 export function completeTransaction(tx: TxBuilder) {

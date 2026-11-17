@@ -54,6 +54,12 @@ deno task test:shutdown
 deno task report:tendermint-cache --write --assert-direct-budget
 ```
 
+CI runs the Gateway creation and update scenarios against a restored Yano deployment snapshot. The fixture uses the same upgradeable deployment configuration as the emulator check. Yano confirms every signed transaction. Speculative transaction evaluation still uses the isolated Scalus evaluator because staged transaction previews can reference outputs that have not been submitted yet. The history adapter retains confirmed outputs and transaction bodies for the existing replay checks. This does not replace the production history indexer.
+
+The Gateway snapshot has a separate cache identity from the shutdown fixture. Contract, deployment, provider or runtime changes invalidate it. Cache hits run the full client suite once and verify that resetting the snapshot restores the original deployed UTxOs. Normal cache misses deploy and then test the cold restore without running the Gateway suite twice. An explicit fresh comparison runs the suite on both states. CI retains those results in `yano-gateway-results` and still supplies the resulting signing evidence to Hermes.
+
+After building the contracts, shared TypeScript packages and Gateway, the snapshot runner can be invoked from the repository root with `python3 scripts/ci/yano_snapshot.py --suite gateway --distribution /path/to/yano-native-distribution --cache .deployment-smoke/yano-gateway-fixture --output .deployment-smoke/yano-gateway-run`. Use a new output directory for each run. Add `--compare-fresh` to force a new deployment and compare the same suite before and after restore.
+
 After building the shared TypeScript packages and Gateway, run `deno run --allow-env --allow-read --allow-write --allow-net --allow-run scripts/test-gateway-tendermint-cache.ts` from `cardano/offchain` for the standard deployment and routing check. Set `IBC_CACHE_SIGNING_EVIDENCE` to retain its transactions for the independent Hermes policy test. CI uploads this evidence and runs `production_gateway_transactions_pass_independent_policy` against the pinned relayer.
 
 Full diagnostics are generated under `.artifacts/tendermint-cache/`, which is ignored by Git. To retain a new run, pass `--artifact-base-url` with the archive's HTTPS download directory, upload the printed gzip file there and verify the checksum before committing its summary. The release assets in the manifest have no automatic expiration.
