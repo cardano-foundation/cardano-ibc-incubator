@@ -70,6 +70,10 @@ async function main() {
   const wrapper = {
     lucid,
     LucidImporter: lib,
+    getCurrentLedgerTime: async () => {
+      const tip = await rpc('queryNetwork/tip');
+      return fixture.clock.zeroTime + (tip.slot - fixture.clock.zeroSlot) * fixture.clock.slotLength;
+    },
     beginWalletSelectionScope: () => 1,
     endWalletSelectionScope: () => {},
     assertWalletSelectionScopeSatisfied: () => {},
