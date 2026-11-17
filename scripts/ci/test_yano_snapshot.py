@@ -82,6 +82,28 @@ class SnapshotCacheTests(unittest.TestCase):
         self.assertFalse(result["saved"])
         build.assert_not_called()
 
+    def test_fresh_comparison_bypasses_a_matching_gateway_cache(self):
+        cache = self.root / "cache"
+        cache.mkdir()
+
+        def build(distribution, work, fixture, key, identity, suite, compare_fresh):
+            self.assertEqual(suite, "gateway")
+            self.assertTrue(compare_fresh)
+            fixture.mkdir()
+            work.mkdir()
+            (work / "integration-result.json").write_text('{"passed": true}')
+            return 2.0
+
+        with patch.object(snapshot, "cache_identity", return_value=("key", {})), \
+                patch.object(snapshot, "build_fixture", side_effect=build) as build_mock, \
+                patch.object(snapshot, "verify_fixture", return_value={"passed": True}) as verify:
+            result = snapshot.run(self.root, cache, self.root / "output", suite="gateway", compare_fresh=True)
+        build_mock.assert_called_once()
+        verify.assert_called_once()
+        self.assertEqual(result["cache"], "miss")
+        self.assertTrue(result["freshIntegration"]["passed"])
+        self.assertTrue(result["saved"])
+
     def test_integration_failure_does_not_rebuild_or_publish(self):
         cache = self.root / "cache"
         cache.mkdir()
