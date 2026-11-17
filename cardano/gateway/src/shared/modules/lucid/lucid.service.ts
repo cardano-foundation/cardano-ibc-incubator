@@ -49,7 +49,7 @@ import { CHANNEL_TOKEN_PREFIX, CLIENT_PREFIX, CONNECTION_TOKEN_PREFIX } from '..
 import { gatewayDiagnostics } from '../../helpers/gateway-diagnostics';
 import { convertString2Hex, hashSha3_256 } from '../../helpers/hex';
 import { LedgerStateUtxo, queryLedgerStateUtxosAtAddresses } from '../../helpers/ogmios-utxo';
-import { computeLedgerAnchoredValidityWindow } from '../../helpers/time';
+import { computeLedgerAnchoredValidityWindow, queryLedgerTime } from '../../helpers/time';
 import { getHeightMapValue } from '../../helpers/verify';
 import { AuthToken, encodeAuthToken } from '../../types/auth-token';
 import { ChannelDatum, decodeChannelDatum, encodeChannelDatum } from '../../types/channel/channel-datum';
@@ -560,6 +560,15 @@ export class LucidService implements OnModuleInit {
     // Keep the variable to aid debugging if we later decide to surface it
     void lastError;
     return [];
+  }
+
+  public async getCurrentLedgerTime(): Promise<number> {
+    const network = this.configService.getOrThrow<'Mainnet' | 'Preview' | 'Preprod' | 'Custom'>('cardanoNetwork');
+    const { currentLedgerTime } = await queryLedgerTime(
+      this.configService.getOrThrow<string>('ogmiosEndpoint'),
+      this.LucidImporter.SLOT_CONFIG_NETWORK[network],
+    );
+    return currentLedgerTime;
   }
 
   public selectWalletFromAddress(addressOrCredential: string, utxos: UTxO[]): void {

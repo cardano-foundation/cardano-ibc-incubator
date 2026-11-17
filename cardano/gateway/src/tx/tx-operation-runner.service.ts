@@ -152,17 +152,7 @@ export class TxOperationRunnerService {
       let walletInputs: UTxO[] | undefined;
 
       try {
-        if (plan.reservation) {
-          await this.inputReservations.refresh(plan.reservation.now, (inputs) =>
-            this.lucidService.lucid.utxosByOutRef(inputs),
-          );
-        }
-        await this.applyWalletInstruction(plan.wallet);
-        this.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, plan.operationName);
-        if (plan.reservation && plan.wallet.mode === 'refresh_from_address') {
-          const available = this.inputReservations.available(await this.lucidService.lucid.wallet().getUtxos());
-          this.lucidService.selectWalletFromAddress(plan.wallet.address, available);
-        }
+        await this.prepareWallet(plan.wallet, walletScopeId, plan.operationName, plan.reservation?.now);
 
         const value = await plan.build({
           availableInputs: (inputs) => this.inputReservations.available(inputs),
@@ -301,8 +291,7 @@ export class TxOperationRunnerService {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const walletScopeId = this.lucidService.beginWalletSelectionScope();
       try {
-        await this.applyWalletInstruction(plan.wallet);
-        this.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, plan.operationName);
+        await this.prepareWallet(plan.wallet, walletScopeId, plan.operationName);
         const selected = attempt > 1 && plan.rebuildUnsignedTx ? plan.rebuildUnsignedTx : plan.unsignedTx;
         const txBuilder = typeof selected === 'function' ? await selected() : selected;
         const txWithValidity = plan.validity.apply(txBuilder);
@@ -344,22 +333,32 @@ export class TxOperationRunnerService {
     throw lastError;
   }
 
-  private async applyWalletInstruction(wallet: TxWalletInstruction): Promise<void> {
+  private async prepareWallet(
+    wallet: TxWalletInstruction,
+    scopeId: number,
+    operationName: string,
+    ledgerTime?: number,
+  ): Promise<void> {
+    if (this.inputReservations.pending) {
+      // Packet builders already obtained ledger time for their validity window.
+      // Ordinary operations must obtain it too, including during idle periods.
+      const now = ledgerTime ?? (await this.lucidService.getCurrentLedgerTime());
+      if (!Number.isSafeInteger(now)) throw new Error('Invalid ledger time for input reservations');
+      await this.inputReservations.refresh(now, (inputs) => this.lucidService.lucid.utxosByOutRef(inputs));
+    }
     if (wallet.mode === 'refresh_from_address') {
       await this.walletContextService.selectWalletFromAddressWithRetry(wallet.address, wallet.context);
-      if (this.inputReservations.pending) {
-        // Expiry is checked against the ledger clock in runChain. A local
-        // wall clock ahead of the ledger must not release a still-valid spend.
-        await this.inputReservations.refresh(Number.NEGATIVE_INFINITY, (inputs) =>
-          this.lucidService.lucid.utxosByOutRef(inputs),
-        );
-        const available = this.inputReservations.available(await this.lucidService.lucid.wallet().getUtxos());
-        this.lucidService.selectWalletFromAddress(wallet.address, available);
-      }
-      return;
+    } else {
+      await wallet.run();
     }
-
-    await wallet.run();
+    // Do not let reservation filtering satisfy a missing explicit selection.
+    this.lucidService.assertWalletSelectionScopeSatisfied(scopeId, operationName);
+    if (this.inputReservations.pending) {
+      const selected = this.lucidService.lucid.wallet();
+      const available = this.inputReservations.available(await selected.getUtxos());
+      const address = wallet.mode === 'refresh_from_address' ? wallet.address : await selected.address();
+      this.lucidService.selectWalletFromAddress(address, available);
+    }
   }
 
   private async sleep(ms: number): Promise<void> {

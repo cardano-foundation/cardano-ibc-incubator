@@ -93,6 +93,25 @@ const queryNetworkTipPoint = async (ogmiosUrl: string): Promise<OgmiosPoint | 'o
   };
 };
 
+const queryLedgerTime = async (ogmiosUrl: string, slotConfig: SlotConfig) => {
+  if (
+    !slotConfig ||
+    !Number.isSafeInteger(slotConfig.zeroTime) ||
+    !Number.isSafeInteger(slotConfig.zeroSlot) ||
+    !Number.isSafeInteger(slotConfig.slotLength) ||
+    slotConfig.slotLength <= 0
+  ) {
+    throw new Error('Invalid Cardano slot configuration');
+  }
+  const tip = await queryNetworkTipPoint(ogmiosUrl);
+  const currentSlot = tip === 'origin' ? 0 : tip.slot;
+  const currentLedgerTime = slotConfig.zeroTime + (currentSlot - slotConfig.zeroSlot) * slotConfig.slotLength;
+  if (!Number.isSafeInteger(currentSlot) || currentSlot < 0 || !Number.isSafeInteger(currentLedgerTime)) {
+    throw new Error('Ogmios returned an invalid ledger clock');
+  }
+  return { currentSlot, currentLedgerTime };
+};
+
 const computeLedgerAnchoredValidityWindow = async (
   ogmiosUrl: string,
   slotConfig: SlotConfig,
@@ -106,18 +125,9 @@ const computeLedgerAnchoredValidityWindow = async (
   validToTime: number;
   slotConfig: SlotConfig;
 }> => {
-  if (!Number.isFinite(slotConfig.zeroTime) || !Number.isFinite(slotConfig.slotLength) || slotConfig.slotLength <= 0) {
-    throw new Error('Invalid Cardano slot configuration');
-  }
-
-  const tip = await queryNetworkTipPoint(ogmiosUrl);
-  const currentSlot = tip === 'origin' ? 0 : tip.slot;
-
-  // Anchor the validity window to the live chain tip rather than host wallclock time. Local
-  // devnet regularly lags the host clock, and wallclock-derived validity can push tx bounds
-  // beyond Ogmios' era forecast horizon (`PastHorizon`).
-  const currentLedgerTime =
-    slotConfig.zeroTime + (currentSlot - slotConfig.zeroSlot) * slotConfig.slotLength;
+  // Anchor validity and reservation expiry to the same node clock. The host
+  // wall clock can run ahead of a halted or lagging ledger.
+  const { currentSlot, currentLedgerTime } = await queryLedgerTime(ogmiosUrl, slotConfig);
   let ttlSlots = Math.max(1, Math.ceil(ttlMs / slotConfig.slotLength));
   if (slotConfig.slotLength < 1000) {
     const eras = await ogmiosRequest<Array<{ parameters: { safeZone: number | null } }>>(
@@ -269,6 +279,7 @@ const getNanoseconds = (date: string): number => {
 export {
   querySystemStart,
   queryLocalSlotConfig,
+  queryLedgerTime,
   queryTransactionInclusionBlockHeight,
   computeLedgerAnchoredValidityWindow,
   ledgerVisibleValidityUpperBoundMs,

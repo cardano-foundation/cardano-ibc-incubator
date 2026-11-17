@@ -114,6 +114,7 @@ class SnapshotCacheTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "cache lifetime"):
                 snapshot.validate_fixture(fixture, "key")
 
+
     def test_old_genesis_is_rejected_before_starting_a_restored_node(self):
         fixture = self.root / "fixture"
         genesis = fixture / "config/network/devnet/shelley-genesis.json"

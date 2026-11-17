@@ -1,3 +1,4 @@
+import type { UTxO } from '@lucid-evolution/lucid';
 import { TRANSACTION_SET_COLLATERAL } from '../../config/constant.config';
 import { TxOperationRunnerService } from '../tx-operation-runner.service';
 import * as CML from '@dcspark/cardano-multiplatform-lib-nodejs';
@@ -10,6 +11,7 @@ describe('TxOperationRunnerService', () => {
       explicitSelectionScopeId: null as number | null,
     };
     const lucidService = {
+      getCurrentLedgerTime: jest.fn(async () => 100),
       lucid: { wallet: jest.fn(() => ({ address: 'selected-wallet' })) },
       beginWalletSelectionScope: jest.fn(() => {
         const scopeId = ++walletSelectionState.nextScopeId;
@@ -428,12 +430,109 @@ describe('TxOperationRunnerService', () => {
     );
   });
 
+  it.each([
+    ['refresh_from_address', false], ['custom_before_complete', false],
+    ['refresh_from_address', true], ['custom_before_complete', true],
+  ] as const)('releases an abandoned packet lease for an idle-period client update at ledger expiry (%s, staged=%s)', async (mode, staged) => {
+    const { service, lucidService, walletContextService } = makeService();
+    const spendHash = '11'.repeat(32);
+    const collateralHash = '22'.repeat(32);
+    const cbor = `84a50081825820${spendHash}000180021a000f4240031903e80d81825820${collateralHash}00a0f5f6`;
+    const funding = { txHash: spendHash, outputIndex: 0, address: 'signer', assets: { lovelace: 30_000_000n } };
+    const collateral = { ...funding, txHash: collateralHash, assets: { lovelace: 10_000_000n } };
+    const unspent = [funding, collateral];
+    let selected = unspent;
+    let ledgerTime = 100;
+    lucidService.getCurrentLedgerTime = jest.fn(async () => ledgerTime);
+    lucidService.LucidImporter = { CML };
+    lucidService.lucid = {
+      wallet: () => ({ getUtxos: async () => selected, address: async () => 'signer' }),
+      utxosByOutRef: jest.fn(async (refs: UTxO[]) => unspent.filter((u) => refs.some((r) => r.txHash === u.txHash && r.outputIndex === u.outputIndex))),
+    };
+    const select = lucidService.selectWalletFromAddress.getMockImplementation();
+    lucidService.selectWalletFromAddress.mockImplementation((_address: string, inputs: typeof unspent) => {
+      select();
+      selected = inputs;
+    });
+    walletContextService.selectWalletFromAddressWithRetry.mockImplementation(async () => {
+      lucidService.selectWalletFromAddress('signer', unspent);
+    });
+    const wallet = { mode: 'refresh_from_address' as const, address: 'signer', context: 'maintenance' };
+    const packetBuilder = {
+      chain: jest.fn().mockResolvedValue([[], [], { toCBOR: () => cbor, toHash: () => 'abandoned-packet' }]),
+    } as any;
+    await service.runChain({
+      operationName: 'packetBatch', wallet, reservation: { now: ledgerTime, expiresAt: 1000 },
+      build: ({ complete }) => complete({
+        operationName: 'packetBatch', unsignedTx: packetBuilder,
+        validity: { apply: (tx) => tx },
+      }),
+    });
+    const completed = { toCBOR: () => '00', toHash: () => 'cached-update' };
+    const maintenanceBuilder = {
+      lucidConfig: () => ({}),
+      complete: jest.fn(async () => {
+        if (selected.length !== 2) throw new Error('maintenance funding unavailable');
+        return completed;
+      }),
+    } as any;
+    const maintenance: Parameters<TxOperationRunnerService['run']>[0] = {
+      operationName: 'updateCachedClient',
+      wallet: mode === 'refresh_from_address' ? wallet : { mode, run: async () => lucidService.selectWalletFromAddress('signer', unspent) },
+      unsignedTx: maintenanceBuilder,
+      validity: { apply: (tx) => tx },
+    };
+    maintenanceBuilder.chain = jest.fn(async () => [[], [], await maintenanceBuilder.complete()]);
+    const runMaintenance = () => staged
+      ? service.runChain({
+          operationName: 'updateClientChain', wallet: maintenance.wallet,
+          build: ({ complete }) => complete({
+            operationName: 'updateClientStage', unsignedTx: maintenanceBuilder,
+            validity: maintenance.validity,
+          }),
+        }).then((result) => result.links[0])
+      : service.run(maintenance);
+    const wallClock = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    try {
+      ledgerTime = 999;
+      await expect(runMaintenance()).rejects.toThrow('maintenance funding unavailable');
+      // No packet retry or spend occurs between these identical maintenance calls.
+      lucidService.getCurrentLedgerTime.mockRejectedValueOnce(new Error('ledger unavailable'));
+      const attempts = maintenanceBuilder.complete.mock.calls.length;
+      await expect(runMaintenance()).rejects.toThrow('ledger unavailable');
+      expect(maintenanceBuilder.complete).toHaveBeenCalledTimes(attempts);
+      await expect(runMaintenance()).rejects.toThrow('maintenance funding unavailable');
+      ledgerTime = 1000;
+      await expect(runMaintenance()).resolves.toMatchObject({ unsignedTxHash: 'cached-update' });
+      expect(selected).toEqual(unspent);
+      expect(packetBuilder.chain).toHaveBeenCalledTimes(1);
+    } finally {
+      wallClock.mockRestore();
+    }
+  });
+
+  it('does not let filtering live reservations mask a missing custom wallet selection', async () => {
+    const { service, lucidService } = makeService();
+    const funding = { txHash: 'funding', outputIndex: 0 } as UTxO;
+    (service as any).inputReservations.reserve('packet', [funding], 1000);
+    lucidService.lucid.utxosByOutRef = jest.fn(async () => [funding]);
+    const build = jest.fn();
+    await expect(service.runChain({
+      operationName: 'maintenance', wallet: { mode: 'custom_before_complete', run: async () => {} }, build,
+    })).rejects.toThrow('no explicit address-backed wallet context');
+    expect(build).not.toHaveBeenCalled();
+    expect(lucidService.selectWalletFromAddress).not.toHaveBeenCalled();
+  });
+
   it('offers unreserved script inputs inside the completion lock', async () => {
     const { service, lucidService } = makeService();
     const busy = { txHash: 'busy', outputIndex: 0 } as any;
     const free = { txHash: 'free', outputIndex: 0 } as any;
     (service as any).inputReservations.reserve('outstanding', [busy], 1000);
-    lucidService.lucid = { utxosByOutRef: jest.fn(async (inputs) => inputs) } as any;
+    lucidService.lucid = {
+      utxosByOutRef: jest.fn(async (inputs) => inputs),
+      wallet: () => ({ getUtxos: async () => [busy, free], address: async () => 'signer' }),
+    } as any;
     await service.runChain({
       operationName: 'selection',
       wallet: { mode: 'custom_before_complete', run: async () => lucidService.selectWalletFromAddress() },
@@ -453,7 +552,10 @@ describe('TxOperationRunnerService', () => {
     const funding = { txHash: hash, outputIndex: 0, address: 'signer', assets: { lovelace: 30_000_000n } };
     const lookup = jest.fn().mockResolvedValue(unspent ? [funding] : []);
     lucidService.LucidImporter = { CML };
-    lucidService.lucid = { utxosByOutRef: lookup };
+    lucidService.lucid = {
+      utxosByOutRef: lookup,
+      wallet: () => ({ getUtxos: async () => [funding], address: async () => 'signer' }),
+    };
     const builder = {
       chain: jest.fn().mockResolvedValue([[], [], {
         toCBOR: () => cbor,
