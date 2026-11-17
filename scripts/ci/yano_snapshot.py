@@ -21,14 +21,14 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
-SCHEMA = 2
+SCHEMA = 3
 
 
 def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def cache_identity(distribution, root=ROOT):
+def cache_identity(distribution, root=ROOT, suite="shutdown"):
     # Hash the compiled blueprint, not Aiken source comments or test changes.
     # Include transitive deployment inputs and the exact runtime/configuration.
     tracked = subprocess.check_output([
@@ -37,13 +37,14 @@ def cache_identity(distribution, root=ROOT):
     paths = {root / name for name in tracked if name}
     paths.update([root / "cardano/onchain/plutus.json",
                   root / "scripts/ci/yano-deployment.ts",
+                  root / "scripts/ci/yano-provider.ts",
                   root / "scripts/ci/yano-shutdown.ts",
                   root / "scripts/ci/yano_snapshot.py"])
     inputs = {str(p.relative_to(root)): digest(p) for p in sorted(paths) if p.is_file()}
     runtime = {str(p.relative_to(distribution)): digest(p)
                for p in sorted((distribution / "config").rglob("*")) if p.is_file()}
     runtime["yano"] = digest(distribution / "yano")
-    identity = {"schema": SCHEMA, "inputs": inputs, "runtime": runtime,
+    identity = {"schema": SCHEMA, "suite": suite, "inputs": inputs, "runtime": runtime,
                 "platform": platform.system(), "architecture": platform.machine(),
                 "deno": subprocess.check_output(["deno", "--version"], text=True).strip()}
     key = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
@@ -134,27 +135,29 @@ def node(distribution, work):
                 process.wait()
 
 
-def run_deployment(work, base, action, log_label=None):
-    env = dict(os.environ, YANO_URL=base, YANO_ACTION=action,
+def run_deployment(work, base, action, log_label=None, suite="shutdown"):
+    env = dict(os.environ, YANO_URL=base, YANO_ACTION=action, YANO_SUITE=suite,
                YANO_EVALUATION_ADAPTER="1", YANO_QUERY_ADAPTER="1", YANO_TIMED_SMOKE="1",
                YANO_GENESIS=str(work / "config/network/devnet/shelley-genesis.json"))
     # A CI fixture must not inherit operator credentials or output destinations.
     for name in list(env):
         if name.startswith(("DEPLOYER_", "DEPLOYMENT_", "MIGRATION_", "YACI_", "KUPO_", "OGMIOS_")):
             env.pop(name)
+    script = ROOT / ("cardano/offchain/scripts/test-gateway-tendermint-cache.ts"
+                     if action == "integration" and suite == "gateway" else "scripts/ci/yano-deployment.ts")
     with (work / f"{log_label or action}.log").open("w") as log:
         subprocess.run(["deno", "run", "--config", str(ROOT / "cardano/offchain/deno.json"),
-                        "--frozen", "-A", str(ROOT / "scripts/ci/yano-deployment.ts")],
-                       cwd=work, env=env, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=300)
+                        "--frozen", "-A", str(script)],
+                       cwd=work, env=env, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=1200 if suite == "gateway" else 300)
 
 
 class IntegrationFailure(RuntimeError):
     """A test failure must fail CI, never be hidden by rebuilding the cache."""
 
 
-def run_integration(work, base, label="integration"):
+def run_integration(work, base, label="integration", suite="shutdown"):
     try:
-        run_deployment(work, base, "integration", label)
+        run_deployment(work, base, "integration", label, suite)
         result = json.loads((work / f"{label}.log").read_text().strip().splitlines()[-1])
         if result.get("passed") is not True:
             raise ValueError("Bridge integration suite did not pass")
@@ -183,12 +186,12 @@ def validate_fixture(fixture, key):
             raise ValueError(f"Incomplete snapshot: {name}")
 
 
-def build_fixture(distribution, work, fixture, key, identity):
+def build_fixture(distribution, work, fixture, key, identity, suite="shutdown", compare_fresh=False):
     work.mkdir()
     shutil.copytree(distribution / "config", work / "config")
     started = time.monotonic()
     with node(distribution, work) as base:
-        run_deployment(work, base, "deploy")
+        run_deployment(work, base, "deploy", suite=suite)
         addresses = sorted(json.loads((work / "known-addresses.json").read_text()))
         expected = inventory(base, addresses)
         hashes = sorted({u["reference_script_hash"] for rows in expected.values() for u in rows if u.get("reference_script_hash")})
@@ -206,12 +209,13 @@ def build_fixture(distribution, work, fixture, key, identity):
         shutil.copy2(work / "provider-state.json", fixture / "provider-state.json")
         seal_fixture(fixture, key, identity)
         ready_seconds = time.monotonic() - started
-        integration = run_integration(work, base)
-        (work / "integration-result.json").write_text(json.dumps(integration))
+        if suite == "shutdown" or compare_fresh:
+            integration = run_integration(work, base, suite=suite)
+            (work / "integration-result.json").write_text(json.dumps(integration))
     return ready_seconds
 
 
-def verify_fixture(distribution, fixture, work, key):
+def verify_fixture(distribution, fixture, work, key, suite="shutdown"):
     validate_fixture(fixture, key)
     work.mkdir()
     started = time.monotonic()
@@ -229,31 +233,35 @@ def verify_fixture(distribution, fixture, work, key):
         if {h: request(base, f"/scripts/{h}/cbor") for h in scripts} != scripts:
             raise RuntimeError("Restored reference script bytes differ")
         ready_seconds = time.monotonic() - started
-        run_deployment(work, base, "smoke")
+        run_deployment(work, base, "smoke", suite=suite)
         smoke = json.loads((work / "smoke.log").read_text().strip().splitlines()[-1])
         if smoke.get("scriptMintAdopted") is not True:
             raise RuntimeError("Restored script transaction failed")
         request(base, "/devnet/restore/ci-baseline", {})
         if inventory(base, expected) != expected:
             raise RuntimeError("Reset did not remove the script mint")
-        integration = run_integration(work, base)
+        integration = run_integration(work, base, suite=suite)
         request(base, "/devnet/restore/ci-baseline", {})
-        if inventory(base, expected) != expected:
+        # Include addresses first created by the suite, such as client caches.
+        # They must be empty again even if they were absent from the snapshot.
+        touched = json.loads((work / "provider-state.json").read_text())["addresses"]
+        reset_expected = {address: expected.get(address, []) for address in set(expected) | set(touched)}
+        if inventory(base, reset_expected) != reset_expected:
             raise IntegrationFailure("Reset did not restore the active bridge deployment")
-        # Rerun against the reset state, not just the first cold restore.
-        repeated = run_integration(work, base, "integration-reset")
+        # The short shutdown suite also checks a second mutation after reset.
+        repeated = run_integration(work, base, "integration-reset", suite) if suite == "shutdown" else None
     return {"integration": integration, "resetIntegration": repeated, "readySeconds": ready_seconds, "totalSeconds": time.monotonic() - started,
             "utxoCount": sum(map(len, expected.values())), "referenceScriptCount": len(scripts), "smoke": smoke}
 
 
-def run(distribution, cache, output, force_fresh=False):
+def run(distribution, cache, output, force_fresh=False, suite="shutdown", compare_fresh=False):
     output.mkdir(parents=True, exist_ok=False)
-    key, identity = cache_identity(distribution)
-    result = {"key": key, "cache": "miss", "saved": False}
+    key, identity = cache_identity(distribution, suite=suite)
+    result = {"key": key, "cache": "miss", "saved": False, "suite": suite}
     try:
-        if cache.exists() and not force_fresh:
+        if cache.exists() and not (force_fresh or compare_fresh):
             try:
-                result["verification"] = verify_fixture(distribution, cache, output / "cached-restore", key)
+                result["verification"] = verify_fixture(distribution, cache, output / "cached-restore", key, suite)
                 result["cache"] = "hit"
                 return result
             except IntegrationFailure:
@@ -262,9 +270,11 @@ def run(distribution, cache, output, force_fresh=False):
                 result.update(cache="rebuild", cacheError=str(error))
                 print(f"Cached fixture failed verification, rebuilding: {error}", flush=True)
         candidate = output / "fixture"
-        result["freshSeconds"] = build_fixture(distribution, output / "fresh", candidate, key, identity)
-        result["freshIntegration"] = json.loads((output / "fresh/integration-result.json").read_text())
-        result["verification"] = verify_fixture(distribution, candidate, output / "fresh-restore", key)
+        result["freshSeconds"] = build_fixture(distribution, output / "fresh", candidate, key, identity, suite, compare_fresh)
+        fresh_report = output / "fresh/integration-result.json"
+        if fresh_report.exists():
+            result["freshIntegration"] = json.loads(fresh_report.read_text())
+        result["verification"] = verify_fixture(distribution, candidate, output / "fresh-restore", key, suite)
         # Publish only a fixture that has passed a cold restore and bridge integration tests.
         if cache.exists():
             shutil.rmtree(cache)
@@ -289,17 +299,19 @@ def main():
     parser.add_argument("--cache", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--force-fresh", action="store_true")
+    parser.add_argument("--compare-fresh", action="store_true", help="Force a fresh deployment and run the suite before and after restore")
+    parser.add_argument("--suite", choices=["shutdown", "gateway"], default="shutdown")
     args = parser.parse_args()
     distribution = args.distribution.resolve()
     if args.print_key:
-        print(cache_identity(distribution)[0])
+        print(cache_identity(distribution, suite=args.suite)[0])
     else:
         if args.cache is None or args.output is None:
             parser.error("--cache and --output are required")
         cache, output = args.cache.resolve(), args.output.resolve()
         if cache == output or cache in output.parents or output in cache.parents:
             parser.error("Cache and output directories must be separate")
-        print(json.dumps(run(distribution, cache, output, args.force_fresh), indent=2))
+        print(json.dumps(run(distribution, cache, output, args.force_fresh, args.suite, args.compare_fresh), indent=2))
 
 
 if __name__ == "__main__":

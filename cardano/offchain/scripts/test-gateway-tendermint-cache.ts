@@ -20,36 +20,74 @@ import parameters from "./fixtures/mainnet-protocol-parameters.json" with {
   type: "json",
 };
 
-const account = generateEmulatorAccount({ lovelace: 200_000_000n });
-account.address = credentialToAddress(
-  "Custom",
-  getAddressDetails(account.address).paymentCredential!,
-);
-const emulator = new Emulator(Array.from({ length: 50 }, () => account), {
-  ...PROTOCOL_PARAMETERS_DEFAULT,
-  maxTxSize: parameters.maxTxSize,
-  maxTxExMem: BigInt(parameters.maxTxExMem),
-  maxTxExSteps: BigInt(parameters.maxTxExSteps),
-  coinsPerUtxoByte: BigInt(parameters.coinsPerUtxoByte),
-  minFeeA: parameters.minFeeA,
-  minFeeB: parameters.minFeeB,
-  priceMem: parameters.priceMem,
-  priceStep: parameters.priceStep,
-  minFeeRefScriptCostPerByte: parameters.minFeeRefScriptCostPerByte,
-});
-emulator.protocolParameters.costModels.PlutusV3 = parameters.plutusV3CostModel;
-emulator.time = Math.floor(Date.now() / 1000) * 1000;
-const clock = customEmulatorSlotConfig(emulator);
-const lucid = await Lucid(emulator, "Custom", {
-  evaluator: createCardanoScalusEvaluator(),
-  slotConfig: clock,
-});
-lucid.selectWallet.fromSeed(account.seedPhrase, { addressType: "Enterprise" });
-isolateEvaluation(lucid, emulator);
+const started = performance.now();
+async function setup() {
+  if (Deno.env.get("YANO_URL")) {
+    const { createYanoContext } = await import(
+      "../../../scripts/ci/yano-provider.ts"
+    );
+    const context = await createYanoContext();
+    return {
+      ...context,
+      emulator: undefined,
+      signer: context.address,
+      selectWallet: () =>
+        context.lucid.selectWallet.fromPrivateKey(context.key),
+    };
+  }
+  const account = generateEmulatorAccount({ lovelace: 200_000_000n });
+  account.address = credentialToAddress(
+    "Custom",
+    getAddressDetails(account.address).paymentCredential!,
+  );
+  const emulator = new Emulator(Array.from({ length: 50 }, () => account), {
+    ...PROTOCOL_PARAMETERS_DEFAULT,
+    maxTxSize: parameters.maxTxSize,
+    maxTxExMem: BigInt(parameters.maxTxExMem),
+    maxTxExSteps: BigInt(parameters.maxTxExSteps),
+    coinsPerUtxoByte: BigInt(parameters.coinsPerUtxoByte),
+    minFeeA: parameters.minFeeA,
+    minFeeB: parameters.minFeeB,
+    priceMem: parameters.priceMem,
+    priceStep: parameters.priceStep,
+    minFeeRefScriptCostPerByte: parameters.minFeeRefScriptCostPerByte,
+  });
+  emulator.protocolParameters.costModels.PlutusV3 =
+    parameters.plutusV3CostModel;
+  emulator.time = Math.floor(Date.now() / 1000) * 1000;
+  const clock = customEmulatorSlotConfig(emulator);
+  const lucid = await Lucid(emulator, "Custom", {
+    evaluator: createCardanoScalusEvaluator(),
+    slotConfig: clock,
+  });
+  lucid.selectWallet.fromSeed(account.seedPhrase, {
+    addressType: "Enterprise",
+  });
+  return {
+    lucid,
+    provider: emulator,
+    emulator,
+    clock,
+    signer: account.address,
+    selectWallet: () =>
+      lucid.selectWallet.fromSeed(account.seedPhrase, {
+        addressType: "Enterprise",
+      }),
+  };
+}
+const { lucid, provider, emulator, clock, signer, selectWallet } =
+  await setup();
+isolateEvaluation(lucid, provider);
+const now = () =>
+  emulator
+    ? emulator.now()
+    : lucid.slotToUnixTime(lucid.unixTimeToSlot(Date.now()));
+const currentSlot = () =>
+  emulator ? emulator.slot : lucid.unixTimeToSlot(now());
 const archive = new Map<string, UTxO & { blockNo: number }>();
 const transactions = new Map<string, string>();
-const submit = emulator.submitTx.bind(emulator);
-emulator.submitTx = async (cbor) => {
+const submit = provider.submitTx.bind(provider);
+provider.submitTx = async (cbor) => {
   const tx = CML.Transaction.from_cbor_hex(cbor);
   assert(
     cbor.length / 2 <= parameters.maxTxSize,
@@ -69,36 +107,54 @@ emulator.submitTx = async (cbor) => {
     );
   }
   const hash = await submit(cbor);
-  emulator.awaitBlock();
+  let blockNo: number;
+  if (emulator) {
+    emulator.awaitBlock();
+    blockNo = emulator.blockHeight;
+  } else {
+    await provider.awaitTx(hash, 100);
+    const response = await fetch(
+      `${Deno.env.get("YANO_URL")}/txs/${hash}/status`,
+    );
+    const status = await response.json();
+    assert(
+      response.ok && status.status === "in_block" &&
+        Number.isSafeInteger(status.block_height),
+    );
+    blockNo = status.block_height;
+  }
   transactions.set(hash, cbor);
   const refs = Array.from(
     { length: tx.body().outputs().len() },
     (_, outputIndex) => ({ txHash: hash, outputIndex }),
   );
-  for (const utxo of await emulator.getUtxosByOutRef(refs)) {
+  for (const utxo of await provider.getUtxosByOutRef(refs)) {
     archive.set(`${hash}#${utxo.outputIndex}`, {
       ...structuredClone(utxo),
-      blockNo: emulator.blockHeight,
+      blockNo,
     });
   }
   return hash;
 };
-const authority = getAddressDetails(account.address).paymentCredential!.hash;
+const authority = getAddressDetails(signer).paymentCredential!.hash;
 const log = console.log;
 let deployment;
 try {
   console.log = () => {};
-  deployment = await createDeployment(lucid, "emulator", {
-    deploymentMode: "upgradeable",
-    migration: {
-      governance: { signers: [authority], quorum: 1n, delay_ms: 86_400_000n },
-      emergency: { signers: ["77".repeat(28)], quorum: 1n },
-      bootstrapSigners: [authority],
-    },
-  });
+  deployment = Deno.env.get("YANO_URL")
+    ? JSON.parse(await Deno.readTextFile("deployments/handler.json"))
+    : await createDeployment(lucid, "emulator", {
+      deploymentMode: "upgradeable",
+      migration: {
+        governance: { signers: [authority], quorum: 1n, delay_ms: 86_400_000n },
+        emergency: { signers: ["77".repeat(28)], quorum: 1n },
+        bootstrapSigners: [authority],
+      },
+    });
 } finally {
   console.log = log;
 }
+const setupSeconds = (performance.now() - started) / 1000;
 const generated = await new Deno.Command("go", {
   cwd: new URL(
     "../../../cosmos/cardano-probabilistic-light-client-core/",
@@ -109,7 +165,7 @@ const generated = await new Deno.Command("go", {
     "-mod=readonly",
     "../../tests/tendermint-cache/headers/main.go",
     "-time-ns",
-    String(BigInt(emulator.now()) * 1_000_000n),
+    String(BigInt(now()) * 1_000_000n),
   ],
   stdout: "piped",
   stderr: "piped",
@@ -158,7 +214,7 @@ const server = Deno.serve(
         result = {
           deployment,
           scenarios,
-          signer: account.address,
+          signer,
           clock,
         };
       } else if (body.method === "policyManifest") {
@@ -166,11 +222,13 @@ const server = Deno.serve(
         result = true;
       } else if (body.method === "clock") {
         result = {
-          now: emulator.now(),
-          slot: emulator.slot,
+          now: now(),
+          slot: currentSlot(),
         };
       } else if (body.method === "referencePrice") {
-        emulator.protocolParameters.minFeeRefScriptCostPerByte = body.args[0];
+        const protocol = await provider.getProtocolParameters();
+        protocol.minFeeRefScriptCostPerByte = body.args[0];
+        provider.getProtocolParameters = () => Promise.resolve(protocol);
         result = true;
       } else if (body.method === "history") {
         const [policy, name] = body.args;
@@ -194,9 +252,7 @@ const server = Deno.serve(
           }),
         };
       } else if (body.method === "signSubmit") {
-        lucid.selectWallet.fromSeed(account.seedPhrase, {
-          addressType: "Enterprise",
-        });
+        selectWallet();
         const unsigned = CML.Transaction.from_cbor_hex(body.args[0]).body();
         const resolve = async (refs: CML.TransactionInputList | undefined) => {
           const keys = Array.from({ length: refs?.len() ?? 0 }, (_, i) => {
@@ -206,7 +262,7 @@ const server = Deno.serve(
               outputIndex: Number(ref.index()),
             };
           });
-          const utxos = await emulator.getUtxosByOutRef(keys);
+          const utxos = await provider.getUtxosByOutRef(keys);
           assert(
             utxos.length === keys.length,
             "Signing evidence has unresolved inputs",
@@ -240,7 +296,7 @@ const server = Deno.serve(
         });
         result = { hash, fee };
       } else if (methods.has(body.method)) {
-        result = await (emulator as unknown as Record<
+        result = await (provider as unknown as Record<
           string,
           (...args: unknown[]) => Promise<unknown>
         >)[body.method](...body.args);
@@ -276,6 +332,17 @@ try {
     );
   }
   assert(child.success, "Production Gateway cached-client integration failed");
+  const report = JSON.parse(
+    new TextDecoder().decode(child.stdout).trim().split("\n").at(-1)!,
+  );
+  console.log(
+    JSON.stringify({
+      passed: true,
+      ...report,
+      setupSeconds,
+      seconds: (performance.now() - started) / 1000,
+    }),
+  );
 } finally {
   await server.shutdown();
 }
