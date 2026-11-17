@@ -51,7 +51,7 @@ function chainResponse(response) {
   return { transactions, rebuild };
 }
 
-async function runtime(fixture) {
+async function runtime(fixture, includePacketState = false) {
   const { deployment, signer, clock } = fixture;
   const provider = Object.fromEntries(['getProtocolParameters', 'getUtxos', 'getUtxosWithUnit', 'getUtxoByUnit', 'getUtxosByOutRef', 'getDatum', 'getDelegation', 'evaluateTx', 'awaitTx', 'submitTx'].map((method) => [method, (...args) => rpc(method, ...args)]));
   const parameters = provider.getProtocolParameters;
@@ -118,7 +118,8 @@ async function runtime(fixture) {
   lucidService.queryLedgerStateUtxosAtAddresses = async (addresses) => (await Promise.all(addresses.map((a) => lucid.utxosAt(a)))).flat();
   const tree = new IbcTreeStateStore({ network: 'Custom', hostStateNFT: deployment.hostStateNFT, clientPolicyId: deployment.validators.mintClientStt.scriptHash }, {
     queryAllClientUtxos: () => lucid.utxosAt(deployment.validators.spendClient.address),
-    queryAllConnectionUtxos: async () => [], queryAllChannelUtxos: async () => [],
+    queryAllConnectionUtxos: async () => includePacketState ? lucid.utxosAt(deployment.validators.spendConnection.address) : [],
+    queryAllChannelUtxos: async () => includePacketState ? lucid.utxosAt(deployment.validators.spendChannel.address) : [],
   }, lucidService);
   const pending = new IbcTreePendingUpdatesService();
   const runner = new TxOperationRunnerService(lucidService, new WalletContextService(logger, lucidService), new TxEventsService(), pending);
@@ -142,7 +143,7 @@ async function runtime(fixture) {
     const any = Any.decode(Buffer.from(attr.value, 'hex'));
     return Header.decode(any.value);
   };
-  return { service, lucidService, replay, signer, fallbackReasons };
+  return { service, lucidService, replay, signer, fallbackReasons, config, tree, runner, logger };
 }
 
 async function main() {
@@ -213,4 +214,5 @@ async function main() {
   }
   process.stdout.write(JSON.stringify({ standardDeployment: true, pairedCreation: true, updates: report }) + '\n');
 }
-main().catch((error) => { console.error(error); process.exitCode = 1; });
+module.exports = { runtime, rpc, chainResponse };
+if (require.main === module) main().catch((error) => { console.error(error); process.exitCode = 1; });

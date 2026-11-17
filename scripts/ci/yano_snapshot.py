@@ -36,6 +36,7 @@ def cache_identity(distribution, root=ROOT, suite="shutdown"):
     # Include transitive deployment inputs and the exact runtime/configuration.
     tracked = subprocess.check_output([
         "git", "ls-files", "-z", "cardano/offchain", "packages", "proto-types",
+        *(["cardano/gateway", "tests/tendermint-cache", "cosmos/cardano-probabilistic-light-client-core"] if suite == "packets" else []),
     ], cwd=root).decode().split("\0")
     paths = {root / name for name in tracked if name}
     paths.update([root / "cardano/onchain/plutus.json",
@@ -43,6 +44,8 @@ def cache_identity(distribution, root=ROOT, suite="shutdown"):
                   root / "scripts/ci/yano-provider.ts",
                   root / "scripts/ci/yano-shutdown.ts",
                   root / "scripts/ci/yano_snapshot.py"])
+    if suite == "packets":
+        paths.update([root / "scripts/ci/yano-packets.ts", root / "cardano/offchain/src/testing/packet-counterparty.ts", root / "cardano/gateway/src/scripts/ci/yano-packet-setup.cjs"])
     inputs = {str(p.relative_to(root)): digest(p) for p in sorted(paths) if p.is_file()}
     runtime = {str(p.relative_to(distribution)): digest(p)
                for p in sorted((distribution / "config").rglob("*")) if p.is_file()}
@@ -148,10 +151,15 @@ def run_deployment(work, base, action, log_label=None, suite="shutdown"):
             env.pop(name)
     script = ROOT / ("cardano/offchain/scripts/test-gateway-tendermint-cache.ts"
                      if action == "integration" and suite == "gateway" else "scripts/ci/yano-deployment.ts")
+    if suite == "packets":
+        if action == "prepare":
+            script = ROOT / "scripts/ci/yano-packets.ts"
+        elif action == "integration":
+            script = ROOT / "cardano/offchain/scripts/test-gateway-packet-backlog.ts"
     with (work / f"{log_label or action}.log").open("w") as log:
         subprocess.run(["deno", "run", "--config", str(ROOT / "cardano/offchain/deno.json"),
                         "--frozen", "-A", str(script)],
-                       cwd=work, env=env, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=1200 if suite == "gateway" else 300)
+                       cwd=work, env=env, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=1200 if suite in ["gateway", "packets"] else 300)
 
 
 class IntegrationFailure(RuntimeError):
@@ -183,6 +191,11 @@ def validate_fixture(fixture, key):
                 if p.is_file() and p.name != "manifest.json"}
     if observed != manifest["files"]:
         raise ValueError("Snapshot file checksum mismatch")
+    if manifest["identity"].get("suite") == "packets":
+        packet = json.loads((fixture / "packet-fixture.json").read_text())
+        age = time.time() * 1000 - packet["createdAt"]
+        if age < 0 or age > 24 * 60 * 60 * 1000:
+            raise ValueError("Packet checkpoint is outside its one-day cache lifetime")
     for name in ["checkpoint/CURRENT", "config/network/devnet/shelley-genesis.json",
                  "deployments/handler.json", "wallet.key", "inventory.json", "scripts.json", "provider-state.json"]:
         if not (fixture / name).is_file():
@@ -200,10 +213,18 @@ def validate_fixture_time(fixture):
 def build_fixture(distribution, work, fixture, key, identity, suite="shutdown", compare_fresh=False):
     work.mkdir()
     shutil.copytree(distribution / "config", work / "config")
+    if suite == "packets":
+        # Preserve the Gateway's two-minute lease window with 200 ms slots.
+        genesis_path = work / "config/network/devnet/shelley-genesis.json"
+        genesis = json.loads(genesis_path.read_text())
+        genesis["securityParam"] = max(genesis["securityParam"], 400)
+        genesis_path.write_text(json.dumps(genesis, indent=2))
     started = time.monotonic()
     with node(distribution, work) as base:
         run_deployment(work, base, "deploy", suite=suite)
-        addresses = sorted(json.loads((work / "known-addresses.json").read_text()))
+        if suite == "packets":
+            run_deployment(work, base, "prepare", suite=suite)
+        addresses = sorted(json.loads((work / "provider-state.json").read_text())["addresses"])
         expected = inventory(base, addresses)
         hashes = sorted({u["reference_script_hash"] for rows in expected.values() for u in rows if u.get("reference_script_hash")})
         if not hashes:
@@ -218,6 +239,8 @@ def build_fixture(distribution, work, fixture, key, identity, suite="shutdown", 
         (fixture / "inventory.json").write_text(json.dumps(expected))
         (fixture / "scripts.json").write_text(json.dumps(scripts))
         shutil.copy2(work / "provider-state.json", fixture / "provider-state.json")
+        if suite == "packets":
+            shutil.copy2(work / "packet-fixture.json", fixture / "packet-fixture.json")
         seal_fixture(fixture, key, identity)
         ready_seconds = time.monotonic() - started
         if suite == "shutdown" or compare_fresh:
@@ -237,6 +260,8 @@ def verify_fixture(distribution, fixture, work, key, suite="shutdown"):
     shutil.copytree(fixture / "deployments", work / "deployments")
     shutil.copy2(fixture / "wallet.key", work / "wallet.key")
     shutil.copy2(fixture / "provider-state.json", work / "provider-state.json")
+    if suite == "packets":
+        shutil.copy2(fixture / "packet-fixture.json", work / "packet-fixture.json")
     expected = json.loads((fixture / "inventory.json").read_text())
     scripts = json.loads((fixture / "scripts.json").read_text())
     with node(distribution, work) as base:
@@ -312,7 +337,7 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--force-fresh", action="store_true")
     parser.add_argument("--compare-fresh", action="store_true", help="Force a fresh deployment and run the suite before and after restore")
-    parser.add_argument("--suite", choices=["shutdown", "gateway"], default="shutdown")
+    parser.add_argument("--suite", choices=["shutdown", "gateway", "packets"], default="shutdown")
     args = parser.parse_args()
     distribution = args.distribution.resolve()
     if args.print_key:

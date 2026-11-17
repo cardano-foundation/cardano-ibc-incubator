@@ -211,6 +211,12 @@ public endpoints behind a proxy with authentication and per-client limits. The o
 
 ## Test
 
+CI runs the packet backlog check against a restored Yano snapshot. The snapshot contains a deployed bridge with a client, an open connection and channel, and initialized packet lanes. Production Gateway builders create that state through signed transactions. Counterparty commitments and proofs are generated fixtures. This check does not run a counterparty chain or Hermes relay.
+
+Each run funds disposable wallets and submits five valid transfer intents plus seven unusable deposits. It exercises backlog draining, concurrent acknowledgements and wallet reservations. A real client update consumes the reference used by an abandoned transaction while its spending inputs remain available. Reset verification checks that the original snapshot state returns and newly created outputs disappear.
+
+After building the contracts, shared TypeScript packages and Gateway, run `python3 scripts/ci/yano_snapshot.py --suite packets --distribution /path/to/yano-native-distribution --cache .deployment-smoke/yano-packets-fixture --output .deployment-smoke/yano-packets-run` from the repository root. Choose a new output directory each time. Add `--compare-fresh` to run the same assertions before and after restore. CI retains timings and logs in `yano-packets-results`. Snapshots are rebuilt when their genesis is at least one hour old to stay within Yano's forecast horizon. The saved client checkpoint is also checked against its trusting period. Changes to the fixture inputs or Yano runtime also invalidate the cache.
+
 Packet transactions reserve their spending and collateral inputs while their unsigned transactions remain valid. Every transaction-runner wallet selection refreshes those reservations using the node's ledger clock. An abandoned packet therefore releases its inputs for client maintenance once its validity deadline passes, even when no further packet work occurs. A local clock ahead of the ledger does not expire a lease. If ledger time cannot be read, completion fails without releasing live reservations.
 
 ```bash

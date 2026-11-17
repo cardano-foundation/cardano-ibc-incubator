@@ -52,6 +52,31 @@ class SnapshotCacheTests(unittest.TestCase):
                     self.assertNotEqual(key, snapshot.cache_identity(self.root / "distribution", self.root)[0])
                     path.write_text("original")
 
+    def test_packet_identity_covers_gateway_builders_and_checkpoint_generator(self):
+        names = ["cardano/gateway/src/tx/channel.service.ts",
+                 "cardano/gateway/src/scripts/ci/yano-packet-setup.cjs",
+                 "tests/tendermint-cache/headers/main.go", "scripts/ci/yano-packets.ts"]
+        for name in names + ["distribution/yano", "distribution/config/genesis.json"]:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("original")
+
+        def command(args, **kwargs):
+            if args[0] == "git":
+                self.assertIn("cardano/gateway", args)
+                self.assertIn("tests/tendermint-cache", args)
+                return "\0".join(names).encode()
+            return "deno pinned-version"
+
+        with patch.object(snapshot.subprocess, "check_output", side_effect=command):
+            key = snapshot.cache_identity(self.root / "distribution", self.root, "packets")[0]
+            for name in names:
+                with self.subTest(name=name):
+                    path = self.root / name
+                    path.write_text("changed")
+                    self.assertNotEqual(key, snapshot.cache_identity(self.root / "distribution", self.root, "packets")[0])
+                    path.write_text("original")
+
     def test_corrupted_or_incomplete_fixture_is_rejected(self):
         fixture = self.root / "fixture"
         for name in ["checkpoint/CURRENT", "config/network/devnet/shelley-genesis.json",
@@ -70,6 +95,25 @@ class SnapshotCacheTests(unittest.TestCase):
         snapshot.seal_fixture(fixture, "key", {})
         with self.assertRaisesRegex(ValueError, "Incomplete"):
             snapshot.validate_fixture(fixture, "key")
+
+    def test_packet_checkpoint_expires_before_the_client_trusting_period(self):
+        fixture = self.root / "fixture"
+        for name in ["checkpoint/CURRENT", "config/network/devnet/shelley-genesis.json",
+                     "deployments/handler.json", "wallet.key", "inventory.json", "scripts.json", "provider-state.json"]:
+            path = fixture / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("original")
+        (fixture / "packet-fixture.json").write_text(json.dumps({"createdAt": 1000}))
+        snapshot.seal_fixture(fixture, "key", {"suite": "packets"})
+        with patch.object(snapshot.time, "time", return_value=3600):
+            snapshot.validate_fixture(fixture, "key")
+        with patch.object(snapshot.time, "time", return_value=86402):
+            with self.assertRaisesRegex(ValueError, "cache lifetime"):
+                snapshot.validate_fixture(fixture, "key")
+        with patch.object(snapshot.time, "time", return_value=0):
+            with self.assertRaisesRegex(ValueError, "cache lifetime"):
+                snapshot.validate_fixture(fixture, "key")
+
 
     def test_old_genesis_is_rejected_before_starting_a_restored_node(self):
         fixture = self.root / "fixture"
