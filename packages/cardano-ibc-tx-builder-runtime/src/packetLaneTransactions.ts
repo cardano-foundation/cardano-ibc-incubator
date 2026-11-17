@@ -1619,6 +1619,18 @@ export function usableTransferIntent(
   }
 }
 
+/** Backing exists, but settlement first needs a bounded consolidation. */
+export class FragmentedPacketLiquidityError extends Error {
+  constructor(
+    readonly inputs: UTxO[],
+    readonly available: bigint,
+    readonly requested: bigint,
+  ) {
+    super("Insufficient liquidity within the transaction input limit");
+    this.name = "FragmentedPacketLiquidityError";
+  }
+}
+
 /** Script addresses accept arbitrary deposits. Authenticate before selecting funds. */
 export function selectPacketLiquidity(
   inputs: UTxO[],
@@ -1632,7 +1644,10 @@ export function selectPacketLiquidity(
   if (amount <= 0n || sequence < 1n) {
     throw new Error("Invalid liquidity request");
   }
+  const seen = new Set<string>();
   const candidates = inputs.flatMap((input) => {
+    const reference = `${input.txHash}#${input.outputIndex}`;
+    if (seen.has(reference)) return [];
     try {
       if (input.address !== deployment.batchAddress) return [];
       const datum = decode(input);
@@ -1682,6 +1697,7 @@ export function selectPacketLiquidity(
           asset !== "lovelace" && asset !== identity && asset !== unit
         )
       ) return [];
+      seen.add(reference);
       return [{ input, principal }];
     } catch {
       // Decode and interpretation errors are local to this untrusted output.
@@ -1712,9 +1728,14 @@ export function selectPacketLiquidity(
     if (total >= amount) break;
   }
   if (total < amount) {
-    throw new Error(
-      "Insufficient liquidity within the transaction input limit",
+    const available = candidates.reduce(
+      (sum, candidate) => sum + candidate.principal,
+      0n,
     );
+    if (available < amount) {
+      throw new Error("Insufficient total packet liquidity");
+    }
+    throw new FragmentedPacketLiquidityError(selected, available, amount);
   }
   return selected;
 }

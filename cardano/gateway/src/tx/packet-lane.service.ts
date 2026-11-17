@@ -15,6 +15,8 @@ import { BadRequestException, ConflictException, ForbiddenException, Inject, Inj
 import { ConfigService } from '@nestjs/config';
 import type { Constr, Data, Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import {
+  buildLiquidityRetirement,
+  FragmentedPacketLiquidityError,
   buildTransferIntent,
   buildTransferIntentCancellation,
   buildPacketSendBatch,
@@ -649,11 +651,21 @@ export class PacketLaneService {
         : !incoming && (kind === 'timeout' || ack?.error) && data.denom.startsWith(`${port}/${channel}/`)
           ? data.denom
           : undefined;
+    let consolidating = false;
     const unsigned_tx = await this.complete(request.signer, `packet${kind}`, async (from, to, availableInputs) => {
-      const liquidity =
-        !voucherDenom && (kind !== 'acknowledge' || ack?.error)
-          ? await this.liquidity(deployment, port, channel, denom, BigInt(data.amount), p.sequence, availableInputs)
-          : [];
+      let liquidity: UTxO[] = [];
+      if (!voucherDenom && (kind !== 'acknowledge' || ack?.error)) {
+        try {
+          liquidity = await this.liquidity(deployment, port, channel, denom, BigInt(data.amount), p.sequence, availableInputs);
+        } catch (error) {
+          if (!(error instanceof FragmentedPacketLiquidityError)) throw error;
+          // Reserve these inputs under the same wallet lock as settlement. Hermes
+          // confirms this maintenance transaction before rebuilding the packet.
+          const tx = await buildLiquidityRetirement(this.lucid.lucid, deployment, error.inputs, true);
+          consolidating = true;
+          return { tx, inputs: error.inputs };
+        }
+      }
       let built: Awaited<ReturnType<typeof buildPacketAcknowledgement>>;
       if (kind === 'receive')
         built = await buildPacketReceive(this.lucid.lucid, deployment, packet, height, proof, liquidity, from, to);
@@ -716,6 +728,11 @@ export class PacketLaneService {
       }
       return { tx, inputs: [built.input, ...liquidity] };
     });
-    return { result: 0, unsigned_tx };
+    return {
+      result: 0,
+      unsigned_tx: consolidating
+        ? { ...unsigned_tx, type_url: '/ibc.cardano.v1.ConsolidatePacketLiquidity' }
+        : unsigned_tx,
+    };
   }
 }
