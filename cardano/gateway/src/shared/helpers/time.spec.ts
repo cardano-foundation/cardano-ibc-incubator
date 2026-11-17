@@ -1,5 +1,5 @@
 import { ogmiosRequest } from './ogmios';
-import { computeLedgerAnchoredValidityWindow, ledgerVisibleValidityUpperBoundMs, queryLocalSlotConfig } from './time';
+import { computeLedgerAnchoredValidityWindow, ledgerVisibleValidityUpperBoundMs, queryLedgerTime, queryLocalSlotConfig } from './time';
 
 jest.mock('./ogmios', () => ({ ogmiosRequest: jest.fn() }));
 
@@ -50,6 +50,41 @@ describe('local slot timing', () => {
     await expect(computeLedgerAnchoredValidityWindow(
       'http://ogmios', { zeroTime, zeroSlot: 0, slotLength: 100 }, 120_000,
     )).rejects.toThrow('forecast safe zone');
+  });
+});
+
+describe('authoritative ledger time', () => {
+  afterEach(() => jest.resetAllMocks());
+
+  it('uses the node tip with sub-second slots and a nonzero slot origin', async () => {
+    (ogmiosRequest as jest.Mock).mockResolvedValue({ slot: 110, id: 'tip' });
+    const wallClock = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    try {
+      await expect(queryLedgerTime('http://ogmios', { zeroTime: 1500, zeroSlot: 100, slotLength: 200 }))
+        .resolves.toEqual({ currentSlot: 110, currentLedgerTime: 3500 });
+      expect(ogmiosRequest).toHaveBeenCalledWith('http://ogmios', 'queryNetwork/tip', {});
+      expect(ogmiosRequest).toHaveBeenCalledTimes(1);
+    } finally {
+      wallClock.mockRestore();
+    }
+  });
+
+  it.each([NaN, Infinity, -1, 1.5])('rejects invalid ledger slot %s', async (slot) => {
+    (ogmiosRequest as jest.Mock).mockResolvedValue({ slot, id: 'tip' });
+    await expect(queryLedgerTime('http://ogmios', { zeroTime: 0, zeroSlot: 0, slotLength: 1000 }))
+      .rejects.toThrow('invalid ledger clock');
+  });
+
+  it('propagates a failed tip query without falling back to local time', async () => {
+    (ogmiosRequest as jest.Mock).mockRejectedValue(new Error('node unavailable'));
+    await expect(queryLedgerTime('http://ogmios', { zeroTime: 0, zeroSlot: 0, slotLength: 1000 }))
+      .rejects.toThrow('node unavailable');
+  });
+
+  it('rejects invalid slot origins before querying the node', async () => {
+    await expect(queryLedgerTime('http://ogmios', { zeroTime: 0, zeroSlot: NaN, slotLength: 1000 }))
+      .rejects.toThrow('slot configuration');
+    expect(ogmiosRequest).not.toHaveBeenCalled();
   });
 });
 

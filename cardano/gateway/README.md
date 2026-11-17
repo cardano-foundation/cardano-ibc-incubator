@@ -211,6 +211,8 @@ public endpoints behind a proxy with authentication and per-client limits. The o
 
 ## Test
 
+Packet transactions reserve their spending and collateral inputs while their unsigned transactions remain valid. Every transaction-runner wallet selection refreshes those reservations using the node's ledger clock. An abandoned packet therefore releases its inputs for client maintenance once its validity deadline passes, even when no further packet work occurs. A local clock ahead of the ledger does not expire a lease. If ledger time cannot be read, completion fails without releasing live reservations.
+
 ```bash
 # unit tests
 $ npm run test
