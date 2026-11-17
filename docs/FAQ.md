@@ -167,6 +167,8 @@ Interchain-query packets still store receipts and acknowledgements in the channe
 datum and use a separate authenticated cleanup operation. The Gateway rejects
 pruning requests for the ICS-20 `transfer` port.
 
+The Cardano funded-intent executor runs only when `mode.packets.enabled = true`. It applies the Cardano chain's `packet_filter` channel policy before building or signing batches. Subscribing to chain events alone does not enable packet execution.
+
 Hermes uses `packet_executor_concurrency = 4` by default to execute funded batches across independent channels while each channel has at most one batch in flight. Set it to `1` for serial execution. Increasing it needs separate signer inputs for fees and collateral. Shared initialization inputs and busy wallet inputs still cause retries. The send builder still includes at most two intents in each transaction. Measure drain time on the intended network before claiming a throughput gain.
 
 ## Why was Mithril removed from the maintained path?
