@@ -22,6 +22,9 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = 3
+# Leave one hour for the suite and transaction TTLs inside Yano's two-hour
+# devnet forecast horizon. Restoring RocksDB does not rewind the wall clock.
+MAX_RESTORE_AGE_SECONDS = 3600
 
 
 def digest(path):
@@ -199,6 +202,14 @@ def validate_fixture(fixture, key):
             raise ValueError(f"Incomplete snapshot: {name}")
 
 
+def validate_fixture_time(fixture):
+    genesis = json.loads((fixture / "config/network/devnet/shelley-genesis.json").read_text())
+    start = datetime.fromisoformat(genesis["systemStart"].replace("Z", "+00:00")).timestamp()
+    age = time.time() - start
+    if age < 0 or age >= MAX_RESTORE_AGE_SECONDS:
+        raise ValueError("Snapshot genesis is outside the safe restore lifetime")
+
+
 def build_fixture(distribution, work, fixture, key, identity, suite="shutdown", compare_fresh=False):
     work.mkdir()
     shutil.copytree(distribution / "config", work / "config")
@@ -240,6 +251,7 @@ def build_fixture(distribution, work, fixture, key, identity, suite="shutdown", 
 
 def verify_fixture(distribution, fixture, work, key, suite="shutdown"):
     validate_fixture(fixture, key)
+    validate_fixture_time(fixture)
     work.mkdir()
     started = time.monotonic()
     shutil.copytree(fixture / "checkpoint", work / "chainstate")
