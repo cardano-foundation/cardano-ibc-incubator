@@ -71,6 +71,24 @@ class SnapshotCacheTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Incomplete"):
             snapshot.validate_fixture(fixture, "key")
 
+    def test_old_genesis_is_rejected_before_starting_a_restored_node(self):
+        fixture = self.root / "fixture"
+        genesis = fixture / "config/network/devnet/shelley-genesis.json"
+        genesis.parent.mkdir(parents=True)
+        genesis.write_text(json.dumps({"systemStart": "2024-01-01T00:00:00Z"}))
+        start = 1704067200
+        with patch.object(snapshot.time, "time", return_value=start + 3599):
+            snapshot.validate_fixture_time(fixture)
+        # The failing CI snapshot was 113 minutes old. Adding the transaction
+        # TTL crossed Yano's 120-minute Plutus time-translation horizon.
+        for age in [-1, 3600, 113 * 60]:
+            with self.subTest(age=age), patch.object(snapshot.time, "time", return_value=start + age), \
+                    patch.object(snapshot, "validate_fixture"), patch.object(snapshot, "node") as node:
+                with self.assertRaisesRegex(ValueError, "safe restore lifetime"):
+                    snapshot.verify_fixture(self.root, fixture, self.root / "restore", "key", "gateway")
+                node.assert_not_called()
+                self.assertFalse((self.root / "restore").exists())
+
     def test_cache_hit_does_not_deploy(self):
         cache = self.root / "cache"
         cache.mkdir()
