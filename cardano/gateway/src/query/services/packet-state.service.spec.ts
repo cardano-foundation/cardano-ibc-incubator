@@ -139,6 +139,30 @@ describe('canonical packet query state', () => {
     expect((await service.entries('transfer', 'channel-0', 'acks', 42n)).entries.get(1n)).toBe('ab'.repeat(32));
   });
 
+  it('reports no receipts for an existing channel before its lanes are initialized', async () => {
+    const { service, history, outputs } = fixture();
+    outputs.set('channel-1', { datum: new Datum([null, 'transfer']) });
+    const result = await service.entries('transfer', 'channel-1', 'receipts', 42n, { sequences: [1n] });
+    expect(result.entries.size).toBe(0);
+    expect(result.height.revision_height).toBe(42n);
+    expect(history.rebuildPacketLaneTreeAtBlock).not.toHaveBeenCalled();
+  });
+
+  it('does not hide missing initialized lanes or unknown channels', async () => {
+    const { service, outputs } = fixture();
+    outputs.delete('11'.repeat(28) + packetLaneTokenName('transfer', 'channel-0', 0, 2));
+    await expect(service.entries('transfer', 'channel-0', 'receipts', 42n)).rejects.toThrow();
+    await expect(service.entries('transfer', 'channel-1', 'receipts', 42n)).rejects.toThrow('channel datum');
+  });
+
+  it('rejects a wrong port or rollback for an uninitialized channel', async () => {
+    const { service, history, outputs } = fixture();
+    outputs.set('channel-1', { datum: new Datum([null, 'transfer']) });
+    await expect(service.entries('other', 'channel-1', 'receipts', 42n)).rejects.toThrow('channel identity');
+    history.findBlockByHeight.mockResolvedValueOnce({ hash: 'aa'.repeat(32) }).mockResolvedValueOnce({ hash: 'dd'.repeat(32) });
+    await expect(service.entries('transfer', 'channel-1', 'receipts', 42n)).rejects.toThrow('rolled back');
+  });
+
   it('rejects a block rollback even when the untouched lane reference stays the same', async () => {
     const { service, history } = fixture();
     history.findBlockByHeight

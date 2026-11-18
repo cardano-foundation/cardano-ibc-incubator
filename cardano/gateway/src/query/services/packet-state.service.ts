@@ -110,7 +110,32 @@ export class PacketStateService {
     const height = await this.height(requested);
     const block = await this.history.findBlockByHeight(height);
     if (!block) throw new Error('Packet entries block missing');
-    const count = this.config.getOrThrow<DeploymentConfig>('deployment').packetState.laneCount;
+    const config = this.config.getOrThrow<DeploymentConfig>('deployment').packetState;
+    const count = config.laneCount;
+    if (!/^channel-(0|[1-9][0-9]*)$/.test(channel)) throw new Error('Invalid packet channel ID');
+    const { Data, Constr, toText } = this.lucid.LucidImporter;
+    const registry = await this.history.findUtxoByUnitAtOrBeforeBlockNo(
+      config.state.scriptHash + Buffer.from('ibc_packet_registry').toString('hex'), height,
+    );
+    const registryDatum = Data.from(registry.datum!);
+    if (!(registryDatum instanceof Constr) || registryDatum.index !== 0 ||
+        registryDatum.fields.length !== 1 || typeof registryDatum.fields[0] !== 'bigint' || registryDatum.fields[0] < 0n)
+      throw new Error('Invalid historical packet registry');
+    const channelIndex = BigInt(channel.slice(8));
+    if (channelIndex >= registryDatum.fields[0]) {
+      // Lanes are initialized in channel order. A real channel beyond this
+      // authenticated boundary cannot have received or sent any packets yet.
+      const output = await this.history.findUtxoByUnitAtOrBeforeBlockNo(
+        this.lucid.getChannelTokenUnit(channelIndex).join(''), height,
+      );
+      if (!output?.datum) throw new Error('Historical channel datum is unavailable');
+      const datum = Data.from(output.datum);
+      if (!(datum instanceof Constr) || datum.index !== 0 || toText(String(datum.fields[1])) !== port)
+        throw new Error('Invalid historical channel identity');
+      if ((await this.history.findBlockByHeight(height))?.hash !== block.hash)
+        throw new Error('Packet entries block rolled back');
+      return { height: { revision_number: 0n, revision_height: height }, entries: new Map<bigint, string>(), total: 0, hasMore: false };
+    }
     const result = new Map<bigint, string>();
     let total = 0;
     if (selection.sequences) {
