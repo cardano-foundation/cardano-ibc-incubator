@@ -178,6 +178,11 @@ async function setup(network = 'Preview', stakeRows = 13, mithril = true) {
       {} as never,
       {} as never,
       packet as never,
+      undefined,
+      { getCardanoStakeDistributionByEpoch: async (epoch: number) => {
+        const response = await fetch(`${mithrilEndpoint}/artifact/cardano-stake-distribution/epoch/${epoch}`);
+        return response.status === 404 ? undefined : response.json();
+      } } as never,
     );
   return { service: create(), create, history, block };
 }
@@ -285,4 +290,19 @@ it('preserves pending initialization data when the automatic cache reaches capac
     expect(existsSync(original)).toBe(true);
     expect(readdirSync(cache)).toHaveLength(64);
   } finally { clock.mockRestore(); }
+});
+
+it('bootstraps with every certified pool instead of a partial table and synthetic remainder', async () => {
+  const { service, history, block } = await setup();
+  const context = await history.findEpochContextAtBlock();
+  const originalPools = context.stakeDistribution.map((row: any) => row.poolId);
+  history.findEpochContextAtBlock.mockResolvedValue({ ...context, stakeDistribution: [{
+    poolId: `__historical_unproduced_stake__:${block.epochNo}`, stake: 1n,
+    vrfKeyHash: '00'.repeat(32), relativeStakeNumerator: 1n, relativeStakeDenominator: 1n,
+  }] });
+  const response = await service.queryNewClient(QueryNewClientRequest.fromPartial({ height: 0n }));
+  expect(response.client_state).toBeDefined();
+  const requiredPools = history.findInitialPoolRegistryAtBlock.mock.calls[0][1];
+  expect(requiredPools).toEqual(expect.arrayContaining(originalPools));
+  expect(requiredPools).not.toContain(`__historical_unproduced_stake__:${block.epochNo}`);
 });

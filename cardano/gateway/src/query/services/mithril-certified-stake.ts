@@ -135,3 +135,21 @@ export async function requireMithrilStakeAgreement(
   }
   return true;
 }
+
+// Bootstrap requires the complete certified table, not a provider's partial
+// producer table and synthetic remainder. The preparer verifies its certificate.
+export async function loadMithrilBootstrapStake(source: MithrilStakeSource, epoch: number) {
+  const distribution = await source.getCardanoStakeDistributionByEpoch(epoch - 2);
+  if (!distribution || distribution.epoch !== epoch - 2 || !HASH.test(distribution.certificate_hash ?? ''))
+    throw new Error(`Mithril-certified bootstrap stake is unavailable for epoch ${epoch}`);
+  const rows = Object.entries(distribution.stake_distribution ?? {}).map(([poolId, value]) => {
+    if (!poolId.startsWith('pool1') || !Number.isSafeInteger(value) || value <= 0)
+      throw new Error('Invalid Mithril bootstrap stake entry');
+    return { poolId, stake: BigInt(value) };
+  });
+  const total = rows.reduce((sum, row) => sum + row.stake, 0n);
+  if (total <= 0n || total > (1n << 64n) - 1n) throw new Error('Invalid Mithril bootstrap stake total');
+  return rows.sort((a, b) => a.poolId.localeCompare(b.poolId)).map((row) => ({
+    ...row, relativeStakeNumerator: row.stake, relativeStakeDenominator: total,
+  }));
+}

@@ -155,6 +155,7 @@ import {
 import {
   loadMithrilStakeCertificates,
   MITHRIL_STAKE_CERTIFICATES_TYPE_URL,
+  loadMithrilBootstrapStake,
   MithrilStakeMismatchError,
   requireMithrilStakeAgreement,
 } from './mithril-certified-stake';
@@ -663,19 +664,27 @@ export class QueryService {
         throw new GrpcFailedPreconditionException(
           'Probabilistic client creation requires MITHRIL_ENDPOINT, because a client starts from Mithril-certified stake',
         );
+      if (!this.mithrilService) throw new GrpcFailedPreconditionException('Mithril service is unavailable');
+      const certifiedStake = await loadMithrilBootstrapStake(this.mithrilService, anchorBlock.epochNo);
       const context = await this.historyService.findEpochContextAtBlock(anchorBlock);
       if (!context || context.epoch !== anchorBlock.epochNo)
         throw new GrpcFailedPreconditionException('Initial epoch context is unavailable');
       const poolProduction = await this.historyService.findObservedPoolProductionAtBlock(anchorBlock);
       const poolRegistry = await this.historyService.findInitialPoolRegistryAtBlock(anchorBlock, [
-        ...context.stakeDistribution.map((row) => row.poolId),
+        ...certifiedStake.map((row) => row.poolId),
         ...poolProduction.pools.map((row) => row.pool_id),
       ]);
+      const bindings = new Map(poolRegistry.effective.map((binding) => [binding.pool_id, binding]));
+      const epochStakeDistribution = certifiedStake.map((row) => {
+        const binding = bindings.get(row.poolId);
+        if (!binding) throw new GrpcFailedPreconditionException(`Pool ${row.poolId} has no authenticated effective registration`);
+        return { ...row, vrfKeyHash: Buffer.from(binding.vrf_key_hash).toString('hex'), firstRegistrationSlot: binding.first_registration_slot };
+      });
       const stabilityEvidence = {
         anchorBlock,
         anchorHeight,
         anchorEpoch: anchorBlock.epochNo,
-        epochStakeDistribution: context.stakeDistribution,
+        epochStakeDistribution,
         epochVerificationContext: context.verificationContext,
       };
       const operationalCertificateCounters = this.toStabilityOperationalCertificateCounters(
