@@ -82,6 +82,7 @@ caribic start network --network preprod
 ```
 
 - This writes the selected network marker plus `YACI_SYNC_START_SLOT`, `YACI_SYNC_START_BLOCKHASH`, and `YACI_SYNC_START_BLOCK_NO` into `cardano/gateway/.env`; Caribic generates the runtime env when that network starts. Resolve these once; do not keep them as a moving "relative to now" value or reuse them for the other public testnet.
+- Keep Gateway's `YACI_STORE_ENDPOINT=http://yaci-store:8080` for Caribic's managed Yaci; external history without block CBOR cannot serve proofs. Leave `IBC_DEPLOYMENT_MODE` unset unless it matches the selected bridge manifest.
 
 Injective startup note:
 - `caribic chain start --chain injective --network local` starts a local single-node Injective devnet.

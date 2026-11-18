@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,6 +67,9 @@ try {
   } else {
     let app;
     if (component === 'gateway') {
+      // A host dist mount would hide the verified image build.
+      const compose = await readFile(join(scripts, '../../cardano/gateway/docker-compose.yml'), 'utf8');
+      assert.doesNotMatch(compose, /\/usr\/src\/app\/dist\b/, 'Gateway Compose must use image-built dist');
       // Official postgres:15 multi-platform index, resolved 2026-09-08.
       const postgres = 'docker.io/library/postgres:15@sha256:9b1d34adbce1dd07ee6e94b4a2cf698884b89bd44a6c9c12f5da8f3acbfe4957';
       await docker('pull', postgres);

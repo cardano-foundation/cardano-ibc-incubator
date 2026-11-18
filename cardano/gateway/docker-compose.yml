@@ -19,7 +19,6 @@ services:
       - cardano_network
     volumes:
       - consensus-history:/var/lib/cardano-ibc/consensus-history
-      - ./dist:/usr/src/app/dist
       - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments:ro
       - ../../manifests:/usr/src/app/manifests:ro
     env_file:
