@@ -93,7 +93,7 @@ function epochPageRows(data: any, epoch: number): any[] {
         row.slot_leader === null &&
         row.issuer_vkey === null &&
         row.size === 0
-      )
+      ),
   );
 }
 
@@ -338,9 +338,7 @@ export class YaciRestHistory {
   ): Promise<RestEpochBlock[]> {
     if (!Number.isSafeInteger(epoch) || epoch < 0)
       throw new Error("Invalid Yaci epoch");
-    return this.snapshot(at, (tip) =>
-      this.readEpochBlocks(epoch, tip.number),
-    );
+    return this.snapshot(at, (tip) => this.readEpochBlocks(epoch, tip.number));
   }
 
   private async readEpochBlocks(
@@ -348,31 +346,42 @@ export class YaciRestHistory {
     tip: number,
   ): Promise<RestEpochBlock[]> {
     const result: RestEpochBlock[] = [];
-    const seen = new Set<number>();
-    for (let page = 1; page <= 100_000; page++) {
+    const seen = new Map<number, RestEpochBlock>();
+    let oldest: number | undefined;
+    for (let page = 1; page <= MAX_HISTORY_PAGES; page++) {
       const data = await this.api.json(
         `blocks/epoch/${epoch}?count=100&page=${page}`,
       );
+      let previous: number | undefined;
+      let added = 0;
       for (const summary of epochPageRows(data, epoch)) {
-        const number = height(summary.number ?? summary.height);
-        if (seen.has(number))
-          throw new Error("Yaci epoch pagination repeated a block");
-        seen.add(number);
-        if (
-          height(summary.epoch) !== epoch ||
-          typeof summary.slot_leader !== "string"
-        )
-          throw new Error("Invalid Yaci epoch block summary");
-        if (number > tip) continue;
-        result.push({
-          number,
-          slot: height(summary.slot),
-          epoch,
-          time: height(summary.time),
-          slot_leader: summary.slot_leader,
-          tx_count: height(summary.tx_count),
-        });
+        const row = epochSummary(summary, epoch);
+        if (previous !== undefined && row.number !== previous - 1)
+          throw new YaciRestPageDriftError("Yaci epoch page is not contiguous");
+        previous = row.number;
+        const existing = seen.get(row.number);
+        if (existing) {
+          // This endpoint always returns newest first. New blocks shift later
+          // offset pages, so an unchanged prefix may overlap the previous page.
+          if (added || JSON.stringify(existing) !== JSON.stringify(row))
+            throw new YaciRestPageDriftError(
+              "Yaci epoch overlap changed a block",
+            );
+          continue;
+        }
+        if (oldest !== undefined && row.number !== oldest - 1)
+          throw new YaciRestPageDriftError(
+            "Yaci epoch pagination skipped a block",
+          );
+        oldest = row.number;
+        seen.set(row.number, row);
+        added++;
+        if (row.number <= tip) result.push(row);
       }
+      if (data.blocks.length === 100 && added === 0)
+        throw new YaciRestPageDriftError(
+          "Yaci epoch pagination made no progress",
+        );
       if (data.blocks.length < 100)
         return result.sort((a, b) => a.number - b.number);
     }

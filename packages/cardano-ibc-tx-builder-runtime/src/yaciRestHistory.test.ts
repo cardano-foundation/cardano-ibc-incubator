@@ -13,7 +13,7 @@ const anchor = {
   slot_leader: "pool",
   tx_count: 0,
 };
-const page = { blocks: [anchor, { ...anchor, number: 101, slot: 1001 }] };
+const page = { blocks: [{ ...anchor, number: 101, slot: 1001 }, anchor] };
 
 test("epoch history uses its requested anchor even when the latest tip changes", async () => {
   const requested: unknown[] = [];
@@ -57,4 +57,59 @@ test("epoch history keeps the latest-tip default for callers without an anchor",
   } as unknown as YaciRestClient;
   await new YaciRestHistory(api).epochBlocks(2);
   assert.deepEqual(requested, ["latest", 100]);
+});
+
+function epochPages(second: number[], alter = false) {
+  const row = (number: number) => ({ ...anchor, number, slot: number + 900 });
+  return {
+    block: async () => anchor,
+    json: async (path: string) => ({
+      blocks: path.endsWith("page=1")
+        ? Array.from({ length: 100 }, (_, i) => row(200 - i))
+        : second.map((number) => ({
+            ...row(number),
+            ...(alter && number === 101 ? { slot_leader: "changed" } : {}),
+          })),
+    }),
+  } as unknown as YaciRestClient;
+}
+
+test("epoch pagination accepts unchanged overlap as the live tip advances", async () => {
+  const rows = await new YaciRestHistory(
+    epochPages([102, 101, 100, 99]),
+  ).epochBlocks(2, 100);
+  assert.deepEqual(
+    rows.map((row) => row.number),
+    [99, 100],
+  );
+});
+
+test("epoch pagination rejects changed overlapping evidence", async () => {
+  await assert.rejects(
+    new YaciRestHistory(epochPages([101, 100], true)).epochBlocks(2, 100),
+    /overlap changed/,
+  );
+});
+
+test("epoch pagination rejects a gap between pages", async () => {
+  await assert.rejects(
+    new YaciRestHistory(epochPages([99, 98])).epochBlocks(2, 100),
+    /skipped a block/,
+  );
+});
+
+test("epoch pagination rejects duplicates within a page", async () => {
+  await assert.rejects(
+    new YaciRestHistory(epochPages([101, 101, 100])).epochBlocks(2, 100),
+    /not contiguous/,
+  );
+});
+
+test("epoch pagination rejects a repeated full page", async () => {
+  await assert.rejects(
+    new YaciRestHistory(
+      epochPages(Array.from({ length: 100 }, (_, i) => 200 - i)),
+    ).epochBlocks(2, 100),
+    /no progress/,
+  );
 });
