@@ -1,4 +1,4 @@
-import { MIN_CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS } from './constant.config';
+import { MIN_CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS, TRANSACTION_TIME_TO_LIVE } from './constant.config';
 import { Network } from '@lucid-evolution/lucid';
 import { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 
@@ -135,6 +135,7 @@ interface Config {
   cardanoNetwork: Network;
   cardanoEpochLength: number;
   cardanoClientTrustingPeriodSeconds: number;
+  cardanoHandshakeTxTtlMs: number;
   cardanoClientMaxClockDriftSeconds: number;
   cardanoRandomnessStabilisationWindowSlots?: string;
   cardanoStabilityCheckpointMaxBridgeBlocks: number;
@@ -160,6 +161,11 @@ export default (): Partial<Config> => {
     (process.env.CARDANO_NETWORK_MAGIC === '42' ? process.env.CARDANO_EPOCH_PARAMS_ENDPOINT : undefined) ||
     process.env.CARDANO_BLOCKFROST_ENDPOINT || defaultBlockfrostEndpoint(process.env.CARDANO_NETWORK_MAGIC);
   validatePublicNetworkStabilityConfig(cardanoNetwork, cardanoEpochParamsEndpoint);
+
+  const cardanoHandshakeTxTtlMs = Number(process.env.CARDANO_HANDSHAKE_TX_TTL_MS ?? TRANSACTION_TIME_TO_LIVE);
+  if (!Number.isSafeInteger(cardanoHandshakeTxTtlMs) || cardanoHandshakeTxTtlMs <= 0 || cardanoHandshakeTxTtlMs > 900_000) {
+    throw new Error('CARDANO_HANDSHAKE_TX_TTL_MS must be an integer between 1 and 900000');
+  }
 
   const defaultTrustingPeriod = 172_800;
   const cardanoClientTrustingPeriodSeconds = Number(process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS || defaultTrustingPeriod);
@@ -190,6 +196,7 @@ export default (): Partial<Config> => {
     ),
     cardanoRandomnessStabilisationWindowSlots: process.env.CARDANO_RANDOMNESS_STABILISATION_WINDOW_SLOTS,
     cardanoClientTrustingPeriodSeconds,
+    cardanoHandshakeTxTtlMs,
     cardanoClientMaxClockDriftSeconds: positiveGoDurationSecondsEnv(
       'CARDANO_CLIENT_MAX_CLOCK_DRIFT_SECONDS',
       10,

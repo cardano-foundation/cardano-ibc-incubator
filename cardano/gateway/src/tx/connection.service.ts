@@ -136,7 +136,8 @@ export class ConnectionService {
       throw new GrpcInternalException(`connection tx failed: invalid slot configuration for network ${network}`);
     }
 
-    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, TRANSACTION_TIME_TO_LIVE);
+    const ttlMs = this.configService.get<number>('cardanoHandshakeTxTtlMs') ?? TRANSACTION_TIME_TO_LIVE;
+    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, ttlMs);
   }
 
   /**

@@ -241,3 +241,5 @@ and the [security policy](../../SECURITY.md) for private vulnerability reports.
 
 The Cardano Gateway is part of the Cardano IBC Incubator and is licensed under
 [Apache-2.0](../../LICENSE).
+
+Connection and channel transactions use a two-minute validity window by default. Set `CARDANO_HANDSHAKE_TX_TTL_MS=300000` when sparse public-network blocks need a five-minute window. The setting accepts positive integer milliseconds up to `900000` and remains anchored to node ledger time and capped by its forecast safe zone. Choose a window supported by the deployed validators and relayer signing policy. Heartbeat, client-update and packet validity windows are unchanged.
