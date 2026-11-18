@@ -692,6 +692,12 @@ export class TendermintClientService {
     );
     this.requireTendermintLedgerUtxo(ledger, operator.currentClientUtxo, 'indexed client');
     if (this.matchingStagedTendermintRequestSessions(ledger.filter((u) => u.address === this.lucidService.getTendermintUpdateSessionAddress()), operator, owner).length) return undefined;
+    // The authoritative UTxO lookup can take most of a short validity window.
+    // Anchor the direct transaction after that lookup so its submission time remains usable.
+    window = await this.computeTxValidityWindow(
+      this.tendermintUpdateSafeBackdateMs(operator.clientDatum),
+      TRANSACTION_TIME_TO_LIVE,
+    );
     const validTo = capTendermintStagedValidTo({
       proposedValidToMs: Math.min(window.validToTime, window.currentLedgerTime + TRANSACTION_TIME_TO_LIVE),
       currentLedgerTimeMs: window.currentLedgerTime,
@@ -699,7 +705,7 @@ export class TendermintClientService {
       clientDatum: operator.clientDatum,
       slotConfig: window.slotConfig,
     });
-    const directOperator = { ...operator, txValidTo: BigInt(validTo) * 1_000_000n };
+    const directOperator = { ...operator, txValidFrom: BigInt(window.validFromTime) * 1_000_000n, txValidTo: BigInt(validTo) * 1_000_000n };
     let signerCandidates = 1;
     for (let signerCandidate = 0; signerCandidate < signerCandidates; signerCandidate++) {
       try {

@@ -2053,6 +2053,31 @@ describe('automatic cached update selection', () => {
     expect(h.pendingUpdates.peek('default-final')).toBeDefined();
   });
 
+  it('refreshes ledger validity after a slow authoritative UTxO lookup', async () => {
+    const h = await harness();
+    const later = TEST_CURRENT_LEDGER_TIME_MS + 90_000;
+    h.lucidService.queryLedgerStateUtxosAtAddresses.mockImplementationOnce(async () => {
+      (h.service as any).computeTxValidityWindow.mockResolvedValue({
+        currentLedgerTime: later,
+        validFromTime: later - 5_000,
+        validToTime: later + 120_000,
+        validToSlot: 0,
+        slotConfig: { zeroTime: 0, zeroSlot: 0, slotLength: 1000 },
+      });
+      return [clientUtxo()];
+    });
+    jest.spyOn(CacheRouting, 'evaluatedUnsignedUpdateBudget').mockReturnValue({ fits: true } as any);
+    await h.run();
+    expect(h.buildFinal).toHaveBeenCalledWith(expect.objectContaining({
+      txValidFrom: BigInt(later - 5_000) * 1000000n,
+      txValidTo: BigInt(later + 120_000) * 1000000n,
+    }), undefined, true, 0);
+    const builder = createTxBuilder('validity-check');
+    h.runnerSpy.mock.calls[0][0].validity.apply(builder);
+    expect(builder.validFrom).toHaveBeenCalledWith(later - 5_000);
+    expect(builder.validTo).toHaveBeenCalledWith(later + 120_000);
+  });
+
   it('falls back without recording rejected transaction state when the reserve does not fit', async () => {
     const h = await harness();
     jest.spyOn(CacheRouting, 'evaluatedUnsignedUpdateBudget').mockReturnValue({ fits: false, exceeded: ['memory'] } as any);
