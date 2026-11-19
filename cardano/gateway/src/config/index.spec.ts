@@ -201,3 +201,22 @@ describe('Permissionless heartbeat trusting period', () => {
     },
   );
 });
+
+
+describe('Handshake transaction validity', () => {
+  const originalEnv = process.env;
+  beforeEach(() => { process.env = { CARDANO_NETWORK_MAGIC: '42' }; });
+  afterEach(() => { process.env = originalEnv; });
+
+  it('keeps the two-minute default', () => {
+    expect(loadConfig().cardanoHandshakeTxTtlMs).toBe(120_000);
+  });
+  it('allows a longer bounded public-network handshake window', () => {
+    process.env.CARDANO_HANDSHAKE_TX_TTL_MS = '300000';
+    expect(loadConfig().cardanoHandshakeTxTtlMs).toBe(300_000);
+  });
+  it.each(['', '0', '-1', '1.5', 'NaN', '900001'])('rejects invalid window %s', (value) => {
+    process.env.CARDANO_HANDSHAKE_TX_TTL_MS = value;
+    expect(() => loadConfig()).toThrow('CARDANO_HANDSHAKE_TX_TTL_MS');
+  });
+});

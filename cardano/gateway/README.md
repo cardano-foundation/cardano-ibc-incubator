@@ -241,3 +241,7 @@ and the [security policy](../../SECURITY.md) for private vulnerability reports.
 
 The Cardano Gateway is part of the Cardano IBC Incubator and is licensed under
 [Apache-2.0](../../LICENSE).
+
+Connection and channel transactions use a two-minute validity window by default. Set `CARDANO_HANDSHAKE_TX_TTL_MS=300000` when sparse public-network blocks need a five-minute window. The setting accepts positive integer milliseconds up to `900000` and remains anchored to node ledger time and capped by its forecast safe zone. Choose a window supported by the deployed validators and relayer signing policy. Heartbeat, client-update and packet validity windows are unchanged.
+
+Authoritative Ogmios UTxO queries can take longer on public networks. `OGMIOS_REQUEST_TIMEOUT_MS` controls their request deadline and defaults to `20000`. For a deployment where those queries take about a minute, `OGMIOS_REQUEST_TIMEOUT_MS=180000` provides a bounded three-minute deadline. Keep it below the calling relayer RPC deadline with enough time left for transaction construction. This changes query waiting time, not transaction validity.
