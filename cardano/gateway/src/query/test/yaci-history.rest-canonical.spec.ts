@@ -152,7 +152,9 @@ describe('direct Yaci REST history', () => {
       jest.mocked(source.api.json).mockResolvedValue({ total_pages: 1, blocks: [first, { ...genesis, ...change }] });
       await expect(source.firstBlockInEpoch(0)).rejects.toThrow('Invalid Yaci transaction height');
       await expect(source.latestBlockInEpoch(0)).rejects.toThrow('Invalid Yaci transaction height');
-      await expect(source.epochBlocks(0)).rejects.toThrow('Invalid Yaci transaction height');
+      await expect(source.epochBlocks(0)).rejects.toThrow(
+        'slot_leader' in change ? 'Invalid Yaci transaction height' : 'Invalid Yaci epoch block summary',
+      );
     }
   });
 
