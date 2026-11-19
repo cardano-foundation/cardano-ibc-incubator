@@ -1,6 +1,11 @@
 import { PacketLaneTree } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
 import { PacketStateService } from './packet-state.service';
 
+class Datum {
+  index = 0;
+  constructor(public fields: unknown[]) {}
+}
+
 function fixture() {
   const trees = Array.from({ length: 4 }, () => new PacketLaneTree());
   for (let sequence = 1n; sequence <= 64n; sequence++) {
@@ -8,9 +13,18 @@ function fixture() {
     tree.set(`acks/ports/transfer/channels/channel-0/sequences/${sequence}`, 'ab'.repeat(32));
     if (sequence <= 32n) tree.set(`receipts/ports/transfer/channels/channel-0/sequences/${sequence}`, '01');
   }
-  const history = { findBlockByHeight: jest.fn(async () => ({ hash: 'canonical' })) };
+  const statePolicy = '11'.repeat(28);
+  const registryUnit = statePolicy + Buffer.from('ibc_packet_registry').toString('hex');
+  const history = {
+    findBlockByHeight: jest.fn(async () => ({ hash: 'canonical' })),
+    findUtxoByUnitAtOrBeforeBlockNo: jest.fn(async (unit: string) =>
+      unit === registryUnit ? { datum: new Datum([1n]) } : undefined),
+  };
+  const lucid = {
+    LucidImporter: { Data: { from: (value: unknown) => value }, Constr: Datum, toText: (value: string) => value },
+  };
   const service = new PacketStateService(
-    { getOrThrow: () => ({ packetState: { laneCount: 4 } }) } as any, {} as any, history as any, {} as any,
+    { getOrThrow: () => ({ packetState: { state: { scriptHash: statePolicy }, laneCount: 4 } }) } as any, lucid as any, history as any, {} as any,
   );
   jest.spyOn(service, 'height').mockResolvedValue(42n);
   const lane = jest.spyOn(service, 'lane').mockImplementation(async (_port, _channel, index) => ({ tree: trees[index].tree }) as any);
