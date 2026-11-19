@@ -2063,9 +2063,17 @@ export class QueryService {
   }
 
   async queryStabilityIBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse> {
-    const { trusted_height: trustedHeight } = request;
-    const maintenance = request.checkpoint_only && request.height === 0n;
-    let height = request.height;
+    // Proto3 omits zero heights. Normalize decoded values before choosing maintenance
+    // or doing arithmetic with the trusted height.
+    const trustedHeight = BigInt(request.trusted_height ?? 0n);
+    let height = BigInt(request.height ?? 0n);
+    const maintenance = request.checkpoint_only && height === 0n;
+    if (!height && !maintenance) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
+    }
+    if (!trustedHeight) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "trusted_height" must be provided');
+    }
     if (maintenance) {
       const tip = await this.historyService.findLatestBlock();
       if (!tip || BigInt(tip.height) <= trustedHeight + 24n) {
@@ -2073,13 +2081,7 @@ export class QueryService {
       }
       height = BigInt(tip.height) - 24n;
     }
-    if (!height) {
-      throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
-    }
-    if (!trustedHeight) {
-      throw new GrpcInvalidArgumentException('Invalid argument: "trusted_height" must be provided');
-    }
-    const effectiveTrustedHeight = this.normalizeStabilityTrustedHeight(BigInt(trustedHeight), BigInt(height));
+    const effectiveTrustedHeight = this.normalizeStabilityTrustedHeight(trustedHeight, height);
     let settlementCreditClient: ClientStateProbabilistic | undefined;
     if (request.probabilistic_client_state?.length) {
       try {
