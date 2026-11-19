@@ -506,7 +506,7 @@ jobs:
         run: script --quiet --return --command 'aiken build --deny --trace-level silent' /dev/null
 
       - name: Setup Python for Gateway snapshots
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
