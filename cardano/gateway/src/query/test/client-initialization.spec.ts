@@ -15,6 +15,9 @@ import { QueryNewClientRequest, QueryNewClientResponse } from '@cardano-ibc/prot
 import { QueryService } from '../services/query.service';
 import { queryPraosNoncesAtPoint } from '../../shared/helpers/ogmios';
 
+// These integration cases start a real Mithril aggregator and Go preparer.
+jest.setTimeout(30_000);
+
 jest.mock('../../shared/helpers/ogmios', () => ({
   ...jest.requireActual('../../shared/helpers/ogmios'),
   queryPraosNoncesAtPoint: jest.fn(),
