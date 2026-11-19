@@ -19,7 +19,7 @@ describe('packet proof history changes', () => {
       findLatestBlock: jest.fn().mockResolvedValueOnce({ height: 100 }).mockResolvedValue({ height: 110 }),
     } as unknown as HistoryService;
     evidence.mockRejectedValueOnce(new YaciRestHistoryChangedError('changed'));
-    evidence.mockResolvedValueOnce({ anchorHeight: 86n } as never);
+    evidence.mockResolvedValueOnce({ anchorHeight: 86n, anchorBlock: { hash: "anchor-86" }, descendantBlocks: [{ height: 110, hash: "anchor-110" }] } as never);
 
     await expect(latestPacketProofHeight(history, logger)).resolves.toBe(86n);
     expect(history.findLatestBlock).toHaveBeenCalledTimes(2);

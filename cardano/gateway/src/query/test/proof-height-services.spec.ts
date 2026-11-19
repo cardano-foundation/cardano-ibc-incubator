@@ -203,7 +203,10 @@ function makeDeps() {
     findUtxoAtWithUnit: jest.fn(),
   };
   const historyService = {
-    findBlockByHeight: jest.fn().mockResolvedValue({ height: Number(LATEST_ACCEPTED_HEIGHT), hash: 'accepted-anchor' }),
+    findBlockByHeight: jest.fn().mockImplementation(async (height: bigint) => ({
+      height: Number(height),
+      hash: height === LATEST_ACCEPTED_HEIGHT + 24n ? 'accepted-descendant' : 'accepted-anchor',
+    })),
     findHostStateUtxoAtOrBeforeBlockNo: jest.fn(async (height: bigint) => ({
       txHash: height === LATEST_ACCEPTED_HEIGHT ? 'live-host-state-tx' : 'historical-host-state-tx',
       outputIndex: 0,
@@ -315,6 +318,7 @@ let stabilitySpies: jest.SpyInstance[] = [];
 function acceptLatestHostState() {
   stabilitySpies = [
     jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(LATEST_ACCEPTED_HEIGHT),
+    jest.spyOn(settledHeight, 'latestPacketProofAnchor').mockResolvedValue({ proofHeight: LATEST_ACCEPTED_HEIGHT, anchorBlockHash: 'accepted-anchor', lastDescendant: { height: Number(LATEST_ACCEPTED_HEIGHT) + 24, hash: 'accepted-descendant' } }),
     jest
       .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
       .mockImplementation(
@@ -858,7 +862,7 @@ describe('proof-bearing services with captured query heights', () => {
       `checks the accepted stability block hash for ${method} even with unchanged HostState (rollback=%s)`,
       async (rollback) => {
         const deps = makeDeps();
-        const settled = jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(LATEST_ACCEPTED_HEIGHT);
+        const settled = jest.spyOn(settledHeight, 'latestPacketProofAnchor').mockResolvedValue({ proofHeight: LATEST_ACCEPTED_HEIGHT, anchorBlockHash: 'accepted-anchor', lastDescendant: { height: Number(LATEST_ACCEPTED_HEIGHT) + 24, hash: 'accepted-descendant' } });
         const evidence = jest.spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight').mockResolvedValue({
           anchorHeight: LATEST_ACCEPTED_HEIGHT,
           anchorBlock: { hash: 'accepted-anchor' },
@@ -874,7 +878,8 @@ describe('proof-bearing services with captured query heights', () => {
         try {
           if (rollback) await expect(run(deps)).rejects.toThrow('Canonical anchor changed');
           else expect((await run(deps)).height?.revision_height).toBe(LATEST_ACCEPTED_HEIGHT);
-          expect(evidence).toHaveBeenCalledWith(expect.objectContaining({ height: LATEST_ACCEPTED_HEIGHT }));
+          expect(settled).toHaveBeenCalled();
+          expect(evidence).not.toHaveBeenCalled();
           expect(deps.mocks.historyService.findBlockByHeight).toHaveBeenLastCalledWith(LATEST_ACCEPTED_HEIGHT);
         } finally {
           settled.mockRestore();
@@ -885,20 +890,17 @@ describe('proof-bearing services with captured query heights', () => {
     it(`does not fabricate a height when stability fails after snapshot capture for ${method}`, async () => {
       jest.useFakeTimers();
       const deps = makeDeps();
-      const settled = jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(LATEST_ACCEPTED_HEIGHT);
-      const evidence = jest
-        .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
-        .mockRejectedValue(new Error('Captured anchor lacks required stability'));
+      const settled = jest.spyOn(settledHeight, 'latestPacketProofAnchor').mockResolvedValue({ proofHeight: LATEST_ACCEPTED_HEIGHT, anchorBlockHash: 'accepted-anchor', lastDescendant: { height: Number(LATEST_ACCEPTED_HEIGHT) + 24, hash: 'accepted-descendant' } });
+      settled.mockRejectedValue(new Error('Captured anchor lacks required stability'));
       try {
         const rejected = expect(run(deps)).rejects.toThrow('Captured anchor lacks required stability');
         await jest.runAllTimersAsync();
         await rejected;
         expect(deps.mocks.treeStore.getAlignedSnapshot).toHaveBeenCalledTimes(1);
-        expect(evidence).toHaveBeenCalled();
+        expect(settled).toHaveBeenCalled();
         expect(deps.mocks.historyService.findUtxoByUnitAtOrBeforeBlockNo).not.toHaveBeenCalled();
       } finally {
         settled.mockRestore();
-        evidence.mockRestore();
         jest.useRealTimers();
       }
     });

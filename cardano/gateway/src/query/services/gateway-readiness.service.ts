@@ -4,7 +4,7 @@ import { HISTORY_SERVICE, HistoryService } from './history.service';
 import { resolveProofHeightForCurrentRoot } from './proof-context';
 import { getStabilityPolicy } from './stability-scoring';
 
-type GatewayReadinessReason = 'ready' | 'waiting_for_yaci_history' | 'waiting_for_stability' | 'history_status_unknown';
+type GatewayReadinessReason = 'ready' | 'waiting_for_yaci_history' | 'waiting_for_stability' | 'history_status_unknown' | 'proof_check_timeout';
 
 type GatewayHistoryReadinessStatus = {
   backend: 'yaci';
@@ -27,7 +27,13 @@ type GatewayReadinessStatus = {
   history: GatewayHistoryReadinessStatus;
 };
 
-const READINESS_PROOF_CHECK_TIMEOUT_MS = 25_000;
+function readinessProofTimeoutMs(): number {
+  const value = Number(process.env.GATEWAY_READINESS_PROOF_TIMEOUT_MS ?? 25_000);
+  if (!Number.isSafeInteger(value) || value <= 0 || value > 300_000) {
+    throw new Error('GATEWAY_READINESS_PROOF_TIMEOUT_MS must be an integer between 1 and 300000');
+  }
+  return value;
+}
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -48,6 +54,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
 @Injectable()
 export class GatewayReadinessService {
   private readonly logger = new Logger(GatewayReadinessService.name);
+  private readonly proofCheckTimeoutMs = readinessProofTimeoutMs();
 
   constructor(
     private readonly lucidService: LucidService,
@@ -70,8 +77,8 @@ export class GatewayReadinessService {
           maxAttempts: 1,
           delayMs: 0,
         }),
-        READINESS_PROOF_CHECK_TIMEOUT_MS,
-        `Gateway proof readiness check timed out after ${READINESS_PROOF_CHECK_TIMEOUT_MS}ms`,
+        this.proofCheckTimeoutMs,
+        `Gateway proof readiness check timed out after ${this.proofCheckTimeoutMs}ms`,
       );
       const history = await this.buildHistoryReadinessStatus(liveHostStateTxHash, true);
 
@@ -85,11 +92,11 @@ export class GatewayReadinessService {
       };
     } catch (error) {
       const cause = error instanceof Error ? error.message : String(error);
-      const history = await this.buildHistoryReadinessStatus(liveHostStateTxHash, false);
       const proofCheckTimedOut = cause.includes('Gateway proof readiness check timed out');
+      const history = await this.buildHistoryReadinessStatus(liveHostStateTxHash, false, proofCheckTimedOut);
       return {
         status: 'not_ready',
-        reason: history.reason,
+        reason: proofCheckTimedOut ? 'proof_check_timeout' : history.reason,
         liveHostStateTxHash,
         proofHeight: null,
         detail:
@@ -105,6 +112,7 @@ export class GatewayReadinessService {
   private async buildHistoryReadinessStatus(
     liveHostStateTxHash: string | null,
     proofReady: boolean,
+    proofCheckTimedOut = false,
   ): Promise<GatewayHistoryReadinessStatus> {
     const requiredDescendantDepth = getStabilityPolicy().threshold_depth.toString();
     const baseStatus = {
@@ -169,6 +177,16 @@ export class GatewayReadinessService {
           message:
             `Yaci has indexed the current HostState tx at block ${liveHostStateTxBlock} and Gateway has accepted ` +
             `it for proof serving.`,
+        };
+      }
+
+      if (proofCheckTimedOut) {
+        return {
+          ...withHostStateTx,
+          reason: 'proof_check_timeout',
+          message:
+            `Yaci has indexed the current HostState tx at block ${liveHostStateTxBlock} with ` +
+            `${indexedDescendantDepth} descendant block(s). Proof readiness did not finish in time, so stability is unconfirmed.`,
         };
       }
 

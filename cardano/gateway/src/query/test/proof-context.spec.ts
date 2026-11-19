@@ -90,6 +90,31 @@ function makeDeps(tree: ICS23MerkleTree, cached?: { tree: ICS23MerkleTree; root:
 }
 
 describe('proof-context stability acceptance', () => {
+  it.each(['none', 'anchor', 'descendant'])('loads accepted evidence once and checks for rollback before returning (rollback=%s)', async (rollback) => {
+    const deps = makeDeps(makeTree('ready'));
+    deps.historyService.findLatestBlock = jest.fn().mockResolvedValue({ height: 224 });
+    const evidence = jest.spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
+      .mockResolvedValue({ anchorHeight: 200n, anchorBlock: { hash: 'anchor-200' }, descendantBlocks: [{ height: 224, hash: 'anchor-224' }] } as never);
+    if (rollback !== 'none') {
+      deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo.mockImplementationOnce(async () => {
+        deps.mocks.historyService.findBlockByHeight.mockImplementation(async (height: bigint) => ({
+          height: Number(height),
+          hash: height === (rollback === 'anchor' ? 200n : 224n) ? 'replacement' : `anchor-${height}`,
+        }));
+        return { txHash: 'live-host-state', outputIndex: 0, blockNo: 200, datum: 'live-datum' };
+      });
+    }
+    try {
+      const result = resolveProofHeightForCurrentRoot({ ...deps, context: 'health/ready', maxAttempts: 1 });
+      if (rollback !== 'none') await expect(result).rejects.toThrow('Canonical');
+      else await expect(result).resolves.toBe(200n);
+      expect(evidence).toHaveBeenCalledTimes(1);
+      expect(deps.mocks.historyService.findBlockByHeight).toHaveBeenCalledWith(200n);
+    } finally {
+      evidence.mockRestore();
+    }
+  });
+
   it('does not advertise a live HostState tx height when the root was not accepted by stability policy', async () => {
     const logger = {
       debug: jest.fn(),
@@ -146,7 +171,7 @@ describe('proof-context stability acceptance', () => {
 
 describe('resolveProofContextForQuery', () => {
   beforeEach(() => {
-    jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(200n);
+    jest.spyOn(settledHeight, 'latestPacketProofAnchor').mockResolvedValue({ proofHeight: 200n, anchorBlockHash: 'anchor-200', lastDescendant: { height: 224, hash: 'anchor-224' } });
     jest
       .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
       .mockImplementation(
@@ -395,12 +420,12 @@ describe('resolveProofContextForQuery', () => {
     const waiting = new Promise<void>((resolve) => {
       markWaiting = resolve;
     });
-    jest.spyOn(settledHeight, 'latestPacketProofHeight').mockImplementationOnce(async () => {
+    jest.spyOn(settledHeight, 'latestPacketProofAnchor').mockImplementationOnce(async () => {
       markWaiting();
       await new Promise<void>((resolve) => {
         releaseAcceptance = resolve;
       });
-      return 200n;
+      return { proofHeight: 200n, anchorBlockHash: 'anchor-200', lastDescendant: { height: 224, hash: 'anchor-224' } };
     });
 
     const pending = resolveProofContextForQuery({
@@ -445,11 +470,11 @@ describe('resolveProofContextForQuery', () => {
   it('proves the captured HostState at a later settled height without requiring a new HostState output', async () => {
     const tree = makeTree('first');
     const deps = makeDeps(tree);
-    deps.mocks.historyService.findBlockByHeight.mockResolvedValue({ height: 200, hash: 'anchor-200' });
+    deps.mocks.historyService.findBlockByHeight.mockImplementation(async (height: bigint) => ({ height: Number(height), hash: `anchor-${height}` }));
     const evidence = jest
       .spyOn(stabilityEvidence, 'loadStakeWeightedStabilityEvidenceByHeight')
       .mockResolvedValue({ anchorHeight: 200n, anchorBlock: { hash: 'anchor-200' } } as never);
-    const acceptance = jest.spyOn(settledHeight, 'latestPacketProofHeight').mockResolvedValue(200n);
+    const acceptance = jest.spyOn(settledHeight, 'latestPacketProofAnchor').mockResolvedValue({ proofHeight: 200n, anchorBlockHash: 'anchor-200', lastDescendant: { height: 224, hash: 'anchor-224' } });
     try {
       const context = await resolveProofContextForQuery({
         ...deps,
