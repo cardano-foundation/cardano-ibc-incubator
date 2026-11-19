@@ -5,6 +5,8 @@ import { QueryIBCHeaderRequest, QueryIBCHeaderResponse } from '@cardano-ibc/prot
 import { QueryNewClientRequest, QueryNewClientResponse, QueryLatestHeightRequest, QueryLatestHeightResponse } from '@cardano-ibc/proto-types/ibc/core/client/v1/query';
 import { QueryMithrilStakeCertificatesRequest, QueryMithrilStakeCertificatesResponse } from '@cardano-ibc/proto-types/ibc/core/types/v1/query';
 import * as grpc from '@grpc/grpc-js';
+import { loadSync, ServiceDefinition } from '@grpc/proto-loader';
+import { createGrpcOptions } from '../../grpc-client.options';
 import { Cbor, CborArray, CborBytes, CborUInt } from '@harmoniclabs/cbor';
 import { createPacketStateMock } from '../../shared/testing/packet-state-test-mock';
 import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
@@ -379,7 +381,8 @@ describe('QueryService stability anchor contract', () => {
     expect(header.descendant_blocks.every((block) => block.header_cbor.length === 860)).toBe(true);
   });
 
-  it('selects an idle maintenance checkpoint from source blocks without a new proof anchor', async () => {
+  it.each(['direct', 'omitted wire zero', 'explicit wire zero'])(
+    'selects an idle maintenance checkpoint without a new proof anchor (%s)', async (encoding) => {
     historyServiceMock.findLatestBlock.mockResolvedValue({ height: 124 });
     historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue(null);
     historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
@@ -394,7 +397,18 @@ describe('QueryService stability anchor contract', () => {
       latest_checkpoint_pool_production: { epoch: 7n, pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) },
     });
     const latestProof = jest.spyOn(service, 'latestCertifiedHeight');
-    const response = await service.queryIBCHeader({ height: 0n, trusted_height: 99n, checkpoint_only: true, probabilistic_client_state: ClientStateProbabilistic.encode(context).finish() });
+    let request = QueryIBCHeaderRequest.fromPartial({ height: 0n, trusted_height: 99n,
+      checkpoint_only: true, probabilistic_client_state: ClientStateProbabilistic.encode(context).finish() });
+    if (encoding !== 'direct') {
+      const { options } = createGrpcOptions({});
+      const definition = loadSync(options.protoPath!, options.loader);
+      const rpc = (definition['ibc.core.types.v1.Query'] as ServiceDefinition).IBCHeader;
+      const wire = Buffer.from(QueryIBCHeaderRequest.encode(request).finish());
+      request = rpc.requestDeserialize(encoding === 'explicit wire zero'
+        ? Buffer.concat([wire, Buffer.from([0x10, 0x00])]) : wire) as QueryIBCHeaderRequest;
+      expect(request.height).toBeUndefined();
+    }
+    const response = await service.queryIBCHeader(request);
     const header = ProbabilisticHeader.decode(response.header!.value);
     expect(header.is_checkpoint).toBe(true);
     expect(header.anchor_block?.height?.revision_height).toBe(100n);
@@ -402,7 +416,25 @@ describe('QueryService stability anchor contract', () => {
     expect(header.new_epoch_context).toBeUndefined();
     expect(latestProof).not.toHaveBeenCalled();
     historyServiceMock.findLatestBlock.mockResolvedValue({ height: 123 });
-    expect((await service.queryIBCHeader({ height: 0n, trusted_height: 99n, checkpoint_only: true, probabilistic_client_state: ClientStateProbabilistic.encode(context).finish() })).header).toBeUndefined();
+    expect((await service.queryIBCHeader(request)).header).toBeUndefined();
+  });
+
+  it('rejects an omitted height outside checkpoint maintenance', async () => {
+    const { options } = createGrpcOptions({});
+    const definition = loadSync(options.protoPath!, options.loader);
+    const rpc = (definition['ibc.core.types.v1.Query'] as ServiceDefinition).IBCHeader;
+    const request = rpc.requestDeserialize(Buffer.from([0x08, 0x63])) as QueryIBCHeaderRequest;
+    await expect(service.queryIBCHeader(request)).rejects.toThrow('height');
+    expect(historyServiceMock.findLatestBlock).not.toHaveBeenCalled();
+  });
+
+  it('rejects maintenance without a trusted height before selecting a checkpoint', async () => {
+    const { options } = createGrpcOptions({});
+    const definition = loadSync(options.protoPath!, options.loader);
+    const rpc = (definition['ibc.core.types.v1.Query'] as ServiceDefinition).IBCHeader;
+    const request = rpc.requestDeserialize(Buffer.from([0x18, 0x01])) as QueryIBCHeaderRequest;
+    await expect(service.queryIBCHeader(request)).rejects.toThrow('trusted_height');
+    expect(historyServiceMock.findLatestBlock).not.toHaveBeenCalled();
   });
 
   it('serves exact rootless challenge evidence when the real block has no HostState transaction', async () => {
