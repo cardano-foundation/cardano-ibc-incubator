@@ -14,7 +14,11 @@ describe('GatewayReadinessService', () => {
     findLatestBlock: jest.Mock;
   };
 
+  let originalTimeout: string | undefined;
+
   beforeEach(() => {
+    originalTimeout = process.env.GATEWAY_READINESS_PROOF_TIMEOUT_MS;
+    delete process.env.GATEWAY_READINESS_PROOF_TIMEOUT_MS;
     lucidServiceMock = {
       findUtxoAtHostStateNFT: jest.fn(),
     };
@@ -28,6 +32,9 @@ describe('GatewayReadinessService', () => {
   });
 
   afterEach(() => {
+    if (originalTimeout === undefined) delete process.env.GATEWAY_READINESS_PROOF_TIMEOUT_MS;
+    else process.env.GATEWAY_READINESS_PROOF_TIMEOUT_MS = originalTimeout;
+    jest.useRealTimers();
     jest.resetAllMocks();
   });
 
@@ -106,4 +113,48 @@ describe('GatewayReadinessService', () => {
       },
     });
   });
+
+  function indexedHost() {
+    lucidServiceMock.findUtxoAtHostStateNFT.mockResolvedValue({ txHash: 'ab'.repeat(32) });
+    historyServiceMock.findLatestBlock.mockResolvedValue({ height: 4249, slotNo: 987654n });
+    historyServiceMock.findTransactionEvidenceByHash.mockResolvedValue({ blockNo: 1234 });
+  }
+
+  it('reports a timeout without claiming that stability thresholds failed', async () => {
+    jest.useFakeTimers();
+    indexedHost();
+    (resolveProofHeightForCurrentRoot as jest.Mock).mockReturnValue(new Promise(() => {}));
+    const result = service.getReadinessStatus();
+    await jest.advanceTimersByTimeAsync(25_000);
+    const status = await result;
+    expect(status).toMatchObject({
+      status: 'not_ready', reason: 'proof_check_timeout', proofHeight: null,
+      history: { reason: 'proof_check_timeout', indexedDescendantDepth: '3015' },
+    });
+    expect(status.cause).toContain('25000ms');
+    expect(status.detail).toContain('stability is unconfirmed');
+    expect(status.detail).not.toContain('thresholds are not met');
+  });
+
+  it('allows a slow successful proof check within the configured deadline', async () => {
+    jest.useFakeTimers();
+    indexedHost();
+    process.env.GATEWAY_READINESS_PROOF_TIMEOUT_MS = '60000';
+    service = new GatewayReadinessService(lucidServiceMock as any, historyServiceMock as any);
+    (resolveProofHeightForCurrentRoot as jest.Mock).mockImplementation(() =>
+      new Promise((resolve) => setTimeout(() => resolve(1234n), 38_000)));
+    let completed = false;
+    const result = service.getReadinessStatus().then((status) => { completed = true; return status; });
+    await jest.advanceTimersByTimeAsync(25_000);
+    expect(completed).toBe(false);
+    await jest.advanceTimersByTimeAsync(13_000);
+    await expect(result).resolves.toMatchObject({ status: 'ready', reason: 'ready', proofHeight: '1234' });
+  });
+
+  it.each(['0', '-1', '1.5', 'invalid', '300001'])('rejects invalid readiness deadline %s', (value) => {
+    process.env.GATEWAY_READINESS_PROOF_TIMEOUT_MS = value;
+    expect(() => new GatewayReadinessService(lucidServiceMock as any, historyServiceMock as any))
+      .toThrow('GATEWAY_READINESS_PROOF_TIMEOUT_MS');
+  });
+
 });

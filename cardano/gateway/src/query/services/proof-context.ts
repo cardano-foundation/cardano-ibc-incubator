@@ -1,4 +1,4 @@
-import { latestPacketProofHeight } from './settled-proof-height';
+import { latestPacketProofAnchor } from './settled-proof-height';
 import { Logger } from '@nestjs/common';
 import { BridgeMigrationInProgressError } from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
@@ -193,13 +193,23 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
   let lastStabilityError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      const height = await latestPacketProofHeight(historyService, logger);
+      const anchor = await latestPacketProofAnchor(historyService, logger);
+      const height = anchor.proofHeight;
       const host = await historyService.findHostStateUtxoAtOrBeforeBlockNo(height);
       if (host.txHash !== liveHostStateUtxo.txHash || host.outputIndex !== liveHostStateUtxo.outputIndex) {
         throw new Error('Current HostState root is not yet stability-accepted');
       }
-      const evidence = await loadStakeWeightedStabilityEvidenceByHeight({ historyService, logger, height });
-      return { proofHeight: height, anchorBlockHash: evidence.anchorBlock.hash };
+      // Height selection already checked stability. Recheck the anchor and final
+      // descendant after reading HostState instead of loading that evidence again.
+      const canonical = await historyService.findBlockByHeight(height);
+      if (canonical?.hash !== anchor.anchorBlockHash) {
+        throw new StaleIbcTreeStateError('Canonical anchor changed while resolving the current proof height');
+      }
+      const descendant = await historyService.findBlockByHeight(BigInt(anchor.lastDescendant.height));
+      if (descendant?.hash !== anchor.lastDescendant.hash) {
+        throw new StaleIbcTreeStateError('Canonical stability descendants changed while resolving the current proof height');
+      }
+      return { proofHeight: height, anchorBlockHash: anchor.anchorBlockHash };
     } catch (error) {
       lastStabilityError = error;
       if (attempt + 1 < maxAttempts && isMissingCurrentLiveHostStateEvidence(error)) {

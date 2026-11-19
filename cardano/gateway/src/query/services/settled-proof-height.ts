@@ -5,17 +5,32 @@ import { getStabilityPolicy, getStabilityLookaheadDepth } from './stability-scor
 import { GrpcNotFoundException } from '../../exception/grpc_exceptions';
 import { YaciRestHistoryChangedError } from '../../shared/helpers/yaci-rest';
 
+type PacketProofAnchor = {
+  proofHeight: bigint;
+  anchorBlockHash: string;
+  lastDescendant: { height: number; hash: string };
+};
+
 export async function latestPacketProofHeight(historyService: HistoryService, logger: Logger): Promise<bigint> {
+  return (await latestPacketProofAnchor(historyService, logger)).proofHeight;
+}
+
+export async function latestPacketProofAnchor(
+  historyService: HistoryService,
+  logger: Logger,
+): Promise<PacketProofAnchor> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await findPacketProofHeight(historyService, logger);
+      return await findPacketProofAnchor(historyService, logger);
     } catch (error) {
       if (!(error instanceof YaciRestHistoryChangedError) || attempt >= 2) throw error;
     }
   }
 }
 
-async function findPacketProofHeight(historyService: HistoryService, logger: Logger): Promise<bigint> {
+async function findPacketProofAnchor(
+  historyService: HistoryService, logger: Logger,
+): Promise<PacketProofAnchor> {
   const tip = await historyService.findLatestBlock();
   if (!tip) throw new Error('Cardano history is unavailable');
   const policy = getStabilityPolicy();
@@ -24,7 +39,13 @@ async function findPacketProofHeight(historyService: HistoryService, logger: Log
   for (let height = first; height >= last; height--) {
     try {
       const evidence = await loadStakeWeightedStabilityEvidenceByHeight({ historyService, logger, height });
-      return evidence.anchorHeight;
+      const lastDescendant = evidence.descendantBlocks.at(-1);
+      if (!lastDescendant) throw new Error('Accepted packet proof has no descendant evidence');
+      return {
+        proofHeight: evidence.anchorHeight,
+        anchorBlockHash: evidence.anchorBlock.hash,
+        lastDescendant: { height: lastDescendant.height, hash: lastDescendant.hash },
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (
