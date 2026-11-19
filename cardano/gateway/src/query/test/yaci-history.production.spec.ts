@@ -20,7 +20,7 @@ describe('Yaci production estimates', () => {
     ];
     const json = jest.spyOn(YaciRestClient.prototype, 'json').mockImplementation(async (path) => {
       const epoch = Number(path.match(/^blocks\/epoch\/(\d+)/)?.[1]);
-      return { blocks: rows.filter(row => row.epoch === epoch).map(row => ({ ...fixture.metadata, ...row })) };
+      return { blocks: rows.filter(row => row.epoch === epoch).sort((a, b) => b.number - a.number).map(row => ({ ...fixture.metadata, ...row })) };
     });
     const block = { height: 100, hash: fixture.metadata.hash, prevHash: fixture.metadata.previous_block!,
       slotNo: 1100n, epochNo: 7, timestampUnixNs: 1_000_000_000n, slotLeader: 'pool1anchorpool' };
