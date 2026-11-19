@@ -117,3 +117,26 @@ describe('Mithril-certified stake', () => {
     expect(await loadMithrilStakeCertificates(mithril, 660)).toEqual([epoch660, epoch661]);
   });
 });
+
+it('loads the complete bootstrap table certified for the leader epoch', async () => {
+  const { loadMithrilBootstrapStake } = await import('../services/mithril-certified-stake');
+  const source = { getCardanoStakeDistributionByEpoch: jest.fn().mockResolvedValue({
+    epoch: 5, certificate_hash: 'ab'.repeat(32), stake_distribution: { pool1b: 3, pool1a: 2 },
+  }) } as unknown as MithrilStakeSource;
+  expect(await loadMithrilBootstrapStake(source, 7)).toEqual([
+    { poolId: 'pool1a', stake: 2n, relativeStakeNumerator: 2n, relativeStakeDenominator: 5n },
+    { poolId: 'pool1b', stake: 3n, relativeStakeNumerator: 3n, relativeStakeDenominator: 5n },
+  ]);
+  expect(source.getCardanoStakeDistributionByEpoch).toHaveBeenCalledWith(5);
+});
+
+it.each([
+  undefined,
+  { epoch: 6, certificate_hash: 'ab'.repeat(32), stake_distribution: { pool1a: 2 } },
+  { epoch: 5, certificate_hash: 'ab'.repeat(32), stake_distribution: {} },
+  { epoch: 5, certificate_hash: 'ab'.repeat(32), stake_distribution: { pool1a: Number.MAX_SAFE_INTEGER + 1 } },
+])('rejects unavailable or invalid certified bootstrap stake %#', async (distribution) => {
+  const { loadMithrilBootstrapStake } = await import('../services/mithril-certified-stake');
+  const source = { getCardanoStakeDistributionByEpoch: jest.fn().mockResolvedValue(distribution) } as unknown as MithrilStakeSource;
+  await expect(loadMithrilBootstrapStake(source, 7)).rejects.toThrow();
+});
