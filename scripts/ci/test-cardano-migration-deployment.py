@@ -95,7 +95,7 @@ def main():
         if artifacts.exists() and any(artifacts.iterdir()):
             parser.error("--artifacts-dir must be empty; keep every previous baseline intact")
         artifacts.mkdir(parents=True, exist_ok=True)
-    elif (artifacts / "handler.json").exists() or (artifacts / "deployment.log").exists():
+    elif (artifacts / "bridge-manifest.json").exists() or (artifacts / "deployment.log").exists():
         parser.error("This network already has deployment artifacts; select a fresh --artifacts-dir for a new baseline")
     docker = ["docker"] + (["--context", args.docker_context] if args.docker_context else [])
     compose = docker + ["compose", "-p", project, "-f", str(compose_file)]
@@ -164,7 +164,7 @@ def main():
                 env[key] = value.strip().strip('"')
         for key in ["KUPO_API_KEY", "OGMIOS_API_KEY"]:
             env.pop(key, None)
-        env["IBC_DEPLOYMENT_MODE"] = "upgradeable" if args.migration_baseline else "legacy"
+        env.pop("IBC_DEPLOYMENT_MODE", None)
         inventory_path = artifacts / "deployment-plan.json"
         cost_path = artifacts / "deployment-cost-report.json"
         env.update({"KUPO_URL": kupo, "OGMIOS_URL": ogmios, "CARDANO_NETWORK_MAGIC": "42", "DEPLOYMENT_PLAN_OUTPUT": str(inventory_path), "DEPLOYMENT_COST_REPORT_PATH": str(cost_path)})
@@ -187,21 +187,18 @@ def main():
                 **funding,
                 'scope': 'Disposable funding diagnostic; no bridge deployed'}) + '\n')
             return
-        if args.migration_baseline:
-            address_info = json.loads(cli("address", "info", "--address", wallet))
-            address_bytes = bytes.fromhex(address_info["base16"])
-            if address_bytes[0] >> 4 not in {0, 2, 6}:
-                raise RuntimeError("Isolated migration authority must be an explicit payment key address")
-            authority = address_bytes[1:29].hex()
-            # Public BIP-39 fixture used only on this isolated magic-42 network.
-            # Distinct from replacement authority and holder/executor fixtures.
-            derive_emergency = "const {walletFromSeed,getAddressDetails}=require('@lucid-evolution/lucid');process.stdout.write(getAddressDetails(walletFromSeed('zoo '.repeat(11)+'wrong',{network:'Custom'}).address).paymentCredential.hash)"
-            emergency = subprocess.check_output(['node', '-e', derive_emergency], cwd=ROOT / 'cardano/gateway', text=True).strip()
-            governance_path = artifacts / "migration-governance.json"
-            governance_path.write_text(json.dumps({"signers": [authority], "quorum": "1", "delay_ms": "86400000", "emergency":{"signers":[emergency],"quorum":"1"}}) + "\n")
-            env["MIGRATION_GOVERNANCE_FILE"] = str(governance_path)
-        else:
-            env.pop("MIGRATION_GOVERNANCE_FILE", None)
+        address_info = json.loads(cli("address", "info", "--address", wallet))
+        address_bytes = bytes.fromhex(address_info["base16"])
+        if address_bytes[0] >> 4 not in {0, 2, 6}:
+            raise RuntimeError("Isolated migration authority must be an explicit payment key address")
+        authority = address_bytes[1:29].hex()
+        # Public BIP-39 fixture used only on this isolated magic-42 network.
+        # Distinct from replacement authority and holder/executor fixtures.
+        derive_emergency = "const {walletFromSeed,getAddressDetails}=require('@lucid-evolution/lucid');process.stdout.write(getAddressDetails(walletFromSeed('zoo '.repeat(11)+'wrong',{network:'Custom'}).address).paymentCredential.hash)"
+        emergency = subprocess.check_output(['node', '-e', derive_emergency], cwd=ROOT / 'cardano/gateway', text=True).strip()
+        governance_path = artifacts / "migration-governance.json"
+        governance_path.write_text(json.dumps({"signers": [authority], "quorum": "1", "delay_ms": "86400000", "emergency":{"signers":[emergency],"quorum":"1"}}) + "\n")
+        env["MIGRATION_GOVERNANCE_FILE"] = str(governance_path)
         # Pin the exact blueprint for the whole run, even if a developer builds
         # another candidate while this network confirms its transactions.
         blueprint_path = ROOT / "cardano/onchain/plutus.json"
@@ -221,8 +218,8 @@ def main():
                 entry = artifacts / "deployment-clock.ts"
                 entry.write_text(f"// Disposable chain clock only; the production delay and scripts are unchanged.\nconst realNow = Date.now.bind(Date);\nDate.now = () => realNow() + {args.clock_offset_seconds * 1000};\nawait import({json.dumps((OFFCHAIN / 'index.ts').as_uri())});\n")
             subprocess.run(["deno", "run", "--config", str(OFFCHAIN / "deno.json"), "--import-map", str(import_map_path), "--allow-net", "--allow-env", "--allow-read", "--allow-run", "--allow-ffi", "--allow-write", str(entry)], cwd=artifacts, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-        manifest = artifacts / "deployments/handler.json"
-        shutil.copy2(manifest, artifacts / "handler.json")
+        manifest = artifacts / "deployments/bridge-manifest.json"
+        shutil.copy2(manifest, artifacts / "bridge-manifest.json")
         plan = json.loads(inventory_path.read_text())
         expected = {validator["hash"] for validator in plan["referenceValidators"]}
         holder = next(validator["address"] for validator in plan["inlineValidators"] if validator["title"] == "reference_validator.refer_only.else")

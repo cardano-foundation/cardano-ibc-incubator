@@ -13,6 +13,7 @@ validator transfer(
   port_token: AuthToken,
   module_token: AuthToken,
   voucher_policy: ByteArray,
+  shutdown_hash: ByteArray,
 ) {
   spend(
     datum: Option<Data>,
@@ -28,9 +29,8 @@ validator transfer(
       expect
         migration.operation_allowed(transaction, registry_policy, generation, 1)
       expect redeemer: IBCModuleRedeemer = raw
-      // validate(False, ...) rejects retirement directly in its dispatch.
       spending_transfer_module.validate(
-        False,
+        True,
         port_token,
         module_token,
         "transfer",
@@ -38,7 +38,7 @@ validator transfer(
         channel_policy,
         voucher_policy,
         host_policy,
-        #"",
+        shutdown_hash,
         datum,
         redeemer,
         own_ref,

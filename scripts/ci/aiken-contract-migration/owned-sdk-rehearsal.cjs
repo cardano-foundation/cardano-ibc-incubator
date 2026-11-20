@@ -26,11 +26,11 @@ function assertSdkRehearsalEvidence({ runtime, artifacts, result, artifactResult
   assert.equal(snapshot.registry.current.generation, '3', 'Expected populated V3 state');
   assert.equal(snapshot.registry.phase, 'Ready', 'Expected activated V3');
   assert.equal(baseline.migration.generation, '1', 'Expected original baseline');
-  const host = baseline.hostStateNFT;
-  assert.equal(manifest.host_state_nft.policy_id, host.policyId, 'Deployment Host NFT mismatch');
-  assert.equal(manifest.host_state_nft.token_name, host.name, 'Deployment Host NFT name mismatch');
-  assert.equal(snapshot.registry.host_policy, host.policyId, 'Population deployment mismatch');
-  assert.equal(manifest.deployment_id, `${manifest.cardano.chain_id}:${host.policyId}.${host.name}`, 'Deployment identity mismatch');
+  const host = baseline.host_state_nft;
+  assert.equal(manifest.host_state_nft.policy_id, host.policy_id, 'Deployment Host NFT mismatch');
+  assert.equal(manifest.host_state_nft.token_name, host.token_name, 'Deployment Host NFT name mismatch');
+  assert.equal(snapshot.registry.host_policy, host.policy_id, 'Population deployment mismatch');
+  assert.equal(manifest.deployment_id, `${manifest.cardano.chain_id}:${host.policy_id}.${host.token_name}`, 'Deployment identity mismatch');
   assert.equal(manifest.migration.registryUnit, baseline.migration.registryUnit, 'Registry identity mismatch');
   assert.equal(manifest.migration.registryUnit, snapshot.registry.token.policy_id + snapshot.registry.token.name, 'Population registry mismatch');
   assert.equal(manifest.migration.compatibility, baseline.migration.compatibility, 'Compatibility mismatch');
@@ -56,7 +56,7 @@ function validateSdkRehearsal(runtimeArg, artifactsArg) {
     genesis: fs.readFileSync(path.join(runtime, 'runtime/genesis-shelley.json'), 'utf8'),
     actualGenesis: docker(['exec', '-T', 'devkit', 'cat', '/clusters/nodes/default/node/genesis/shelley-genesis.json']),
     ports: Object.fromEntries(endpoints.map(([service, port]) => [`${service}:${port}`, docker(['port', service, port]).trim()])),
-    population: read(runtime, 'wallet-population.json'), baseline: read(artifacts, 'handler.json'),
+    population: read(runtime, 'wallet-population.json'), baseline: read(artifacts, 'bridge-manifest.json'),
     manifest: read(artifacts, 'bridge-manifest-3.json'), snapshot: read(artifacts, 'population-after-v3.json'),
   };
   return { ...evidence, genesisSha256: assertSdkRehearsalEvidence(evidence) };

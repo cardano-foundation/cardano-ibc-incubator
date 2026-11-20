@@ -35,11 +35,9 @@ import { ConfigService } from '@nestjs/config';
 import { ClientDatumState } from 'src/shared/types/client-datum-state';
 import { ATTRIBUTE_KEY_CLIENT, CLIENT_ID_PREFIX, CLIENT_PREFIX, EVENT_TYPE_CLIENT } from 'src/constant';
 import { ClientDatum, encodeClientStateValue, encodeConsensusStateValue } from 'src/shared/types/client-datum';
-import { SpendClientRedeemer } from 'src/shared/types/client-redeemer';
 import { Height } from 'src/shared/types/height';
-import { getClientMessageFromTendermint, verifyClientMessage } from '../shared/types/msgs/client-message';
+import { getClientMessageFromTendermint } from '../shared/types/msgs/client-message';
 import {
-  checkForMisbehaviour,
   initializeMisbehaviour,
   TENDERMINT_MISBEHAVIOUR_TYPE_URL,
 } from '@shared/types/misbehaviour/misbehaviour';
@@ -430,6 +428,7 @@ export class TendermintClientService {
       // Find the UTXO for the client token
       const currentClientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
       const stagedTendermintClient = this.lucidService.hasStagedTendermintClient();
+      if (!stagedTendermintClient) throw new GrpcFailedPreconditionException('The deployment requires the governed Tendermint client');
       const clientMessageType = clientMessage.type_url;
       if (
         stagedTendermintClient &&
@@ -496,75 +495,6 @@ export class TendermintClientService {
           `Unsupported staged Tendermint client message type: ${clientMessageType || '<empty>'}`,
         );
       }
-      if (!stagedTendermintClient && !verifyClientMessage(clientMessage, currentClientDatum)) {
-        throw new GrpcInvalidArgumentException('Invalid client message');
-      }
-
-      // The staged Aiken validators and the exact off-chain session planner are
-      // the verification authority. The legacy JS verifier remains in place
-      // only for deployments using the original single-transaction client.
-      const foundMisbehaviour = stagedTendermintClient
-        ? false
-        : checkForMisbehaviour(clientMessage, currentClientDatum);
-
-      if (foundMisbehaviour) {
-        await this.refreshWalletContext(constructedAddress, 'updateClientOnMisbehaviourBuilder');
-        // Build and complete the unsigned transaction
-        const updateOnMisbehaviourOperator: UpdateOnMisbehaviourOperatorDto = {
-          clientId,
-          clientMessage,
-          constructedAddress,
-          clientDatum: currentClientDatum,
-          clientTokenUnit,
-          currentClientUtxo,
-          historyWitnesses,
-        };
-
-        const { unsignedTx: unsignedUpdateClientTx, pendingTreeUpdate } =
-          await this.buildUnsignedUpdateOnMisbehaviour(updateOnMisbehaviourOperator);
-        const safeBackdateMs = this.tendermintUpdateSafeBackdateMs(currentClientDatum);
-        const { validFromTime: validFromTimeMs, validToTime } = await this.computeTxValidityWindow(safeBackdateMs);
-        const frozenHeight = {
-          revisionNumber: 0n,
-          revisionHeight: 1n,
-        } as Height;
-        const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
-          operationName: 'updateClientOnMisbehaviour',
-          unsignedTx: unsignedUpdateClientTx,
-          validity: {
-            apply: (builder: TxBuilder) => builder.validFrom(validFromTimeMs).validTo(validToTime),
-          },
-          wallet: {
-            mode: 'refresh_from_address',
-            address: constructedAddress,
-            context: 'updateClientOnMisbehaviour',
-          },
-          completeOptions: {
-            localUPLCEval: false,
-            setCollateral: TRANSACTION_SET_COLLATERAL,
-          },
-          pendingTreeUpdate,
-          syntheticEvents: [
-            this.buildUpdateClientSyntheticEvent(
-              EVENT_TYPE_CLIENT.CLIENT_MISBEHAVIOR,
-              clientId,
-              frozenHeight,
-              clientMessage,
-            ),
-          ],
-        });
-
-        this.logger.log(`Returning unsigned tx for update client on misbehaviour (client_id: ${clientId})`);
-
-        const response: MsgUpdateClientResponse = {
-          unsigned_tx: {
-            type_url: '',
-            value: cborHexBytes,
-          },
-          client_id: parseInt(clientId.toString()),
-        } as unknown as MsgUpdateClientResponse;
-        return response;
-      }
       if (clientMessage.type_url === TENDERMINT_MISBEHAVIOUR_TYPE_URL) {
         throw new GrpcInvalidArgumentException('submitted Tendermint misbehaviour does not prove a conflict');
       }
@@ -626,45 +556,7 @@ export class TendermintClientService {
           validityWindow.slotConfig,
         );
       }
-      await this.refreshWalletContext(constructedAddress, 'updateClientBuilder');
-      const { unsignedTx: unsignedUpdateClientTx, pendingTreeUpdate } =
-        await this.buildUnsignedUpdateClientTx(updateClientHeaderOperator);
-      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
-        operationName: 'updateClient',
-        unsignedTx: unsignedUpdateClientTx,
-        validity: {
-          apply: (builder: TxBuilder) => builder.validFrom(validFromTimeMs).validTo(validToTimeMs),
-        },
-        wallet: {
-          mode: 'refresh_from_address',
-          address: constructedAddress,
-          context: 'updateClient',
-        },
-        completeOptions: {
-          localUPLCEval: false,
-          setCollateral: TRANSACTION_SET_COLLATERAL,
-        },
-        pendingTreeUpdate,
-        syntheticEvents: [
-          this.buildUpdateClientSyntheticEvent(
-            EVENT_TYPE_CLIENT.UPDATE_CLIENT,
-            clientId,
-            updateConsensusHeight,
-            clientMessage,
-          ),
-        ],
-      });
-
-      this.logger.log(`Returning unsigned tx for update client (client_id: ${clientId})`);
-
-      const response: MsgUpdateClientResponse = {
-        unsigned_tx: {
-          type_url: '',
-          value: cborHexBytes,
-        },
-        client_id: parseInt(clientId.toString()),
-      } as unknown as MsgUpdateClientResponse;
-      return response;
+      throw new GrpcFailedPreconditionException('The deployment requires the governed Tendermint client');
     } catch (error) {
       console.error(error);
 
@@ -1867,9 +1759,7 @@ export class TendermintClientService {
         last_update_time: BigInt(Date.now()),
       },
     };
-    const spend = this.lucidService.hasStagedTendermintClient()
-      ? encodeSpendMultitxClientRedeemer('UpgradeClient', this.lucidService.LucidImporter)
-      : await this.lucidService.encode('UpgradeClient', 'spendClientRedeemer');
+    const spend = encodeSpendMultitxClientRedeemer('UpgradeClient', this.lucidService.LucidImporter);
     const withdrawal = await this.lucidService.encode(
       { UpgradeClientWithdrawal: { subject_token: before.token } },
       'recoverClientWithdrawalRedeemer',
@@ -1940,11 +1830,7 @@ export class TendermintClientService {
       } catch {
         throw new GrpcInvalidArgumentException('Recover client signer is not a valid Cardano address');
       }
-      if (!this.lucidService.hasGovernedClientRecovery() && signerKeyHash.toLowerCase() !== hostStateDatum.deployer.toLowerCase()) {
-        throw new GrpcFailedPreconditionException(
-          'Recover client signer does not match the deployment recovery authority',
-        );
-      }
+
 
       const subjectClientTokenUnit = this.lucidService.getClientTokenUnit(subjectClientId);
       const substituteClientTokenUnit = this.lucidService.getClientTokenUnit(substituteClientId);
@@ -2022,13 +1908,12 @@ export class TendermintClientService {
 
   public async buildUnsignedUpdateOnMisbehaviour(
     updateOnMisbehaviourOperator: UpdateOnMisbehaviourOperatorDto,
-    stagedFinalizations?: StagedTendermintFinalization[],
+    stagedFinalizations: StagedTendermintFinalization[],
   ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     if (stagedFinalizations && (stagedFinalizations.length < 1 || stagedFinalizations.length > 2)) {
       throw new GrpcInvalidArgumentException('Freezing a staged client requires one or two completed sessions');
     }
     const currentClientDatumState = updateOnMisbehaviourOperator.clientDatum.state;
-    const clientMessageAny = updateOnMisbehaviourOperator.clientMessage;
 
     const newClientState: ClientState = {
       ...currentClientDatumState.clientState,
@@ -2098,77 +1983,51 @@ export class TendermintClientService {
       },
     };
 
-    const encodedSpendClientRedeemer = stagedFinalizations
-      ? encodeSpendMultitxClientRedeemer(
-          stagedFinalizations.length === 2
-            ? {
-                FinalizeMisbehaviour: {
-                  sessionToken1: stagedFinalizations[0].datum.sessionToken,
-                  sessionToken2: stagedFinalizations[1].datum.sessionToken,
-                  historyWitnesses: updateOnMisbehaviourOperator.historyWitnesses ?? [],
-                },
-              }
-            : {
-                FinalizeUpdate: {
-                  sessionToken: stagedFinalizations[0].datum.sessionToken,
-                  historyWitnesses: updateOnMisbehaviourOperator.historyWitnesses ?? [],
-                  historySiblings: [],
-                },
-              },
-          this.lucidService.LucidImporter,
-        )
-      : await this.lucidService.encode(
-          {
-            UpdateClient: {
-              msg: getClientMessageFromTendermint(clientMessageAny),
-              history_witnesses: updateOnMisbehaviourOperator.historyWitnesses ?? [],
-              history_siblings: [],
+    const encodedSpendClientRedeemer = encodeSpendMultitxClientRedeemer(
+      stagedFinalizations.length === 2
+        ? {
+            FinalizeMisbehaviour: {
+              sessionToken1: stagedFinalizations[0].datum.sessionToken,
+              sessionToken2: stagedFinalizations[1].datum.sessionToken,
+              historyWitnesses: updateOnMisbehaviourOperator.historyWitnesses ?? [],
+            },
+          }
+        : {
+            FinalizeUpdate: {
+              sessionToken: stagedFinalizations[0].datum.sessionToken,
+              historyWitnesses: updateOnMisbehaviourOperator.historyWitnesses ?? [],
+              historySiblings: [],
             },
           },
-          'spendClientRedeemer',
-        );
+      this.lucidService.LucidImporter,
+    );
     const encodedNewClientDatum: string = await this.lucidService.encode<ClientDatum>(newClientDatum, 'client');
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
-    const unsignedTx = stagedFinalizations
-      ? await this.lucidService.createUnsignedFinalizeTendermintSessionTransaction(
-          hostStateUtxo,
-          encodedHostStateRedeemer,
-          updateOnMisbehaviourOperator.currentClientUtxo,
-          encodedSpendClientRedeemer,
-          stagedFinalizations[0].utxo,
-          encodeSpendSessionRedeemer('Finalize', this.lucidService.LucidImporter),
-          encodeMintSessionRedeemer(
-            stagedFinalizations.length === 2
-              ? { BurnSessions: { tokenNames: stagedFinalizations.map(({ datum }) => datum.sessionToken.name) } }
-              : { BurnSession: { tokenName: stagedFinalizations[0].datum.sessionToken.name } },
-            this.lucidService.LucidImporter,
-          ),
-          encodedUpdatedHostStateDatum,
-          encodedNewClientDatum,
-          updateOnMisbehaviourOperator.clientTokenUnit,
-          stagedFinalizations[0].tokenUnit,
-          stagedFinalizations[0].signerKeyHash,
-          await this.lucidService.encode(
-            { CheckStagedClientHistory: { subject_token: newClientDatum.token } },
-            'recoverClientWithdrawalRedeemer',
-          ),
-          stagedFinalizations.slice(1),
-        )
-      : await this.lucidService.createUnsignedUpdateClientTransaction(
-          hostStateUtxo,
-          encodedHostStateRedeemer,
-          updateOnMisbehaviourOperator.currentClientUtxo,
-          encodedSpendClientRedeemer,
-          encodedUpdatedHostStateDatum,
-          encodedNewClientDatum,
-          updateOnMisbehaviourOperator.clientTokenUnit,
-          updateOnMisbehaviourOperator.constructedAddress,
-          await this.lucidService.encode(
-            { CheckClientHistory: { subject_token: newClientDatum.token } },
-            'recoverClientWithdrawalRedeemer',
-          ),
-        );
+    const unsignedTx = await this.lucidService.createUnsignedFinalizeTendermintSessionTransaction(
+      hostStateUtxo,
+      encodedHostStateRedeemer,
+      updateOnMisbehaviourOperator.currentClientUtxo,
+      encodedSpendClientRedeemer,
+      stagedFinalizations[0].utxo,
+      encodeSpendSessionRedeemer('Finalize', this.lucidService.LucidImporter),
+      encodeMintSessionRedeemer(
+        stagedFinalizations.length === 2
+          ? { BurnSessions: { tokenNames: stagedFinalizations.map(({ datum }) => datum.sessionToken.name) } }
+          : { BurnSession: { tokenName: stagedFinalizations[0].datum.sessionToken.name } },
+        this.lucidService.LucidImporter,
+      ),
+      encodedUpdatedHostStateDatum,
+      encodedNewClientDatum,
+      updateOnMisbehaviourOperator.clientTokenUnit,
+      stagedFinalizations[0].tokenUnit,
+      stagedFinalizations[0].signerKeyHash,
+      await this.lucidService.encode(
+        { CheckStagedClientHistory: { subject_token: newClientDatum.token } },
+        'recoverClientWithdrawalRedeemer',
+      ),
+      stagedFinalizations.slice(1),
+    );
     return {
       unsignedTx,
       pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
@@ -2187,16 +2046,6 @@ export class TendermintClientService {
     const currentClientDatumState = updateClientOperator.clientDatum.state;
     const header = updateClientOperator.header;
     const insertion = await this.lucidService.prepareConsensusHistoryUpdate(updateClientOperator.currentClientUtxo);
-    // Create a SpendClientRedeemer using the provided header
-    const spendClientRedeemer: SpendClientRedeemer = {
-      UpdateClient: {
-        msg: {
-          HeaderCase: [header],
-        },
-        history_witnesses: updateClientOperator.historyWitnesses ?? [],
-        history_siblings: insertion.siblings,
-      },
-    };
     const headerHeight = header.signedHeader.header.height;
     validateUpdateHeaderAdvancesLatestHeight(headerHeight, currentClientDatumState.clientState.latestHeight);
     const newHeight: Height = {
@@ -2351,21 +2200,7 @@ export class TendermintClientService {
         ),
       );
     } else {
-      const encodedSpendClientRedeemer = await this.lucidService.encode(spendClientRedeemer, 'spendClientRedeemer');
-      unsignedTx = await this.lucidService.createUnsignedUpdateClientTransaction(
-        hostStateUtxo,
-        encodedHostStateRedeemer,
-        updateClientOperator.currentClientUtxo,
-        encodedSpendClientRedeemer,
-        encodedUpdatedHostStateDatum,
-        encodedNewClientDatum,
-        updateClientOperator.clientTokenUnit,
-        updateClientOperator.constructedAddress,
-        await this.lucidService.encode(
-          { CheckClientHistory: { subject_token: newClientDatum.token } },
-          'recoverClientWithdrawalRedeemer',
-        ),
-      );
+      throw new GrpcFailedPreconditionException('Client updates require a cache witness or a verified session');
     }
     if (stagedFinalization && this.lucidService.hasCachedTendermintClient?.()) {
       const { utxo, cache } = await this.lucidService.resolveValidatorCache(newClientDatum.token, updateClientOperator.currentClientUtxo.address);
@@ -2457,12 +2292,6 @@ export class TendermintClientService {
         consensus_state_siblings: consensusStateSiblings,
       },
     };
-    const spendClientRedeemer: SpendClientRedeemer = {
-      RecoverClient: {
-        substitute_token: operator.substituteClientDatum.token,
-        history_siblings: insertion.siblings,
-      },
-    };
     const withdrawalRedeemer = {
       RecoverClientWithdrawal: {
         subject_token: operator.subjectClientDatum.token,
@@ -2472,8 +2301,7 @@ export class TendermintClientService {
 
     const [encodedHostStateRedeemer, encodedSpendClientRedeemer, encodedWithdrawalRedeemer] = await Promise.all([
       this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer'),
-      this.lucidService.hasStagedTendermintClient()
-        ? encodeSpendMultitxClientRedeemer(
+      encodeSpendMultitxClientRedeemer(
             {
               RecoverClient: {
                 substituteToken: operator.substituteClientDatum.token,
@@ -2481,16 +2309,14 @@ export class TendermintClientService {
               },
             },
             this.lucidService.LucidImporter,
-          )
-        : this.lucidService.encode(spendClientRedeemer, 'spendClientRedeemer'),
+          ),
       this.lucidService.encode(withdrawalRedeemer, 'recoverClientWithdrawalRedeemer'),
     ]);
     const [encodedUpdatedHostStateDatum, encodedRecoveredClientDatum] = await Promise.all([
       this.lucidService.encode(updatedHostStateDatum, 'host_state'),
       this.lucidService.encode(recoveredClientDatum, 'client'),
     ]);
-    const governed = this.lucidService.hasGovernedClientRecovery();
-    if (governed && operator.txValidFrom === undefined) {
+    if (operator.txValidFrom === undefined) {
       throw new GrpcFailedPreconditionException('Governed recovery requires an explicit validity interval');
     }
     const unsignedTx = await this.lucidService.createUnsignedRecoverClientTransaction(
@@ -2504,11 +2330,11 @@ export class TendermintClientService {
       encodedRecoveredClientDatum,
       operator.subjectClientTokenUnit,
       operator.signerKeyHash,
-      ...(governed ? [{
+      {
         substituteUnit: operator.substituteClientDatum.token.policyId + operator.substituteClientDatum.token.name,
         validFrom: Number(operator.txValidFrom! / 1_000_000n),
         validTo: Number(operator.txValidTo / 1_000_000n),
-      }] as const : [] as const),
+      },
     );
 
     return {

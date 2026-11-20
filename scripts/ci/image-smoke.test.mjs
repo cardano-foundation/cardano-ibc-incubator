@@ -11,7 +11,7 @@ import { smokeManifest, protocolParameters, fixtureHandler } from './image-smoke
 test('fixture serves only expected startup reads and records unexpected requests', async () => {
   const manifest = smokeManifest();
   const parameters = protocolParameters({ PlutusV1: [1], PlutusV2: [2], PlutusV3: [3] });
-  const handler = fixtureHandler(manifest, 'd87980', parameters);
+  const handler = fixtureHandler(manifest, 'd87980', parameters, 'd8799fff');
   const server = createServer(handler);
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -37,6 +37,12 @@ test('fixture serves only expected startup reads and records unexpected requests
       '{"method":"queryNetwork/genesisConfiguration","params":{"era":"conway"}}']) {
       assert.equal(handler.websocketMessage(Buffer.from(message)), undefined);
     }
+    const registryAsset = manifest.migration.registryUnit.slice(0, 56) + '.' + manifest.migration.registryUnit.slice(56);
+    const registry = await get('/matches/' + registryAsset + '?unspent');
+    assert.equal(registry[0].address, manifest.migration.registryAddress);
+    assert.equal(registry[0].value.assets[registryAsset], '1');
+    assert.deepEqual(await get('/matches/' + manifest.migration.registryAddress + '?unspent'), registry);
+    assert.deepEqual(await get('/datums/' + registry[0].datum_hash + '?inline'), { datum: 'd8799fff' });
     const nft = manifest.host_state_nft;
     const byUnit = await get('/matches/' + nft.policy_id + '.' + nft.token_name + '?unspent');
     const byAddress = await get('/matches/' + manifest.validators.host_state_stt.address + '?unspent');
@@ -68,7 +74,7 @@ test('fixture serves only expected startup reads and records unexpected requests
     }
     const observed = await get('/__smoke/status');
     assert.deepEqual({ ...observed, unexpected: observed.unexpected.length },
-      { protocol: 1, timing: 2, references: 1, host: 2, datum: 1, entities: 3, history: 1, unexpected: 8 });
+      { protocol: 1, timing: 2, references: 1, host: 2, datum: 1, registry: 2, registryDatum: 1, entities: 3, history: 1, unexpected: 8 });
   } finally {
     await new Promise(resolve => server.close(resolve));
   }

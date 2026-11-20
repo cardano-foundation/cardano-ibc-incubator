@@ -1,4 +1,4 @@
-import { loadHostStateValidator } from "../deployment-plan.ts";
+import { governedHostFixture } from "./governed-host.ts";
 import { clientRegistryData } from "../client-registry.ts";
 import {
   applyDoubleCborEncoding,
@@ -317,32 +317,26 @@ export async function channelFixture(
     portPolicy,
     legacyProofPolicy,
     hostPolicy,
+    "ee".repeat(28),
   );
   const [shutdownScript, shutdownScriptHash] = readValidator(
-    "recover_client.recover_client.withdraw",
+    "governance_recover_client.governance_recover_client.withdraw",
     lucid,
-    [hostPolicy, legacyProofPolicy],
+    [hostPolicy, legacyProofPolicy, "ee".repeat(28)],
   );
   const [channelMint, channelPolicy] = readValidator(
-    "minting_channel_stt.mint_channel_stt.mint",
+    "upgradeable/mint_channel.mint_channel.mint",
     lucid,
-    [
-      clients,
-      connectionPolicy,
-      portPolicy,
-      legacyProofPolicy,
-      channelScripts.base.hash,
-      hostPolicy,
-      shutdownScriptHash,
-    ],
+    ["ee".repeat(28), portPolicy, verifyPolicy, shutdownScriptHash],
   );
   const [moduleScript, moduleHash, moduleAddress] = readValidator(
     GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
     lucid,
     [hostPolicy],
   );
-  const [hostScript, , hostAddress] = loadHostStateValidator(
+  const [hostScript, , hostAddress] = governedHostFixture(
     lucid,
+    emulator,
     hostPolicy,
     clients,
     hash("66"),

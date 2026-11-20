@@ -18,7 +18,7 @@ use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/voucher_flow as transfer_voucher_flow
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  ReclaimTransferWithdrawal, RecoverClientWithdrawalRedeemer,
+  ReclaimTransferWithdrawal,
 }
 use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{
@@ -63,19 +63,16 @@ pub fn validate(
             transaction.redeemers,
             Withdraw(Script(shutdown_script_hash)),
           )
-        expect ReclaimTransferWithdrawal {
-          port_unit,
-          module_unit,
-          escrow_policy,
-        }: RecoverClientWithdrawalRedeemer = actual
-        and {
-          port_unit == bytearray.concat(port_token.policy_id, port_token.name),
-          module_unit == bytearray.concat(
-            module_token.policy_id,
-            module_token.name,
-          ),
-          escrow_policy == transfer_escrow_shard_policy_id,
-        }
+        let expected: Data =
+          ReclaimTransferWithdrawal {
+            port_unit: bytearray.concat(port_token.policy_id, port_token.name),
+            module_unit: bytearray.concat(
+              module_token.policy_id,
+              module_token.name,
+            ),
+            escrow_policy: transfer_escrow_shard_policy_id,
+          }
+        actual == expected
       } else {
         False
       }

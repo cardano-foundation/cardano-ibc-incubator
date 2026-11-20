@@ -1,3 +1,4 @@
+use aiken/builtin as fixture_builtin
 use aiken/builtin
 use aiken/cbor
 use aiken/collection/list
@@ -8,13 +9,16 @@ use aiken/interval
 use aiken/primitive/bytearray
 use aiken/primitive/int
 use aiken/primitive/string
+use cardano/address as fixture_address
 use cardano/address.{Address, Credential, Script, VerificationKey}
 use cardano/assets.{PolicyId, Value, add, from_asset, quantity_of, zero}
+use cardano/transaction as fixture_transaction
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Redeemer, Spend,
   Transaction, placeholder,
 }
-use host_state_stt
+use governance_authority as fixture_authority_entry
+use host_state_nft as fixture_nft_entry
 use ibc/apps/transfer/types/transfer_module_datum.{
   TransferModuleDatum, empty_escrow_shard_registry_root,
 }
@@ -57,18 +61,23 @@ use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
+use ibc/core/ics_025_handler_interface/heartbeat as fixture_heartbeat
 use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
+use ibc/core/ics_025_handler_interface/host_state as fixture_datum
 use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
   ShutdownState, ShuttingDown, empty_ibc_state_root, host_state_token_name,
   max_bound_ports, min_shutdown_grace_period_ms, validate_bind_port,
 }
+use ibc/core/ics_025_handler_interface/host_state_redeemer as fixture_redeemer
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  AuthorizeFinalization, BindPort, ClaimBackup, CreateClient, CreateConnection,
-  EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer,
-  UpdateChannel, UpdateClient, UpdateConnection,
+  AuthorizeFinalization, BindPort, CreateClient, CreateConnection, EnterShutdown,
+  FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer, UpdateChannel,
+  UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/implementation/host_state_stt as host_roots
+use ibc/migration/auth as fixture_migration
 use ibc/migration/types.{
   Authority, Counts, Emergency, FixedIdentity, Governance, Implementation,
   Moving, Proposed, Ready, Registry, Replace, Rotate, minimum_delay_ms,
@@ -77,6 +86,8 @@ use ibc/migration/types.{
 use ibc/testing/client_registry_fixtures.{RegistryCase}
 use ibc/testing/fuzz_dsl
 use ibc/utils/bits
+use testing/host as governed_host
+use upgradeable/host_state as fixture_host_entry
 use upgradeable/host_state as migration_host
 
 // Build a list with `count` copies of `value`.
@@ -635,20 +646,10 @@ fn spend_host_state_with_signatories(
   outputs: List<Output>,
   extra_signatories: List<crypto.VerificationKeyHash>,
 ) -> Bool {
-  spend_host_state_with_backup(redeemer, inputs, outputs, extra_signatories, "")
-}
-
-fn spend_host_state_with_backup(
-  redeemer: HostStateRedeemer,
-  inputs: List<Input>,
-  outputs: List<Output>,
-  extra_signatories: List<crypto.VerificationKeyHash>,
-  backup_operator: ByteArray,
-) -> Bool {
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     test_nft_policy(),
     [
-      registry.legacy(
+      registry.tendermint_registration(
         "mock client policy",
         test_client_script_hash(),
         "mock proof policy",
@@ -659,7 +660,6 @@ fn spend_host_state_with_backup(
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    backup_operator,
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     redeemer,
@@ -691,61 +691,6 @@ fn spend_host_state_with_backup(
   )
 }
 
-const named_backup = #"99999999999999999999999999999999999999999999999999999999"
-
-fn claim_backup_as(
-  deployed_backup: ByteArray,
-  new_deployer: ByteArray,
-  signatories: List<crypto.VerificationKeyHash>,
-  change_root: Bool,
-) -> Bool {
-  let old_state = test_host_state(empty_ibc_state_root, 1)
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      ibc_state_root: if change_root {
-        #"01"
-      } else {
-        old_state.ibc_state_root
-      },
-    }
-  let new_datum =
-    HostStateDatum {
-      ..test_host_state_datum(new_state, test_nft_policy()),
-      deployer: new_deployer,
-    }
-  let output =
-    Output { ..test_host_output(new_state), datum: InlineDatum(new_datum) }
-  spend_host_state_with_backup(
-    ClaimBackup,
-    [test_host_input(old_state)],
-    [output],
-    signatories,
-    deployed_backup,
-  )
-}
-
-test named_backup_can_claim_deployer_authority() {
-  claim_backup_as(named_backup, named_backup, [named_backup], False)
-}
-
-test backup_claim_rejects_missing_backup_signature() {
-  !claim_backup_as(named_backup, named_backup, [trusted_deployer], False)
-}
-
-test backup_claim_rejects_arbitrary_new_deployer() {
-  !claim_backup_as(named_backup, trusted_deployer, [named_backup], False)
-}
-
-test backup_claim_rejects_root_mutation() {
-  !claim_backup_as(named_backup, named_backup, [named_backup], True)
-}
-
-test backup_claim_rejects_deployment_without_backup() {
-  !claim_backup_as("", named_backup, [named_backup], False)
-}
-
 type HostCase =
   Pair<HostStateRedeemer, Transaction>
 
@@ -772,10 +717,10 @@ fn packet_host_case(
 
 fn run_host_case(case: HostCase) -> Bool {
   let Pair(redeemer, transaction) = case
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     test_nft_policy(),
     [
-      registry.legacy(
+      registry.tendermint_registration(
         "mock client policy",
         test_client_script_hash(),
         "mock proof policy",
@@ -786,7 +731,6 @@ fn run_host_case(case: HostCase) -> Bool {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     redeemer,
@@ -1676,10 +1620,10 @@ test host_update_client_capacity_minimum_history_succeeds() {
       outputs,
     )
 
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     test_nft_policy(),
     [
-      registry.legacy(
+      registry.tendermint_registration(
         "mock client policy",
         test_client_script_hash(),
         "mock proof policy",
@@ -1690,7 +1634,6 @@ test host_update_client_capacity_minimum_history_succeeds() {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     redeemer,
@@ -1842,10 +1785,10 @@ fn create_connection_thread(token: AuthToken, mint: Value) -> Bool {
         },
       ),
     }
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     test_nft_policy(),
     [
-      registry.legacy(
+      registry.tendermint_registration(
         "mock client policy",
         test_client_script_hash(),
         "mock proof policy",
@@ -1856,7 +1799,6 @@ fn create_connection_thread(token: AuthToken, mint: Value) -> Bool {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     CreateConnection { connection_siblings: siblings },
@@ -3887,7 +3829,7 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
       extra_signatories: [trusted_deployer],
     }
 
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     nft_policy,
     dummy_script_hash,
     dummy_script_hash,
@@ -3895,7 +3837,6 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     redeemer,
@@ -3985,7 +3926,7 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
       extra_signatories: [trusted_deployer],
     }
 
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     nft_policy,
     dummy_script_hash,
     dummy_script_hash,
@@ -3993,7 +3934,6 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     redeemer,
@@ -4104,7 +4044,7 @@ test host_state_cannot_move_nft_to_different_address() fail {
       extra_signatories: [trusted_deployer],
     }
 
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     nft_policy,
     dummy_script_hash,
     dummy_script_hash,
@@ -4112,7 +4052,6 @@ test host_state_cannot_move_nft_to_different_address() fail {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     redeemer,
@@ -4216,7 +4155,7 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
       extra_signatories: [trusted_deployer],
     }
 
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     nft_policy,
     dummy_script_hash,
     dummy_script_hash,
@@ -4224,7 +4163,6 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     redeemer,
@@ -4290,7 +4228,7 @@ test host_state_bind_port_fails_if_output_missing() fail {
       extra_signatories: [trusted_deployer],
     }
 
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     nft_policy,
     dummy_script_hash,
     dummy_script_hash,
@@ -4298,7 +4236,6 @@ test host_state_bind_port_fails_if_output_missing() fail {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     redeemer,
@@ -4388,7 +4325,7 @@ fn validate_test_enter_shutdown(
 
   let redeemer: HostStateRedeemer = EnterShutdown { grace_period_end }
 
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     nft_policy,
     dummy_script_hash,
     dummy_script_hash,
@@ -4396,7 +4333,6 @@ fn validate_test_enter_shutdown(
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     redeemer,
@@ -4545,10 +4481,10 @@ fn validate_test_finalize_shutdown_with_input(
   outputs: List<Output>,
   valid_from: Int,
 ) -> Bool {
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     test_nft_policy(),
     [
-      registry.legacy(
+      registry.tendermint_registration(
         "mock client policy",
         test_client_script_hash(),
         "mock proof policy",
@@ -4559,7 +4495,6 @@ fn validate_test_finalize_shutdown_with_input(
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     FinalizeShutdown,
@@ -4643,10 +4578,10 @@ fn validate_test_authorize_finalization(root_present: Bool) -> Bool {
     } else {
       [host_input]
     }
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     nft_policy,
     [
-      registry.legacy(
+      registry.tendermint_registration(
         "mock client policy",
         test_client_script_hash(),
         "mock proof policy",
@@ -4657,7 +4592,6 @@ fn validate_test_authorize_finalization(root_present: Bool) -> Bool {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     AuthorizeFinalization,
@@ -4695,10 +4629,10 @@ test host_state_finalize_shutdown_succeeds_with_exact_nft_burn() {
 test host_state_finalize_shutdown_rejects_registered_transfer_root() fail {
   let nft_policy = test_nft_policy()
   let grace_period_end = 2000 + min_shutdown_grace_period_ms
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     nft_policy,
     [
-      registry.legacy(
+      registry.tendermint_registration(
         "mock client policy",
         test_client_script_hash(),
         "mock proof policy",
@@ -4709,7 +4643,6 @@ test host_state_finalize_shutdown_rejects_registered_transfer_root() fail {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     FinalizeShutdown,
@@ -4885,7 +4818,7 @@ test host_state_update_channel_rejects_packet_field_changes() fail {
 
   let redeemer: HostStateRedeemer = UpdateChannel { channel_siblings }
 
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     nft_policy,
     host_script_hash,
     host_script_hash,
@@ -4893,7 +4826,6 @@ test host_state_update_channel_rejects_packet_field_changes() fail {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     redeemer,
@@ -5024,7 +4956,7 @@ test host_state_handle_packet_rejects_channel_only_changes() fail {
       packet_acknowledgement_siblings: [],
     }
 
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     nft_policy,
     host_script_hash,
     host_script_hash,
@@ -5032,7 +4964,6 @@ test host_state_handle_packet_rejects_channel_only_changes() fail {
     "mock client policy",
     "mock connection policy",
     "mock channel policy",
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     redeemer,
@@ -5621,6 +5552,8 @@ fn containment_restricted(
       1
     },
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
+    registry.approval_authority,
+    registry.host_policy,
     None,
     raw,
     test_host_ref(),
@@ -5649,6 +5582,8 @@ fn registry_bound_heartbeat(
     registry.token.policy_id,
     generation,
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
+    registry.approval_authority,
+    registry.host_policy,
     None,
     raw,
     own_ref,
@@ -5986,10 +5921,14 @@ test emergency_heartbeat_permits_send() {
 // policy, spending script and IBC identifier may authorize its new commitment.
 fn create_alternate_registered_client(commitment_id: ByteArray) -> Bool {
   let first =
-    registry.legacy("mock client policy", test_client_script_hash(), "proof-a")
+    registry.tendermint_registration(
+      "mock client policy",
+      test_client_script_hash(),
+      "proof-a",
+    )
   let second =
     registry.ClientRegistration {
-      ..registry.legacy(
+      ..registry.tendermint_registration(
         "alternate client policy",
         "alternate client script",
         "proof-b",
@@ -6078,25 +6017,21 @@ fn create_registered_client(
         },
       ),
     }
-  host_state_stt.host_state_stt.spend(
-    test_nft_policy(),
+  // Namespace selection is a shared commitment primitive. The deployed HostState
+  // uses the single client identity authenticated by its implementation registry.
+  expect InlineDatum(old_raw) = test_host_input(old_state).output.datum
+  expect old_datum: HostStateDatum = old_raw
+  expect InlineDatum(new_raw) = host_output.datum
+  expect new_datum: HostStateDatum = new_raw
+  host_roots.validate_create_client_root(
+    old_datum,
+    new_datum,
+    [host_output, client_output],
+    from_asset(token.policy_id, token.name, 1),
     client_registry_fixtures.registrations(sample),
-    test_connection_script_hash(),
-    test_channel_script_hash(),
-    "mock client policy",
-    "mock connection policy",
-    "mock channel policy",
-    "",
-    HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
-    None,
-    CreateClient { client_state_siblings, consensus_state_siblings },
-    test_host_ref(),
-    Transaction {
-      ..placeholder,
-      inputs: [test_host_input(old_state)],
-      outputs: [host_output, client_output],
-      mint: from_asset(token.policy_id, token.name, 1),
-    },
+    second.mint_policy,
+    client_state_siblings,
+    consensus_state_siblings,
   )
 }
 
@@ -6174,7 +6109,7 @@ test heartbeat_does_not_depend_on_current_deployer() {
   let old_datum =
     HostStateDatum {
       ..test_host_state_datum(old_state, test_nft_policy()),
-      deployer: named_backup,
+      deployer: #"99999999999999999999999999999999999999999999999999999999",
     }
   let new_datum =
     HostStateDatum {
@@ -6185,7 +6120,7 @@ test heartbeat_does_not_depend_on_current_deployer() {
         last_heartbeat_time: new_state.last_update_time,
       },
     }
-  spend_host_state_with_backup(
+  spend_host_state_with_signatories(
     Heartbeat,
     [Input(reference, Output { ..old_output, datum: InlineDatum(old_datum) })],
     [
@@ -6195,7 +6130,6 @@ test heartbeat_does_not_depend_on_current_deployer() {
       },
     ],
     [trusted_deployer],
-    named_backup,
   )
 }
 
@@ -6225,4 +6159,66 @@ test host_state_heartbeat_rejects_missing_heartbeat_clock() fail {
     [test_host_output(new_state)],
     [trusted_deployer],
   )
+}
+
+fn spend_governed_host(
+  host_policy: ByteArray,
+  clients: Data,
+  connection: ByteArray,
+  channel: ByteArray,
+  client_policy: ByteArray,
+  connection_policy: ByteArray,
+  channel_policy: ByteArray,
+  schedule: fixture_heartbeat.HeartbeatSchedule,
+  datum: Option<fixture_datum.HostStateDatum>,
+  redeemer: fixture_redeemer.HostStateRedeemer,
+  own_ref: fixture_transaction.OutputReference,
+  transaction: fixture_transaction.Transaction,
+) -> Bool {
+  let (registry, tx) =
+    governed_host.context(
+      host_policy,
+      clients,
+      connection,
+      channel,
+      client_policy,
+      connection_policy,
+      channel_policy,
+      schedule,
+      datum,
+      redeemer,
+      own_ref,
+      transaction,
+    )
+  let raw: Data = redeemer
+  and {
+    fixture_host_entry.host_state.spend(
+      registry.token.policy_id,
+      1,
+      schedule,
+      registry.approval_authority,
+      host_policy,
+      None,
+      raw,
+      own_ref,
+      tx,
+    ),
+    if fixture_migration.is_host_control(raw) && redeemer != fixture_redeemer.FinalizeShutdown {
+      fixture_authority_entry.governance_authority.withdraw(
+        registry.token.policy_id,
+        fixture_builtin.constr_data(1, []),
+        fixture_address.Script(registry.approval_authority),
+        tx,
+      )
+    } else if redeemer == fixture_redeemer.FinalizeShutdown {
+      fixture_nft_entry.host_state_nft.mint(
+        own_ref,
+        fixture_nft_entry.BurnFinal,
+        host_policy,
+        tx,
+      )
+    } else {
+      True
+    },
+  }
 }

@@ -34,8 +34,8 @@ use ibc/core/ics_025_handler_interface/host_state.{
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{CreateClient}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/implementation/minting_client_stt as minting_client_stt
 use ibc/utils/math
-use minting_client_stt
 use verifying_proof
 
 // Milliseconds, on slot boundaries. The update may be included at valid_to -
@@ -127,7 +127,7 @@ fn initial_client() -> ClientDatum {
 }
 
 // Exercise the state transition and a real ICS-23 proof together. Full signed
-// UpdateClient entry-point coverage lives in spending_client_capacity.test.ak.
+// UpdateClient entry-point coverage lives in cardano/offchain/scripts/tendermint-cache.test.ts.
 fn next_header() -> Header {
   let template = header.null_header()
   Header {
@@ -242,7 +242,8 @@ fn mint_client(datum: ClientDatum, validity_range: ValidityRange) -> Bool {
       redeemers: [Pair(Spend(host_ref), host_redeemer)],
       validity_range,
     }
-  minting_client_stt.mint_client_stt.mint(
+  minting_client_stt.validate(
+    True,
     client_script,
     host_policy,
     MintClient,

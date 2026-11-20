@@ -1675,7 +1675,8 @@ test state_value_preserves_reserves_and_allows_datum_growth_top_up() {
 test registered_client_reference_uses_the_common_view() {
   let (inputs, referrer, policy, client_id, datum) =
     setup_validate_referred_client()
-  let registration = registry.legacy(policy, "mock script hash", "proof-a")
+  let registration =
+    registry.tendermint_registration(policy, "mock script hash", "proof-a")
   let clients: Data = [registration]
   let view =
     validator_utils.validate_referred_client(
@@ -1698,7 +1699,8 @@ test registered_client_reference_uses_the_common_view() {
 test registered_client_rejects_the_wrong_spending_script() fail {
   let (inputs, referrer, policy, client_id, _) =
     setup_validate_referred_client()
-  let clients: Data = [registry.legacy(policy, "other script", "proof-a")]
+  let clients: Data =
+    [registry.tendermint_registration(policy, "other script", "proof-a")]
   expect _ =
     validator_utils.validate_referred_client(
       inputs,
@@ -1714,7 +1716,13 @@ test registered_client_rejects_the_wrong_spending_script() fail {
 test registered_client_rejects_the_wrong_mint_policy() fail {
   let (inputs, referrer, _, client_id, _) = setup_validate_referred_client()
   let clients: Data =
-    [registry.legacy("other policy", "mock script hash", "proof-a")]
+    [
+      registry.tendermint_registration(
+        "other policy",
+        "mock script hash",
+        "proof-a",
+      ),
+    ]
   expect _ =
     validator_utils.validate_referred_client(
       inputs,
@@ -1728,10 +1736,10 @@ test registered_client_rejects_the_wrong_mint_policy() fail {
 }
 
 test registered_client_cannot_use_another_registered_types_verifier() {
-  let a = registry.legacy("policy-a", "script-a", "proof-a")
+  let a = registry.tendermint_registration("policy-a", "script-a", "proof-a")
   let b =
     registry.ClientRegistration {
-      ..registry.legacy("policy-b", "script-b", "proof-b"),
+      ..registry.tendermint_registration("policy-b", "script-b", "proof-b"),
       client_type: "99-other",
     }
   let clients: Data = [a, b]
@@ -1742,7 +1750,8 @@ test registered_client_cannot_use_another_registered_types_verifier() {
 }
 
 test registered_client_requires_its_own_proof_marker() fail {
-  let clients: Data = [registry.legacy("policy", "script", "proof-a")]
+  let clients: Data =
+    [registry.tendermint_registration("policy", "script", "proof-a")]
   let policy =
     validator_utils.client_proof_policy(clients, "07-tendermint-0", "proof-b")
   let unrelated_redeemer: Data =

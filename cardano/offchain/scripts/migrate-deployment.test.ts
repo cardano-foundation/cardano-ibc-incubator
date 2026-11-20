@@ -9,12 +9,12 @@ Deno.test("migration CLI requires explicit artifacts, funding and bounded execut
   for (
     const args of [
       [],
-      ["prepare", "--handler", "original.json", "--out", "new.json"],
-      ["execute", "--handler", "original.json", "--submit"],
-      ["publish", "--handler", "original.json", "--plan", "plan.json"],
+      ["prepare", "--manifest", "original.json", "--out", "new.json"],
+      ["execute", "--manifest", "original.json", "--submit"],
+      ["publish", "--manifest", "original.json", "--plan", "plan.json"],
       [
         "resume",
-        "--handler",
+        "--manifest",
         "original.json",
         "--plan",
         "plan.json",
@@ -23,8 +23,8 @@ Deno.test("migration CLI requires explicit artifacts, funding and bounded execut
         "--max-steps",
         "2",
       ],
-      ["inspect", "--handler", "a", "--handler", "b"],
-      ["inspect", "--handler", "a", "--force"],
+      ["inspect", "--manifest", "a", "--manifest", "b"],
+      ["inspect", "--manifest", "a", "--force"],
     ]
   ) {
     assertThrows(() => parseMigrationArgs(args));
@@ -32,7 +32,7 @@ Deno.test("migration CLI requires explicit artifacts, funding and bounded execut
   assertEquals(
     parseMigrationArgs([
       "resume",
-      "--handler",
+      "--manifest",
       "original.json",
       "--plan",
       "plan.json",
@@ -413,7 +413,7 @@ Deno.test("concurrent expired-publication rebuilds adopt one immutable replaceme
 Deno.test("emergency authority rotation requires an exact authority and cannot request permission changes", () => {
   const args = [
     "rotate-emergency",
-    "--handler",
+    "--manifest",
     "baseline.json",
     "--out",
     "unsigned.json",
@@ -431,12 +431,12 @@ Deno.test("emergency authority rotation requires an exact authority and cannot r
 Deno.test("deployer CLI requires an explicit export or submission and retains the chosen successor", () => {
   for (const command of ["nominate-deployer", "graduate-deployer"]) {
     assertThrows(() =>
-      parseMigrationArgs([command, "--handler", "deployment.json"])
+      parseMigrationArgs([command, "--manifest", "deployment.json"])
     );
     assertEquals(
       parseMigrationArgs([
         command,
-        "--handler",
+        "--manifest",
         "deployment.json",
         "--out",
         "tx.json",
@@ -448,7 +448,7 @@ Deno.test("deployer CLI requires an explicit export or submission and retains th
   assertEquals(
     parseMigrationArgs([
       "nominate-deployer",
-      "--handler",
+      "--manifest",
       "deployment.json",
       "--successor",
       key,
@@ -462,8 +462,8 @@ Deno.test("deployer CLI requires an explicit export or submission and retains th
 Deno.test("client recovery nomination binds two distinct units from the same policy", () => {
   const common = [
     "nominate-client-recovery",
-    "--handler",
-    "handler.json",
+    "--manifest",
+    "bridge-manifest.json",
     "--out",
     "approval.json",
   ];
@@ -502,8 +502,8 @@ Deno.test("client recovery nomination binds two distinct units from the same pol
     () =>
       parseMigrationArgs([
         "nominate-client-recovery",
-        "--handler",
-        "handler.json",
+        "--manifest",
+        "bridge-manifest.json",
         "--subject-client-unit",
         subject,
         "--substitute-client-unit",

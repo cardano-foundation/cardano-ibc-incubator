@@ -1,6 +1,6 @@
 use cardano/transaction.{OutputReference, Transaction}
 use ibc/core/ics_004/channel_datum.{ChannelDatum}
-use ibc/core/ics_004/channel_redeemer.{ReclaimChannel, SpendChannelRedeemer}
+use ibc/core/ics_004/channel_redeemer.{SpendChannelRedeemer}
 use ibc/implementation/spending_channel
 use ibc/migration/auth as migration
 
@@ -9,6 +9,7 @@ validator channel(
   generation: Int,
   host_policy: ByteArray,
   operations: List<ByteArray>,
+  packet_config_policy: ByteArray,
 ) {
   spend(
     datum: Option<ChannelDatum>,
@@ -24,13 +25,13 @@ validator channel(
       expect
         migration.operation_allowed(transaction, registry_policy, generation, 1)
       expect redeemer: SpendChannelRedeemer = raw
-      expect redeemer != ReclaimChannel
       expect [
         open_ack, open_confirm, close_init, close_confirm, recv, send, timeout,
         ack, prune, upgrade, upgrade_handshake, upgrade_finish,
       ] = operations
       spending_channel.validate(
-        False,
+        True,
+        packet_config_policy,
         open_ack,
         open_confirm,
         close_init,

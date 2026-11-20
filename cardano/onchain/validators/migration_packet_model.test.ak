@@ -466,6 +466,7 @@ fn channel_handover(model: Model, next_datum: ChannelDatum) -> Bool {
       model.generation,
       hash(2),
       [],
+      hash(3),
       Some(datum),
       raw,
       reference(2),

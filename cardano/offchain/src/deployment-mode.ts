@@ -4,26 +4,17 @@ import {
 } from "../types/plutus/Migration.ts";
 import type { DeploymentOptions } from "./deployment.ts";
 
-/** Resolve before network access or funding: omission never selects legacy. */
+/** Every deployment requires governance and a separate emergency authority. */
 export async function deploymentOptionsFromEnvironment(
   env: (name: string) => string | undefined = Deno.env.get,
   read: (path: string) => Promise<string> = Deno.readTextFile,
 ): Promise<DeploymentOptions> {
-  const deploymentMode = env("IBC_DEPLOYMENT_MODE");
-  if (deploymentMode !== "upgradeable" && deploymentMode !== "legacy") {
+  if (env("IBC_DEPLOYMENT_MODE")) {
     throw new Error(
-      "Set IBC_DEPLOYMENT_MODE explicitly to upgradeable or legacy; legacy has no recovery capability",
+      "IBC_DEPLOYMENT_MODE was removed. Configure MIGRATION_GOVERNANCE_FILE for the single governed deployment model",
     );
   }
   const path = env("MIGRATION_GOVERNANCE_FILE");
-  if (deploymentMode === "legacy") {
-    if (path) {
-      throw new Error(
-        "Legacy mode conflicts with MIGRATION_GOVERNANCE_FILE; select upgradeable",
-      );
-    }
-    return { deploymentMode };
-  }
   if (!path?.trim()) {
     throw new Error(
       "Upgradeable deployment requires MIGRATION_GOVERNANCE_FILE; no transactions were submitted",
@@ -46,7 +37,6 @@ export async function deploymentOptionsFromEnvironment(
     };
     assertEmergencyAuthority(emergency, governance);
     return {
-      deploymentMode,
       migration: {
         governance,
         emergency,

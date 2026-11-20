@@ -1,3 +1,4 @@
+import { shutdownRegistryReference } from "../src/shutdown.ts";
 import { assert, assertEquals, assertThrows } from "@std/assert";
 import {
   Data,
@@ -14,7 +15,7 @@ import { createCardanoScalusEvaluator } from "../src/scalus-evaluator.ts";
 import { shutdownFixture } from "../src/testing/shutdown-fixture.ts";
 import { evaluatedUpdateBudget } from "../src/tendermint-cache-routing.ts";
 import { type DeploymentTemplate, readValidator } from "../src/utils.ts";
-import { loadHostStateValidator } from "../src/deployment-plan.ts";
+import { governedHostFixture } from "../src/testing/governed-host.ts";
 import {
   HostStateDatum,
   HostStateNftRedeemer,
@@ -276,7 +277,7 @@ Deno.test("finalize shutdown atomically burns the HostState NFT and its referenc
   }]);
 });
 
-Deno.test("finalize shutdown rejects a handler without its NFT policy", () => {
+Deno.test("finalize shutdown rejects a deployment without its NFT policy", () => {
   const deployment = testDeployment();
   deployment.hostStateNFT!.script = undefined;
   const nftUnit = deployment.hostStateNFT!.policyId +
@@ -344,17 +345,17 @@ Deno.test("atomic finalization stays below the mainnet transaction size", async 
     Data.Tuple([OutputReferenceSchema]) as unknown as [typeof nonce],
   );
   const dummyHash = "20".repeat(28);
-  const [hostValidator, hostValidatorHash, hostAddress] =
-    loadHostStateValidator(
-      lucid,
-      nftPolicyId,
-      dummyHash,
-      dummyHash,
-      dummyHash,
-      "21".repeat(28),
-      "22".repeat(28),
-      "23".repeat(28),
-    );
+  const [hostValidator, hostValidatorHash, hostAddress] = governedHostFixture(
+    lucid,
+    emulator,
+    nftPolicyId,
+    dummyHash,
+    dummyHash,
+    dummyHash,
+    "21".repeat(28),
+    "22".repeat(28),
+    "23".repeat(28),
+  );
   const [, referenceValidatorHash, referenceAddress] = readValidator(
     "reference_validator.refer_only.else",
     lucid,
@@ -445,7 +446,7 @@ Deno.test("atomic finalization stays below the mainnet transaction size", async 
   const signed = await completed.sign.withWallet().complete();
   const transaction = signed.toTransaction();
 
-  assertEquals(transaction.body().reference_inputs()?.len() ?? 0, 0);
+  assertEquals(transaction.body().reference_inputs()?.len() ?? 0, 1);
   const inputs = transaction.body().inputs();
   assert(
     Array.from({ length: inputs.len() }, (_, index) => inputs.get(index)).some(
@@ -476,7 +477,7 @@ Deno.test("atomic finalization stays below the mainnet transaction size", async 
 Deno.test("cached shutdown refunds every forwarded credential deposit before HostState removal", async () => {
   const f = await shutdownFixture(0n, "cached");
   const validators = shutdownStakeValidators(f.deployment);
-  assertEquals(validators.length, 5);
+  assertEquals(validators.length, 6);
   for (const validator of validators) {
     assertEquals(
       (await f.emulator.getRewardAccount(validator.address)).registered,
@@ -495,6 +496,7 @@ Deno.test("cached shutdown refunds every forwarded credential deposit before Hos
     f.hostUtxo,
     f.hostDatum.deployer,
     f.emulator.now(),
+    await shutdownRegistryReference(f.lucid, f.deployment),
   ).complete({ localUPLCEval: true });
   const signed = await completed.sign.withWallet().complete();
   assert(

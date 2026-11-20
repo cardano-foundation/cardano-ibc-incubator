@@ -651,7 +651,7 @@ fn host_state_redeemer_index(expected: ExpectedHostStateRedeemer) -> Int {
     ExpectUpdateConnection -> 5
     ExpectUpdateChannel -> 6
     ExpectHandlePacket -> 7
-    ExpectUpgradeChannel -> 14
+    ExpectUpgradeChannel -> 13
   }
 }
 

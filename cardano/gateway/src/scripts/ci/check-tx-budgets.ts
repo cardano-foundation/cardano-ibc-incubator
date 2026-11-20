@@ -21,11 +21,6 @@ import {
 import { encodeRecoverClientWithdrawalRedeemer } from '@shared/types/recover-client-redeemer';
 
 import {
-  analyzeCapacityScenario,
-  formatCapacityReport,
-  loadNormalizedCapacityFixture,
-} from './tendermint-update-capacity';
-import {
   addMaxAlternativeExUnits,
   type ExUnits,
   subtractBaselineExUnits,
@@ -162,21 +157,7 @@ const TX_OUTPUT_BYTES = 80;
 const TX_MINT_POLICY_BYTES = 45;
 const TX_REFERENCE_INPUT_BYTES = 44;
 
-const CAPACITY_HOST_STATE_AIKEN_TEST = 'host_state_stt.test.host_update_client_capacity_minimum_history_succeeds';
-const CAPACITY_SCENARIOS = [
-  {
-    fixtureName: 'adjacent_all_signed',
-    aikenTest: 'spending_client_capacity.test.update_client_capacity_adjacent_all_signed_45_succeeds',
-  },
-  {
-    fixtureName: 'adjacent_mixed',
-    aikenTest: 'spending_client_capacity.test.update_client_capacity_adjacent_mixed_45_succeeds',
-  },
-  {
-    fixtureName: 'non_adjacent_mixed',
-    aikenTest: 'spending_client_capacity.test.update_client_capacity_non_adjacent_mixed_45_succeeds',
-  },
-] as const;
+
 
 const STAGED_TENDERMINT_EXECUTION_SCENARIOS: StagedExecutionScenario[] = [
   {
@@ -831,9 +812,9 @@ async function buildMinimumHistoryRecoveryScenario(): Promise<ScenarioInput> {
     outputCount: 2,
     mintPolicyCount: 0,
     referenceScriptTitles: [
-      'host_state_stt.host_state_stt.spend',
-      'spending_client.spend_client.spend',
-      'recover_client.recover_client.withdraw',
+      'upgradeable/host_state.host_state.spend',
+      'upgradeable/cached_client.cached_client.spend',
+      'governance_recover_client.governance_recover_client.withdraw',
     ],
     redeemers: [
       // Recovery updates the client-state leaf and inserts one consensus
@@ -929,7 +910,7 @@ async function buildScenarios(
       outputCount: 2,
       mintPolicyCount: 2,
       referenceScriptTitles: [
-        'host_state_stt.host_state_stt.spend',
+        'upgradeable/host_state.host_state.spend',
         'minting_port.mint_port.mint',
         'minting_identifier.minting_identifier.mint',
       ],
@@ -956,8 +937,8 @@ async function buildScenarios(
       outputCount: 3,
       mintPolicyCount: 2,
       referenceScriptTitles: [
-        'host_state_stt.host_state_stt.spend',
-        'minting_connection_stt.mint_connection_stt.mint',
+        'upgradeable/host_state.host_state.spend',
+        'upgradeable/mint_connection.mint_connection.mint',
         'verifying_proof.verify_proof.mint',
       ],
       redeemers: [
@@ -995,8 +976,8 @@ async function buildScenarios(
       outputCount: 3,
       mintPolicyCount: 1,
       referenceScriptTitles: [
-        'host_state_stt.host_state_stt.spend',
-        'spending_connection.spend_connection.spend',
+        'upgradeable/host_state.host_state.spend',
+        'upgradeable/connection.connection.spend',
         'verifying_proof.verify_proof.mint',
       ],
       redeemers: [
@@ -1016,9 +997,9 @@ async function buildScenarios(
       outputCount: 4,
       mintPolicyCount: 2,
       referenceScriptTitles: [
-        'host_state_stt.host_state_stt.spend',
-        'spending_channel.spend_channel.spend',
-        'spending_transfer_module.spend_transfer_module.spend',
+        'upgradeable/host_state.host_state.spend',
+        'upgradeable/channel.channel.spend',
+        'upgradeable/transfer.transfer.spend',
         'spending_channel/send_packet.send_packet.mint',
         'minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint',
       ],
@@ -1055,8 +1036,8 @@ async function buildScenarios(
       outputCount: 3,
       mintPolicyCount: 2,
       referenceScriptTitles: [
-        'host_state_stt.host_state_stt.spend',
-        'spending_channel.spend_channel.spend',
+        'upgradeable/host_state.host_state.spend',
+        'upgradeable/channel.channel.spend',
         'spending_channel/recv_packet.recv_packet.mint',
         'verifying_proof.verify_proof.mint',
       ],
@@ -1098,8 +1079,8 @@ async function buildScenarios(
       outputCount: 2,
       mintPolicyCount: 2,
       referenceScriptTitles: [
-        'host_state_stt.host_state_stt.spend',
-        'spending_channel.spend_channel.spend',
+        'upgradeable/host_state.host_state.spend',
+        'upgradeable/channel.channel.spend',
         'spending_channel/prune_packet_history.prune_packet_history.mint',
         'verifying_proof.verify_proof.mint',
       ],
@@ -1146,8 +1127,8 @@ async function buildScenarios(
       outputCount: 2,
       mintPolicyCount: 2,
       referenceScriptTitles: [
-        'host_state_stt.host_state_stt.spend',
-        'spending_channel.spend_channel.spend',
+        'upgradeable/host_state.host_state.spend',
+        'upgradeable/channel.channel.spend',
         'spending_channel/prune_packet_history.prune_packet_history.mint',
         'verifying_proof.verify_proof.mint',
       ],
@@ -1191,9 +1172,9 @@ async function buildScenarios(
       outputCount: 3,
       mintPolicyCount: 2,
       referenceScriptTitles: [
-        'host_state_stt.host_state_stt.spend',
-        'spending_channel.spend_channel.spend',
-        'spending_transfer_module.spend_transfer_module.spend',
+        'upgradeable/host_state.host_state.spend',
+        'upgradeable/channel.channel.spend',
+        'upgradeable/transfer.transfer.spend',
         'spending_channel/acknowledge_packet.acknowledge_packet.mint',
         'verifying_proof.verify_proof.mint',
       ],
@@ -1231,9 +1212,9 @@ async function buildScenarios(
       outputCount: 4,
       mintPolicyCount: 3,
       referenceScriptTitles: [
-        'host_state_stt.host_state_stt.spend',
-        'spending_channel.spend_channel.spend',
-        'spending_transfer_module.spend_transfer_module.spend',
+        'upgradeable/host_state.host_state.spend',
+        'upgradeable/channel.channel.spend',
+        'upgradeable/transfer.transfer.spend',
         'spending_channel/timeout_packet.timeout_packet.mint',
         'verifying_proof.verify_proof.mint',
         'minting_voucher.mint_voucher.mint',
@@ -1423,36 +1404,6 @@ async function buildScenarios(
   return scenarios.map((scenario) => buildScenarioReport(validators, aikenTests, scenario));
 }
 
-async function buildCapacityReports(aikenTests: Map<string, ExUnits>) {
-  const fixture = loadNormalizedCapacityFixture();
-  const hostState = requiredAikenTestUnits(aikenTests, CAPACITY_HOST_STATE_AIKEN_TEST);
-  // Measure the exact capacity fixture's spending and support scripts separately;
-  // combined positive/negative tests must not be double-counted as components.
-
-  return Promise.all(
-    CAPACITY_SCENARIOS.map(async ({ fixtureName, aikenTest }) => {
-      const scenario = fixture.scenarios[fixtureName];
-      if (!scenario) {
-        throw new Error(`Missing normalized Tendermint capacity scenario: ${fixtureName}`);
-      }
-      const spendClient = requiredAikenTestUnits(aikenTests, aikenTest);
-      const clientSupport = requiredAikenTestUnits(aikenTests,
-        `spending_client_capacity.test.support_capacity_${fixtureName}_45_succeeds`);
-      const artifact = await analyzeCapacityScenario(
-        fixtureName,
-        scenario,
-        {
-          hostState: { mem: BigInt(hostState.mem), steps: BigInt(hostState.steps) },
-          spendClient: { mem: BigInt(spendClient.mem), steps: BigInt(spendClient.steps) },
-          clientSupport: { mem: BigInt(clientSupport.mem), steps: BigInt(clientSupport.steps) },
-        },
-        'aiken-unit-tests',
-      );
-      return artifact.report;
-    }),
-  );
-}
-
 function printReport(reports: ScenarioReport[], maxTxSize: number): void {
   console.log(`Cardano transaction cost estimates (diagnostic only, ledger size limit=${maxTxSize})`);
   for (const report of reports) {
@@ -1515,7 +1466,6 @@ async function main() {
   const aikenCheckReport = readJson<AikenCheckReport>(aikenCheckJsonPath);
   const aikenTests = toAikenTestMap(aikenCheckReport);
   const reports = await buildScenarios(validators, aikenTests, deploymentReferences);
-  const capacityReports = await buildCapacityReports(aikenTests);
   const stagedExecutionReports = buildStagedExecutionReports(aikenTests);
   console.log(`Production deployment preflight passed for ${deploymentReferences.length} fully applied references across both modes.`);
   printStagedExecutionReports(stagedExecutionReports);
@@ -1524,8 +1474,6 @@ async function main() {
     'These synthetic estimates include Aiken test setup and overlapping validation. They do not measure complete transactions.',
   );
   printReport(reports, maxTxSize);
-  console.log('\nInjective Tendermint UpdateClient capacity estimates (diagnostic only)');
-  console.log(capacityReports.map((report) => formatCapacityReport(report)).join('\n\n'));
   console.log('\nLedger-limit enforcement runs separately through cardano/offchain deno task test:tx-budgets.');
   console.log(
     'Complete-transaction coverage does not yet include registry rollover, first-seen voucher minting or Injective capacity profiles.',

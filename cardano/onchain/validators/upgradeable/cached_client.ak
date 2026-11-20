@@ -59,7 +59,7 @@ validator cached_client(
           2,
         )
       spending_cached_client.validate(
-        False,
+        True,
         host_policy,
         staged_script,
         cached_script,

@@ -55,8 +55,8 @@ use ibc/core/ics_025_handler_interface/host_state.{
   ShuttingDown, empty_ibc_state_root,
 }
 use ibc/encoding/hex
+use ibc/implementation/spending_transfer_module as spending_transfer_module
 use ibc/testing/fuzz_dsl
-use spending_transfer_module
 
 //=====================================Test================================================
 
@@ -646,7 +646,8 @@ fn run_transfer_module_transition(
   )
     |> fuzz_dsl.with_protocol_validator_check(
         "spending_transfer_module",
-        spending_transfer_module.spend_transfer_module.spend(
+        spending_transfer_module.validate(
+          True,
           mock.port_token,
           mock.module_token,
           mock.port_id,
@@ -1555,7 +1556,8 @@ test on_chan_open_init_succeed() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -1594,7 +1596,8 @@ test on_chan_open_init_fails_without_host_state_co_spend() fail {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -1643,7 +1646,8 @@ test on_chan_open_try_succeed() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -1692,7 +1696,8 @@ test on_chan_open_ack_succeed() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -1737,7 +1742,8 @@ test on_chan_open_confirm_succeed() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -1823,7 +1829,8 @@ test on_recv_packet_mint_voucher_succeed() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -1902,7 +1909,8 @@ fn on_recv_packet_mint_voucher_prebuilt_succeeds(
     Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -2034,7 +2042,8 @@ test on_recv_packet_unescrow_succeed() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -2151,7 +2160,8 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -2246,7 +2256,8 @@ test transfer_escrow_succeed() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -2346,7 +2357,8 @@ test transfer_escrow_fails_when_host_state_is_shutting_down() fail {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -2427,7 +2439,8 @@ test transfer_escrow_native_asset_fails_with_short_created_shard() fail {
     }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -2508,7 +2521,8 @@ test transfer_escrow_native_asset_fails_with_extra_created_shard() fail {
     }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -2585,7 +2599,8 @@ test transfer_burn_voucher_succeed() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -2667,7 +2682,8 @@ test transfer_burn_voucher_succeeds_when_host_state_is_shutting_down() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -2767,7 +2783,8 @@ fn check_timeout_packet_mint_voucher(use_timeout_on_close: Bool) {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -2893,7 +2910,8 @@ test on_timeout_packet_unescrow_succeed() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -2993,7 +3011,8 @@ test on_timeout_packet_native_refund_fails_with_wrong_escrow_delta() fail {
     Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -3109,7 +3128,8 @@ fn validate_source_recv_payout(
     Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -3334,7 +3354,8 @@ test on_acknowledgement_packet_result_succeed() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -3427,7 +3448,8 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -3547,7 +3569,8 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -3586,7 +3609,8 @@ test on_chan_close_init_given_any_input_returns_false() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     fake_data.port_token,
     fake_data.module_token,
     fake_data.port_id,
@@ -3625,7 +3649,8 @@ test on_chan_close_confirm_rejects_missing_channel_spend() fail {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     fake_data.port_token,
     fake_data.module_token,
     fake_data.port_id,
@@ -3730,7 +3755,8 @@ test transfer_escrow_zero_balance_shard_reuse_succeeds() {
       escrowed_amount: 0,
     }
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     mock.port_token,
     mock.module_token,
     mock.port_id,

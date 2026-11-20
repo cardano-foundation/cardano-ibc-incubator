@@ -27,9 +27,8 @@ function fixture(initialMask: bigint) {
   const compatibility = 'ab'.repeat(32);
   const hostStateUnit = hash(8) + Buffer.from('ibc_host_state').toString('hex');
   const deployment: any = {
-    deploymentMode: 'upgradeable',
     migration: {
-      profile: 'cardano-ibc-compatible-v3',
+      profile: 'cardano-ibc-compatible-v6',
       registryUnit,
       registryAddress: scriptAddress(10),
       generation: '1',
@@ -66,6 +65,7 @@ function fixture(initialMask: bigint) {
         record(1n, [1, 2, 3, 4, 5].map(rawAddress), compatibility),
         new Lucid.Constr(0, []),
         record(record([hash(17)], 1n), 0n, mask, new Lucid.Constr(1, [])),
+        hash(19),
       ),
     ),
   });

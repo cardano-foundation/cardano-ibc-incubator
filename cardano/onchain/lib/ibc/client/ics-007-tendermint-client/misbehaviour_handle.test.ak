@@ -172,7 +172,7 @@ test regression_client_misbehaviour_rejects_wrong_client_id() {
     "wrong_client_id",
     "registry.matches_id",
     registry.matches_id(
-      registry.legacy("policy", "script", "proof"),
+      registry.tendermint_registration("policy", "script", "proof"),
       "client-0",
     ),
   )

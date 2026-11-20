@@ -71,9 +71,9 @@ def read_gateway_readiness(url='http://127.0.0.1:8800/health/ready'):
         return {'error': str(error)}
 
 
-def handover_transactions(receipt, generation, handler):
+def handover_transactions(receipt, generation, manifest):
     if (receipt.get('format') != 'populated-migration-handover-v1' or
-            receipt.get('generation') != generation or receipt.get('handler') != str(handler)):
+            receipt.get('generation') != generation or receipt.get('manifest') != str(manifest)):
         raise RuntimeError('Handover receipt does not describe the selected successor')
     transactions = receipt.get('transactions')
     if (not isinstance(transactions, list) or not transactions or
@@ -84,28 +84,28 @@ def handover_transactions(receipt, generation, handler):
 
 
 def bind_handover_snapshots(before, approved, after, source, target, generation, genesis_sha):
-    roles = ['hostStateStt', 'spendClient', 'spendConnection', 'spendChannel', 'spendTransferModule']
+    roles = ['host_state_stt', 'spend_client', 'spend_connection', 'spend_channel', 'spend_transfer_module']
     unit = source['migration']['registryUnit']
-    if (target['migration']['registryUnit'] != unit or source['hostStateNFT'] != target['hostStateNFT'] or
+    if (target['migration']['registryUnit'] != unit or source['host_state_nft'] != target['host_state_nft'] or
             int(source['migration']['generation']) != generation - 1 or
             int(target['migration']['generation']) != generation):
-        raise RuntimeError('Selected handlers do not describe this bridge handover')
-    for snapshot, handler, expected_generation in [(before, source, generation - 1),
+        raise RuntimeError('Selected manifests do not describe this bridge handover')
+    for snapshot, manifest, expected_generation in [(before, source, generation - 1),
                                                   (approved, source, generation - 1),
                                                   (after, target, generation)]:
         registry = snapshot['registry']
         if (snapshot['genesisSha256'] != genesis_sha or
                 registry['token']['policy_id'] + registry['token']['name'] != unit or
-                registry['host_policy'] != source['hostStateNFT']['policyId'] or
+                registry['host_policy'] != source['host_state_nft']['policy_id'] or
                 int(registry['current']['generation']) != expected_generation):
             raise RuntimeError('Snapshot genesis, deployment or generation differs from selected handover')
         # This rehearsal's production planner creates enterprise script addresses.
         # Compare the full Plutus credential representation, including absent stake.
-        addresses = [{'payment_credential': {'Script': [handler['validators'][role]['scriptHash']]},
+        addresses = [{'payment_credential': {'Script': [manifest['validators'][role]['script_hash']]},
                       'stake_credential': None} for role in roles]
         if (registry['current']['addresses'] != addresses or
-                registry['current']['compatibility'] != handler['migration']['compatibility']):
-            raise RuntimeError('Snapshot successor configuration differs from installed handler')
+                registry['current']['compatibility'] != manifest['migration']['compatibility']):
+            raise RuntimeError('Snapshot successor configuration differs from installed manifest')
 
 
 def bind_counterparty_continuity(generation, packet_row, activation):
@@ -165,7 +165,7 @@ def main():
     run_dir.mkdir()
     children = {}
     opened_logs = []
-    source = artifacts / 'handler.json'
+    source = artifacts / 'bridge-manifest.json'
     deno = ['deno', 'run', '-A', '--config', str(ROOT / 'cardano/offchain/deno.json'),
             '--import-map', str(artifacts / 'import-map.json')]
     channels = ['channel-0', 'channel-1']
@@ -186,10 +186,10 @@ def main():
             raise RuntimeError(f'{label} failed; inspect {logfile}; retain all journals and chain data')
         return logfile.read_text()
 
-    def runtime_command(command, handler, database=None, extra=()):
+    def runtime_command(command, manifest, database=None, extra=()):
         return ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-runtime.py'), command,
                 '--runtime', str(runtime), '--project', project, '--clock-offset-seconds', str(offset()),
-                '--handler', str(handler), '--history-schema', args.history_schema,
+                '--manifest', str(manifest), '--history-schema', args.history_schema,
                 '--gateway-database', database or args.database_prefix, *extra]
 
     def stop(name):
@@ -238,25 +238,25 @@ def main():
                 time.sleep(2)
         raise RuntimeError(f'Gateway did not reach the required readiness; last observation: {last}; evidence: {evidence}')
 
-    def history(handler):
-        run('init-history', runtime_command('init-history', handler))
+    def history(manifest):
+        run('init-history', runtime_command('init-history', manifest))
 
-    def gateway(handler, historical=False, proof_ready=True):
+    def gateway(manifest, historical=False, proof_ready=True):
         stop('gateway')
         preflight_gateway_ports()
-        generation = json.loads(handler.read_text())['migration']['generation']
+        generation = json.loads(manifest.read_text())['migration']['generation']
         database = args.database_prefix + ('_cold_' if historical else '_active_') + str(generation)
         if historical:
             # init-history preserves existing databases. An invocation-specific
             # name is required to demonstrate reconstruction from an empty cache.
             database += '_' + uuid.uuid4().hex[:12]
-        run('init-gateway-cache', runtime_command('init-history', handler, database))
+        run('init-gateway-cache', runtime_command('init-history', manifest, database))
         env = dict(os.environ)
         if historical:
             env['GATEWAY_HISTORICAL_READ_ONLY'] = 'true'
         else:
             env.pop('GATEWAY_HISTORICAL_READ_ONLY', None)
-        start('gateway', runtime_command('gateway', handler, database), env)
+        start('gateway', runtime_command('gateway', manifest, database), env)
         wait_http(not historical and proof_ready)
 
     def hermes(operation):
@@ -272,29 +272,29 @@ def main():
         if not verify: args.retry_read_failure = None
         return output
 
-    def control(handler, command):
+    def control(manifest, command):
         return ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-control.py'), '--runtime', str(runtime),
-                '--artifacts-dir', str(artifacts), '--handler', str(handler), '--', *command]
+                '--artifacts-dir', str(artifacts), '--manifest', str(manifest), '--', *command]
 
-    def capture(handler, name):
+    def capture(manifest, name):
         run(name, deno + [str(ROOT / 'scripts/ci/aiken-contract-migration/capture-migration-population.ts'), str(runtime),
-                         str(handler), str(artifacts / (name + '.json'))])
+                         str(manifest), str(artifacts / (name + '.json'))])
 
-    def balances(handler, snapshot, phase, generation):
+    def balances(manifest, snapshot, phase, generation):
         run('balances-' + phase, ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/verify-migration-traffic-balances.py'),
-            '--handler', str(handler), '--snapshot', str(artifacts / (snapshot + '.json')),
+            '--manifest', str(manifest), '--snapshot', str(artifacts / (snapshot + '.json')),
             '--wallet-population', str(runtime / 'wallet-population.json'), '--phase', phase,
             '--generation', str(generation), '--genesis-sha256', genesis_sha, '--cosmos-channels', *channels])
 
     def installed(generation):
-        return source if generation == 1 else artifacts / f'handler-v{generation}.json'
+        return source if generation == 1 else artifacts / f'manifest-v{generation}.json'
 
     def ensure_active(generation):
-        handler = installed(generation)
+        manifest = installed(generation)
         if 'gateway' not in children:
-            history(handler)
-            gateway(handler)
-        return handler
+            history(manifest)
+            gateway(manifest)
+        return manifest
 
     try:
         for stage in selected:
@@ -333,8 +333,8 @@ def main():
                         '--runtime', str(runtime), '--project', project, '--file-clock', '--pool-aging',
                         '--step-seconds', '86400', '--until-ms', str(mature_ms)])
                 history(source)
-                gateway(source, proof_ready=False)
                 run('manifest-v1', runtime_command('export', source))
+                gateway(source, proof_ready=False)
                 run('hermes-setup', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-hermes.py'), 'setup',
                     '--runtime', str(runtime), '--artifacts-dir', str(artifacts), '--clock-offset-seconds', str(offset())])
                 # The original HostState was published before its pools aged.
@@ -355,7 +355,7 @@ def main():
                 traffic('populate')
             elif stage.startswith('approve-'):
                 generation = int(stage[-1])
-                handler = ensure_active(generation - 1)
+                manifest = ensure_active(generation - 1)
                 plan = artifacts / f'migration-v{generation}-populated.json'
                 outbox = artifacts / f'v{generation}-outbox'
                 accepted = json.loads(run('accepted-cardano-height',
@@ -373,25 +373,25 @@ def main():
                 # Require a retained IBC root and actual historical proof access
                 # before approving, including when no update was necessary.
                 run('counterparty-anchor', ['node', str(ROOT / 'scripts/ci/aiken-contract-migration/capture-migration-historical-proof.cjs'),
-                    str(runtime), str(handler), client, state['client_state']['latest_height']['revision_height'],
+                    str(runtime), str(manifest), client, state['client_state']['latest_height']['revision_height'],
                     'channel-0', '1', str(artifacts / f'counterparty-pre-v{generation}-proof.json')])
                 with (artifacts / f'counterparty-pre-v{generation}-client-state.json').open('x') as output:
                     json.dump(state, output, indent=2)
-                run('prepare', control(handler, ['prepare', '--blueprint', str(
+                run('prepare', control(manifest, ['prepare', '--blueprint', str(
                     args.v2_blueprint.resolve() if generation == 2 else args.v3_blueprint.resolve()), '--out', str(plan)]))
-                run('publish', control(handler, ['publish', '--plan', str(plan), '--outbox', str(outbox), '--submit']))
-                capture(handler, f'population-before-v{generation}')
-                balances(handler, f'population-before-v{generation}', 'populated' if generation == 2 else 'settled', generation - 1)
-                run('witness', runtime_command('witness', handler, extra=['--out', str(artifacts / f'activation-v{generation}-witness.json')]))
+                run('publish', control(manifest, ['publish', '--plan', str(plan), '--outbox', str(outbox), '--submit']))
+                capture(manifest, f'population-before-v{generation}')
+                balances(manifest, f'population-before-v{generation}', 'populated' if generation == 2 else 'settled', generation - 1)
+                run('witness', runtime_command('witness', manifest, extra=['--out', str(artifacts / f'activation-v{generation}-witness.json')]))
                 tip = json.loads(subprocess.check_output(compose + ['exec', '-T', 'devkit', 'cardano-cli',
                     'conway', 'query', 'tip', '--testnet-magic', '42']))
                 genesis_start_ms = int(datetime.datetime.fromisoformat(genesis['systemStart'].replace('Z', '+00:00')).timestamp() * 1000)
                 expiry = genesis_start_ms + tip['slot'] * 1000 + 259200000
                 authority = rehearsal_governance(json.loads((artifacts / 'migration-governance.json').read_text()))
-                run('authorize', control(handler, ['authorize', '--plan', str(plan), '--signers', authority['signers'][0],
+                run('authorize', control(manifest, ['authorize', '--plan', str(plan), '--signers', authority['signers'][0],
                     '--expires-at', str(expiry), '--outbox', str(outbox), '--submit']))
-                capture(handler, f'population-approved-v{generation}')
-                observed = json.loads(run('inspect-approved', control(handler, ['inspect'])).splitlines()[-1])
+                capture(manifest, f'population-approved-v{generation}')
+                observed = json.loads(run('inspect-approved', control(manifest, ['inspect'])).splitlines()[-1])
                 stop_operational()
                 ready = int(observed['registry']['phase']['Proposed']['ready_at']) + 120000
                 run('approval-delay', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/advance-migration-clock.py'),
@@ -399,26 +399,26 @@ def main():
                     '--step-seconds', '86400' if genesis['securityParam'] == 2160 else '300'])
             elif stage.startswith('handover-'):
                 generation = int(stage[-1])
-                handler = installed(generation - 1)
+                manifest = installed(generation - 1)
                 stop_operational()
                 preflight_gateway_ports()
-                history(handler)
+                history(manifest)
                 handover = ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/rehearse-migration-handover.py'),
-                    '--runtime', str(runtime), '--artifacts-dir', str(artifacts), '--handler', str(handler),
+                    '--runtime', str(runtime), '--artifacts-dir', str(artifacts), '--manifest', str(manifest),
                     '--plan', str(artifacts / f'migration-v{generation}-populated.json'), '--generation', str(generation)]
                 run('begin-' + str(generation), handover + ['begin'])
-                gateway(handler, historical=True)
+                gateway(manifest, historical=True)
                 accepted = json.loads((artifacts / f'counterparty-pre-v{generation}-client-state.json').read_text())
                 height = accepted['client_state']['latest_height']['revision_height']
                 run('cold-history', ['node', str(ROOT / 'scripts/ci/aiken-contract-migration/capture-migration-historical-proof.cjs'),
-                    str(runtime), str(handler), client, str(height), 'channel-0', '1',
+                    str(runtime), str(manifest), client, str(height), 'channel-0', '1',
                     str(artifacts / f'cold-moving-v{generation}-proof.json')])
                 run('paused-rpc', ['node', str(ROOT / 'scripts/ci/aiken-contract-migration/verify-migration-paused-rpc.cjs'),
                     str(artifacts / f'cold-moving-v{generation}-rejections.json')])
                 stop('gateway')
                 if args.exercise_rollback and generation == 2:
                     run('rollback-v2', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/rehearse-migration-rollback.py'),
-                        '--runtime', str(runtime), '--artifacts-dir', str(artifacts), '--handler', str(handler),
+                        '--runtime', str(runtime), '--artifacts-dir', str(artifacts), '--manifest', str(manifest),
                         '--plan', str(artifacts / 'migration-v2-populated.json')])
                 run('finish-' + str(generation), handover + ['finish'])
                 stop('history')
@@ -431,10 +431,10 @@ def main():
                 gateway(target)
             elif stage.startswith('settle-'):
                 generation = int(stage[-1])
-                handler = ensure_active(generation)
+                manifest = ensure_active(generation)
                 traffic(stage)
-                capture(handler, f'population-settled-v{generation}')
-                balances(handler, f'population-settled-v{generation}', 'settled' if generation == 2 else 'settled-v3', generation)
+                capture(manifest, f'population-settled-v{generation}')
+                balances(manifest, f'population-settled-v{generation}', 'settled' if generation == 2 else 'settled-v3', generation)
             elif stage == 'verify-all':
                 ensure_active(3)
                 packet_rows, continuity = {}, []

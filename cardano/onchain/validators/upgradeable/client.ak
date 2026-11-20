@@ -39,9 +39,8 @@ validator client(
           generation,
           2,
         )
-      // The guard rejects retirement in this wrapper.
       spending_multitx_client.validate_guard(
-        False,
+        True,
         host_policy,
         update_client_script_hash,
         recovery,

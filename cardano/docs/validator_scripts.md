@@ -9,13 +9,13 @@ Validator scripts is written in Aiken - a modern programming language and toolch
 ## Components
 
 Validators scripts are located in `validators/` directory and implement the following specifications of IBC:
-- [ICS-25 Handler Interface](https://github.com/cosmos/ibc/tree/main/spec/core/ics-025-handler-interface): `host_state_stt.host_state_stt`, `host_state_nft.host_state_nft`.
-- [ICS-02 Client Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-002-client-semantics): `minting_client_stt.mint_client_stt`, `spending_client.spend_client`.
-- [ICS-03 Connection Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-003-connection-semantics): `minting_connection_stt.mint_connection_stt`, `spending_connection.spend_connection`.
-- [ICS-04 Channel & Packet Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-004-channel-and-packet-semantics): `minting_channel_stt.mint_channel_stt`, `spending_channel.spend_channel`, all validators in `spending_channel/` directory.
+- [ICS-25 Handler Interface](https://github.com/cosmos/ibc/tree/main/spec/core/ics-025-handler-interface): `upgradeable/host_state.host_state`, `host_state_nft.host_state_nft`.
+- [ICS-02 Client Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-002-client-semantics): `upgradeable/mint_cached_client.mint_cached_client`, `upgradeable/cached_client.cached_client`.
+- [ICS-03 Connection Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-003-connection-semantics): `upgradeable/mint_connection.mint_connection`, `upgradeable/connection.connection`.
+- [ICS-04 Channel & Packet Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-004-channel-and-packet-semantics): `upgradeable/mint_channel.mint_channel`, `upgradeable/channel.channel`, all validators in `spending_channel/` directory.
 - [ICS-05 Port Allocation](https://github.com/cosmos/ibc/tree/main/spec/core/ics-005-port-allocation): `minting_port.mint_port`.
 - [ICS-23 Vector Commitments](https://github.com/cosmos/ibc/blob/main/spec/core/ics-023-vector-commitments): `verifying_proof.verify_proof`.
-- [ICS-20 Fungible Token Transfer](https://github.com/cosmos/ibc/tree/main/spec/app/ics-020-fungible-token-transfer): `spending_transfer_module.spend_transfer_module`, `minting_voucher.mint_voucher`.
+- [ICS-20 Fungible Token Transfer](https://github.com/cosmos/ibc/tree/main/spec/app/ics-020-fungible-token-transfer): `upgradeable/transfer.transfer`, `minting_voucher.mint_voucher`.
 
 There are also some validator scripts used as utilities and will be explained later.
 
@@ -55,9 +55,9 @@ Since we have separated validator scripts into multiple smaller ones, they often
 
 ```mermaid
 graph TD;
-    HOST_STATE(host_state_stt.host_state_stt)-.->MINT_CLIENT(minting_client_stt.mint_client_stt);
-    HOST_STATE-.->MINT_CONN(minting_connection_stt.mint_connection_stt);
-    HOST_STATE-.->MINT_CHAN(minting_channel_stt.mint_channel_stt);
+    HOST_STATE(upgradeable/host_state.host_state)-.->MINT_CLIENT(upgradeable/mint_cached_client.mint_cached_client);
+    HOST_STATE-.->MINT_CONN(upgradeable/mint_connection.mint_connection);
+    HOST_STATE-.->MINT_CHAN(upgradeable/mint_channel.mint_channel);
     HOST_STATE-.->MINT_PORT(minting_port.mint_port);
 
     SPEND_CHANNEL-.->MINT_CLIENT;
@@ -65,17 +65,17 @@ graph TD;
     SPEND_CHANNEL-.->MINT_CHAN;
     SPEND_CHANNEL-.->MINT_PORT(minting_port.mint_port);
 
-    MINT_CLIENT-.->SPEND_CLIENT(spending_client.spend_client);
+    MINT_CLIENT-.->SPEND_CLIENT(upgradeable/cached_client.cached_client);
 
     MINT_CONN-.->MINT_CLIENT;
-    MINT_CONN-.->SPEND_CONN(spending_connection.spend_connection);
+    MINT_CONN-.->SPEND_CONN(upgradeable/connection.connection);
     MINT_CONN-.->VERIFY_PROOF(verifying_proof.verify_proof);
 
     MINT_CHAN-.->MINT_CLIENT;
     MINT_CHAN-.->MINT_CONN;
     MINT_CHAN-.->MINT_PORT;
     MINT_CHAN-.->VERIFY_PROOF;
-    MINT_CHAN-.->SPEND_CHAN(spending_channel.spend_channel);
+    MINT_CHAN-.->SPEND_CHAN(upgradeable/channel.channel);
 
     SPEND_CONN-.->MINT_CLIENT;
     SPEND_CONN-.->VERIFY_PROOF;
@@ -94,4 +94,4 @@ Cardano does not have the concept of deploying validator scripts, so what we act
 
 In the section about [dependencies between scripts](#dependencies-between-validator-scripts), we saw that some scripts need to know about others. The technique we use here is passing the script hashes of dependent scripts to the validator parameters of the needed ones. These parameters are only set off-chain and will become a part of the bytecode of the scripts instead of being stored as states on-chain. This leads to another requirement that validator scripts need to be initialized in a specific order, particularly in a bottom-up order from our dependencies graph.
 
-As you can see, the deploying process is quite complex and hard to do manually. To make the deploying experience better, we wrote a script to automate this process. This [script](../offchain/src/deployment.ts) will read the `plutus.json` file generated by Aiken, initialize validator scripts, create required UTXOs for the system, and store all the needed information in a file called `handler.json`.
+As you can see, the deploying process is quite complex and hard to do manually. To make the deploying experience better, we wrote a script to automate this process. This [script](../offchain/src/deployment.ts) will read the `plutus.json` file generated by Aiken, initialize validator scripts, create required UTXOs for the system, and store all the needed information in a file called `bridge-manifest.json`.

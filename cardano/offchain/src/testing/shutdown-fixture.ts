@@ -1,4 +1,5 @@
-import { loadHostStateValidator } from "../deployment-plan.ts";
+import { CHANNEL_OPERATION_NAMES } from "../migration-plan.ts";
+import { plutusAddress, Registry } from "../../types/plutus/Migration.ts";
 import { assertRejects } from "@std/assert";
 import { loadCachedTendermintValidators } from "../tendermint-cache-validators.ts";
 import { cacheRecord, cacheRecordData } from "../tendermint-cache.ts";
@@ -42,7 +43,7 @@ const EMPTY_ROOT = "00".repeat(32);
 /** Assumed shutdown snapshot for isolated cleanup-policy tests, not a deployment history. */
 export async function shutdownFixture(
   escrowAmount = 0n,
-  clientMode: "legacy" | "staged" | "cached" = "staged",
+  clientMode: "staged" | "cached" = "staged",
   shape = { history: 1, settledPackets: 0, extraLovelace: 0n },
 ) {
   const seedPhrase = "abandon ".repeat(11) + "about";
@@ -66,6 +67,7 @@ export async function shutdownFixture(
   lucid.selectWallet.fromSeed(account.seedPhrase);
   const deployer = getAddressDetails(account.address).paymentCredential!.hash;
   const hostPolicy = hash("44");
+  const registryPolicy = hash("f0");
   let outputIndex = 0;
   function seed(
     address: string,
@@ -97,7 +99,11 @@ export async function shutdownFixture(
   }
   function validator(title: string, parameters: unknown[] = []) {
     const schemas = parameters.map((parameter) =>
-      typeof parameter === "string"
+      typeof parameter === "bigint"
+        ? Data.Integer()
+        : Array.isArray(parameter)
+        ? Data.Array(Data.Bytes())
+        : typeof parameter === "string"
         ? Data.Bytes()
         : parameter && typeof parameter === "object" && "policy_id" in parameter
         ? AuthTokenSchema
@@ -120,10 +126,14 @@ export async function shutdownFixture(
       refUtxo: reference(script),
     };
   }
-  const recoverClient = validator("recover_client.recover_client.withdraw", [
-    hostPolicy,
-    "00".repeat(28),
-  ]);
+  const recoverClient = validator(
+    "governance_recover_client.governance_recover_client.withdraw",
+    [
+      hostPolicy,
+      "00".repeat(28),
+      registryPolicy,
+    ],
+  );
   recoverClient.address = validatorToRewardAddress("Custom", {
     type: "PlutusV3",
     script: recoverClient.script,
@@ -153,6 +163,7 @@ export async function shutdownFixture(
       lucid,
       hostPolicy,
       recoverClient.scriptHash,
+      registryPolicy,
     )
     : undefined;
   const described = (tuple: [Script, string, string], title: string) => ({
@@ -166,7 +177,7 @@ export async function shutdownFixture(
     ? {
       cacheSpend: described(
         cachedScripts.cacheSpend,
-        "spending_validator_cache.spend_validator_cache.spend",
+        "upgradeable/validator_cache.validator_cache.spend",
       ),
       cacheMint: described(
         cachedScripts.cacheMint,
@@ -191,38 +202,31 @@ export async function shutdownFixture(
   const spendClient = cachedScripts
     ? described(
       cachedScripts.clientSpend,
-      "spending_cached_client.spend_cached_client.spend",
+      "upgradeable/cached_client.cached_client.spend",
     )
-    : clientMode === "staged"
-    ? validator("spending_multitx_client.spend_multitx_client.spend", [
+    : validator("upgradeable/client.client.spend", [
+      registryPolicy,
+      1n,
       hostPolicy,
       updateClient.scriptHash,
       { Script: [recoverClient.scriptHash] },
-    ])
-    : validator("spending_client.spend_client.spend", [hostPolicy, {
-      Script: [recoverClient.scriptHash],
-    }]);
+    ]);
   const mintClientStt = cachedScripts
     ? described(
       cachedScripts.clientMint,
-      "minting_cached_client.mint_cached_client.mint",
+      "upgradeable/mint_cached_client.mint_cached_client.mint",
     )
-    : validator("minting_client_stt.mint_client_stt.mint", [
-      spendClient.scriptHash,
-      hostPolicy,
-    ]);
-  const spendConnection = validator(
-    "spending_connection.spend_connection.spend",
-    [mintClientStt.scriptHash, hash("55"), hostPolicy],
-  );
+    : validator("upgradeable/mint_client.mint_client.mint", [registryPolicy]);
+  const spendConnection = validator("upgradeable/connection.connection.spend", [
+    registryPolicy,
+    1n,
+    hostPolicy,
+    mintClientStt.scriptHash,
+    hash("55"),
+  ]);
   const mintConnectionStt = validator(
-    "minting_connection_stt.mint_connection_stt.mint",
-    [
-      mintClientStt.scriptHash,
-      hash("55"),
-      spendConnection.scriptHash,
-      hostPolicy,
-    ],
+    "upgradeable/mint_connection.mint_connection.mint",
+    [registryPolicy, hash("55")],
   );
   const mintPort = validator("minting_port.mint_port.mint", [hostPolicy]);
   const mintIdentifier = validator(
@@ -235,26 +239,19 @@ export async function shutdownFixture(
     mintPort.scriptHash,
     hash("55"),
     hostPolicy,
+    registryPolicy,
     hash("ba"),
   );
-  const spendChannel = {
-    title: "spending_channel.spend_channel.spend",
-    script: channels.base.script.script,
-    scriptHash: channels.base.hash,
-    address: channels.base.address,
-    refUtxo: reference(channels.base.script),
-  };
+  const spendChannel = validator("upgradeable/channel.channel.spend", [
+    registryPolicy,
+    1n,
+    hostPolicy,
+    CHANNEL_OPERATION_NAMES.map((name) => channels.referredScripts[name].hash),
+    hash("ba"),
+  ]);
   const mintChannelStt = validator(
-    "minting_channel_stt.mint_channel_stt.mint",
-    [
-      mintClientStt.scriptHash,
-      mintConnectionStt.scriptHash,
-      mintPort.scriptHash,
-      hash("55"),
-      spendChannel.scriptHash,
-      hostPolicy,
-      recoverClient.scriptHash,
-    ],
+    "upgradeable/mint_channel.mint_channel.mint",
+    [registryPolicy, mintPort.scriptHash, hash("55"), recoverClient.scriptHash],
   );
   const spendMockModule = validator(
     "spending_mock_module.spend_mock_module.spend",
@@ -286,19 +283,17 @@ export async function shutdownFixture(
     "minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint",
     [portToken, hostPolicy],
   );
-  const spendTransferModule = validator(
-    "spending_transfer_module.spend_transfer_module.spend",
-    [
-      portToken,
-      moduleToken,
-      fromText("transfer"),
-      mintTransferEscrowShard.scriptHash,
-      mintChannelStt.scriptHash,
-      mintVoucher.scriptHash,
-      hostPolicy,
-      recoverClient.scriptHash,
-    ],
-  );
+  const spendTransferModule = validator("upgradeable/transfer.transfer.spend", [
+    registryPolicy,
+    1n,
+    hostPolicy,
+    mintChannelStt.scriptHash,
+    mintTransferEscrowShard.scriptHash,
+    portToken,
+    moduleToken,
+    mintVoucher.scriptHash,
+    recoverClient.scriptHash,
+  ]);
   const spendTraceRegistry = validator(
     "trace_registry.spend_trace_registry.spend",
     [
@@ -309,18 +304,27 @@ export async function shutdownFixture(
       hostPolicy,
     ],
   );
-  const [hostScript, hostHash, hostAddress] = loadHostStateValidator(
+  const governanceAuthority = validator(
+    "governance_authority.governance_authority.withdraw",
+    [registryPolicy],
+  );
+  governanceAuthority.address = validatorToRewardAddress("Custom", {
+    type: "PlutusV3",
+    script: governanceAuthority.script,
+  });
+  const [hostScript, hostHash, hostAddress] = readValidator(
+    "upgradeable/host_state.host_state.spend",
     lucid,
-    hostPolicy,
-    spendClient.scriptHash,
-    spendConnection.scriptHash,
-    spendChannel.scriptHash,
-    mintClientStt.scriptHash,
-    mintConnectionStt.scriptHash,
-    mintChannelStt.scriptHash,
+    [
+      registryPolicy,
+      1n,
+      record(0n, 86_400_000n),
+      governanceAuthority.scriptHash,
+      hostPolicy,
+    ],
   );
   const host = {
-    title: "host_state_stt.host_state_stt.spend",
+    title: "upgradeable/host_state.host_state.spend",
     script: hostScript.script,
     scriptHash: hostHash,
     address: hostAddress,
@@ -419,6 +423,66 @@ export async function shutdownFixture(
       directory: { policyId: directory.policy_id, name: directory.name },
     },
   } as unknown as DeploymentTemplate;
+
+  const registryToken = {
+    policy_id: registryPolicy,
+    name: fromText("ibc_implementation_registry"),
+  };
+  const addresses = [
+    host.address,
+    spendClient.address,
+    spendConnection.address,
+    spendChannel.address,
+    spendTransferModule.address,
+  ];
+  const registry: Registry = {
+    token: registryToken,
+    host_policy: hostPolicy,
+    identity: {
+      client_policy: mintClientStt.scriptHash,
+      connection_policy: mintConnectionStt.scriptHash,
+      channel_policy: mintChannelStt.scriptHash,
+      escrow_policy: mintTransferEscrowShard.scriptHash,
+      reference_holder: plutusAddress(referenceAccount.address),
+    },
+    governance: { signers: [deployer], quorum: 1n, delay_ms: 86_400_000n },
+    nonce: 0n,
+    current: {
+      generation: 1n,
+      addresses: addresses.map(plutusAddress),
+      compatibility: "00".repeat(32),
+    },
+    phase: "Ready",
+    emergency: {
+      authority: { signers: [hash("ee")], quorum: 1n },
+      epoch: 0n,
+      mask: 0n,
+      restoration: null,
+    },
+    approval_authority: governanceAuthority.scriptHash,
+  };
+  const registryUnit = registryToken.policy_id + registryToken.name;
+  const registryUtxo = seed(referenceAccount.address, {
+    lovelace: 10_000_000n,
+    [registryUnit]: 1n,
+  }, Data.to(registry, Registry));
+  deployment.migration = {
+    profile: "cardano-ibc-compatible-v6",
+    registryUnit,
+    registryAddress: registryUtxo.address,
+    registryReference: registryUtxo,
+    registryDatum: registryUtxo.datum!,
+    generation: "1",
+    compatibility: registry.current.compatibility,
+    originalAddresses: addresses,
+    governanceAuthority,
+    baseline: {},
+    lineage: [],
+  };
+  emulator.chain[governanceAuthority.address] = {
+    registeredStake: true,
+    delegation: { poolId: null, rewards: 0n },
+  };
 
   const token = (policy: string, name: string) => record(policy, name);
   const stateValue = (policy: string, name: string) => ({
@@ -697,7 +761,9 @@ export async function rejectClientReclaimMutation(
           new Constr(
             mutation === "legacy-redeemer"
               ? 2
-              : (f.deployment.validators.spendClient.title.includes("multitx")
+              : (f.deployment.validators.spendClient.title.includes(
+                  "client.client",
+                )
                 ? 4
                 : 2),
             [],

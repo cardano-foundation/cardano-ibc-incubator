@@ -1,3 +1,4 @@
+use aiken/builtin
 use aiken/collection/dict
 use aiken/collection/list
 use cardano/assets
@@ -5,8 +6,8 @@ use cardano/transaction.{OutputReference, Transaction}
 use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
 use ibc/core/ics_025_handler_interface/host_state as host
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, CreateChannel, CreateClient, CreateConnection, HandlePacket,
-  Heartbeat, HostStateRedeemer, UpdateChannel, UpdateClient, UpdateConnection,
+  CreateChannel, CreateClient, CreateConnection, HandlePacket, Heartbeat,
+  HostStateRedeemer, UpdateChannel, UpdateClient, UpdateConnection,
   UpgradeChannel,
 }
 use ibc/implementation/host_state_stt
@@ -17,15 +18,37 @@ validator host_state(
   registry_policy: ByteArray,
   generation: Int,
   heartbeat_schedule: HeartbeatSchedule,
+  shutdown_authority: ByteArray,
+  shutdown_host_policy: ByteArray,
 ) {
   spend(
-    _datum: Option<Data>,
+    // Keep the canonical datum schema in the blueprint for the wire schema lock.
+    _datum: Option<host.HostStateDatum>,
     raw: Data,
     own_ref: OutputReference,
     transaction: Transaction,
   ) {
     if migration.is_migration(raw) {
       migration.migration_witness(transaction, registry_policy)
+    } else if migration.is_host_control(raw) {
+      expect Some(input) = transaction.find_input(transaction.inputs, own_ref)
+      expect
+        assets.has_nft(
+          input.output.value,
+          shutdown_host_policy,
+          host.host_state_token_name,
+        )
+      if raw == builtin.constr_data(9, []) {
+        // The immutable NFT policy validates deployer, grace, drained ports and counts.
+        assets.quantity_of(
+          transaction.mint,
+          shutdown_host_policy,
+          host.host_state_token_name,
+        ) == -1
+      } else {
+        // The fixed authority authenticates the current registry, HostState and transition.
+        migration.host_control_witness(transaction, shutdown_authority)
+      }
     } else {
       let registry = migration.recovery_registry(transaction, registry_policy)
       expect registry.current.generation == generation
@@ -49,8 +72,7 @@ validator host_state(
       // Decode the role addresses once for authentication and state transitions.
       // Every role address must exist; each needed credential is still decoded.
       expect [
-        host_address, client_address, connection_address, channel_address,
-        transfer_address,
+        host_address, client_address, connection_address, channel_address, _,
       ] = registry.current.addresses
       // Keep transaction decoding in the entry point to fit reference publication.
       let nft_policy = registry.host_policy
@@ -63,14 +85,7 @@ validator host_state(
       let connection_policy_id = registry.identity.connection_policy
       let channel_policy_id = registry.identity.channel_policy
       // 1. Extract transaction fields
-      let Transaction {
-        inputs,
-        outputs,
-        mint,
-        redeemers,
-        extra_signatories,
-        ..
-      } = transaction
+      let Transaction { inputs, outputs, mint, redeemers, .. } = transaction
       // Reuse the decoded HostState role address instead of looking it up again.
       let own_input =
         list.expect_find(
@@ -147,38 +162,6 @@ validator host_state(
               next_sequence_ack_siblings,
             ),
           }
-        BindPort { port_id, registration, port_siblings } -> {
-          // Select the singleton once for both address authentication and its commitment.
-          let module_output =
-            host_state_stt.find_state_output(
-              outputs,
-              registration.module_script_hash,
-            )
-          expect
-            if port_id == "transfer" {
-              let actual_address: Data = module_output.address
-              // Selection by the registered hash and equality of the full
-              // address bind both the credential and staking part to the registry.
-              actual_address == transfer_address
-            } else {
-              True
-            }
-          and {
-            // A permanent global registration is an administrative action.
-            // Requiring the deployment authority prevents port squatting and
-            // makes the protocol-wide bound useful rather than attacker-fillable.
-            list.has(extra_signatories, old_datum.deployer),
-            host.validate_bind_port(old_datum, new_datum, port_id, registration),
-            host_state_stt.validate_bind_port_root(
-              old_datum,
-              new_datum,
-              port_id,
-              registration,
-              module_output,
-              port_siblings,
-            ),
-          }
-        }
         UpdateClient { client_state_siblings, consensus_state_siblings } ->
           and {
             // Client updates should not change HostState sequencing, only the root.
@@ -266,7 +249,7 @@ validator host_state(
             transaction.validity_range,
             heartbeat_schedule,
           )
-        // Shutdown and finalization belong only to immutable deployments.
+        // Shutdown uses the fixed authority above. Deployer handover is governed.
         _ -> fail
       }
     }

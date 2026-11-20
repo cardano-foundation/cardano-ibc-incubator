@@ -52,7 +52,7 @@ export async function loadMigrationBaseline(
   const manifest = deployment.migration;
   if (!manifest || manifest.profile !== MIGRATION_PROFILE) {
     throw new Error(
-      "This immutable deployment has no authenticated handover mechanism; a new bridge is not a migration",
+      "Unsupported deployment profile. Redeploy with the current governed contracts",
     );
   }
   const baseline = structuredClone(manifest.baseline) as DeploymentPlan;

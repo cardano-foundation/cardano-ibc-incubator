@@ -1,3 +1,4 @@
+import { deploymentFromManifest } from "../src/deployment-artifacts.ts";
 /** Production Gateway requests, native evaluation and ordinary signed responses. */
 import { assert } from "@std/assert";
 import {
@@ -142,9 +143,10 @@ let deployment;
 try {
   console.log = () => {};
   deployment = Deno.env.get("YANO_URL")
-    ? JSON.parse(await Deno.readTextFile("deployments/handler.json"))
+    ? deploymentFromManifest(
+      JSON.parse(await Deno.readTextFile("deployments/bridge-manifest.json")),
+    )
     : await createDeployment(lucid, "emulator", {
-      deploymentMode: "upgradeable",
       migration: {
         governance: { signers: [authority], quorum: 1n, delay_ms: 86_400_000n },
         emergency: { signers: ["77".repeat(28)], quorum: 1n },

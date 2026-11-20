@@ -1,3 +1,5 @@
+import { writeDeploymentArtifacts } from "./deployment-artifacts.ts";
+import { deriveCardanoNetwork } from "../../../packages/cardano-ibc-tx-builder-runtime/src/bridgeManifest.ts";
 import { Buffer } from "node:buffer";
 import {
   type BucketEntry,
@@ -40,7 +42,6 @@ import {
   type IdentifierThreadMint,
   verifyReferencePublications,
 } from "./deployment-transactions.ts";
-import { ensureDir } from "@std/fs";
 import {
   CML,
   Constr,
@@ -62,7 +63,6 @@ import {
 import {
   completeAndSignTx,
   DeploymentTemplate,
-  formatTimestamp,
   generateIdentifierTokenName,
   generatePortTokenName,
   getLiveWalletUtxos,
@@ -355,8 +355,7 @@ const buildBindPortHostStateUpdate = async (
 export type DeploymentOptions = {
   heartbeatSchedule?:
     import("../../../packages/cardano-ibc-tx-builder-runtime/src/heartbeatSchedule.ts").HeartbeatSchedule;
-  deploymentMode?: "upgradeable" | "legacy";
-  migration?: {
+  migration: {
     governance: Governance;
     emergency: Authority;
     bootstrapSigners: string[];
@@ -366,25 +365,15 @@ export type DeploymentOptions = {
 
 export const createDeployment = async (
   lucid: LucidEvolution,
-  mode?: string,
-  options: DeploymentOptions = {},
+  mode: string | undefined,
+  options: DeploymentOptions,
 ) => {
-  if (
-    options.deploymentMode !== "upgradeable" &&
-    options.deploymentMode !== "legacy"
-  ) {
+  if (!options.migration) {
     throw new Error(
-      "Explicit deploymentMode required: upgradeable or legacy (no recovery)",
+      "Every deployment requires migration governance and emergency authority",
     );
   }
-  if (
-    (options.deploymentMode === "upgradeable") !== Boolean(options.migration)
-  ) {
-    throw new Error(
-      "Deployment mode and migration governance configuration disagree",
-    );
-  }
-  console.log(`Create ${options.deploymentMode} deployment info`);
+  console.log("Create governed deployment info");
   // Resolve the replay boundary before submitting any deployment transaction.
   // Public deployments reuse the stable checkpoint selected for their Yaci follower.
   const networkMagic = Number(Deno.env.get("CARDANO_NETWORK_MAGIC") || 42);
@@ -400,8 +389,8 @@ export const createDeployment = async (
   const walletAddress = await lucid.wallet().address();
   const deployerPaymentKeyHash = getPaymentCredentialHash(walletAddress);
   const migration = options.migration;
-  const nonceCount = RESERVED_DEPLOYMENT_NONCE_COUNT + (migration ? 1 : 0);
-  if (migration) {
+  const nonceCount = RESERVED_DEPLOYMENT_NONCE_COUNT + 1;
+  {
     assertGovernance(migration.governance);
     assertEmergencyAuthority(migration.emergency, migration.governance);
     const signers = new Set(migration.bootstrapSigners);
@@ -423,8 +412,6 @@ export const createDeployment = async (
       );
     }
   }
-  const backupOperatorKeyHash = Deno.env.get("DEPLOYER_BACKUP_PAYMENT_KEY_HASH")
-    ?.trim();
   const deploymentReportEnabled = mode !== undefined && mode != EMULATOR_ENV;
   const deploymentWalletAddress = deploymentReportEnabled
     ? walletAddress
@@ -469,15 +456,12 @@ export const createDeployment = async (
         nonces[2 + TRACE_REGISTRY_SHARD_COUNT],
       ),
       deployerPaymentKeyHash,
-      backupOperatorKeyHash,
       benchmarkVoucherEnabled: Deno.env.get("CARDANO_NETWORK_MAGIC") === "42",
-      migration: migration
-        ? {
-          registryNonce: buildOutputReference(nonces[nonceCount - 1]),
-          governance: migration.governance,
-          emergency: migration.emergency,
-        }
-        : undefined,
+      migration: {
+        registryNonce: buildOutputReference(nonces[nonceCount - 1]),
+        governance: migration.governance,
+        emergency: migration.emergency,
+      },
     });
     assertDeploymentReferenceValidatorsFit(
       lucid,
@@ -650,7 +634,7 @@ export const createDeployment = async (
 
   const plan = deploymentPlan!;
   let implementationRegistryUtxo: UTxO | undefined;
-  if (migration) {
+  {
     if (
       !plan.registry || !plan.mintImplementationRegistry ||
       !plan.implementationRegistry
@@ -736,7 +720,7 @@ export const createDeployment = async (
     false,
   );
   reservedDeploymentRefs = await setSpendableWalletUtxos();
-  if (plan.governanceAuthority) {
+  {
     const approvalAddress = validatorToRewardAddress(
       lucid.config().network || "Custom",
       plan.governanceAuthority.script,
@@ -780,6 +764,15 @@ export const createDeployment = async (
   );
   reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   const bootstrapReferenceScripts: BootstrapReferenceScripts = {
+    governanceAuthority: requireReferenceUtxo(
+      bootstrapRefUtxosInfo,
+      plan.governanceAuthority.hash,
+      "governance authority",
+    ),
+    governanceRewardAddress: validatorToRewardAddress(
+      lucid.config().network || "Custom",
+      plan.governanceAuthority.script,
+    ),
     implementationRegistry: implementationRegistryUtxo,
     hostStateStt: requireReferenceUtxo(
       bootstrapRefUtxosInfo,
@@ -970,34 +963,30 @@ export const createDeployment = async (
       batch: packetValidator(plan.packetBatch),
       guard: packetValidator(plan.packetGuard),
     },
-    deploymentMode: options.deploymentMode,
-    ...(plan.registry && plan.implementationRegistry
-      ? {
-        migration: {
-          profile: MIGRATION_PROFILE,
-          registryUnit: plan.registry.token.policy_id +
-            plan.registry.token.name,
-          registryAddress: plan.implementationRegistry.address,
-          registryReference: refUtxosInfo[plan.implementationRegistry.hash],
-          governanceAuthority: plan.governanceAuthority
-            ? cachedScript(plan.governanceAuthority)
-            : undefined,
-          registryDatum: Data.to(plan.registry, Registry),
-          generation: "1",
-          compatibility: plan.registry.current.compatibility,
-          originalAddresses: [
-            plan.hostState,
-            plan.spendClient,
-            plan.spendConnection,
-            plan.spendingChannel.base,
-            plan.spendTransferModule,
-          ].map(({ address }) => address),
-          baseline: JSON.parse(canonicalMigrationJson(plan)),
-          lineage: [],
-        },
-      }
-      : {}),
-    backupOperatorKeyHash: backupOperatorKeyHash?.toLowerCase() || undefined,
+    ...({
+      migration: {
+        profile: MIGRATION_PROFILE,
+        registryUnit: plan.registry.token.policy_id +
+          plan.registry.token.name,
+        registryAddress: plan.implementationRegistry.address,
+        registryReference: refUtxosInfo[plan.implementationRegistry.hash],
+        governanceAuthority: plan.governanceAuthority
+          ? cachedScript(plan.governanceAuthority)
+          : undefined,
+        registryDatum: Data.to(plan.registry, Registry),
+        generation: "1",
+        compatibility: plan.registry.current.compatibility,
+        originalAddresses: [
+          plan.hostState,
+          plan.spendClient,
+          plan.spendConnection,
+          plan.spendingChannel.base,
+          plan.spendTransferModule,
+        ].map(({ address }) => address),
+        baseline: JSON.parse(canonicalMigrationJson(plan)),
+        lineage: [],
+      },
+    }),
     clientRegistrations: plan.clientRegistrations,
     deployedAt,
     consensusHistoryFormat: "proof-backed-v1",
@@ -1046,14 +1035,14 @@ export const createDeployment = async (
         refUtxo: refUtxosInfo[mintTendermintUpdateSessionPolicyId],
       },
       spendConnection: {
-        title: "spending_connection.spend_connection.spend",
+        title: plan.spendConnection.title,
         script: spendConnectionValidator.script,
         scriptHash: spendConnectionScriptHash,
         address: spendConnectionAddress,
         refUtxo: refUtxosInfo[spendConnectionScriptHash],
       },
       spendChannel: {
-        title: "spending_channel.spend_channel.spend",
+        title: plan.spendingChannel.base.title,
         script: spendingChannel.base.script.script,
         scriptHash: spendingChannel.base.hash,
         address: spendingChannel.base.address,
@@ -1061,7 +1050,7 @@ export const createDeployment = async (
         refValidator: spendChannelRefValidator,
       },
       spendTransferModule: {
-        title: "spending_transfer_module.spend_transfer_module.spend",
+        title: plan.spendTransferModule.title,
         script: spendTransferModule.validator.script,
         scriptHash: spendTransferModule.scriptHash,
         address: spendTransferModule.address,
@@ -1143,28 +1132,28 @@ export const createDeployment = async (
         refUtxo: refUtxosInfo[verifyProofPolicyId],
       },
       hostStateStt: {
-        title: "host_state_stt.host_state_stt.spend",
+        title: plan.hostState.title,
         script: hostStateStt.validator.script,
         scriptHash: hostStateStt.scriptHash,
         address: hostStateStt.address,
         refUtxo: refUtxosInfo[hostStateStt.scriptHash],
       },
       mintClientStt: {
-        title: "minting_client_stt.mint_client_stt.mint",
+        title: plan.mintClient.title,
         script: mintClientSttValidator.script,
         scriptHash: mintClientSttPolicyId,
         address: "",
         refUtxo: refUtxosInfo[mintClientSttPolicyId],
       },
       mintConnectionStt: {
-        title: "minting_connection_stt.mint_connection_stt.mint",
+        title: plan.mintConnection.title,
         script: mintConnectionSttValidator.script,
         scriptHash: mintConnectionSttPolicyId,
         address: "",
         refUtxo: refUtxosInfo[mintConnectionSttPolicyId],
       },
       mintChannelStt: {
-        title: "minting_channel_stt.mint_channel_stt.mint",
+        title: plan.mintChannel.title,
         script: mintChannelSttValidator.script,
         scriptHash: mintChannelSttPolicyId,
         address: "",
@@ -1204,17 +1193,22 @@ export const createDeployment = async (
   };
 
   if (mode !== undefined && mode != EMULATOR_ENV) {
-    const jsonConfig = JSON.stringify(deploymentInfo);
-
-    const folder = "./deployments";
-    await ensureDir(folder);
-
-    const filePath = folder + "/handler_" +
-      formatTimestamp(Date.parse(deployedAt)) + ".json";
-
-    await Deno.writeTextFile(filePath, jsonConfig);
-    await Deno.writeTextFile(folder + "/handler.json", jsonConfig);
-    console.log("Deploy info saved to:", filePath);
+    const network = deriveCardanoNetwork(networkMagic);
+    await writeDeploymentArtifacts(
+      deploymentInfo,
+      {
+        chain_id: Deno.env.get("CARDANO_CHAIN_ID") ||
+          (network === "Custom"
+            ? "cardano-devnet"
+            : `cardano-${network.toLowerCase()}`),
+        network_magic: networkMagic,
+        network,
+      },
+      "./deployments",
+    );
+    console.log(
+      "Bridge manifest saved to ./deployments",
+    );
   }
 
   return deploymentInfo;
@@ -1240,6 +1234,8 @@ type ReferenceValidatorBatch = {
 type ReferenceUtxoMap = Record<string, UTxO>;
 
 type BootstrapReferenceScripts = {
+  governanceAuthority: UTxO;
+  governanceRewardAddress: string;
   implementationRegistry?: UTxO;
   hostStateStt: UTxO;
   mintIdentifier: UTxO;
@@ -1929,7 +1925,13 @@ const deployTransferModule = async (
         bootstrapReferenceScripts.hostStateStt,
         bootstrapReferenceScripts.mintPort,
         bootstrapReferenceScripts.mintIdentifier,
+        bootstrapReferenceScripts.governanceAuthority,
       ])
+      .withdraw(
+        bootstrapReferenceScripts.governanceRewardAddress,
+        0n,
+        Data.to(new Constr(1, [])),
+      )
       .collectFrom([nonceUtxo], Data.void())
       .collectFrom(
         [hostStateUtxo],
@@ -2082,7 +2084,13 @@ const deployGenericModule = async (
         bootstrapReferenceScripts.hostStateStt,
         bootstrapReferenceScripts.mintPort,
         bootstrapReferenceScripts.mintIdentifier,
+        bootstrapReferenceScripts.governanceAuthority,
       ])
+      .withdraw(
+        bootstrapReferenceScripts.governanceRewardAddress,
+        0n,
+        Data.to(new Constr(1, [])),
+      )
       .collectFrom([nonceUtxo], Data.void())
       .collectFrom(
         [hostStateUtxo],

@@ -1,8 +1,11 @@
+import { migrationReference } from "../../../packages/cardano-ibc-tx-builder-runtime/src/migrationRuntime.ts";
+import { Registry } from "../types/plutus/Migration.ts";
 import {
   Constr,
   Data,
   getAddressDetails,
   type LucidEvolution,
+  type TxBuilder,
   type UTxO,
 } from "@lucid-evolution/lucid";
 import { readValidatorCache, validatorCacheToken } from "./tendermint-cache.ts";
@@ -10,6 +13,44 @@ import { DeploymentIbcTree } from "./deployment.ts";
 import type { DeploymentTemplate } from "./utils.ts";
 import { fromText } from "@lucid-evolution/lucid";
 import { HostStateDatum, HostStateRedeemer } from "../types/index.ts";
+
+export async function shutdownRegistryReference(
+  lucid: LucidEvolution,
+  deployment: DeploymentTemplate,
+): Promise<UTxO[]> {
+  if (
+    !deployment.migration ||
+    deployment.migration.profile !== "cardano-ibc-compatible-v6"
+  ) {
+    throw new Error(
+      "This artifact predates governed shutdown. Redeploy with the current deployment model",
+    );
+  }
+  const utxo = await migrationReference(lucid, deployment as never, false, 0n);
+  const registry = Data.from(utxo.datum!, Registry);
+  if (registry.phase !== "Ready") {
+    throw new Error(
+      "Shutdown requires a Ready registry with no pending or active migration",
+    );
+  }
+  if (
+    registry.current.generation.toString() !== deployment.migration.generation
+  ) throw new Error("Shutdown deployment generation is stale");
+  return [utxo];
+}
+
+export function withShutdownAuthority(
+  tx: TxBuilder,
+  deployment: DeploymentTemplate,
+): TxBuilder {
+  const authority = deployment.migration?.governanceAuthority;
+  if (!authority) throw new Error("Missing governed shutdown authority");
+  return tx.readFrom([authority.refUtxo]).withdraw(
+    authority.address,
+    0n,
+    Data.to(new Constr(1, [])),
+  );
+}
 
 type StateKind =
   | "channel"
@@ -323,11 +364,6 @@ export async function buildReclaimStateTx(
       "Retire packet lanes through their channel and return liquidity reserves through the packet retirement builder",
     );
   }
-  if (deployment.migration) {
-    throw new Error(
-      "This upgrade-capable deployment retains authenticated inventory; use migration, not state reclamation",
-    );
-  }
   if (
     group.utxos.length === 0 ||
     group.utxos.some((utxo) => utxo.address !== group.validator.address)
@@ -367,9 +403,8 @@ export async function buildReclaimStateTx(
   const clientTitle = deployment.validators.spendClient.title;
   if (
     group.kind === "client" && ![
-      "spending_client.spend_client.spend",
-      "spending_multitx_client.spend_multitx_client.spend",
-      "spending_cached_client.spend_cached_client.spend",
+      "upgradeable/client.client.spend",
+      "upgradeable/cached_client.cached_client.spend",
     ].includes(clientTitle)
   ) {
     throw new Error(`Unknown client validator for shutdown: ${clientTitle}`);
@@ -389,8 +424,8 @@ export async function buildReclaimStateTx(
     channel: 10,
     connection: 2,
     client: [
-        "spending_multitx_client.spend_multitx_client.spend",
-        "spending_cached_client.spend_cached_client.spend",
+        "upgradeable/client.client.spend",
+        "upgradeable/cached_client.cached_client.spend",
       ].includes(clientTitle)
       ? 4
       : 2,
@@ -404,10 +439,12 @@ export async function buildReclaimStateTx(
     "packet-lanes": 4,
     "packet-liquidity": 0,
   };
-  const tx = lucid.newTx();
+  const tx = lucid.newTx().readFrom(
+    await shutdownRegistryReference(lucid, deployment),
+  );
   if (
     group.kind === "client" &&
-    clientTitle === "spending_cached_client.spend_cached_client.spend"
+    clientTitle === "upgradeable/cached_client.cached_client.spend"
   ) {
     const cached = deployment.cachedTendermint?.validators;
     if (!cached) {
@@ -474,7 +511,9 @@ export async function buildReclaimStateTx(
         [countField]: host.control[countField] - 1n,
       },
     };
-    tx.readFrom([deployment.validators.hostStateStt.refUtxo])
+    withShutdownAuthority(tx, deployment).readFrom([
+      deployment.validators.hostStateStt.refUtxo,
+    ])
       .collectFrom(
         [hostUtxo],
         Data.to(
@@ -501,7 +540,9 @@ export async function buildReclaimStateTx(
       state: { ...host.state, version: host.state.version + 1n },
       control: { ...host.control, port_registry: portRegistry },
     };
-    tx.readFrom([deployment.validators.hostStateStt.refUtxo])
+    withShutdownAuthority(tx, deployment).readFrom([
+      deployment.validators.hostStateStt.refUtxo,
+    ])
       .collectFrom(
         [hostUtxo],
         Data.to("AuthorizeFinalization", HostStateRedeemer, {
@@ -577,11 +618,6 @@ export async function buildReclaimEscrowTx(
   walletAddress: string,
   validFrom: number,
 ) {
-  if (deployment.migration) {
-    throw new Error(
-      "Escrow retirement is disabled for this migration compatibility profile",
-    );
-  }
   const host = decodeHost(hostUtxo, walletAddress, validFrom);
   assertStateDrained([group], deployment);
   const rootUnit = deployment.modules.transfer.identifier;
@@ -625,7 +661,11 @@ export async function buildReclaimEscrowTx(
   if (!group.validator.refUtxo) {
     throw new Error("Missing transfer module reference");
   }
-  const tx = lucid.newTx().readFrom([hostUtxo, group.validator.refUtxo])
+  const tx = lucid.newTx().readFrom([
+    hostUtxo,
+    group.validator.refUtxo,
+    ...await shutdownRegistryReference(lucid, deployment),
+  ])
     .collectFrom([root, shard], redeemer)
     .pay.ToContract(root.address, {
       kind: "inline",

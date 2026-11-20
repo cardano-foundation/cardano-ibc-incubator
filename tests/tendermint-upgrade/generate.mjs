@@ -143,7 +143,7 @@ function render(results) {
           expect upgrade.verify(before, after, u, ${c.now})
           let (tx, envelope) = transaction_fixture(before, after, u, ${c.now})
           expect verifying_proof.verify_proof.mint(envelope, "proof", tx)
-          recover_client.recover_client.withdraw("host", "proof", UpgradeClientWithdrawal { subject_token: before.token }, address.Script("recovery"), tx)`
+          recovery_logic.validate("host", "proof", UpgradeClientWithdrawal { subject_token: before.token }, tx, fn(_host, _tx) { True })`
       } else {
         checks = `expect upgrade.verify(before, after, u, ${c.now})`
       }
@@ -185,7 +185,8 @@ use cardano/assets
 use cardano/transaction.{InlineDatum, Input, Mint, Output, OutputReference, Spend, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum, ClientDatumState}
-use ibc/client/ics_007_tendermint_client/client_redeemer.{UpgradeClient, UpgradeClientWithdrawal}
+use ibc/client/ics_007_tendermint_client/client_redeemer.{UpgradeClientWithdrawal}
+use ibc/client/ics_007_tendermint_client/multitx/client_redeemer.{UpgradeClient} as staged_redeemer
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/upgrade_pb
 use ibc/client/ics_007_tendermint_client/consensus_history
@@ -197,7 +198,7 @@ use ibc/client/ics_007_tendermint_client/upgrade.{Upgrade}
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{CommitmentProof, CommitmentProof_Exist, CommitmentProof_Nonexist, ExistenceProof, NonExistenceProof, InnerOp, LeafOp}
 use ibc/core/ics_023_vector_commitments/merkle.{MerklePath, MerkleProof, MerkleRoot}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
-use recover_client
+use ibc/client/ics_007_tendermint_client/recovery as recovery_logic
 use verifying_proof
 
 fn fixture(old: ClientState, trusted: ConsensusState, proposed: ClientState, kernel: ConsensusState, pc: MerkleProof, ps: MerkleProof, now: Int) -> (ClientDatum, ClientDatum, Upgrade) {

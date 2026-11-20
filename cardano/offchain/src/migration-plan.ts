@@ -27,7 +27,7 @@ import {
   readValidator,
 } from "./utils.ts";
 
-export const MIGRATION_PROFILE = "cardano-ibc-compatible-v5";
+export const MIGRATION_PROFILE = "cardano-ibc-compatible-v6";
 export type SuccessorBlueprint = {
   validators: Array<{ title: string; compiledCode: string }>;
 };
@@ -72,6 +72,7 @@ type BasePlan = {
   inputs: DeploymentPlanInputs;
   validators: PlannedValidator[];
   hostNft: PlannedValidator;
+  packetConfig: PlannedValidator;
   hostState: PlannedValidator;
   spendClient: PlannedValidator;
   spendConnection: PlannedValidator;
@@ -85,9 +86,9 @@ type BasePlan = {
   mintChannel: PlannedValidator;
   mintTransferEscrowShard: PlannedValidator;
   referenceHolder: PlannedValidator;
-  implementationRegistry: PlannedValidator | null;
-  mintImplementationRegistry: PlannedValidator | null;
-  governanceAuthority: PlannedValidator | null;
+  implementationRegistry: PlannedValidator;
+  mintImplementationRegistry: PlannedValidator;
+  governanceAuthority: PlannedValidator;
   sessionMint: PlannedValidator;
   updateClient: PlannedValidator;
   cachedUpdateClient?: PlannedValidator;
@@ -253,6 +254,8 @@ export async function loadSuccessorImplementation(
       heartbeatScheduleData(
         deploymentHeartbeatSchedule(lucid, baseline.inputs.heartbeatSchedule),
       ),
+      baseline.governanceAuthority.hash,
+      registry.host_policy,
     ],
     undefined,
   );
@@ -319,12 +322,14 @@ export async function loadSuccessorImplementation(
       CHANNEL_OPERATION_NAMES.map((name) =>
         baseline.spendingChannel.referredScripts[name].hash
       ),
+      baseline.packetConfig.hash,
     ],
     Data.Tuple([
       Data.Bytes(),
       Data.Integer(),
       Data.Bytes(),
       Data.Array(Data.Bytes()),
+      Data.Bytes(),
     ]),
   );
   load(
@@ -340,6 +345,7 @@ export async function loadSuccessorImplementation(
       },
       moduleToken,
       baseline.mintVoucher.hash,
+      baseline.recoverClient.hash,
     ],
     Data.Tuple([
       Data.Bytes(),
@@ -349,6 +355,7 @@ export async function loadSuccessorImplementation(
       Data.Bytes(),
       AuthTokenSchema,
       AuthTokenSchema,
+      Data.Bytes(),
       Data.Bytes(),
     ]),
   );

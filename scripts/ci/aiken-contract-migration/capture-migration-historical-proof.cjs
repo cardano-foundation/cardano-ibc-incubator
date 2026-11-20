@@ -12,18 +12,18 @@ const grpc = gatewayRequire('@grpc/grpc-js');
 const loader = gatewayRequire('@grpc/proto-loader');
 
 async function main() {
-  const [runtimeArg, handlerArg, clientId, height, channelId, sequence, outputArg] = process.argv.slice(2);
-  if (!outputArg) throw new Error('Usage: capture-migration-historical-proof.cjs OWNED_RUNTIME HANDLER COSMOS_CLIENT CARDANO_HEIGHT CARDANO_CHANNEL SEQUENCE NEW_REPORT');
-  const runtime = fs.realpathSync(runtimeArg), handlerPath = fs.realpathSync(handlerArg), output = path.resolve(outputArg);
-  for (const p of [runtime, handlerPath, output]) {
+  const [runtimeArg, manifestArg, clientId, height, channelId, sequence, outputArg] = process.argv.slice(2);
+  if (!outputArg) throw new Error('Usage: capture-migration-historical-proof.cjs OWNED_RUNTIME MANIFEST COSMOS_CLIENT CARDANO_HEIGHT CARDANO_CHANNEL SEQUENCE NEW_REPORT');
+  const runtime = fs.realpathSync(runtimeArg), manifestPath = fs.realpathSync(manifestArg), output = path.resolve(outputArg);
+  for (const p of [runtime, manifestPath, output]) {
     assert(p.startsWith(path.join(root, '.deployment-smoke') + path.sep), 'Explicit owned rehearsal paths required');
   }
   assert.equal(JSON.parse(fs.readFileSync(path.join(runtime, 'runtime/genesis-shelley.json'))).networkMagic, 42);
   assert.match(clientId, /^08-cardano-probabilistic-\d+$/);
   assert.match(channelId, /^channel-\d+$/);
   for (const n of [height, sequence]) assert.match(n, /^[1-9]\d*$/);
-  const handler = JSON.parse(fs.readFileSync(handlerPath));
-  assert(['cardano-ibc-compatible-v3', 'cardano-ibc-compatible-v4', 'cardano-ibc-compatible-v5'].includes(handler.migration.profile));
+  const manifest = JSON.parse(fs.readFileSync(manifestPath));
+  assert(['cardano-ibc-compatible-v6'].includes(manifest.migration.profile));
   const rest = async (route) => {
     const response = await fetch('http://127.0.0.1:1527' + route, { signal: AbortSignal.timeout(30_000) });
     assert(response.ok, `Counterparty query failed: ${response.status} ${route}`);
@@ -31,8 +31,8 @@ async function main() {
   };
   const { client_state: client } = await rest(`/ibc/core/client/v1/client_states/${clientId}`);
   assert.equal(client['@type'], '/ibc.lightclients.probabilistic.v1.ClientState');
-  assert.equal(Buffer.from(client.host_state_nft_policy_id, 'base64').toString('hex'), handler.hostStateNFT.policyId);
-  assert.equal(Buffer.from(client.host_state_nft_token_name, 'base64').toString('hex'), handler.hostStateNFT.name);
+  assert.equal(Buffer.from(client.host_state_nft_policy_id, 'base64').toString('hex'), manifest.host_state_nft.policy_id);
+  assert.equal(Buffer.from(client.host_state_nft_token_name, 'base64').toString('hex'), manifest.host_state_nft.token_name);
   const { consensus_state: consensus } = await rest(`/ibc/core/client/v1/consensus_states/${clientId}/revision/0/height/${height}`);
   assert.equal(consensus['@type'], '/ibc.lightclients.probabilistic.v1.ConsensusState');
   assert.equal(Buffer.from(consensus.ibc_state_root, 'base64').length, 32);
@@ -64,7 +64,7 @@ async function main() {
     const readiness = await fetch('http://127.0.0.1:8800/health/ready', { signal: AbortSignal.timeout(30_000) });
     const evidence = {
       format: 'cardano-ibc-historical-proof-v1', clientId, height, channelId, sequence,
-      hostStateNFT: handler.hostStateNFT, consensus,
+      hostStateNFT: { policyId: manifest.host_state_nft.policy_id, name: manifest.host_state_nft.token_name }, consensus,
       channel: channel.channel, proofHeight: ack.proof_height,
       acknowledgementBase64: ack.acknowledgement.toString('base64'),
       acknowledgementProofBase64: ack.proof.toString('base64'),

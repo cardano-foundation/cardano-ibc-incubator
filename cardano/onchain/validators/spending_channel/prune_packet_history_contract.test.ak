@@ -1,12 +1,16 @@
+use aiken/builtin as fixture_builtin
 use aiken/builtin
 use aiken/cbor
 use aiken/collection/pairs
 use aiken/interval
+use cardano/address as fixture_address
 use cardano/assets.{add, from_asset}
+use cardano/transaction as fixture_transaction
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, Redeemer, ScriptPurpose, Spend, Transaction,
 }
-use host_state_stt
+use governance_authority as fixture_authority_entry
+use host_state_nft as fixture_nft_entry
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
@@ -32,20 +36,26 @@ use ibc/core/ics_023_vector_commitments/merkle.{
   MerklePath, MerkleProof, MerkleRoot,
 } as merkle
 use ibc/core/ics_024_host_requirements/packet_keys
+use ibc/core/ics_025_handler_interface/heartbeat as fixture_heartbeat
 use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
+use ibc/core/ics_025_handler_interface/host_state as fixture_datum
 use ibc/core/ics_025_handler_interface/host_state.{
   HostState, HostStateDatum, empty_ibc_state_root,
 }
+use ibc/core/ics_025_handler_interface/host_state_redeemer as fixture_redeemer
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   HandlePacket, HostStateRedeemer,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/implementation/spending_channel as spending_channel
+use ibc/migration/auth as fixture_migration
 use ibc/utils/bits
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
-use spending_channel
 use spending_channel/prune_packet_history
 use spending_channel/spending_channel_fixture.{setup}
+use testing/host as governed_host
+use upgradeable/host_state as fixture_host_entry
 use verifying_proof
 
 const sequence = 1
@@ -504,7 +514,8 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       transaction,
     )
   let spending_channel_valid =
-    spending_channel.spend_channel.spend(
+    spending_channel.validate(
+      True,
       #"",
       mock.chan_open_ack_policy_id,
       mock.chan_open_confirm_policy_id,
@@ -525,7 +536,7 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       transaction,
     )
   let host_state_valid =
-    host_state_stt.host_state_stt.spend(
+    spend_governed_host(
       mock.host_state_nft_policy_id,
       "unused client script hash",
       "unused connection script hash",
@@ -533,7 +544,6 @@ fn check_composed_prune(mutation: Mutation) -> Bool {
       mock.client_minting_policy_id,
       mock.connection_minting_policy_id,
       mock.channel_minting_policy_id,
-      "",
       HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
       None,
       host_redeemer,
@@ -573,4 +583,66 @@ test ordered_prune_packet_history_composes_all_real_validators() {
 
 test prune_packet_history_composition_rejects_verify_path_sequence_mismatch() {
   check_composed_prune(VerifyPathSequenceMismatch)
+}
+
+fn spend_governed_host(
+  host_policy: ByteArray,
+  clients: Data,
+  connection: ByteArray,
+  channel: ByteArray,
+  client_policy: ByteArray,
+  connection_policy: ByteArray,
+  channel_policy: ByteArray,
+  schedule: fixture_heartbeat.HeartbeatSchedule,
+  datum: Option<fixture_datum.HostStateDatum>,
+  redeemer: fixture_redeemer.HostStateRedeemer,
+  own_ref: fixture_transaction.OutputReference,
+  transaction: fixture_transaction.Transaction,
+) -> Bool {
+  let (registry, tx) =
+    governed_host.context(
+      host_policy,
+      clients,
+      connection,
+      channel,
+      client_policy,
+      connection_policy,
+      channel_policy,
+      schedule,
+      datum,
+      redeemer,
+      own_ref,
+      transaction,
+    )
+  let raw: Data = redeemer
+  and {
+    fixture_host_entry.host_state.spend(
+      registry.token.policy_id,
+      1,
+      schedule,
+      registry.approval_authority,
+      host_policy,
+      None,
+      raw,
+      own_ref,
+      tx,
+    ),
+    if fixture_migration.is_host_control(raw) && redeemer != fixture_redeemer.FinalizeShutdown {
+      fixture_authority_entry.governance_authority.withdraw(
+        registry.token.policy_id,
+        fixture_builtin.constr_data(1, []),
+        fixture_address.Script(registry.approval_authority),
+        tx,
+      )
+    } else if redeemer == fixture_redeemer.FinalizeShutdown {
+      fixture_nft_entry.host_state_nft.mint(
+        own_ref,
+        fixture_nft_entry.BurnFinal,
+        host_policy,
+        tx,
+      )
+    } else {
+      True
+    },
+  }
 }

@@ -1,15 +1,19 @@
+use aiken/builtin as fixture_builtin
 use aiken/cbor
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/interval
 use aiken/primitive/bytearray
+use cardano/address as fixture_address
 use cardano/address
 use cardano/assets.{from_asset}
+use cardano/transaction as fixture_transaction
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
   Spend, Transaction, Withdraw,
 }
-use host_state_stt
+use governance_authority as fixture_authority_entry
+use host_state_nft as fixture_nft_entry
 use ibc/apps/transfer/types/transfer_module_datum.{
   TransferModuleDatum, empty_escrow_shard_registry_root,
 }
@@ -18,8 +22,8 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 } as client_datum_mod
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  CheckClientHistory, CheckStagedClientHistory, ReclaimTransferWithdrawal,
-  RecoverClient, RecoverClientWithdrawal, RecoverClientWithdrawalRedeemer,
+  CheckStagedClientHistory, ReclaimTransferWithdrawal, RecoverClientWithdrawal,
+  RecoverClientWithdrawalRedeemer,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
@@ -33,27 +37,33 @@ use ibc/client/ics_007_tendermint_client/cometbft/version/consensus.{
 use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
-use ibc/client/ics_007_tendermint_client/multitx/client_redeemer as staged_client
+use ibc/client/ics_007_tendermint_client/multitx/client_redeemer.{RecoverClient} as staged_client
 use ibc/client/ics_007_tendermint_client/multitx/types.{
   BurnSessions, CommitCore, Complete, Finalize, SessionDatum, UpdatePlan,
 }
+use ibc/client/ics_007_tendermint_client/recovery as recovery_logic
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/keys.{client_prefix}
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_024_host_requirements/client_keys
+use ibc/core/ics_025_handler_interface/heartbeat as fixture_heartbeat
 use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
+use ibc/core/ics_025_handler_interface/host_state as fixture_datum
 use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, host_state_token_name,
 }
+use ibc/core/ics_025_handler_interface/host_state_redeemer as fixture_redeemer
 use ibc/core/ics_025_handler_interface/host_state_redeemer
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/implementation/spending_multitx_client as client_guard
+use ibc/implementation/spending_multitx_client as spending_multitx_client
+use ibc/migration/auth as fixture_migration
 use ibc/testing/sparse_tree
 use minting_tendermint_update_session
-use recover_client
-use spending_client
-use spending_multitx_client
 use spending_tendermint_update_session
+use testing/host as governed_host
 use update_staged_client
+use upgradeable/host_state as fixture_host_entry
 
 const host_policy = #"11111111111111111111111111111111111111111111111111111111"
 
@@ -131,7 +141,7 @@ fn reclaim_transfer(escrow_root: ByteArray, obligation: Int) -> Bool {
       mint: from_asset(port_policy, port_name, -1)
         |> assets.add(module_policy, module_name, -1),
     }
-  recover_client.recover_client.withdraw(
+  recovery_logic.validate(
     host_policy,
     #"",
     ReclaimTransferWithdrawal {
@@ -139,8 +149,8 @@ fn reclaim_transfer(escrow_root: ByteArray, obligation: Int) -> Bool {
       module_unit: bytearray.concat(module_policy, module_name),
       escrow_policy: "unused escrow policy",
     },
-    address.Script(recovery_script_hash),
     transaction,
+    fn(host, tx) { list.has(tx.extra_signatories, host.deployer) },
   )
 }
 
@@ -468,11 +478,10 @@ fn run_recovery(
   substitute_script_hash: ByteArray,
   signers: List<ByteArray>,
 ) -> Bool {
-  recover_client.recover_client.withdraw(
+  recovery_logic.validate(
     host_policy,
     #"",
     recovery_redeemer(subject, substitute),
-    address.Script(recovery_script_hash),
     recovery_transaction(
       subject,
       substitute,
@@ -482,6 +491,7 @@ fn run_recovery(
       True,
       True,
     ),
+    fn(host, tx) { list.has(tx.extra_signatories, host.deployer) },
   )
 }
 
@@ -702,7 +712,8 @@ fn run_atomic_recovery_between(
   } else {
     expect
       if staged {
-        spending_multitx_client.spend_multitx_client.spend(
+        spending_multitx_client.validate_guard(
+          True,
           host_policy,
           "unused session mint policy",
           address.Script(recovery_script_hash),
@@ -718,8 +729,10 @@ fn run_atomic_recovery_between(
           transaction,
         )
       } else {
-        spending_client.spend_client.spend(
+        client_guard.validate_guard(
+          True,
           host_policy,
+          recovery_script_hash,
           address.Script(recovery_script_hash),
           Some(subject),
           RecoverClient {
@@ -734,15 +747,15 @@ fn run_atomic_recovery_between(
         )
       }
     expect
-      recover_client.recover_client.withdraw(
+      recovery_logic.validate(
         host_policy,
         #"",
         recovery_redeemer(subject, substitute),
-        address.Script(recovery_script_hash),
         transaction,
+        fn(host, tx) { list.has(tx.extra_signatories, host.deployer) },
       )
     if verify_host_state {
-      host_state_stt.host_state_stt.spend(
+      spend_governed_host(
         host_policy,
         client_script_hash,
         connection_script_hash,
@@ -750,7 +763,6 @@ fn run_atomic_recovery_between(
         client_policy,
         "unused connection minting policy",
         "unused channel minting policy",
-        "",
         HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
         Some(old_host_datum),
         host_update_redeemer,
@@ -1043,7 +1055,8 @@ fn run_atomic_staged_freeze(correct_root: Bool, verify_validators: Bool) -> Bool
         address.Script(recovery_script_hash),
         tx,
       ),
-      spending_multitx_client.spend_multitx_client.spend(
+      spending_multitx_client.validate_guard(
+        True,
         host_policy,
         recovery_script_hash,
         address.Script(recovery_script_hash),
@@ -1072,7 +1085,7 @@ fn run_atomic_staged_freeze(correct_root: Bool, verify_validators: Bool) -> Bool
         evidence_session_policy,
         tx,
       ),
-      host_state_stt.host_state_stt.spend(
+      spend_governed_host(
         host_policy,
         client_script_hash,
         connection_script_hash,
@@ -1080,7 +1093,6 @@ fn run_atomic_staged_freeze(correct_root: Bool, verify_validators: Bool) -> Bool
         client_policy,
         "unused connection minting policy",
         "unused channel minting policy",
-        "",
         HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
         Some(old_host),
         host_redeemer,
@@ -1130,7 +1142,8 @@ fn run_staged_recovery(
     )
       |> staged_recovery_transaction(substitute.token)
   and {
-    spending_multitx_client.spend_multitx_client.spend(
+    spending_multitx_client.validate_guard(
+      True,
       host_policy,
       "unused session mint policy",
       address.Script(recovery_script_hash),
@@ -1145,12 +1158,12 @@ fn run_staged_recovery(
       subject_reference,
       tx,
     ),
-    recover_client.recover_client.withdraw(
+    recovery_logic.validate(
       host_policy,
       #"",
       recovery_redeemer(subject, substitute),
-      address.Script(recovery_script_hash),
       tx,
+      fn(host, tx) { list.has(tx.extra_signatories, host.deployer) },
     ),
   }
 }
@@ -1291,7 +1304,8 @@ test staged_recovery_rejects_missing_authority_withdrawal() fail {
       False,
     )
       |> staged_recovery_transaction(substitute.token)
-  spending_multitx_client.spend_multitx_client.spend(
+  spending_multitx_client.validate_guard(
+    True,
     host_policy,
     "unused session mint policy",
     address.Script(recovery_script_hash),
@@ -1322,12 +1336,12 @@ test staged_recovery_rejects_another_substitute_in_spend() fail {
       True,
     )
       |> staged_recovery_transaction(subject.token)
-  recover_client.recover_client.withdraw(
+  recovery_logic.validate(
     host_policy,
     #"",
     recovery_redeemer(subject, substitute),
-    address.Script(recovery_script_hash),
     tx,
+    fn(host, tx) { list.has(tx.extra_signatories, host.deployer) },
   )
 }
 
@@ -1573,8 +1587,10 @@ fn state_value_recovery(output_ada: Int, output_reserve: Int) -> Bool {
       outputs: [subject_output, host_output],
     }
   and {
-    spending_client.spend_client.spend(
+    client_guard.validate_guard(
+      True,
       host_policy,
+      recovery_script_hash,
       address.Script(recovery_script_hash),
       Some(subject),
       RecoverClient {
@@ -1587,12 +1603,12 @@ fn state_value_recovery(output_ada: Int, output_reserve: Int) -> Bool {
       subject_reference,
       transaction,
     ),
-    recover_client.recover_client.withdraw(
+    recovery_logic.validate(
       host_policy,
       #"",
       recovery_redeemer(subject, substitute),
-      address.Script(recovery_script_hash),
       transaction,
+      fn(host, tx) { list.has(tx.extra_signatories, host.deployer) },
     ),
   }
 }
@@ -1755,8 +1771,10 @@ test recover_client_rejects_different_token_policy() fail {
 test spend_client_forwards_valid_recovery() {
   let subject = expired_subject()
   let substitute = active_substitute()
-  spending_client.spend_client.spend(
+  client_guard.validate_guard(
+    True,
     host_policy,
+    recovery_script_hash,
     address.Script(recovery_script_hash),
     Some(subject),
     RecoverClient {
@@ -1779,8 +1797,10 @@ test spend_client_forwards_valid_recovery() {
 test spend_client_rejects_missing_recovery_withdrawal() fail {
   let subject = expired_subject()
   let substitute = active_substitute()
-  spending_client.spend_client.spend(
+  client_guard.validate_guard(
+    True,
     host_policy,
+    recovery_script_hash,
     address.Script(recovery_script_hash),
     Some(subject),
     RecoverClient {
@@ -1815,8 +1835,10 @@ fn spend_with_forged_recovery_support(support: Redeemer) -> Bool {
     )
   let credential = address.Script(recovery_script_hash)
   let raw: Redeemer = support
-  spending_client.spend_client.spend(
+  client_guard.validate_guard(
+    True,
     host_policy,
+    recovery_script_hash,
     credential,
     Some(subject),
     RecoverClient {
@@ -1833,7 +1855,7 @@ fn spend_with_forged_recovery_support(support: Redeemer) -> Bool {
 
 test recovery_spend_rejects_update_support_branch() fail {
   spend_with_forged_recovery_support(
-    CheckClientHistory { subject_token: subject_token() },
+    CheckStagedClientHistory { subject_token: subject_token() },
   )
 }
 
@@ -1925,20 +1947,22 @@ test recovery_retains_nonempty_subject_history_not_substitute_history() {
       ),
     }
   and {
-    spending_client.spend_client.spend(
+    client_guard.validate_guard(
+      True,
       host_policy,
+      recovery_script_hash,
       address.Script(recovery_script_hash),
       Some(subject),
       redeemer,
       subject_reference,
       supported,
     ),
-    recover_client.recover_client.withdraw(
+    recovery_logic.validate(
       host_policy,
       #"",
       recovery_redeemer(subject, substitute),
-      address.Script(recovery_script_hash),
       supported,
+      fn(host, tx) { list.has(tx.extra_signatories, host.deployer) },
     ),
     output.history_root == sparse_tree.root(
       [
@@ -2024,15 +2048,17 @@ test unrelated_valid_recovery_cannot_authorize_a_real_client_spend() {
       ],
     }
   expect
-    recover_client.recover_client.withdraw(
+    recovery_logic.validate(
       host_policy,
       #"",
       recovery_redeemer(fake_subject, fake_substitute),
-      address.Script(recovery_script_hash),
       tx,
+      fn(host, tx) { list.has(tx.extra_signatories, host.deployer) },
     )
-  !spending_client.spend_client.spend(
+  !client_guard.validate_guard(
+    True,
     host_policy,
+    recovery_script_hash,
     address.Script(recovery_script_hash),
     Some(subject),
     RecoverClient {
@@ -2042,4 +2068,66 @@ test unrelated_valid_recovery_cannot_authorize_a_real_client_spend() {
     subject_reference,
     tx,
   )
+}
+
+fn spend_governed_host(
+  host_policy: ByteArray,
+  clients: Data,
+  connection: ByteArray,
+  channel: ByteArray,
+  client_policy: ByteArray,
+  connection_policy: ByteArray,
+  channel_policy: ByteArray,
+  schedule: fixture_heartbeat.HeartbeatSchedule,
+  datum: Option<fixture_datum.HostStateDatum>,
+  redeemer: fixture_redeemer.HostStateRedeemer,
+  own_ref: fixture_transaction.OutputReference,
+  transaction: fixture_transaction.Transaction,
+) -> Bool {
+  let (registry, tx) =
+    governed_host.context(
+      host_policy,
+      clients,
+      connection,
+      channel,
+      client_policy,
+      connection_policy,
+      channel_policy,
+      schedule,
+      datum,
+      redeemer,
+      own_ref,
+      transaction,
+    )
+  let raw: Data = redeemer
+  and {
+    fixture_host_entry.host_state.spend(
+      registry.token.policy_id,
+      1,
+      schedule,
+      registry.approval_authority,
+      host_policy,
+      None,
+      raw,
+      own_ref,
+      tx,
+    ),
+    if fixture_migration.is_host_control(raw) && redeemer != fixture_redeemer.FinalizeShutdown {
+      fixture_authority_entry.governance_authority.withdraw(
+        registry.token.policy_id,
+        fixture_builtin.constr_data(1, []),
+        fixture_address.Script(registry.approval_authority),
+        tx,
+      )
+    } else if redeemer == fixture_redeemer.FinalizeShutdown {
+      fixture_nft_entry.host_state_nft.mint(
+        own_ref,
+        fixture_nft_entry.BurnFinal,
+        host_policy,
+        tx,
+      )
+    } else {
+      True
+    },
+  }
 }

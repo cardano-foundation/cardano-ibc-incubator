@@ -1,0 +1,1286 @@
+import { checkedHeartbeatSchedule, type HeartbeatSchedule } from './heartbeatSchedule.ts';
+import { requireMigrationConfig, type MigrationRuntimeConfig } from './migrationRuntime.ts';
+import { requireHistoryBootstrap, type HistoryBootstrap } from './historyBootstrap.ts';
+type RefUtxo = {
+  txHash: string;
+  outputIndex: number;
+};
+
+type AuthToken = {
+  policyId: string;
+  name: string;
+};
+
+type DeploymentRefValidator = {
+  scriptHash: string;
+  refUtxo: RefUtxo;
+};
+
+type DeploymentValidator = {
+  scriptHash: string;
+  address?: string;
+  refUtxo: RefUtxo;
+};
+
+type DeploymentVoucherMetadata = {
+  address: string;
+};
+
+type DeploymentSpendChannelValidator = DeploymentValidator & {
+  refValidator: {
+    acknowledge_packet: DeploymentRefValidator;
+    chan_close_confirm: DeploymentRefValidator;
+    chan_close_init: DeploymentRefValidator;
+    chan_open_ack: DeploymentRefValidator;
+    chan_open_confirm: DeploymentRefValidator;
+    recv_packet: DeploymentRefValidator;
+    prune_packet_history: DeploymentRefValidator;
+    send_packet: DeploymentRefValidator;
+    timeout_packet: DeploymentRefValidator;
+    chan_upgrade: DeploymentRefValidator;
+    chan_upgrade_handshake: DeploymentRefValidator;
+    chan_upgrade_finish: DeploymentRefValidator;
+  };
+};
+
+type DeploymentModule = {
+  identifier: string;
+  address: string;
+};
+
+type DeploymentTraceRegistryShard = {
+  policyId: string;
+  name: string;
+};
+
+type DeploymentTraceRegistry = {
+  address: string;
+  shardPolicyId: string;
+  directory: DeploymentTraceRegistryShard;
+};
+
+export const ICS20_PACKET_CODEC = {
+  LEGACY: 'legacy-cardano-json',
+  STRICT: 'ics20-classic-json-v1',
+} as const;
+
+export type Ics20PacketCodec = (typeof ICS20_PACKET_CODEC)[keyof typeof ICS20_PACKET_CODEC];
+export const CONSENSUS_HISTORY_FORMAT = 'proof-backed-v1' as const;
+
+function requireConsensusHistoryFormat(value: unknown): typeof CONSENSUS_HISTORY_FORMAT {
+  if (value !== CONSENSUS_HISTORY_FORMAT) {
+    throw new Error(
+      'A fresh proof-backed deployment is required: missing or unsupported consensus-history format. Regenerate deployment artifacts; adding a marker does not migrate old contracts.',
+    );
+  }
+  return value;
+}
+
+const PACKET_OPERATIONS = [
+  'send',
+  'acknowledge',
+  'timeout',
+  'reject',
+  'receive',
+  'timeout_on_close',
+  'retire',
+  'funds',
+  'send_funds',
+] as const;
+
+type PacketStateDeployment = {
+  operations: Record<string, DeploymentValidator>;
+  format: 'packet-lanes-v1';
+  receiptStorage: 'merkle-history-v1';
+  laneCount: number;
+  acknowledgementBatchSize?: 2;
+  configToken: AuthToken;
+  state: DeploymentValidator;
+  batch: DeploymentValidator;
+  guard: DeploymentValidator;
+};
+
+type PacketStateManifest = {
+  operations: Record<string, BridgeManifestValidator>;
+  format: 'packet-lanes-v1';
+  receipt_storage: 'merkle-history-v1';
+  lane_count: number;
+  acknowledgement_batch_size?: 2;
+  config_token: BridgeManifestAuthToken;
+  state: BridgeManifestValidator;
+  batch: BridgeManifestValidator;
+  guard: BridgeManifestValidator;
+};
+
+const CACHED_TENDERMINT_ROLES = ['update', 'updateCore', 'generalUpdateCore', 'stagedUpdate', 'cacheSpend', 'cacheMint'] as const;
+type CachedTendermintRole = typeof CACHED_TENDERMINT_ROLES[number];
+export type CachedTendermintConfig = {
+  format: 'authenticated-validator-cache-v1';
+  validators: Record<CachedTendermintRole, DeploymentValidator>;
+};
+type CachedTendermintManifest = {
+  format: 'authenticated-validator-cache-v1';
+  validators: Record<CachedTendermintRole, BridgeManifestValidator>;
+};
+
+export type DeploymentConfig = {
+  heartbeatSchedule?: HeartbeatSchedule;
+  cachedTendermint?: CachedTendermintConfig;
+  packetState: PacketStateDeployment;
+  migration: MigrationRuntimeConfig;
+  deployedAt: string;
+  consensusHistoryFormat: typeof CONSENSUS_HISTORY_FORMAT;
+  history?: HistoryBootstrap;
+  ics20PacketCodec: Ics20PacketCodec;
+  hostStateNFT: AuthToken;
+  validators: {
+    hostStateStt: DeploymentValidator;
+    updateClient?: DeploymentValidator;
+    recoverClient?: DeploymentValidator;
+    spendClient: DeploymentValidator;
+    // Both session validators are present for staged Tendermint deployments;
+    // both are absent for existing direct deployments.
+    spendTendermintUpdateSession?: DeploymentValidator;
+    mintTendermintUpdateSession?: DeploymentValidator;
+    spendConnection: DeploymentValidator;
+    spendChannel: DeploymentSpendChannelValidator;
+    spendMockModule?: DeploymentValidator;
+    spendTraceRegistry?: DeploymentValidator;
+    spendTransferModule: DeploymentValidator;
+    mintIdentifier: DeploymentValidator;
+    verifyProof: DeploymentValidator;
+    verifyMembership?: DeploymentValidator;
+    mintClientStt: DeploymentValidator;
+    mintConnectionStt: DeploymentValidator;
+    mintChannelStt: DeploymentValidator;
+    mintVoucher: DeploymentValidator;
+    mintTransferEscrowShard: DeploymentValidator;
+    mintPort: DeploymentValidator;
+    voucherMetadata?: DeploymentVoucherMetadata;
+  };
+  modules: {
+    transfer: DeploymentModule;
+    mock?: DeploymentModule;
+    icq?: DeploymentModule;
+  };
+  traceRegistry?: DeploymentTraceRegistry;
+};
+
+type BridgeManifestRefUtxo = {
+  tx_hash: string;
+  output_index: number;
+};
+
+type BridgeManifestAuthToken = {
+  policy_id: string;
+  token_name: string;
+};
+
+type BridgeManifestRefValidator = {
+  script_hash: string;
+  ref_utxo: BridgeManifestRefUtxo;
+};
+
+type BridgeManifestValidator = {
+  script_hash: string;
+  address: string;
+  ref_utxo: BridgeManifestRefUtxo;
+};
+
+type BridgeManifestVoucherMetadata = {
+  address: string;
+};
+
+type BridgeManifestSpendChannelValidator = BridgeManifestValidator & {
+  ref_validator: {
+    acknowledge_packet: BridgeManifestRefValidator;
+    chan_close_confirm: BridgeManifestRefValidator;
+    chan_close_init: BridgeManifestRefValidator;
+    chan_open_ack: BridgeManifestRefValidator;
+    chan_open_confirm: BridgeManifestRefValidator;
+    recv_packet: BridgeManifestRefValidator;
+    prune_packet_history: BridgeManifestRefValidator;
+    send_packet: BridgeManifestRefValidator;
+    timeout_packet: BridgeManifestRefValidator;
+    chan_upgrade: BridgeManifestRefValidator;
+    chan_upgrade_handshake: BridgeManifestRefValidator;
+    chan_upgrade_finish: BridgeManifestRefValidator;
+  };
+};
+
+type BridgeManifestModule = {
+  identifier: string;
+  address: string;
+};
+
+type BridgeManifestTraceRegistryShard = {
+  policy_id: string;
+  token_name: string;
+};
+
+type BridgeManifestTraceRegistry = {
+  address: string;
+  shard_policy_id: string;
+  directory: BridgeManifestTraceRegistryShard;
+};
+
+type ManifestHeartbeatSchedule = { epoch_origin_ms: number; epoch_length_ms: number };
+
+// The manifest is the public, deployment-stable bootstrap document we expose to
+// external operators. It intentionally uses snake_case and only includes the
+// on-chain facts another Gateway/relayer stack needs to reconnect to this bridge.
+export type BridgeManifest = {
+  heartbeat_schedule?: ManifestHeartbeatSchedule;
+  cached_tendermint?: CachedTendermintManifest;
+  packet_state: PacketStateManifest;
+  migration: MigrationRuntimeConfig;
+  schema_version: number;
+  consensus_history_format: typeof CONSENSUS_HISTORY_FORMAT;
+  deployment_id: string;
+  deployed_at: string;
+  history?: HistoryBootstrap;
+  ics20_packet_codec: Ics20PacketCodec;
+  cardano: {
+    chain_id: string;
+    network_magic: number;
+    network: string;
+  };
+  host_state_nft: BridgeManifestAuthToken;
+  validators: {
+    host_state_stt: BridgeManifestValidator;
+    update_client?: BridgeManifestValidator;
+    recover_client?: BridgeManifestValidator;
+    spend_client: BridgeManifestValidator;
+    // Presence of this pair selects the staged Tendermint protocol.
+    spend_tendermint_update_session?: BridgeManifestValidator;
+    mint_tendermint_update_session?: BridgeManifestValidator;
+    spend_connection: BridgeManifestValidator;
+    spend_channel: BridgeManifestSpendChannelValidator;
+    spend_mock_module?: BridgeManifestValidator;
+    spend_trace_registry?: BridgeManifestValidator;
+    spend_transfer_module: BridgeManifestValidator;
+    mint_identifier: BridgeManifestValidator;
+    verify_proof: BridgeManifestValidator;
+    verify_membership?: BridgeManifestValidator;
+    mint_client_stt: BridgeManifestValidator;
+    mint_connection_stt: BridgeManifestValidator;
+    mint_channel_stt: BridgeManifestValidator;
+    mint_voucher: BridgeManifestValidator;
+    mint_transfer_escrow_shard: BridgeManifestValidator;
+    mint_port: BridgeManifestValidator;
+    // Runtime discovery needs only the immutable CIP-68 output address.
+    // The complete manifest also retains deployment metadata for maintenance.
+    voucher_metadata?: BridgeManifestVoucherMetadata;
+  };
+  modules: {
+    transfer: BridgeManifestModule;
+    mock?: BridgeManifestModule;
+    icq?: BridgeManifestModule;
+  };
+  trace_registry?: BridgeManifestTraceRegistry;
+};
+
+export type BridgeManifestCardanoIdentity = BridgeManifest['cardano'];
+
+export type LoadedBridgeConfig = {
+  deployment: DeploymentConfig;
+  bridgeManifest: BridgeManifest;
+};
+
+export function deriveCardanoNetwork(networkMagic: number): string {
+  if (networkMagic === 1) {
+    return 'Preprod';
+  }
+  if (networkMagic === 2) {
+    return 'Preview';
+  }
+  if (networkMagic === 764824073) {
+    return 'Mainnet';
+  }
+  return 'Custom';
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+// These helpers make startup failures point to the exact bad field in the
+// manifest/handler file instead of surfacing as later undefined-access errors.
+function requireObject(value: unknown, path: string): Record<string, unknown> {
+  assert(value && typeof value === 'object', `Invalid bridge config: "${path}" must be an object`);
+  return value as Record<string, unknown>;
+}
+
+function requireNonEmptyString(value: unknown, path: string): string {
+  assert(isNonEmptyString(value), `Invalid bridge config: "${path}" must be a non-empty string`);
+  return value;
+}
+
+function requireNonNegativeInteger(value: unknown, path: string): number {
+  assert(
+    typeof value === 'number' && Number.isInteger(value) && value >= 0,
+    `Invalid bridge config: "${path}" must be a non-negative integer`,
+  );
+  return value;
+}
+
+function requireIsoTimestamp(value: unknown, path: string): string {
+  const timestamp = requireNonEmptyString(value, path);
+  assert(!Number.isNaN(Date.parse(timestamp)), `Invalid bridge config: "${path}" must be an ISO-8601 timestamp`);
+  return timestamp;
+}
+
+function requireIcs20PacketCodec(value: unknown, path: string): Ics20PacketCodec {
+  assert(
+    value === ICS20_PACKET_CODEC.LEGACY || value === ICS20_PACKET_CODEC.STRICT,
+    `Invalid bridge config: "${path}" must be "${ICS20_PACKET_CODEC.LEGACY}" or "${ICS20_PACKET_CODEC.STRICT}"`,
+  );
+  return value;
+}
+
+function requireRefUtxo(value: unknown, path: string): RefUtxo {
+  const refUtxo = requireObject(value, path);
+  return {
+    txHash: requireNonEmptyString(refUtxo.txHash, `${path}.txHash`),
+    outputIndex: requireNonNegativeInteger(refUtxo.outputIndex, `${path}.outputIndex`),
+  };
+}
+
+function requireManifestRefUtxo(value: unknown, path: string): BridgeManifestRefUtxo {
+  const refUtxo = requireObject(value, path);
+  return {
+    tx_hash: requireNonEmptyString(refUtxo.tx_hash, `${path}.tx_hash`),
+    output_index: requireNonNegativeInteger(refUtxo.output_index, `${path}.output_index`),
+  };
+}
+
+function requireAuthToken(value: unknown, path: string): AuthToken {
+  const authToken = requireObject(value, path);
+  return {
+    policyId: requireNonEmptyString(authToken.policyId, `${path}.policyId`),
+    name: requireNonEmptyString(authToken.name, `${path}.name`),
+  };
+}
+
+function requireManifestAuthToken(value: unknown, path: string): BridgeManifestAuthToken {
+  const authToken = requireObject(value, path);
+  return {
+    policy_id: requireNonEmptyString(authToken.policy_id, `${path}.policy_id`),
+    token_name: requireNonEmptyString(authToken.token_name, `${path}.token_name`),
+  };
+}
+
+function requireDeploymentValidator(value: unknown, path: string): DeploymentValidator {
+  const validator = requireObject(value, path);
+  return {
+    scriptHash: requireNonEmptyString(validator.scriptHash, `${path}.scriptHash`),
+    address: typeof validator.address === 'string' ? validator.address : '',
+    refUtxo: requireRefUtxo(validator.refUtxo, `${path}.refUtxo`),
+  };
+}
+
+function requireManifestValidator(value: unknown, path: string): BridgeManifestValidator {
+  const validator = requireObject(value, path);
+  return {
+    script_hash: requireNonEmptyString(validator.script_hash, `${path}.script_hash`),
+    address: typeof validator.address === 'string' ? validator.address : '',
+    ref_utxo: requireManifestRefUtxo(validator.ref_utxo, `${path}.ref_utxo`),
+  };
+}
+
+function requireDeploymentVoucherMetadata(value: unknown, path: string): DeploymentVoucherMetadata {
+  const validator = requireObject(value, path);
+  return {
+    address: requireNonEmptyString(validator.address, `${path}.address`),
+  };
+}
+
+function requireManifestVoucherMetadata(value: unknown, path: string): BridgeManifestVoucherMetadata {
+  const validator = requireObject(value, path);
+  return {
+    address: requireNonEmptyString(validator.address, `${path}.address`),
+  };
+}
+
+function requireDeploymentRefValidator(value: unknown, path: string): DeploymentRefValidator {
+  const validator = requireObject(value, path);
+  return {
+    scriptHash: requireNonEmptyString(validator.scriptHash, `${path}.scriptHash`),
+    refUtxo: requireRefUtxo(validator.refUtxo, `${path}.refUtxo`),
+  };
+}
+
+function requireManifestRefValidator(value: unknown, path: string): BridgeManifestRefValidator {
+  const validator = requireObject(value, path);
+  return {
+    script_hash: requireNonEmptyString(validator.script_hash, `${path}.script_hash`),
+    ref_utxo: requireManifestRefUtxo(validator.ref_utxo, `${path}.ref_utxo`),
+  };
+}
+
+function requireDeploymentSpendChannelValidator(value: unknown, path: string): DeploymentSpendChannelValidator {
+  const validator = requireObject(value, path);
+  const refValidator = requireObject(validator.refValidator, `${path}.refValidator`);
+
+  return {
+    ...requireDeploymentValidator(validator, path),
+    refValidator: {
+      acknowledge_packet: requireDeploymentRefValidator(
+        refValidator.acknowledge_packet,
+        `${path}.refValidator.acknowledge_packet`,
+      ),
+      chan_close_confirm: requireDeploymentRefValidator(
+        refValidator.chan_close_confirm,
+        `${path}.refValidator.chan_close_confirm`,
+      ),
+      chan_close_init: requireDeploymentRefValidator(
+        refValidator.chan_close_init,
+        `${path}.refValidator.chan_close_init`,
+      ),
+      chan_open_ack: requireDeploymentRefValidator(refValidator.chan_open_ack, `${path}.refValidator.chan_open_ack`),
+      chan_open_confirm: requireDeploymentRefValidator(
+        refValidator.chan_open_confirm,
+        `${path}.refValidator.chan_open_confirm`,
+      ),
+      recv_packet: requireDeploymentRefValidator(refValidator.recv_packet, `${path}.refValidator.recv_packet`),
+      prune_packet_history: requireDeploymentRefValidator(
+        refValidator.prune_packet_history,
+        `${path}.refValidator.prune_packet_history`,
+      ),
+      send_packet: requireDeploymentRefValidator(refValidator.send_packet, `${path}.refValidator.send_packet`),
+      timeout_packet: requireDeploymentRefValidator(refValidator.timeout_packet, `${path}.refValidator.timeout_packet`),
+      chan_upgrade: requireDeploymentRefValidator(refValidator.chan_upgrade, `${path}.refValidator.chan_upgrade`),
+      chan_upgrade_handshake: requireDeploymentRefValidator(refValidator.chan_upgrade_handshake, `${path}.refValidator.chan_upgrade_handshake`),
+      chan_upgrade_finish: requireDeploymentRefValidator(refValidator.chan_upgrade_finish, `${path}.refValidator.chan_upgrade_finish`),
+    },
+  };
+}
+
+function requireManifestSpendChannelValidator(value: unknown, path: string): BridgeManifestSpendChannelValidator {
+  const validator = requireObject(value, path);
+  const refValidator = requireObject(validator.ref_validator, `${path}.ref_validator`);
+
+  return {
+    ...requireManifestValidator(validator, path),
+    ref_validator: {
+      acknowledge_packet: requireManifestRefValidator(
+        refValidator.acknowledge_packet,
+        `${path}.ref_validator.acknowledge_packet`,
+      ),
+      chan_close_confirm: requireManifestRefValidator(
+        refValidator.chan_close_confirm,
+        `${path}.ref_validator.chan_close_confirm`,
+      ),
+      chan_close_init: requireManifestRefValidator(
+        refValidator.chan_close_init,
+        `${path}.ref_validator.chan_close_init`,
+      ),
+      chan_open_ack: requireManifestRefValidator(refValidator.chan_open_ack, `${path}.ref_validator.chan_open_ack`),
+      chan_open_confirm: requireManifestRefValidator(
+        refValidator.chan_open_confirm,
+        `${path}.ref_validator.chan_open_confirm`,
+      ),
+      recv_packet: requireManifestRefValidator(refValidator.recv_packet, `${path}.ref_validator.recv_packet`),
+      prune_packet_history: requireManifestRefValidator(
+        refValidator.prune_packet_history,
+        `${path}.ref_validator.prune_packet_history`,
+      ),
+      send_packet: requireManifestRefValidator(refValidator.send_packet, `${path}.ref_validator.send_packet`),
+      timeout_packet: requireManifestRefValidator(refValidator.timeout_packet, `${path}.ref_validator.timeout_packet`),
+      chan_upgrade: requireManifestRefValidator(refValidator.chan_upgrade, `${path}.ref_validator.chan_upgrade`),
+      chan_upgrade_handshake: requireManifestRefValidator(refValidator.chan_upgrade_handshake, `${path}.ref_validator.chan_upgrade_handshake`),
+      chan_upgrade_finish: requireManifestRefValidator(refValidator.chan_upgrade_finish, `${path}.ref_validator.chan_upgrade_finish`),
+    },
+  };
+}
+
+function requireDeploymentModule(value: unknown, path: string): DeploymentModule {
+  const module = requireObject(value, path);
+  return {
+    identifier: requireNonEmptyString(module.identifier, `${path}.identifier`),
+    address: requireNonEmptyString(module.address, `${path}.address`),
+  };
+}
+
+function requireManifestModule(value: unknown, path: string): BridgeManifestModule {
+  const module = requireObject(value, path);
+  return {
+    identifier: requireNonEmptyString(module.identifier, `${path}.identifier`),
+    address: requireNonEmptyString(module.address, `${path}.address`),
+  };
+}
+
+function requireDeploymentTraceRegistry(value: unknown, path: string): DeploymentTraceRegistry {
+  const traceRegistry = requireObject(value, path);
+  const directory = requireObject(traceRegistry.directory, `${path}.directory`);
+
+  return {
+    address: requireNonEmptyString(traceRegistry.address, `${path}.address`),
+    shardPolicyId: requireNonEmptyString(traceRegistry.shardPolicyId, `${path}.shardPolicyId`),
+    directory: {
+      policyId: requireNonEmptyString(directory.policyId, `${path}.directory.policyId`),
+      name: requireNonEmptyString(directory.name, `${path}.directory.name`),
+    },
+  };
+}
+
+function requireManifestTraceRegistry(value: unknown, path: string): BridgeManifestTraceRegistry {
+  const traceRegistry = requireObject(value, path);
+  const directory = requireObject(traceRegistry.directory, `${path}.directory`);
+
+  return {
+    address: requireNonEmptyString(traceRegistry.address, `${path}.address`),
+    shard_policy_id: requireNonEmptyString(traceRegistry.shard_policy_id, `${path}.shard_policy_id`),
+    directory: {
+      policy_id: requireNonEmptyString(directory.policy_id, `${path}.directory.policy_id`),
+      token_name: requireNonEmptyString(directory.token_name, `${path}.directory.token_name`),
+    },
+  };
+}
+
+function requireCardanoIdentity(value: BridgeManifestCardanoIdentity): BridgeManifestCardanoIdentity {
+  return {
+    chain_id: requireNonEmptyString(value.chain_id, 'cardano.chain_id'),
+    network_magic: requireNonNegativeInteger(value.network_magic, 'cardano.network_magic'),
+    network: requireNonEmptyString(value.network, 'cardano.network'),
+  };
+}
+
+function buildDeploymentId(cardano: BridgeManifestCardanoIdentity, hostStateNFT: AuthToken): string {
+  return `${cardano.chain_id}:${hostStateNFT.policyId}.${hostStateNFT.name}`;
+}
+
+function deploymentAuthTokenToManifest(authToken: AuthToken): BridgeManifestAuthToken {
+  return {
+    policy_id: authToken.policyId,
+    token_name: authToken.name,
+  };
+}
+
+function manifestAuthTokenToDeployment(authToken: BridgeManifestAuthToken): AuthToken {
+  return {
+    policyId: authToken.policy_id,
+    name: authToken.token_name,
+  };
+}
+
+function deploymentRefUtxoToManifest(refUtxo: RefUtxo): BridgeManifestRefUtxo {
+  return {
+    tx_hash: refUtxo.txHash,
+    output_index: refUtxo.outputIndex,
+  };
+}
+
+function manifestRefUtxoToDeployment(refUtxo: BridgeManifestRefUtxo): RefUtxo {
+  return {
+    txHash: refUtxo.tx_hash,
+    outputIndex: refUtxo.output_index,
+  };
+}
+
+function deploymentValidatorToManifest(validator: DeploymentValidator): BridgeManifestValidator {
+  return {
+    script_hash: validator.scriptHash,
+    address: validator.address ?? '',
+    ref_utxo: deploymentRefUtxoToManifest(validator.refUtxo),
+  };
+}
+
+function manifestValidatorToDeployment(validator: BridgeManifestValidator): DeploymentValidator {
+  return {
+    scriptHash: validator.script_hash,
+    address: validator.address,
+    refUtxo: manifestRefUtxoToDeployment(validator.ref_utxo),
+  };
+}
+
+function deploymentVoucherMetadataToManifest(validator: DeploymentVoucherMetadata): BridgeManifestVoucherMetadata {
+  return {
+    address: validator.address,
+  };
+}
+
+function manifestVoucherMetadataToDeployment(validator: BridgeManifestVoucherMetadata): DeploymentVoucherMetadata {
+  return {
+    address: validator.address,
+  };
+}
+
+function deploymentRefValidatorToManifest(validator: DeploymentRefValidator): BridgeManifestRefValidator {
+  return {
+    script_hash: validator.scriptHash,
+    ref_utxo: deploymentRefUtxoToManifest(validator.refUtxo),
+  };
+}
+
+function manifestRefValidatorToDeployment(validator: BridgeManifestRefValidator): DeploymentRefValidator {
+  return {
+    scriptHash: validator.script_hash,
+    refUtxo: manifestRefUtxoToDeployment(validator.ref_utxo),
+  };
+}
+
+function deploymentTraceRegistryToManifest(traceRegistry: DeploymentTraceRegistry): BridgeManifestTraceRegistry {
+  return {
+    address: traceRegistry.address,
+    shard_policy_id: traceRegistry.shardPolicyId,
+    directory: {
+      policy_id: traceRegistry.directory.policyId,
+      token_name: traceRegistry.directory.name,
+    },
+  };
+}
+
+function manifestTraceRegistryToDeployment(traceRegistry: BridgeManifestTraceRegistry): DeploymentTraceRegistry {
+  return {
+    address: traceRegistry.address,
+    shardPolicyId: traceRegistry.shard_policy_id,
+    directory: {
+      policyId: traceRegistry.directory.policy_id,
+      name: traceRegistry.directory.token_name,
+    },
+  };
+}
+
+function deploymentSpendChannelToManifest(
+  validator: DeploymentSpendChannelValidator,
+): BridgeManifestSpendChannelValidator {
+  return {
+    ...deploymentValidatorToManifest(validator),
+    ref_validator: {
+      acknowledge_packet: deploymentRefValidatorToManifest(validator.refValidator.acknowledge_packet),
+      chan_close_confirm: deploymentRefValidatorToManifest(validator.refValidator.chan_close_confirm),
+      chan_close_init: deploymentRefValidatorToManifest(validator.refValidator.chan_close_init),
+      chan_open_ack: deploymentRefValidatorToManifest(validator.refValidator.chan_open_ack),
+      chan_open_confirm: deploymentRefValidatorToManifest(validator.refValidator.chan_open_confirm),
+      recv_packet: deploymentRefValidatorToManifest(validator.refValidator.recv_packet),
+      prune_packet_history: deploymentRefValidatorToManifest(validator.refValidator.prune_packet_history),
+      send_packet: deploymentRefValidatorToManifest(validator.refValidator.send_packet),
+      timeout_packet: deploymentRefValidatorToManifest(validator.refValidator.timeout_packet),
+      chan_upgrade: deploymentRefValidatorToManifest(validator.refValidator.chan_upgrade),
+      chan_upgrade_handshake: deploymentRefValidatorToManifest(validator.refValidator.chan_upgrade_handshake),
+      chan_upgrade_finish: deploymentRefValidatorToManifest(validator.refValidator.chan_upgrade_finish),
+    },
+  };
+}
+
+function manifestSpendChannelToDeployment(
+  validator: BridgeManifestSpendChannelValidator,
+): DeploymentSpendChannelValidator {
+  return {
+    ...manifestValidatorToDeployment(validator),
+    refValidator: {
+      acknowledge_packet: manifestRefValidatorToDeployment(validator.ref_validator.acknowledge_packet),
+      chan_close_confirm: manifestRefValidatorToDeployment(validator.ref_validator.chan_close_confirm),
+      chan_close_init: manifestRefValidatorToDeployment(validator.ref_validator.chan_close_init),
+      chan_open_ack: manifestRefValidatorToDeployment(validator.ref_validator.chan_open_ack),
+      chan_open_confirm: manifestRefValidatorToDeployment(validator.ref_validator.chan_open_confirm),
+      recv_packet: manifestRefValidatorToDeployment(validator.ref_validator.recv_packet),
+      prune_packet_history: manifestRefValidatorToDeployment(validator.ref_validator.prune_packet_history),
+      send_packet: manifestRefValidatorToDeployment(validator.ref_validator.send_packet),
+      timeout_packet: manifestRefValidatorToDeployment(validator.ref_validator.timeout_packet),
+      chan_upgrade: manifestRefValidatorToDeployment(validator.ref_validator.chan_upgrade),
+      chan_upgrade_handshake: manifestRefValidatorToDeployment(validator.ref_validator.chan_upgrade_handshake),
+      chan_upgrade_finish: manifestRefValidatorToDeployment(validator.ref_validator.chan_upgrade_finish),
+    },
+  };
+}
+
+function requirePacketState(value: unknown): PacketStateDeployment {
+  const packet = requireObject(value, 'packetState');
+  assert(packet.format === 'packet-lanes-v1', 'A fresh packet-lane deployment is required');
+  assert(packet.receiptStorage === 'merkle-history-v1', 'A fresh history-backed packet-lane deployment is required. Changing the storage marker does not migrate existing contracts.');
+  const laneCount = requireNonNegativeInteger(packet.laneCount, 'packetState.laneCount');
+  assert(laneCount >= 1 && laneCount <= 64, 'Invalid packet lane count');
+  assert(packet.acknowledgementBatchSize === undefined || packet.acknowledgementBatchSize === 2,
+    'Invalid acknowledgement batch capability');
+  const validator = (name: string) => {
+    const result = requireDeploymentValidator(packet[name], `packetState.${name}`);
+    assert(!!result.address, `Missing packetState.${name}.address`);
+    return result;
+  };
+  const operations = requireObject(packet.operations, 'packetState.operations');
+  return {
+    operations: Object.fromEntries(
+      PACKET_OPERATIONS.map((name) => [
+        name,
+        requireDeploymentValidator(operations[name], `packetState.operations.${name}`),
+      ]),
+    ),
+    format: 'packet-lanes-v1',
+    receiptStorage: 'merkle-history-v1',
+    laneCount,
+    ...(packet.acknowledgementBatchSize === 2 ? { acknowledgementBatchSize: 2 as const } : {}),
+    configToken: requireAuthToken(packet.configToken, 'packetState.configToken'),
+    state: validator('state'),
+    batch: validator('batch'),
+    guard: validator('guard'),
+  };
+}
+
+function packetStateToManifest(packet: PacketStateDeployment): PacketStateManifest {
+  return {
+    operations: Object.fromEntries(
+      PACKET_OPERATIONS.map((name) => [name, deploymentValidatorToManifest(packet.operations[name])]),
+    ),
+    format: packet.format,
+    receipt_storage: packet.receiptStorage,
+    lane_count: packet.laneCount,
+    ...(packet.acknowledgementBatchSize === 2 ? { acknowledgement_batch_size: 2 as const } : {}),
+    config_token: deploymentAuthTokenToManifest(packet.configToken),
+    state: deploymentValidatorToManifest(packet.state),
+    batch: deploymentValidatorToManifest(packet.batch),
+    guard: deploymentValidatorToManifest(packet.guard),
+  };
+}
+
+function packetStateFromManifest(value: unknown): PacketStateDeployment {
+  const packet = requireObject(value, 'packet_state');
+  const operations = requireObject(packet.operations, 'packet_state.operations');
+  return requirePacketState({
+    operations: Object.fromEntries(
+      PACKET_OPERATIONS.map((name) => [
+        name,
+        manifestValidatorToDeployment(requireManifestValidator(operations[name], `packet_state.operations.${name}`)),
+      ]),
+    ),
+    format: packet.format,
+    receiptStorage: packet.receipt_storage,
+    laneCount: packet.lane_count,
+    acknowledgementBatchSize: packet.acknowledgement_batch_size,
+    configToken: manifestAuthTokenToDeployment(
+      requireManifestAuthToken(packet.config_token, 'packet_state.config_token'),
+    ),
+    ...Object.fromEntries(
+      ['state', 'batch', 'guard'].map((name) => [
+        name,
+        manifestValidatorToDeployment(requireManifestValidator(packet[name], `packet_state.${name}`)),
+      ]),
+    ),
+  });
+}
+
+function cachedTendermintConfig(value: unknown): CachedTendermintConfig {
+  const cache = requireObject(value, 'cachedTendermint');
+  assert(cache.format === 'authenticated-validator-cache-v1', 'Unsupported validator cache format');
+  const validators = requireObject(cache.validators, 'cachedTendermint.validators');
+  return { format: 'authenticated-validator-cache-v1', validators: Object.fromEntries(
+    CACHED_TENDERMINT_ROLES.map((role) => [role, requireDeploymentValidator(validators[role], `cachedTendermint.validators.${role}`)]),
+  ) as CachedTendermintConfig['validators'] };
+}
+function validateCachedTendermint(cache: CachedTendermintConfig | undefined, update: DeploymentValidator | undefined, hasSessions: boolean): void {
+  if (!cache) return;
+  assert(hasSessions && update, 'Cached Tendermint requires staged fallback');
+  assert(JSON.stringify(cache.validators.stagedUpdate) === JSON.stringify(update), 'Cached Tendermint pins a different staged verifier');
+  for (const role of ['update', 'updateCore', 'generalUpdateCore', 'cacheSpend'] as const) {
+    assert(Boolean(cache.validators[role].address), `Cached Tendermint ${role} address is missing`);
+  }
+}
+function cachedTendermintToManifest(cache: CachedTendermintConfig): CachedTendermintManifest {
+  return { format: cache.format, validators: Object.fromEntries(CACHED_TENDERMINT_ROLES.map((role) => [role, deploymentValidatorToManifest(cache.validators[role])])) as CachedTendermintManifest['validators'] };
+}
+function cachedTendermintFromManifest(value: unknown): CachedTendermintConfig {
+  const cache = requireObject(value, 'cached_tendermint');
+  const validators = requireObject(cache.validators, 'cached_tendermint.validators');
+  return cachedTendermintConfig({ format: cache.format, validators: Object.fromEntries(CACHED_TENDERMINT_ROLES.map((role) => [role, manifestValidatorToDeployment(requireManifestValidator(validators[role], `cached_tendermint.validators.${role}`))])) });
+}
+
+function heartbeatScheduleToManifest(schedule: HeartbeatSchedule): ManifestHeartbeatSchedule {
+  return { epoch_origin_ms: schedule.epochOriginMs, epoch_length_ms: schedule.epochLengthMs };
+}
+function heartbeatScheduleFromManifest(value: unknown): HeartbeatSchedule {
+  const schedule = requireObject(value, 'heartbeat_schedule');
+  return checkedHeartbeatSchedule({ epochOriginMs: schedule.epoch_origin_ms, epochLengthMs: schedule.epoch_length_ms });
+}
+
+export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfig {
+  const deploymentAny = requireObject(deployment, 'deployment');
+  const validators = requireObject(deploymentAny.validators, 'validators');
+  if ('spendConsensusState' in validators) {
+    throw new Error(
+      'Archive-NFT consensus history is no longer supported; a fresh proof-backed deployment is required',
+    );
+  }
+  const consensusHistoryFormat = requireConsensusHistoryFormat(deploymentAny.consensusHistoryFormat);
+  const modules = requireObject(deploymentAny.modules, 'modules');
+  const hasSpendSession = validators.spendTendermintUpdateSession !== undefined;
+  const hasMintSession = validators.mintTendermintUpdateSession !== undefined;
+  assert(
+    hasSpendSession === hasMintSession,
+    'Invalid bridge config: staged Tendermint spend and mint session validators must be configured together',
+  );
+  assert(!validators.updateClient || hasSpendSession, 'Ordinary client forwarding requires staged Tendermint sessions');
+  validateCachedTendermint(deploymentAny.cachedTendermint ? cachedTendermintConfig(deploymentAny.cachedTendermint) : undefined, validators.updateClient ? requireDeploymentValidator(validators.updateClient, 'validators.updateClient') : undefined, hasSpendSession);
+
+  return {
+    ...(deploymentAny.cachedTendermint ? { cachedTendermint: cachedTendermintConfig(deploymentAny.cachedTendermint) } : {}),
+    ...(deploymentAny.heartbeatSchedule ? { heartbeatSchedule: checkedHeartbeatSchedule(deploymentAny.heartbeatSchedule) } : {}),
+    packetState: requirePacketState(deploymentAny.packetState),
+    deployedAt: requireIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
+    migration: requireMigrationConfig(deploymentAny.migration),
+    consensusHistoryFormat,
+    ...(deploymentAny.history ? { history: requireHistoryBootstrap(deploymentAny.history, 42) } : {}),
+    // Packet wire encoding is independent of the required client-history ABI.
+    // Keep its legacy default only after validating the proof-backed marker.
+    ics20PacketCodec:
+      deploymentAny.ics20PacketCodec === undefined
+        ? ICS20_PACKET_CODEC.LEGACY
+        : requireIcs20PacketCodec(deploymentAny.ics20PacketCodec, 'ics20PacketCodec'),
+    hostStateNFT: requireAuthToken(deploymentAny.hostStateNFT, 'hostStateNFT'),
+    validators: {
+      hostStateStt: requireDeploymentValidator(validators.hostStateStt, 'validators.hostStateStt'),
+      ...(validators.updateClient
+        ? { updateClient: requireDeploymentValidator(validators.updateClient, 'validators.updateClient') }
+        : {}),
+      ...(validators.recoverClient
+        ? { recoverClient: requireDeploymentValidator(validators.recoverClient, 'validators.recoverClient') }
+        : {}),
+      spendClient: requireDeploymentValidator(validators.spendClient, 'validators.spendClient'),
+      ...(hasSpendSession
+        ? {
+            spendTendermintUpdateSession: requireDeploymentValidator(
+              validators.spendTendermintUpdateSession,
+              'validators.spendTendermintUpdateSession',
+            ),
+            mintTendermintUpdateSession: requireDeploymentValidator(
+              validators.mintTendermintUpdateSession,
+              'validators.mintTendermintUpdateSession',
+            ),
+          }
+        : {}),
+      spendConnection: requireDeploymentValidator(validators.spendConnection, 'validators.spendConnection'),
+      spendChannel: requireDeploymentSpendChannelValidator(validators.spendChannel, 'validators.spendChannel'),
+      ...(validators.spendMockModule
+        ? { spendMockModule: requireDeploymentValidator(validators.spendMockModule, 'validators.spendMockModule') }
+        : {}),
+      ...(validators.spendTraceRegistry
+        ? {
+            spendTraceRegistry: requireDeploymentValidator(
+              validators.spendTraceRegistry,
+              'validators.spendTraceRegistry',
+            ),
+          }
+        : {}),
+      spendTransferModule: requireDeploymentValidator(validators.spendTransferModule, 'validators.spendTransferModule'),
+      mintIdentifier: requireDeploymentValidator(validators.mintIdentifier, 'validators.mintIdentifier'),
+      verifyProof: requireDeploymentValidator(validators.verifyProof, 'validators.verifyProof'),
+      ...(validators.verifyMembership !== undefined
+        ? { verifyMembership: requireDeploymentValidator(validators.verifyMembership, 'validators.verifyMembership') }
+        : {}),
+      mintClientStt: requireDeploymentValidator(validators.mintClientStt, 'validators.mintClientStt'),
+      mintConnectionStt: requireDeploymentValidator(validators.mintConnectionStt, 'validators.mintConnectionStt'),
+      mintChannelStt: requireDeploymentValidator(validators.mintChannelStt, 'validators.mintChannelStt'),
+      mintVoucher: requireDeploymentValidator(validators.mintVoucher, 'validators.mintVoucher'),
+      mintTransferEscrowShard: requireDeploymentValidator(
+        validators.mintTransferEscrowShard,
+        'validators.mintTransferEscrowShard',
+      ),
+      mintPort: requireDeploymentValidator(validators.mintPort, 'validators.mintPort'),
+      ...(validators.voucherMetadata
+        ? {
+            voucherMetadata: requireDeploymentVoucherMetadata(validators.voucherMetadata, 'validators.voucherMetadata'),
+          }
+        : {}),
+    },
+    modules: {
+      transfer: requireDeploymentModule(modules.transfer, 'modules.transfer'),
+      ...(modules.mock ? { mock: requireDeploymentModule(modules.mock, 'modules.mock') } : {}),
+      ...(modules.icq ? { icq: requireDeploymentModule(modules.icq, 'modules.icq') } : {}),
+    },
+    ...(deploymentAny.traceRegistry
+      ? { traceRegistry: requireDeploymentTraceRegistry(deploymentAny.traceRegistry, 'traceRegistry') }
+      : {}),
+  };
+}
+
+export function normalizeDeploymentConfig(
+  deployment: unknown,
+  cardano: BridgeManifestCardanoIdentity,
+): LoadedBridgeConfig {
+  const normalizedDeployment = requireSttDeploymentConfig(deployment);
+  const normalizedCardano = requireCardanoIdentity(cardano);
+  if ([1, 2, 764824073].includes(normalizedCardano.network_magic) || normalizedDeployment.history) {
+    normalizedDeployment.history = requireHistoryBootstrap(
+      normalizedDeployment.history,
+      normalizedCardano.network_magic,
+    );
+  }
+
+  // Deployment and explicit legacy conversion publish the same public document.
+  return {
+    deployment: normalizedDeployment,
+    bridgeManifest: {
+      schema_version: 6,
+      ...(normalizedDeployment.cachedTendermint ? { cached_tendermint: cachedTendermintToManifest(normalizedDeployment.cachedTendermint) } : {}),
+      packet_state: packetStateToManifest(normalizedDeployment.packetState),
+      migration: normalizedDeployment.migration,
+      consensus_history_format: normalizedDeployment.consensusHistoryFormat,
+      deployment_id: buildDeploymentId(normalizedCardano, normalizedDeployment.hostStateNFT),
+      deployed_at: normalizedDeployment.deployedAt,
+      ...(normalizedDeployment.history ? { history: normalizedDeployment.history } : {}),
+      ics20_packet_codec: normalizedDeployment.ics20PacketCodec,
+      cardano: normalizedCardano,
+      ...(normalizedDeployment.heartbeatSchedule ? { heartbeat_schedule: heartbeatScheduleToManifest(normalizedDeployment.heartbeatSchedule) } : {}),
+      host_state_nft: deploymentAuthTokenToManifest(normalizedDeployment.hostStateNFT),
+      validators: {
+        host_state_stt: deploymentValidatorToManifest(normalizedDeployment.validators.hostStateStt),
+        ...(normalizedDeployment.validators.updateClient
+          ? { update_client: deploymentValidatorToManifest(normalizedDeployment.validators.updateClient) }
+          : {}),
+        ...(normalizedDeployment.validators.recoverClient
+          ? { recover_client: deploymentValidatorToManifest(normalizedDeployment.validators.recoverClient) }
+          : {}),
+        spend_client: deploymentValidatorToManifest(normalizedDeployment.validators.spendClient),
+        ...(normalizedDeployment.validators.spendTendermintUpdateSession &&
+        normalizedDeployment.validators.mintTendermintUpdateSession
+          ? {
+              spend_tendermint_update_session: deploymentValidatorToManifest(
+                normalizedDeployment.validators.spendTendermintUpdateSession,
+              ),
+              mint_tendermint_update_session: deploymentValidatorToManifest(
+                normalizedDeployment.validators.mintTendermintUpdateSession,
+              ),
+            }
+          : {}),
+        spend_connection: deploymentValidatorToManifest(normalizedDeployment.validators.spendConnection),
+        spend_channel: deploymentSpendChannelToManifest(normalizedDeployment.validators.spendChannel),
+        ...(normalizedDeployment.validators.spendMockModule
+          ? { spend_mock_module: deploymentValidatorToManifest(normalizedDeployment.validators.spendMockModule) }
+          : {}),
+        ...(normalizedDeployment.validators.spendTraceRegistry
+          ? {
+              spend_trace_registry: deploymentValidatorToManifest(normalizedDeployment.validators.spendTraceRegistry),
+            }
+          : {}),
+        spend_transfer_module: deploymentValidatorToManifest(normalizedDeployment.validators.spendTransferModule),
+        mint_identifier: deploymentValidatorToManifest(normalizedDeployment.validators.mintIdentifier),
+        verify_proof: deploymentValidatorToManifest(normalizedDeployment.validators.verifyProof),
+        ...(normalizedDeployment.validators.verifyMembership
+          ? { verify_membership: deploymentValidatorToManifest(normalizedDeployment.validators.verifyMembership) }
+          : {}),
+        mint_client_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintClientStt),
+        mint_connection_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintConnectionStt),
+        mint_channel_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintChannelStt),
+        mint_voucher: deploymentValidatorToManifest(normalizedDeployment.validators.mintVoucher),
+        mint_transfer_escrow_shard: deploymentValidatorToManifest(
+          normalizedDeployment.validators.mintTransferEscrowShard,
+        ),
+        mint_port: deploymentValidatorToManifest(normalizedDeployment.validators.mintPort),
+        ...(normalizedDeployment.validators.voucherMetadata
+          ? {
+              voucher_metadata: deploymentVoucherMetadataToManifest(normalizedDeployment.validators.voucherMetadata),
+            }
+          : {}),
+      },
+      modules: {
+        transfer: normalizedDeployment.modules.transfer,
+        ...(normalizedDeployment.modules.mock ? { mock: normalizedDeployment.modules.mock } : {}),
+        ...(normalizedDeployment.modules.icq ? { icq: normalizedDeployment.modules.icq } : {}),
+      },
+      ...(normalizedDeployment.traceRegistry
+        ? { trace_registry: deploymentTraceRegistryToManifest(normalizedDeployment.traceRegistry) }
+        : {}),
+    },
+  };
+}
+
+function normalizePublicBridgeManifestConfig(manifest: unknown): LoadedBridgeConfig {
+  const manifestAny = requireObject(manifest, 'bridgeManifest');
+  const cardano = requireCardanoIdentity(
+    requireObject(manifestAny.cardano, 'cardano') as unknown as BridgeManifestCardanoIdentity,
+  );
+  const validators = requireObject(manifestAny.validators, 'validators');
+  if ('spend_consensus_state' in validators) {
+    throw new Error(
+      'Archive-NFT consensus history is no longer supported; a fresh proof-backed deployment is required',
+    );
+  }
+  const consensusHistoryFormat = requireConsensusHistoryFormat(manifestAny.consensus_history_format);
+  const modules = requireObject(manifestAny.modules, 'modules');
+  const hasSpendSession = validators.spend_tendermint_update_session !== undefined;
+  const hasMintSession = validators.mint_tendermint_update_session !== undefined;
+  assert(
+    hasSpendSession === hasMintSession,
+    'Invalid bridge config: staged Tendermint spend and mint session validators must be configured together',
+  );
+  assert(!validators.update_client || hasSpendSession, 'Ordinary client forwarding requires staged Tendermint sessions');
+  validateCachedTendermint(manifestAny.cached_tendermint ? cachedTendermintFromManifest(manifestAny.cached_tendermint) : undefined, validators.update_client ? manifestValidatorToDeployment(requireManifestValidator(validators.update_client, 'validators.update_client')) : undefined, hasSpendSession);
+
+  // Manifest startup is the inverse path: validate the public document, then
+  // rebuild the internal deployment shape so downstream Gateway code stays
+  // unaware of which bootstrap source was used.
+  const bridgeManifest: BridgeManifest = {
+    schema_version: requireNonNegativeInteger(manifestAny.schema_version, 'schema_version'),
+    packet_state: packetStateToManifest(packetStateFromManifest(manifestAny.packet_state)),
+    migration: requireMigrationConfig(manifestAny.migration),
+    ...(manifestAny.cached_tendermint ? { cached_tendermint: cachedTendermintToManifest(cachedTendermintFromManifest(manifestAny.cached_tendermint)) } : {}),
+    consensus_history_format: consensusHistoryFormat,
+    deployment_id: requireNonEmptyString(manifestAny.deployment_id, 'deployment_id'),
+    deployed_at: requireIsoTimestamp(manifestAny.deployed_at, 'deployed_at'),
+    ...([1, 2, 764824073].includes(cardano.network_magic) || manifestAny.history
+      ? { history: requireHistoryBootstrap(manifestAny.history, cardano.network_magic) }
+      : {}),
+    // The packet codec remains independent of the required history capability.
+    ics20_packet_codec:
+      manifestAny.ics20_packet_codec === undefined
+        ? ICS20_PACKET_CODEC.LEGACY
+        : requireIcs20PacketCodec(manifestAny.ics20_packet_codec, 'ics20_packet_codec'),
+    cardano,
+    ...(manifestAny.heartbeat_schedule ? { heartbeat_schedule: heartbeatScheduleToManifest(heartbeatScheduleFromManifest(manifestAny.heartbeat_schedule)) } : {}),
+    host_state_nft: requireManifestAuthToken(manifestAny.host_state_nft, 'host_state_nft'),
+    validators: {
+      host_state_stt: requireManifestValidator(validators.host_state_stt, 'validators.host_state_stt'),
+      ...(validators.update_client
+        ? { update_client: requireManifestValidator(validators.update_client, 'validators.update_client') }
+        : {}),
+      ...(validators.recover_client
+        ? { recover_client: requireManifestValidator(validators.recover_client, 'validators.recover_client') }
+        : {}),
+      spend_client: requireManifestValidator(validators.spend_client, 'validators.spend_client'),
+      ...(hasSpendSession
+        ? {
+            spend_tendermint_update_session: requireManifestValidator(
+              validators.spend_tendermint_update_session,
+              'validators.spend_tendermint_update_session',
+            ),
+            mint_tendermint_update_session: requireManifestValidator(
+              validators.mint_tendermint_update_session,
+              'validators.mint_tendermint_update_session',
+            ),
+          }
+        : {}),
+      spend_connection: requireManifestValidator(validators.spend_connection, 'validators.spend_connection'),
+      spend_channel: requireManifestSpendChannelValidator(validators.spend_channel, 'validators.spend_channel'),
+      ...(validators.spend_mock_module
+        ? { spend_mock_module: requireManifestValidator(validators.spend_mock_module, 'validators.spend_mock_module') }
+        : {}),
+      ...(validators.spend_trace_registry
+        ? {
+            spend_trace_registry: requireManifestValidator(
+              validators.spend_trace_registry,
+              'validators.spend_trace_registry',
+            ),
+          }
+        : {}),
+      spend_transfer_module: requireManifestValidator(
+        validators.spend_transfer_module,
+        'validators.spend_transfer_module',
+      ),
+      mint_identifier: requireManifestValidator(validators.mint_identifier, 'validators.mint_identifier'),
+      verify_proof: requireManifestValidator(validators.verify_proof, 'validators.verify_proof'),
+      ...(validators.verify_membership !== undefined
+        ? { verify_membership: requireManifestValidator(validators.verify_membership, 'validators.verify_membership') }
+        : {}),
+      mint_client_stt: requireManifestValidator(validators.mint_client_stt, 'validators.mint_client_stt'),
+      mint_connection_stt: requireManifestValidator(validators.mint_connection_stt, 'validators.mint_connection_stt'),
+      mint_channel_stt: requireManifestValidator(validators.mint_channel_stt, 'validators.mint_channel_stt'),
+      mint_voucher: requireManifestValidator(validators.mint_voucher, 'validators.mint_voucher'),
+      mint_transfer_escrow_shard: requireManifestValidator(
+        validators.mint_transfer_escrow_shard,
+        'validators.mint_transfer_escrow_shard',
+      ),
+      mint_port: requireManifestValidator(validators.mint_port, 'validators.mint_port'),
+      ...(validators.voucher_metadata
+        ? {
+            voucher_metadata: requireManifestVoucherMetadata(
+              validators.voucher_metadata,
+              'validators.voucher_metadata',
+            ),
+          }
+        : {}),
+    },
+    modules: {
+      transfer: requireManifestModule(modules.transfer, 'modules.transfer'),
+      ...(modules.mock ? { mock: requireManifestModule(modules.mock, 'modules.mock') } : {}),
+      ...(modules.icq ? { icq: requireManifestModule(modules.icq, 'modules.icq') } : {}),
+    },
+    ...(manifestAny.trace_registry
+      ? { trace_registry: requireManifestTraceRegistry(manifestAny.trace_registry, 'trace_registry') }
+      : {}),
+  };
+
+  assert(bridgeManifest.schema_version === 6, 'Invalid bridge config: "schema_version" must be 6');
+
+  return {
+    bridgeManifest,
+    deployment: {
+      ...(bridgeManifest.cached_tendermint ? { cachedTendermint: cachedTendermintFromManifest(bridgeManifest.cached_tendermint) } : {}),
+      packetState: packetStateFromManifest(bridgeManifest.packet_state),
+      deployedAt: bridgeManifest.deployed_at,
+      migration: bridgeManifest.migration,
+      consensusHistoryFormat,
+      ...(bridgeManifest.history ? { history: bridgeManifest.history } : {}),
+      ics20PacketCodec: bridgeManifest.ics20_packet_codec,
+      ...(bridgeManifest.heartbeat_schedule ? { heartbeatSchedule: heartbeatScheduleFromManifest(bridgeManifest.heartbeat_schedule) } : {}),
+      hostStateNFT: manifestAuthTokenToDeployment(bridgeManifest.host_state_nft),
+      validators: {
+        hostStateStt: manifestValidatorToDeployment(bridgeManifest.validators.host_state_stt),
+        ...(bridgeManifest.validators.update_client
+          ? { updateClient: manifestValidatorToDeployment(bridgeManifest.validators.update_client) }
+          : {}),
+        ...(bridgeManifest.validators.recover_client
+          ? { recoverClient: manifestValidatorToDeployment(bridgeManifest.validators.recover_client) }
+          : {}),
+        spendClient: manifestValidatorToDeployment(bridgeManifest.validators.spend_client),
+        ...(bridgeManifest.validators.spend_tendermint_update_session &&
+        bridgeManifest.validators.mint_tendermint_update_session
+          ? {
+              spendTendermintUpdateSession: manifestValidatorToDeployment(
+                bridgeManifest.validators.spend_tendermint_update_session,
+              ),
+              mintTendermintUpdateSession: manifestValidatorToDeployment(
+                bridgeManifest.validators.mint_tendermint_update_session,
+              ),
+            }
+          : {}),
+        spendConnection: manifestValidatorToDeployment(bridgeManifest.validators.spend_connection),
+        spendChannel: manifestSpendChannelToDeployment(bridgeManifest.validators.spend_channel),
+        ...(bridgeManifest.validators.spend_mock_module
+          ? { spendMockModule: manifestValidatorToDeployment(bridgeManifest.validators.spend_mock_module) }
+          : {}),
+        ...(bridgeManifest.validators.spend_trace_registry
+          ? {
+              spendTraceRegistry: manifestValidatorToDeployment(bridgeManifest.validators.spend_trace_registry),
+            }
+          : {}),
+        spendTransferModule: manifestValidatorToDeployment(bridgeManifest.validators.spend_transfer_module),
+        mintIdentifier: manifestValidatorToDeployment(bridgeManifest.validators.mint_identifier),
+        verifyProof: manifestValidatorToDeployment(bridgeManifest.validators.verify_proof),
+        ...(bridgeManifest.validators.verify_membership
+          ? { verifyMembership: manifestValidatorToDeployment(bridgeManifest.validators.verify_membership) }
+          : {}),
+        mintClientStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_client_stt),
+        mintConnectionStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_connection_stt),
+        mintChannelStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_channel_stt),
+        mintVoucher: manifestValidatorToDeployment(bridgeManifest.validators.mint_voucher),
+        mintTransferEscrowShard: manifestValidatorToDeployment(bridgeManifest.validators.mint_transfer_escrow_shard),
+        mintPort: manifestValidatorToDeployment(bridgeManifest.validators.mint_port),
+        ...(bridgeManifest.validators.voucher_metadata
+          ? {
+              voucherMetadata: manifestVoucherMetadataToDeployment(bridgeManifest.validators.voucher_metadata),
+            }
+          : {}),
+      },
+      modules: {
+        transfer: requireDeploymentModule(bridgeManifest.modules.transfer, 'modules.transfer'),
+        ...(bridgeManifest.modules.mock
+          ? { mock: requireDeploymentModule(bridgeManifest.modules.mock, 'modules.mock') }
+          : {}),
+        ...(bridgeManifest.modules.icq
+          ? { icq: requireDeploymentModule(bridgeManifest.modules.icq, 'modules.icq') }
+          : {}),
+      },
+      ...(bridgeManifest.trace_registry
+        ? { traceRegistry: manifestTraceRegistryToDeployment(bridgeManifest.trace_registry) }
+        : {}),
+    },
+  };
+}
+
+export function bridgeManifestsEqual(left: BridgeManifest, right: BridgeManifest): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+// The manifest is the only persisted deployment document. Runtime consumers use
+// validated discovery fields. Maintenance also retains applied scripts, complete
+// reference outputs and the migration baseline in that same
+// document. These are public chain facts, not signing keys.
+const deploymentFieldNames: Record<string, string> = {
+  deployedAt: 'deployed_at',
+  consensusHistoryFormat: 'consensus_history_format',
+  ics20PacketCodec: 'ics20_packet_codec',
+  hostStateNFT: 'host_state_nft',
+  heartbeatSchedule: 'heartbeat_schedule',
+  epochOriginMs: 'epoch_origin_ms',
+  epochLengthMs: 'epoch_length_ms',
+  cachedTendermint: 'cached_tendermint',
+  packetState: 'packet_state',
+  receiptStorage: 'receipt_storage',
+  laneCount: 'lane_count',
+  acknowledgementBatchSize: 'acknowledgement_batch_size',
+  configToken: 'config_token',
+  clientRegistrations: 'client_registrations',
+  scriptHash: 'script_hash',
+  refUtxo: 'ref_utxo',
+  refValidator: 'ref_validator',
+  txHash: 'tx_hash',
+  outputIndex: 'output_index',
+  policyId: 'policy_id',
+  name: 'token_name',
+  traceRegistry: 'trace_registry',
+  shardPolicyId: 'shard_policy_id',
+  hostStateStt: 'host_state_stt',
+  updateClient: 'update_client',
+  recoverClient: 'recover_client',
+  spendClient: 'spend_client',
+  spendConnection: 'spend_connection',
+  spendChannel: 'spend_channel',
+  spendTendermintUpdateSession: 'spend_tendermint_update_session',
+  mintTendermintUpdateSession: 'mint_tendermint_update_session',
+  spendMockModule: 'spend_mock_module',
+  spendTraceRegistry: 'spend_trace_registry',
+  spendTransferModule: 'spend_transfer_module',
+  mintIdentifier: 'mint_identifier',
+  verifyProof: 'verify_proof',
+  verifyMembership: 'verify_membership',
+  mintClientStt: 'mint_client_stt',
+  mintConnectionStt: 'mint_connection_stt',
+  mintChannelStt: 'mint_channel_stt',
+  mintVoucher: 'mint_voucher',
+  mintTransferEscrowShard: 'mint_transfer_escrow_shard',
+  mintPort: 'mint_port',
+  voucherMetadata: 'voucher_metadata',
+  mintTraceRegistryBenchmarkVoucher: 'mint_trace_registry_benchmark_voucher',
+};
+
+function deploymentFields(value: unknown, toManifest: boolean): unknown {
+  if (Array.isArray(value)) return value.map((entry) => deploymentFields(entry, toManifest));
+  if (!value || typeof value !== 'object') return value;
+  const names = toManifest
+    ? deploymentFieldNames
+    : Object.fromEntries(Object.entries(deploymentFieldNames).map(([key, name]) => [name, key]));
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      names[key] ?? key,
+      // These embedded schemas have their own stable field names.
+      ['migration', 'history', 'tokens', 'clientRegistrations', 'client_registrations'].includes(key)
+        ? entry
+        : deploymentFields(entry, toManifest),
+    ]),
+  );
+}
+
+function withDeploymentMetadata<T>(source: unknown, validated: T): T {
+  if (!validated || typeof validated !== 'object' || Array.isArray(validated)) return validated;
+  const original =
+    source && typeof source === 'object' && !Array.isArray(source) ? (source as Record<string, unknown>) : {};
+  return Object.fromEntries([
+    ...Object.entries(original).filter(([key]) => !['deploymentMode', 'backupOperatorKeyHash', 'backup_operator_key_hash'].includes(key)),
+    ...Object.entries(validated).map(([key, value]) => [key, withDeploymentMetadata(original[key], value)]),
+  ]) as T;
+}
+
+export function createBridgeManifest(deployment: unknown, cardano: BridgeManifestCardanoIdentity): BridgeManifest {
+  const validated = normalizeDeploymentConfig(deployment, cardano).bridgeManifest;
+  const manifest = withDeploymentMetadata(deploymentFields(deployment, true), validated);
+  normalizePublicBridgeManifestConfig(manifest);
+  return manifest;
+}
+
+export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeConfig {
+  const validated = normalizePublicBridgeManifestConfig(manifest);
+  const bridgeManifest = withDeploymentMetadata(manifest, validated.bridgeManifest) as BridgeManifest;
+  const { schema_version: _schema, deployment_id: _id, cardano: _cardano, ...fields } = bridgeManifest;
+  return {
+    // Discovery responses stay compact. Applied scripts and the migration plan
+    // remain in the persisted manifest and the decoded operational deployment.
+    bridgeManifest: validated.bridgeManifest,
+    deployment: withDeploymentMetadata(deploymentFields(fields, false), validated.deployment),
+  };
+}

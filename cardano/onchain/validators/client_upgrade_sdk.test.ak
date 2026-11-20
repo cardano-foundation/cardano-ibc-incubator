@@ -12,13 +12,15 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  UpgradeClient, UpgradeClientWithdrawal,
+  UpgradeClientWithdrawal,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/upgrade_pb
 use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/multitx/client_redeemer.{UpgradeClient} as staged_redeemer
+use ibc/client/ics_007_tendermint_client/recovery as recovery_logic
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
   UncheckedRational,
 }
@@ -34,7 +36,6 @@ use ibc/core/ics_023_vector_commitments/merkle.{
   MerklePath, MerkleProof, MerkleRoot,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
-use recover_client
 use verifying_proof
 
 fn fixture(
@@ -1550,12 +1551,12 @@ test sdk_upgrade_v8_revision_reset() {
   let (tx, envelope) =
     transaction_fixture(before, after, u, 1700000001000000000)
   expect verifying_proof.verify_proof.mint(envelope, "proof", tx)
-  recover_client.recover_client.withdraw(
+  recovery_logic.validate(
     "host",
     "proof",
     UpgradeClientWithdrawal { subject_token: before.token },
-    address.Script("recovery"),
     tx,
+    fn(_host, _tx) { True },
   )
 }
 
@@ -1721,12 +1722,12 @@ test sdk_upgrade_v8_same_revision() {
   let (tx, envelope) =
     transaction_fixture(before, after, u, 1700000001000000000)
   expect verifying_proof.verify_proof.mint(envelope, "proof", tx)
-  recover_client.recover_client.withdraw(
+  recovery_logic.validate(
     "host",
     "proof",
     UpgradeClientWithdrawal { subject_token: before.token },
-    address.Script("recovery"),
     tx,
+    fn(_host, _tx) { True },
   )
 }
 
@@ -1784,12 +1785,12 @@ test sdk_upgrade_v8_committed_reduced_unbonding() {
   let (tx, envelope) =
     transaction_fixture(before, after, u, 1700000001000000000)
   expect verifying_proof.verify_proof.mint(envelope, "proof", tx)
-  recover_client.recover_client.withdraw(
+  recovery_logic.validate(
     "host",
     "proof",
     UpgradeClientWithdrawal { subject_token: before.token },
-    address.Script("recovery"),
     tx,
+    fn(_host, _tx) { True },
   )
 }
 
@@ -1817,12 +1818,12 @@ test sdk_upgrade_v8_submitted_trust_parameters() {
   let (tx, envelope) =
     transaction_fixture(before, after, u, 1700000001000000000)
   expect verifying_proof.verify_proof.mint(envelope, "proof", tx)
-  recover_client.recover_client.withdraw(
+  recovery_logic.validate(
     "host",
     "proof",
     UpgradeClientWithdrawal { subject_token: before.token },
-    address.Script("recovery"),
     tx,
+    fn(_host, _tx) { True },
   )
 }
 
@@ -2032,12 +2033,12 @@ test sdk_upgrade_v8_committed_old_timestamp() {
   let (tx, envelope) =
     transaction_fixture(before, after, u, 1700000001000000000)
   expect verifying_proof.verify_proof.mint(envelope, "proof", tx)
-  recover_client.recover_client.withdraw(
+  recovery_logic.validate(
     "host",
     "proof",
     UpgradeClientWithdrawal { subject_token: before.token },
-    address.Script("recovery"),
     tx,
+    fn(_host, _tx) { True },
   )
 }
 
@@ -2095,12 +2096,12 @@ test sdk_upgrade_v10_revision_reset() {
   let (tx, envelope) =
     transaction_fixture(before, after, u, 1700000001000000000)
   expect verifying_proof.verify_proof.mint(envelope, "proof", tx)
-  recover_client.recover_client.withdraw(
+  recovery_logic.validate(
     "host",
     "proof",
     UpgradeClientWithdrawal { subject_token: before.token },
-    address.Script("recovery"),
     tx,
+    fn(_host, _tx) { True },
   )
 }
 
@@ -2266,12 +2267,12 @@ test sdk_upgrade_v10_same_revision() {
   let (tx, envelope) =
     transaction_fixture(before, after, u, 1700000001000000000)
   expect verifying_proof.verify_proof.mint(envelope, "proof", tx)
-  recover_client.recover_client.withdraw(
+  recovery_logic.validate(
     "host",
     "proof",
     UpgradeClientWithdrawal { subject_token: before.token },
-    address.Script("recovery"),
     tx,
+    fn(_host, _tx) { True },
   )
 }
 
@@ -2329,12 +2330,12 @@ test sdk_upgrade_v10_committed_reduced_unbonding() {
   let (tx, envelope) =
     transaction_fixture(before, after, u, 1700000001000000000)
   expect verifying_proof.verify_proof.mint(envelope, "proof", tx)
-  recover_client.recover_client.withdraw(
+  recovery_logic.validate(
     "host",
     "proof",
     UpgradeClientWithdrawal { subject_token: before.token },
-    address.Script("recovery"),
     tx,
+    fn(_host, _tx) { True },
   )
 }
 
@@ -2362,12 +2363,12 @@ test sdk_upgrade_v10_submitted_trust_parameters() {
   let (tx, envelope) =
     transaction_fixture(before, after, u, 1700000001000000000)
   expect verifying_proof.verify_proof.mint(envelope, "proof", tx)
-  recover_client.recover_client.withdraw(
+  recovery_logic.validate(
     "host",
     "proof",
     UpgradeClientWithdrawal { subject_token: before.token },
-    address.Script("recovery"),
     tx,
+    fn(_host, _tx) { True },
   )
 }
 
@@ -2577,12 +2578,12 @@ test sdk_upgrade_v10_committed_old_timestamp() {
   let (tx, envelope) =
     transaction_fixture(before, after, u, 1700000001000000000)
   expect verifying_proof.verify_proof.mint(envelope, "proof", tx)
-  recover_client.recover_client.withdraw(
+  recovery_logic.validate(
     "host",
     "proof",
     UpgradeClientWithdrawal { subject_token: before.token },
-    address.Script("recovery"),
     tx,
+    fn(_host, _tx) { True },
   )
 }
 

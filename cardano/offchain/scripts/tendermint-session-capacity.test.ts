@@ -103,6 +103,7 @@ async function verify(
     lucid,
     "11".repeat(28),
     "22".repeat(28),
+    "ee".repeat(28),
   );
   const references = [
     scripts.sessionSpend.validator,

@@ -14,8 +14,8 @@ async function main(): Promise<void> {
     throw new Error('Usage: generate-tendermint-update-capacity-aiken.ts [--check|--write]');
   }
 
-  // This generator emits only header/trust constants; the executable Aiken
-  // transaction fixture lives separately in spending_client_capacity.test.ak.
+  // This generator emits header and trust constants consumed by the staged
+  // Aiken tests and compiled cached-client transaction tests.
   // Check its current Gateway counterpart before updating the shared constants.
   // Capacity overflow remains diagnostic: these real 45-validator headers are
   // intentionally retained even when they exceed the transaction-size limit.

@@ -22,7 +22,7 @@ import {
 } from "../src/tendermint-cache-routing.ts";
 import { submitHistorySession } from "./consensus-history-staged-fixture.ts";
 import { DeploymentIbcTree } from "../src/deployment.ts";
-import { loadHostStateValidator } from "../src/deployment-plan.ts";
+import { governedHostFixture } from "../src/testing/governed-host.ts";
 import { generateTokenName, readValidator } from "../src/utils.ts";
 import { loadCachedTendermintValidators } from "../src/tendermint-cache-validators.ts";
 import { createCardanoScalusEvaluator } from "../src/scalus-evaluator.ts";
@@ -258,11 +258,13 @@ export async function cachedUpdateFixture(
     lucid,
     hostPolicy,
     "00".repeat(28),
+    "ee".repeat(28),
   );
   const [clientScript, clientHash, clientAddress] = scripts.clientSpend;
   const [clientMint, clientPolicy] = scripts.clientMint;
-  const [hostScript, , hostAddress] = loadHostStateValidator(
+  const [hostScript, , hostAddress] = governedHostFixture(
     lucid,
+    emulator,
     hostPolicy,
     clientHash,
     dummy,

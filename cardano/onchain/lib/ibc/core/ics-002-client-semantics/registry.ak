@@ -24,12 +24,12 @@ pub type ClientRegistration {
   proof_policy: PolicyId,
 }
 
-/// Byte parameters retain the original Tendermint deployment ABI. New
-/// deployments pass List<ClientRegistration> instead. These are script
-/// parameters, never transaction-supplied registrations.
+/// Governed wrappers supply their authenticated Tendermint policy directly.
+/// Adapter lists carry explicit namespaces for shared validation. Neither form
+/// lets a transaction choose its client registration.
 pub fn for_client(registry: Data, client_id: ByteArray) -> ClientRegistration {
   if registry is policy: ByteArray {
-    let registration = legacy(policy, "", "")
+    let registration = tendermint_registration(policy, "", "")
     expect matches_id(registration, client_id)
     registration
   } else {
@@ -72,7 +72,7 @@ pub fn sequence(
   bytearray.drop(client_id, bytearray.length(registration.client_type) + 1)
 }
 
-pub fn legacy(
+pub fn tendermint_registration(
   mint_policy: PolicyId,
   spend_validator: ByteArray,
   proof_policy: PolicyId,
@@ -94,7 +94,7 @@ pub fn for_output(
   expect Script(script_hash) = output.address.payment_credential
   if registry is script: ByteArray {
     expect script_hash == script
-    legacy(fallback_policy, script, "")
+    tendermint_registration(fallback_policy, script, "")
   } else {
     expect registrations: List<ClientRegistration> = registry
     expect [registration] =

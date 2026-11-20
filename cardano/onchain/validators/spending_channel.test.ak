@@ -53,9 +53,9 @@ use ibc/core/ics_025_handler_interface/host_state.{
   empty_ibc_state_root,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
+use ibc/implementation/spending_channel as spending_channel
 use ibc/testing/fuzz_dsl
 use ibc/utils/validator_utils
-use spending_channel
 
 type MockData {
   host_state_nft_policy_id: PolicyId,
@@ -533,7 +533,8 @@ fn check_prune_spending_channel(
       },
     }
 
-  spending_channel.spend_channel.spend(
+  spending_channel.validate(
+    True,
     #"",
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
@@ -649,7 +650,8 @@ fn run_spending_channel_transition(
   )
     |> fuzz_dsl.with_protocol_validator_check(
         "spending_channel",
-        spending_channel.spend_channel.spend(
+        spending_channel.validate(
+          True,
           #"",
           mock_data.chan_open_ack_policy_id,
           mock_data.chan_open_confirm_policy_id,
@@ -1151,7 +1153,8 @@ test chan_open_ack_succeed() {
       mint: operation_marker(mock_data.chan_open_ack_policy_id),
     }
 
-  spending_channel.spend_channel.spend(
+  spending_channel.validate(
+    True,
     #"",
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
@@ -1380,7 +1383,8 @@ test chan_open_confirm_succeed() {
       mint: operation_marker(mock_data.chan_open_confirm_policy_id),
     }
 
-  spending_channel.spend_channel.spend(
+  spending_channel.validate(
+    True,
     #"",
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
@@ -1640,7 +1644,8 @@ test recv_packet_succeed() {
       mint: operation_marker(mock_data.recv_packet_policy_id),
     }
 
-  spending_channel.spend_channel.spend(
+  spending_channel.validate(
+    True,
     #"",
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
@@ -1774,7 +1779,8 @@ test send_packet_succeed() {
       mint: operation_marker(mock_data.send_packet_policy_id),
     }
 
-  spending_channel.spend_channel.spend(
+  spending_channel.validate(
+    True,
     #"",
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
@@ -2058,7 +2064,8 @@ test timeout_packet_succeed() {
       mint: operation_marker(mock_data.timeout_packet_policy_id),
     }
 
-  spending_channel.spend_channel.spend(
+  spending_channel.validate(
+    True,
     #"",
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
@@ -2325,7 +2332,8 @@ test acknowledge_packet_succeed() {
       mint: operation_marker(mock_data.acknowledge_packet_policy_id),
     }
 
-  spending_channel.spend_channel.spend(
+  spending_channel.validate(
+    True,
     #"",
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
@@ -2426,7 +2434,8 @@ test chan_close_init_succeed() {
 
   let spend_channel_redeemer = ChanCloseInit
 
-  spending_channel.spend_channel.spend(
+  spending_channel.validate(
+    True,
     #"",
     fake_data.chan_open_ack_policy_id,
     fake_data.chan_open_confirm_policy_id,
@@ -2505,7 +2514,8 @@ test chan_close_init_fails_without_closed_channel_continuation() fail {
       mint: operation_marker(fake_data.chan_close_init_policy_id),
     }
 
-  spending_channel.spend_channel.spend(
+  spending_channel.validate(
+    True,
     #"",
     fake_data.chan_open_ack_policy_id,
     fake_data.chan_open_confirm_policy_id,
@@ -2581,7 +2591,8 @@ test chan_close_init_fails_without_host_state_co_spend() fail {
 
   let spend_channel_redeemer = ChanCloseInit
 
-  spending_channel.spend_channel.spend(
+  spending_channel.validate(
+    True,
     #"",
     fake_data.chan_open_ack_policy_id,
     fake_data.chan_open_confirm_policy_id,
@@ -2679,7 +2690,8 @@ test chan_close_confirm_succeed() {
       counterparty_upgrade_sequence: 0,
     }
 
-  spending_channel.spend_channel.spend(
+  spending_channel.validate(
+    True,
     #"",
     fake_data.chan_open_ack_policy_id,
     fake_data.chan_open_confirm_policy_id,

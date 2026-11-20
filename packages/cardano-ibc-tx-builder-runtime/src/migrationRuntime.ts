@@ -8,7 +8,7 @@ export class BridgeMigrationInProgressError extends Error {
 }
 
 export type MigrationRuntimeConfig = {
-  profile: 'cardano-ibc-compatible-v3' | 'cardano-ibc-compatible-v4' | 'cardano-ibc-compatible-v5';
+  profile: 'cardano-ibc-compatible-v6';
   registryUnit: string;
   registryAddress: string;
   generation: string;
@@ -17,7 +17,6 @@ export type MigrationRuntimeConfig = {
 };
 
 export type MigrationRuntimeDeployment = {
-  deploymentMode?: 'upgradeable' | 'legacy';
   migration?: MigrationRuntimeConfig;
   hostStateNFT: { policyId: string; name: string };
   validators: Record<'hostStateStt' | 'spendClient' | 'spendConnection' | 'spendChannel' | 'spendTransferModule', { address?: string }> &
@@ -27,7 +26,7 @@ export type MigrationRuntimeDeployment = {
 
 export function requireMigrationConfig(value: unknown): MigrationRuntimeConfig {
   const input = value as MigrationRuntimeConfig;
-  if (!input || !['cardano-ibc-compatible-v3', 'cardano-ibc-compatible-v4', 'cardano-ibc-compatible-v5'].includes(input.profile) ||
+  if (!input || !['cardano-ibc-compatible-v6'].includes(input.profile) ||
     !/^[0-9a-f]{58,120}$/.test(input.registryUnit) || !input.registryAddress ||
     !/^[1-9][0-9]*$/.test(input.generation) || !/^[0-9a-f]{64}$/.test(input.compatibility) ||
     !Array.isArray(input.originalAddresses) || input.originalAddresses.length !== 5 || input.originalAddresses.some((a) => typeof a !== 'string' || !a)) {
@@ -58,15 +57,12 @@ function addressFromData(network: Network, data: Data): string {
  * The returned out-ref is included in the transaction: a concurrent handover
  * invalidates it at the ledger even if an indexer has temporarily served stale data.
  */
-export async function migrationReference(lucid: LucidEvolution, deployment: MigrationRuntimeDeployment, createObject = false, restriction = 1n): Promise<UTxO | undefined> {
-  if (deployment.deploymentMode === 'upgradeable' && !deployment.migration) throw new Error('Upgradeable deployment is missing its recovery configuration');
-  if (deployment.deploymentMode === 'legacy' && deployment.migration) throw new Error('Legacy deployment conflicts with migration configuration');
-  if (!deployment.migration) return undefined;
+export async function migrationReference(lucid: LucidEvolution, deployment: MigrationRuntimeDeployment, createObject = false, restriction = 1n): Promise<UTxO> {
   const manifest = requireMigrationConfig(deployment.migration);
   const utxo = await lucid.utxoByUnit(manifest.registryUnit);
   if (utxo.address !== manifest.registryAddress || utxo.assets[manifest.registryUnit] !== 1n || !utxo.datum) throw new Error('Missing authenticated implementation registry');
-  const [token, hostPolicy, identity, , , implementation, phase, emergency, approvalAuthority] = record(Data.from(utxo.datum), manifest.profile === 'cardano-ibc-compatible-v3' ? 8 : 9);
-  if (manifest.profile !== 'cardano-ibc-compatible-v3' && (typeof approvalAuthority !== 'string' || !/^[0-9a-f]{56}$/.test(approvalAuthority))) throw new Error('Invalid fixed governance authority');
+  const [token, hostPolicy, identity, , , implementation, phase, emergency, approvalAuthority] = record(Data.from(utxo.datum), 9);
+  if (typeof approvalAuthority !== 'string' || !/^[0-9a-f]{56}$/.test(approvalAuthority)) throw new Error('Invalid fixed governance authority');
   const [policy, name] = record(token, 2);
   const [generation, addresses, compatibility] = record(implementation, 3);
   if (typeof policy !== 'string' || typeof name !== 'string' || policy + name !== manifest.registryUnit || hostPolicy !== deployment.hostStateNFT.policyId || deployment.hostStateNFT.name !== '6962635f686f73745f7374617465' || compatibility !== manifest.compatibility) throw new Error('Registry identifies a different bridge or compatibility profile');
@@ -99,17 +95,8 @@ export async function migrationReference(lucid: LucidEvolution, deployment: Migr
  */
 export async function withMigrationReference(lucid: LucidEvolution, tx: TxBuilder, deployment: MigrationRuntimeDeployment, createObject = false, restriction = 1n): Promise<TxBuilder> {
   const reference = await migrationReference(lucid, deployment, createObject, restriction);
-  if (reference) tx.readFrom([reference]);
+  tx.readFrom([reference]);
   return tx;
-}
-
-/** New manifests explicitly declare capability; a declaration never replaces
- * migrationReference's canonical NFT, identity and role-credential checks. */
-export function checkedDeploymentMode(mode: unknown, migration: unknown): 'upgradeable' | 'legacy' | undefined {
-  if (mode === undefined) return undefined; // Pre-marker manifests checked by startup policy.
-  if (mode !== 'upgradeable' && mode !== 'legacy') throw new Error('Invalid deploymentMode; expected upgradeable or legacy');
-  if ((mode === 'upgradeable') !== (migration !== undefined)) throw new Error('Deployment mode and recovery configuration disagree');
-  return mode;
 }
 
 /** Consume the delayed approval in the same transaction as client recovery.
@@ -125,7 +112,7 @@ export async function withClientRecoveryApproval(
   validTo: number,
 ): Promise<TxBuilder> {
   const manifest = requireMigrationConfig(deployment.migration);
-  if (manifest.profile !== 'cardano-ibc-compatible-v5') throw new Error('This deployment does not support quorum client recovery');
+  if (manifest.profile !== 'cardano-ibc-compatible-v6') throw new Error('This deployment does not support quorum client recovery');
   const registry = await migrationReference(lucid, deployment, false, 2n);
   if (!registry?.datum) throw new Error('Missing authenticated recovery approval');
   const datum = Data.from(registry.datum);

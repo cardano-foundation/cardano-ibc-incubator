@@ -23,8 +23,8 @@ const parameters: fc.Arbitrary<ChannelParameters> = fc.record({
   remotePort: identifier,
   version: identifier,
   ordered: fc.boolean(),
-  clientType: identifier.map((value) => `99-client-${value}`),
-  useLongClientType: fc.boolean(),
+  clientType: fc.constant("07-tendermint"),
+  useLongClientType: fc.constant(false),
   reverseClientRegistry: fc.boolean(),
   reverseClientReferences: fc.boolean(),
 });
@@ -33,6 +33,7 @@ const parameters: fc.Arbitrary<ChannelParameters> = fc.record({
 // The generated values change token names, state-tree keys,
 // proof contents and the actual ordered/unordered channel branch. Two registered
 // clients share a sequence, with overlapping type prefixes and distinct state.
+// The governed registry binds the canonical 07-tendermint client identity.
 for (const action of channelActions) {
   Deno.test(`${action.name} validates generated transactions and marker mutations`, async () => {
     await fc.assert(

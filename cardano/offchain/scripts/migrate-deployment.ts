@@ -1,3 +1,8 @@
+import {
+  type BridgeManifest,
+  createBridgeManifest,
+  normalizeBridgeManifestConfig,
+} from "../../../packages/cardano-ibc-tx-builder-runtime/src/bridgeManifest.ts";
 import { HostStateDatum } from "../types/plutus/HostState.ts";
 import { MigrationInventory } from "../src/migration-inventory.ts";
 import { Data, fromText, type TxBuilder } from "@lucid-evolution/lucid";
@@ -53,7 +58,7 @@ export function parseMigrationArgs(args: string[]) {
   const allowed = new Set([
     "mask",
     "emergency-authority",
-    "handler",
+    "manifest",
     "plan",
     "blueprint",
     "out",
@@ -83,9 +88,9 @@ export function parseMigrationArgs(args: string[]) {
       flags[key] = value;
     }
   }
-  if (!flags.handler) {
+  if (!flags.manifest) {
     throw new Error(
-      "--handler must identify the original deployment manifest (including its migration baseline)",
+      "--manifest must identify the original deployment manifest (including its migration baseline)",
     );
   }
   if (command === "nominate-client-recovery") {
@@ -181,7 +186,9 @@ async function writeJson(path: string, value: unknown) {
 
 export async function main(args = Deno.args) {
   const { command, flags, maxSteps } = parseMigrationArgs(args);
-  const deployment = await readJson<DeploymentTemplate>(flags.handler);
+  const manifest = await readJson<BridgeManifest>(flags.manifest);
+  const deployment = normalizeBridgeManifestConfig(manifest)
+    .deployment as unknown as DeploymentTemplate;
   const readOnly = ["prepare", "inspect", "verify"].includes(command);
   const lucid = await buildOperationalLucid({
     keyEnvironment: "MIGRATION_EXECUTOR_SK",
@@ -197,7 +204,7 @@ export async function main(args = Deno.args) {
   const timing = () => migrationTiming(lucid, Deno.env.get("OGMIOS_URL")!);
   const submit = migrationSubmitter(
     lucid,
-    flags.outbox ?? `${flags.plan ?? flags.handler}.migration-outbox`,
+    flags.outbox ?? `${flags.plan ?? flags.manifest}.migration-outbox`,
     (entry) => console.log(canonicalMigrationJson(entry)),
     3,
     async () => BigInt((await timing()).slot),
@@ -248,7 +255,6 @@ export async function main(args = Deno.args) {
     console.log(canonicalMigrationJson({
       registry: observed.registry,
       deployer: Data.from(host.datum!, HostStateDatum).deployer,
-      backupNominee: deployment.backupOperatorKeyHash ?? null,
       outref: {
         txHash: observed.utxo.txHash,
         outputIndex: observed.utxo.outputIndex,
@@ -355,12 +361,11 @@ export async function main(args = Deno.args) {
     return;
   }
   if (command === "nominate-deployer") {
-    const successor =
-      (flags.successor ?? deployment.backupOperatorKeyHash ?? "").trim()
-        .toLowerCase();
+    const successor = (flags.successor ?? "").trim()
+      .toLowerCase();
     if (!/^[0-9a-f]{56}$/.test(successor)) {
       throw new Error(
-        "nominate-deployer requires --successor payment key hash or a configured backup nominee",
+        "nominate-deployer requires --successor payment key hash",
       );
     }
     const host = await lucid.utxoByUnit(
@@ -485,7 +490,10 @@ export async function main(args = Deno.args) {
       deployment,
       artifact,
     );
-    await writeJson(flags.out, verified.deployment);
+    await writeJson(
+      flags.out,
+      createBridgeManifest(verified.deployment, manifest.cardano),
+    );
     console.log(canonicalMigrationJson(verified.evidence));
     return;
   }

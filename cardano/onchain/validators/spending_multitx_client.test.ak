@@ -41,9 +41,9 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/core/ics_025_handler_interface/host_state_redeemer
+use ibc/implementation/spending_multitx_client as spending_multitx_client
 use ibc/utils/validator_utils
 use minting_tendermint_update_session
-use spending_multitx_client
 use spending_tendermint_update_session
 use update_staged_client
 
@@ -61,7 +61,8 @@ fn verify_client(
   let tx =
     Transaction { ..tx, redeemers: [Pair(Spend(ref), raw), ..tx.redeemers] }
   and {
-    spending_multitx_client.spend_multitx_client.spend(
+    spending_multitx_client.validate_guard(
+      True,
       host_policy,
       update_script,
       credential,

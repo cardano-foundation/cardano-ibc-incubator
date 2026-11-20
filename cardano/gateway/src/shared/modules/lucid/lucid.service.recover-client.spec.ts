@@ -1,3 +1,9 @@
+import { withClientRecoveryApproval } from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
+jest.mock('@cardano-ibc/tx-builder-runtime/migrationRuntime', () => ({
+  ...jest.requireActual('@cardano-ibc/tx-builder-runtime/migrationRuntime'),
+  withClientRecoveryApproval: jest.fn(async (_lucid, tx) => tx),
+  withMigrationReference: jest.fn(async (_lucid, tx) => tx),
+}));
 import { LucidService } from './lucid.service';
 
 describe('LucidService recover client wiring', () => {
@@ -56,8 +62,13 @@ describe('LucidService recover client wiring', () => {
       'new-subject-datum',
       'subject-unit',
       'signer-key-hash',
+      { substituteUnit: 'substitute-unit', validFrom: 100, validTo: 200 },
     );
 
+    expect(withClientRecoveryApproval).toHaveBeenCalledWith(
+      service.lucid, txBuilder, service.configService.get('deployment'),
+      'subject-unit', 'substitute-unit', 100, 200,
+    );
     expect(result).toBe(txBuilder);
     expect(txBuilder.readFrom).toHaveBeenCalledWith([
       service.referenceScripts.hostStateStt,
@@ -128,7 +139,7 @@ describe('LucidService recover client wiring', () => {
     service.referenceScripts.recoverClient = undefined;
 
     await expect(
-      async () => await service.createUnsignedRecoverClientTransaction({}, '', {}, '', {}, '', '', '', '', ''),
+      async () => await service.createUnsignedRecoverClientTransaction({}, '', {}, '', {}, '', '', '', '', '', { substituteUnit: 'substitute', validFrom: 100, validTo: 200 }),
     ).rejects.toThrow('Tendermint client recovery is not configured');
   });
 });

@@ -1,3 +1,5 @@
+import { DEPLOYMENT_PLAN_FIXTURE } from "./deployment-plan.ts";
+import { testDeploymentGovernance } from "./testing/deployment-governance.ts";
 import { assert, assertEquals, assertThrows } from "@std/assert";
 import {
   CML,
@@ -77,6 +79,7 @@ async function batchingFixture(extraWalletOutputs = 0) {
     output_index: BigInt(index),
   });
   const plan = await loadDeploymentPlan(lucid, {
+    migration: DEPLOYMENT_PLAN_FIXTURE.migration,
     hostStateNonce: outref(FUNDING_INDEX),
     transferModuleNonce: outref(COLLATERAL_INDEX),
     traceDirectoryNonce: outref(DIRECTORY_NONCE_INDEX),
@@ -208,7 +211,7 @@ for (const splitRequired of [true, false]) {
     }).address;
     const fundedNonceCount = splitRequired
       ? 0
-      : RESERVED_DEPLOYMENT_NONCE_COUNT;
+      : RESERVED_DEPLOYMENT_NONCE_COUNT + 1;
     const balances = [
       50_000_000_000n,
       5_000_000n,
@@ -243,7 +246,7 @@ for (const splitRequired of [true, false]) {
     Deno.env.set("CARDANO_NETWORK_MAGIC", "42");
     try {
       const deployment = await createDeployment(lucid, undefined, {
-        deploymentMode: "legacy",
+        migration: await testDeploymentGovernance(lucid),
       });
       const traceRegistry = deployment.traceRegistry;
       assert(traceRegistry);
@@ -270,10 +273,17 @@ for (const splitRequired of [true, false]) {
           fundedOutputs++;
         }
       }
-      assertEquals(fundedOutputs, RESERVED_DEPLOYMENT_NONCE_COUNT + 16);
+      assertEquals(fundedOutputs, RESERVED_DEPLOYMENT_NONCE_COUNT + 1 + 16);
     } else {
-      // Register recovery, staging and all three cached verifier credentials.
-      assertEquals(firstBody.certs()?.len(), 5);
+      // With funded nonces the first transaction bootstraps the registry.
+      assert(firstBody.mint());
+      assertEquals(
+        submissions.reduce(
+          (count, tx) => count + (tx.body().certs()?.len() ?? 0),
+          0,
+        ),
+        6,
+      );
     }
   });
 }

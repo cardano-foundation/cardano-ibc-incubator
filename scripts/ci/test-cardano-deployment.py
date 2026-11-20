@@ -107,8 +107,7 @@ def main():
                 env[key] = value.strip().strip('"')
         for key in ["KUPO_API_KEY", "OGMIOS_API_KEY"]:
             env.pop(key, None)
-        env["IBC_DEPLOYMENT_MODE"] = "legacy"
-        env.pop("MIGRATION_GOVERNANCE_FILE", None)
+        env.pop("IBC_DEPLOYMENT_MODE", None)
         inventory_path = runtime_root / "deployment-plan.json"
         cost_path = runtime_root / "deployment-cost-report.json"
         env.update({"KUPO_URL": kupo, "OGMIOS_URL": ogmios, "CARDANO_NETWORK_MAGIC": "42", "DEPLOYMENT_PLAN_OUTPUT": str(inventory_path), "DEPLOYMENT_COST_REPORT_PATH": str(cost_path)})
@@ -118,6 +117,11 @@ def main():
             str(OFFCHAIN / "scripts/get-wallet-address.ts"),
         ], cwd=runtime_root, env=env)
         wallet = json.loads(address_output)["address"]
+        address_info = json.loads(cli("address", "info", "--address", wallet))
+        authority = bytes.fromhex(address_info["base16"])[1:29].hex()
+        governance_path = runtime_root / "migration-governance.json"
+        governance_path.write_text(json.dumps({"signers": [authority], "quorum": "1", "delay_ms": "86400000", "emergency": {"signers": ["ee" * 28], "quorum": "1"}}) + "\n")
+        env["MIGRATION_GOVERNANCE_FILE"] = str(governance_path)
         runtime.fund(wallet, 100_000_000_000)
         wait_for("deployer funding", lambda: sum(
             output["value"]["coins"] for output in get_json(kupo + "/matches/" + wallet + "?unspent")
@@ -137,8 +141,8 @@ def main():
         print(f"Running production deployment; log: {log_path}", flush=True)
         with log_path.open("w") as log:
             subprocess.run(["deno", "run", "--config", str(OFFCHAIN / "deno.json"), "--import-map", str(import_map_path), "--allow-net", "--allow-env", "--allow-read", "--allow-run", "--allow-ffi", "--allow-write", str(OFFCHAIN / "index.ts")], cwd=runtime_root, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-        manifest = runtime_root / "deployments/handler.json"
-        shutil.copy2(manifest, runtime_root / "handler.json")
+        manifest = runtime_root / "deployments/bridge-manifest.json"
+        shutil.copy2(manifest, runtime_root / "bridge-manifest.json")
         plan = json.loads(inventory_path.read_text())
         expected = {validator["hash"] for validator in plan["referenceValidators"]}
         holder = next(validator["address"] for validator in plan["inlineValidators"] if validator["title"] == "reference_validator.refer_only.else")

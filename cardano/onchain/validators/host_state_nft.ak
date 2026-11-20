@@ -21,11 +21,12 @@ use cardano/transaction.{
   Transaction, find_input,
 }
 use ibc/core/ics_025_handler_interface/host_state.{
-  HostStateDatum, host_state_token_name,
+  HostStateDatum, host_state_token_name, validate_finalize_shutdown,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   FinalizeShutdown, HostStateRedeemer,
 }
+use ibc/utils/validator_utils
 
 /// Redeemer for the HostState NFT policy
 pub type NFTRedeemer {
@@ -51,6 +52,7 @@ fn validate_final_host_state_spend(
   inputs: List<Input>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   policy_id: PolicyId,
+  transaction: Transaction,
 ) -> Bool {
   expect Some(host_input) =
     list.find(
@@ -66,6 +68,12 @@ fn validate_final_host_state_spend(
   expect InlineDatum(raw) = host_input.output.datum
   expect datum: HostStateDatum = raw
   and {
+    datum.nft_policy == policy_id,
+    list.has(transaction.extra_signatories, datum.deployer),
+    validate_finalize_shutdown(
+      datum,
+      validator_utils.get_tx_valid_from(transaction.validity_range),
+    ),
     datum.control.live_clients == 0,
     datum.control.live_connections == 0,
     datum.control.live_channels == 0,
@@ -92,7 +100,12 @@ validator host_state_nft(utxo_ref: OutputReference) {
           quantity == 1,
         }
       BurnFinal -> and {
-          validate_final_host_state_spend(inputs, redeemers, policy_id),
+          validate_final_host_state_spend(
+            inputs,
+            redeemers,
+            policy_id,
+            transaction,
+          ),
           quantity == -1,
         }
     }

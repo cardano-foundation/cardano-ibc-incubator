@@ -1,6 +1,6 @@
 # State-preserving bridge redeployment
 
-This implements compatible contract replacement for [issue #462](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/462): new contracts, the same bridge, existing vouchers and outstanding claims. It requires a fresh `cardano-ibc-compatible-v5` deployment with migration enabled. Production release remains blocked on the qualifications below.
+This implements compatible contract replacement for [issue #462](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/462): new contracts, the same bridge, existing vouchers and outstanding claims. It requires a fresh `cardano-ibc-compatible-v6` governed deployment. Production release remains blocked on the qualifications below.
 
 ## Mechanism and compatibility
 
@@ -26,31 +26,39 @@ Containment takes effect on canonical inclusion and is enforced against direct t
 
 ## Operator procedure
 
-Select `IBC_DEPLOYMENT_MODE=upgradeable` and supply a valid `MIGRATION_GOVERNANCE_FILE` before deploying. Configuration needs explicit signer hashes, quorum, delay and a disjoint emergency signer set. Missing or contradictory configuration fails before deployment. Intentional immutable deployment requires explicit `legacy` selection. Readiness checks authenticate deployed registry/state identities and current addresses rather than trusting a manifest label.
+Every deployment uses the governed upgradeable model. Supply `MIGRATION_GOVERNANCE_FILE` with explicit signer hashes, quorum, delay and a disjoint emergency signer set. There is no deployment mode switch. The deployer and Gateway reject `IBC_DEPLOYMENT_MODE`. Gateway and SDK manifests require the current `cardano-ibc-compatible-v6` profile. Older deployments need redeployment. Readiness checks still authenticate the canonical registry and implementation addresses.
 
-Retain the original handler, applied policies, full canonical history and reviewed successor blueprint. Use Aiken `1.1.24` and Deno `2.9.6` with locked dependencies. Set `KUPO_URL`, `OGMIOS_URL` and `CARDANO_NETWORK_MAGIC` explicitly. The migration CLI does not load `.env.default`. Submission uses the explicitly supplied `MIGRATION_EXECUTOR_SK`. Ensure the counterparty can catch up and its trust window accommodates the pause. Fund the executor separately for fees, collateral and deposits.
+## Governed shutdown
+
+Entering shutdown requires the current deployer and the governance quorum. The registry must be `Ready` with no pending proposal or active migration. Shutdown immediately stops new work. Reclamation waits until a grace period of at least 24 hours and at least the configured governance delay has passed. Existing packet obligations and voucher returns still need to drain before their dependencies can be reclaimed. Shutdown cannot be cancelled.
+
+Run `deno task shutdown:deployment enter --manifest <bridge-manifest.json> --grace-period-ms <milliseconds> --signers <governor-key-hashes> --out <unsigned.json>` to export the exact transaction body. Collect the deployer and quorum signatures before submitting it. The export does not submit a partially signed transaction. After draining and the grace period, use `reclaim-state`, `reclaim-reference-scripts` and `finalize`. Finalization burns the HostState NFT. Governance and client-verifier staking deposits are reclaimed before finalization. The immutable implementation-registry NFT and its minimum ADA remain as the permanent deployment identity. Its one-shot policy does not permit burning that identity.
+
+## Migration procedure
+
+Retain the original manifest, applied policies, full canonical history and reviewed successor blueprint. Use Aiken `1.1.24` and Deno `2.9.6` with locked dependencies. Set `KUPO_URL`, `OGMIOS_URL` and `CARDANO_NETWORK_MAGIC` explicitly. The migration CLI does not load `.env.default`. Submission uses the explicitly supplied `MIGRATION_EXECUTOR_SK`. Ensure the counterparty can catch up and its trust window accommodates the pause. Fund the executor separately for fees, collateral and deposits.
 
 From `cardano/offchain`, inspect and prepare the reviewed plan:
 
 ```sh
-deno task migrate:deployment inspect --handler /artifacts/handler-v1.json
-deno task migrate:deployment prepare --handler /artifacts/handler-v1.json \
+deno task migrate:deployment inspect --manifest /artifacts/bridge-manifest-v1.json
+deno task migrate:deployment prepare --manifest /artifacts/bridge-manifest-v1.json \
   --blueprint /artifacts/reviewed-v2/plutus.json --out /artifacts/migration-v2.json
 ```
 
-Retain the reported plan digest. `publish` uses `--handler`, `--plan`, `--outbox` and `--submit` to publish references with the explicitly configured executor. `authorize` uses `--handler`, `--plan`, `--signers`, `--expires-at`, `--wallet-address` and `--out` to export an unsigned approval for the normal quorum-signing workflow. Expiry is a POSIX millisecond timestamp beyond the approval delay and intended start. A stale approval transaction needs rebuilding and fresh signatures over its exact body.
+Retain the reported plan digest. `publish` uses `--manifest`, `--plan`, `--outbox` and `--submit` to publish references with the explicitly configured executor. `authorize` uses `--manifest`, `--plan`, `--signers`, `--expires-at`, `--wallet-address` and `--out` to export an unsigned approval for the normal quorum-signing workflow. Expiry is a POSIX millisecond timestamp beyond the approval delay and intended start. A stale approval transaction needs rebuilding and fresh signatures over its exact body.
 
 After approval matures, execute bounded steps:
 
 ```sh
-deno task migrate:deployment execute --handler /artifacts/handler-v1.json \
+deno task migrate:deployment execute --manifest /artifacts/bridge-manifest-v1.json \
   --plan /artifacts/migration-v2.json --outbox /artifacts/v2-outbox \
   --max-steps 20 --submit
 ```
 
 Use `resume` with the same arguments after interruption. Every step reads canonical registry state, waits for provider inclusion and verifies output adoption. This does not establish irreversible finality or pipeline unconfirmed transactions. The disposable inventory cache verifies its root against the registry and rebuilds after unexpected progress, restart or rollback. Stale or incomplete inventory stops execution. Preserve the outbox and signed revisions, and inspect canonical state before retrying an unresolved submission.
 
-Before activation, use Gateway's `export:migration-witness` command with the original handler and an output path. It reconstructs and authenticates the transfer-port proof from retained history. Supply that path through `--port-witness` when resuming. After activation, `verify --handler ... --plan ... --out ...` produces the successor handler. Export Gateway's normalized bridge manifest, update Gateway and Hermes' pinned manifest, then restart them. Recheck historical proofs, old redemption/refund/remint and new traffic on the existing routes. Retain original addresses and history. Repeat from the verified successor handler for the next migration.
+Before activation, use Gateway's `export:migration-witness` command with the original manifest and an output path. It reconstructs and authenticates the transfer-port proof from retained history. Supply that path through `--port-witness` when resuming. After activation, `verify --manifest ... --plan ... --out ...` produces the successor manifest. Update Gateway and Hermes' pinned manifest, then restart them. Recheck historical proofs, old redemption/refund/remint and new traffic on the existing routes. Retain original addresses and history. Repeat from the verified successor manifest for the next migration.
 
 ## Executed evidence
 
@@ -76,17 +84,17 @@ The migration rehearsal uses the same five-producer Yaci DevKit provisioner as C
 
 ## Light client recovery
 
-The same registry quorum can approve recovery of a frozen or expired Aiken Tendermint client. Create and review an active substitute first. The subject and substitute must already exist at the current client implementation. From `cardano/offchain`, use `deno task migrate:deployment nominate-client-recovery --handler <handler.json> --subject-client-unit <unit> --substitute-client-unit <unit> --signers <governor-key-hashes> --expires-at <milliseconds> --wallet-address <address> --out <approval.json>`. Units include the client policy ID and asset name. The quorum signs the exact exported transaction.
+The same registry quorum can approve recovery of a frozen or expired Aiken Tendermint client. Create and review an active substitute first. The subject and substitute must already exist at the current client implementation. From `cardano/offchain`, use `deno task migrate:deployment nominate-client-recovery --manifest <bridge-manifest.json> --subject-client-unit <unit> --substitute-client-unit <unit> --signers <governor-key-hashes> --expires-at <milliseconds> --wallet-address <address> --out <approval.json>`. Units include the client policy ID and asset name. The quorum signs the exact exported transaction.
 
 The proposal binds the two client identities and current implementation generation. It shares the existing proposal slot and delay of at least 24 hours with deployer graduation and contract replacement. The substitute may continue normal verified updates while approval matures. Execution checks its current state rather than pinning an old checkpoint.
 
 After the delay, submit the normal Gateway `RecoverClient` request with the approved subject and substitute. Any funded payment-key signer can execute it. The transaction consumes the approval together with HostState and the subject client. It returns the registry to `Ready`. The deployer key cannot authorize recovery by itself. Cancelled, consumed, expired and mismatched approvals fail. The client-maintenance emergency restriction also applies.
 
-Recovery retains the existing checks for a non-active subject and an active newer substitute with compatible parameters. It preserves the subject client identity, consensus history, bridge assets and packet state. It adopts the substitute's verified checkpoint and clears the frozen height. This requires a fresh `cardano-ibc-compatible-v5` registry and recovery credential. Earlier deployments retain their original authorization rules. Ordinary implementation migration cannot add actions to an immutable registry.
+Recovery retains the existing checks for a non-active subject and an active newer substitute with compatible parameters. It preserves the subject client identity, consensus history, bridge assets and packet state. It adopts the substitute's verified checkpoint and clears the frozen height. The current deployment profile includes the matching immutable registry and recovery credential. Earlier artifacts must be replaced by a fresh deployment.
 
 ## Deployer graduation
 
-New upgradeable deployments support replacing the bridge admin through the existing migration governance authority. The signer set and quorum in the authenticated implementation registry decide who can approve a successor. The current deployer has no veto. Possessing the backup key alone gives no authority in this mode. Caribic records the backup payment key hash as a suggested successor and still requires governance to approve that exact key.
+The governance quorum can replace the bridge admin after its configured delay. The current deployer has no veto. The successor is an explicit input to the approval transaction.
 
 `nominate-deployer` creates a `NominateDeployer` proposal containing the successor payment key hash, current implementation generation and next registry nonce. The registry requires its fixed authority script to verify the configured quorum through transaction signatories. It records an activation time derived from the approval transaction's upper validity bound plus the existing governance delay, which is at least 24 hours. The proposal has an explicit expiry. It shares the proposal slot with code replacement and governance rotation so those decisions cannot race. Normal bridge operations continue while approval is pending.
 
@@ -94,8 +102,8 @@ New upgradeable deployments support replacing the bridge admin through the exist
 
 Execution changes the HostState deployer key and increments its version. It preserves the IBC commitment, all counters and live-state counts, port registrations, shutdown status, address, reference script and protected assets. Other bridge objects cannot be spent in the handover transaction. Existing clients, channels, escrow and outstanding voucher obligations remain in place. The old admin loses admin-only operations such as port binding. Heartbeat remains permissionless. The successor does not acquire migration-governance votes. Code migration still requires the configured governance quorum and delay. If the outgoing admin is separately a named governor, graduation does not remove that independent vote. Use the existing governance rotation process to change the voter set.
 
-Upgradeable deployments continue to reject destructive shutdown for both the old admin and the successor. This handover does not enable legacy cleanup against live upgradeable state. Emergency restrictions stay unchanged. As with governance-authority rotation, emergency keys cannot veto admin replacement, but the successor remains subject to every existing restriction. The upgradeable HostState rejects `ClaimBackup` before and after graduation, so a single backup key cannot bypass quorum approval.
+The new deployer can enter shutdown only with the governance quorum and a Ready registry. Existing emergency restrictions remain in force. Deployer replacement always requires governance approval.
 
-`v4` already supports deployer graduation. `v5` adds quorum client recovery. These capabilities require the matching immutable registry and applied scripts. Updating Caribic or a handler cannot add them to an older deployment. Ordinary implementation migration cannot replace that registry. Existing legacy deployments keep their original backup and shutdown rules. Runtime readers continue to accept `v3` and `v4` manifests for ordinary operations.
+The current `v6` profile includes deployer graduation, quorum client recovery and governed shutdown. Runtime readers reject earlier profiles. Updating a manifest does not upgrade deployed scripts and cannot replace redeployment.
 
-Caribic exposes `deployer nominate-deployer`, `deployer graduate-deployer`, `deployer inspect` and `deployer cancel`. The same actions are available through `scripts/migrate-deployment.ts`. Approval supports unsigned export for collecting governance witnesses. Execution supports the existing durable submission flow. The deployment-time backup prompt is optional with a warning on local and public testnets. Mainnet deployment planning requires a distinct backup nominee. Caribic itself still has no mainnet runtime.
+Caribic exposes `deployer nominate-deployer`, `deployer graduate-deployer`, `deployer inspect` and `deployer cancel`. The same actions are available through `scripts/migrate-deployment.ts`. Approval supports unsigned export for collecting governance witnesses. Execution supports the existing durable submission flow.

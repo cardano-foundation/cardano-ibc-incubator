@@ -1,3 +1,12 @@
+import { withMigrationReference } from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
+
+// These tests inspect transaction wiring. Registry authentication is exercised
+// against a real provider in bridge-manifest.spec.ts.
+jest.mock('@cardano-ibc/tx-builder-runtime/migrationRuntime', () => ({
+  ...jest.requireActual('@cardano-ibc/tx-builder-runtime/migrationRuntime'),
+  withMigrationReference: jest.fn(async (_lucid, tx) => tx),
+}));
+
 import { LucidService } from './lucid.service';
 
 function utxo(txHash: string, outputIndex: number) {
@@ -62,6 +71,9 @@ describe('LucidService prune packet history transaction', () => {
     };
 
     expect(await service.createUnsignedPrunePacketHistoryTx(dto)).toBe(tx);
+    expect(withMigrationReference).toHaveBeenCalledWith(
+      service.lucid, tx, service.configService.getOrThrow('deployment'), false, 1n,
+    );
     expect(tx.readFrom).toHaveBeenNthCalledWith(1, [
       service.referenceScripts.spendChannel,
       service.referenceScripts.prunePacketHistory,

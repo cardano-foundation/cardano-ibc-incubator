@@ -1,3 +1,9 @@
+import { Registry } from "../types/plutus/Migration.ts";
+import {
+  shutdownRegistryReference,
+  withShutdownAuthority,
+} from "../src/shutdown.ts";
+import { deploymentFromManifest } from "../src/deployment-artifacts.ts";
 import { toOgmiosScript } from "../src/ogmios-script.ts";
 import {
   assertNoDeploymentState,
@@ -48,7 +54,6 @@ import {
 
 type Command =
   | "status"
-  | "claim-backup"
   | "enter"
   | "reclaim-state"
   | "reclaim-reference-scripts"
@@ -56,13 +61,15 @@ type Command =
 
 type ScriptArgs = {
   command: Command;
-  handlerJsonPath: string;
+  manifestPath: string;
   gracePeriodEnd?: number;
   gracePeriodMs?: number;
   batchSize: number;
+  signers?: string[];
+  out?: string;
 };
 
-const DEFAULT_HANDLER_JSON_PATH = "./deployments/handler.json";
+const DEFAULT_BRIDGE_MANIFEST_PATH = "./deployments/bridge-manifest.json";
 const DEFAULT_REFERENCE_RECLAIM_BATCH_SIZE = 10;
 const DEFAULT_KUPMIOS_SUBMIT_TIMEOUT_MS = 60000;
 const TX_VALIDITY_WINDOW_MS = 10 * 60 * 1000;
@@ -542,12 +549,11 @@ function usage(): never {
   throw new Error(
     [
       "Usage:",
-      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts status [--handler-json <path>]",
-      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts claim-backup [--handler-json <path>]",
-      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts enter (--grace-period-ms <ms> | --grace-period-end <unix-ms>) [--handler-json <path>]",
-      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts reclaim-state [--batch-size <n>] [--handler-json <path>]",
-      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts reclaim-reference-scripts [--batch-size <n>] [--handler-json <path>]",
-      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts finalize [--handler-json <path>]",
+      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts status [--manifest <path>]",
+      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-write --allow-run --allow-ffi scripts/shutdown-deployment.ts enter (--grace-period-ms <ms> | --grace-period-end <unix-ms>) [--manifest <path>] [--signers <key-hashes> --out <unsigned.json>]",
+      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts reclaim-state [--batch-size <n>] [--manifest <path>]",
+      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts reclaim-reference-scripts [--batch-size <n>] [--manifest <path>]",
+      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts finalize [--manifest <path>]",
       "",
       "Before finalizing, close or migrate every connected counterparty client. Finalizing burns the HostState NFT and permanently stops state updates.",
     ].join("\n"),
@@ -569,7 +575,6 @@ function parseArgs(argv: string[]): ScriptArgs {
   const command = argv[0] as Command | undefined;
   if (
     command !== "status" &&
-    command !== "claim-backup" &&
     command !== "enter" &&
     command !== "reclaim-state" &&
     command !== "reclaim-reference-scripts" &&
@@ -578,16 +583,30 @@ function parseArgs(argv: string[]): ScriptArgs {
     usage();
   }
 
-  let handlerJsonPath = DEFAULT_HANDLER_JSON_PATH;
+  let manifestPath = DEFAULT_BRIDGE_MANIFEST_PATH;
   let gracePeriodEnd: number | undefined;
   let gracePeriodMs: number | undefined;
   let batchSize = DEFAULT_REFERENCE_RECLAIM_BATCH_SIZE;
+  let signers: string[] | undefined;
+  let out: string | undefined;
 
   for (let index = 1; index < argv.length; index += 1) {
     const arg = argv[index];
     switch (arg) {
-      case "--handler-json":
-        handlerJsonPath = argv[index + 1];
+      case "--signers":
+        signers = (argv[++index] ?? "").split(",");
+        if (signers.some((key) => !/^[0-9a-f]{56}$/.test(key))) {
+          throw new Error(
+            "--signers requires comma-separated payment key hashes",
+          );
+        }
+        break;
+      case "--out":
+        out = argv[++index];
+        if (!out) throw new Error("--out requires a path");
+        break;
+      case "--manifest":
+        manifestPath = argv[index + 1];
         index += 1;
         break;
       case "--grace-period-end":
@@ -611,7 +630,11 @@ function parseArgs(argv: string[]): ScriptArgs {
     }
   }
 
-  if (!handlerJsonPath) {
+  if (command !== "enter" && (signers || out)) {
+    throw new Error("--signers and --out are only valid for enter");
+  }
+
+  if (!manifestPath) {
     usage();
   }
 
@@ -631,10 +654,12 @@ function parseArgs(argv: string[]): ScriptArgs {
 
   return {
     command,
-    handlerJsonPath,
+    manifestPath,
     gracePeriodEnd,
     gracePeriodMs,
     batchSize,
+    signers,
+    out,
   };
 }
 
@@ -697,7 +722,7 @@ export async function buildOperationalLucid(
 }
 
 async function loadDeployment(path: string): Promise<DeploymentTemplate> {
-  return JSON.parse(await Deno.readTextFile(path)) as DeploymentTemplate;
+  return deploymentFromManifest(JSON.parse(await Deno.readTextFile(path)));
 }
 
 function normalizeAssets(
@@ -745,7 +770,7 @@ function deployerPaymentKeyHash(address: string): string {
 
 function hostStateUnit(deployment: DeploymentTemplate): string {
   if (!deployment.hostStateNFT) {
-    throw new Error("handler.json does not contain hostStateNFT");
+    throw new Error("bridge-manifest.json does not contain host_state_nft");
   }
   return deployment.hostStateNFT.policyId + deployment.hostStateNFT.name;
 }
@@ -754,7 +779,7 @@ function hostStateNftPolicy(deployment: DeploymentTemplate) {
   const hostStateNFT = deployment.hostStateNFT;
   if (!hostStateNFT?.script) {
     throw new Error(
-      "handler.json does not contain the burn-capable HostState NFT policy script. Deployments created before burn support must be migrated instead of finalized",
+      "bridge-manifest.json does not contain the burn-capable HostState NFT policy script. Deployments created before burn support must be migrated instead of finalized",
     );
   }
 
@@ -786,7 +811,7 @@ const CACHED_SCRIPT_TITLES = {
   generalUpdateCore:
     "verify_general_cached_client.verify_general_cached_client.withdraw",
   stagedUpdate: "update_staged_client.update_staged_client.withdraw",
-  cacheSpend: "spending_validator_cache.spend_validator_cache.spend",
+  cacheSpend: "upgradeable/validator_cache.validator_cache.spend",
   cacheMint: "minting_validator_cache.mint_validator_cache.mint",
 } as const;
 
@@ -795,7 +820,6 @@ function cachedShutdownValidators(
 ): CachedTendermintDeployment["validators"] | undefined {
   const cached = deployment.cachedTendermint;
   const usesCachedClient = [
-    "spending_cached_client.spend_cached_client.spend",
     "upgradeable/cached_client.cached_client.spend",
   ].includes(deployment.validators.spendClient?.title) ||
     deployment.validators.updateClient?.title === CACHED_SCRIPT_TITLES.update;
@@ -812,10 +836,7 @@ function cachedShutdownValidators(
     Object.entries(CACHED_SCRIPT_TITLES).some(([role, title]) => {
       const validator = cached.validators
         ?.[role as keyof typeof CACHED_SCRIPT_TITLES];
-      const expected =
-        role === "cacheSpend" && deployment.deploymentMode === "upgradeable"
-          ? "upgradeable/validator_cache.validator_cache.spend"
-          : title;
+      const expected = title;
       return !validator || validator.title !== expected || !validator.refUtxo;
     })
   ) {
@@ -846,6 +867,9 @@ export function shutdownStakeValidators(
       : []),
     ...(cached ? CACHED_WITHDRAWAL_ROLES.map((role) => cached[role]) : []),
     recovery,
+    ...(deployment.migration?.governanceAuthority
+      ? [deployment.migration.governanceAuthority]
+      : []),
   ];
   return [
     ...new Map(validators.map((validator) => [validator.address, validator]))
@@ -869,6 +893,12 @@ function deploymentReferenceOutRefs(
         ...Object.values(validator.refValidator).map((entry) => entry.refUtxo),
       );
     }
+  }
+  if (deployment.migration) {
+    refs.push(
+      deployment.migration.registryReference,
+      deployment.migration.governanceAuthority!.refUtxo,
+    );
   }
   const cached = cachedShutdownValidators(deployment);
   if (cached) {
@@ -961,7 +991,7 @@ function readReferenceValidator(
   deployment: DeploymentTemplate,
 ) {
   if (!deployment.hostStateNFT) {
-    throw new Error("handler.json does not contain hostStateNFT");
+    throw new Error("bridge-manifest.json does not contain host_state_nft");
   }
   return readValidator(
     "reference_validator.refer_only.else",
@@ -1060,7 +1090,6 @@ async function status(lucid: LucidEvolution, deployment: DeploymentTemplate) {
       unit: hostStateUnit(deployment),
       utxo: `${hostUtxo.txHash}#${hostUtxo.outputIndex}`,
       deployer: hostDatum.deployer,
-      backupOperator: deployment.backupOperatorKeyHash ?? null,
       shutdown: hostDatum.control.shutdown,
     },
     state: (await scanDeploymentState(lucid, deployment)).map((group) => ({
@@ -1079,60 +1108,13 @@ async function status(lucid: LucidEvolution, deployment: DeploymentTemplate) {
   }));
 }
 
-export async function claimBackup(
+export async function buildEnterShutdownTx(
   lucid: LucidEvolution,
   deployment: DeploymentTemplate,
-) {
-  const backupOperator = deployment.backupOperatorKeyHash;
-  if (!backupOperator) {
-    throw new Error("This deployment did not name a backup operator");
-  }
-  const signerKeyHash = deployerPaymentKeyHash(await lucid.wallet().address());
-  if (signerKeyHash.toLowerCase() !== backupOperator.toLowerCase()) {
-    throw new Error("The selected wallet is not the named backup operator");
-  }
-  const hostUtxo = await getHostStateUtxo(lucid, deployment);
-  const currentDatum = decodeHostStateDatum(hostUtxo);
-  if (currentDatum.deployer.toLowerCase() === signerKeyHash.toLowerCase()) {
-    throw new Error("The backup operator is already the deployer");
-  }
-  const updatedDatum: HostStateDatumType = {
-    ...currentDatum,
-    deployer: signerKeyHash,
-    state: {
-      ...currentDatum.state,
-      version: currentDatum.state.version + 1n,
-    },
-  };
-  const hostStateSttReferenceUtxo = await refreshUtxoByRef(
-    lucid,
-    normalizeUtxo(deployment.validators.hostStateStt.refUtxo),
-  );
-  const txHash = await submitTx(
-    () =>
-      lucid
-        .newTx()
-        .readFrom([hostStateSttReferenceUtxo])
-        .collectFrom([hostUtxo], Data.to("ClaimBackup", HostStateRedeemer))
-        .pay.ToContract(
-          deployment.validators.hostStateStt.address,
-          {
-            kind: "inline",
-            value: Data.to(updatedDatum, HostStateDatum, { canonical: true }),
-          },
-          hostUtxo.assets,
-        )
-        .addSignerKey(signerKeyHash),
-    lucid,
-    "ClaimDeployerBackup",
-  );
-  console.log(toJson({ txHash, deployer: signerKeyHash }));
-}
-
-export async function enterShutdown(
-  lucid: LucidEvolution,
-  deployment: DeploymentTemplate,
-  grace: Pick<ScriptArgs, "gracePeriodEnd" | "gracePeriodMs">,
+  grace: Pick<
+    ScriptArgs,
+    "gracePeriodEnd" | "gracePeriodMs" | "signers" | "out"
+  >,
 ) {
   const hostUtxo = await getHostStateUtxo(lucid, deployment);
   const currentDatum = decodeHostStateDatum(hostUtxo);
@@ -1169,35 +1151,81 @@ export async function enterShutdown(
     normalizeUtxo(deployment.validators.hostStateStt.refUtxo),
   );
 
-  const txHash = await submitTx(
-    () =>
-      lucid
-        .newTx()
-        .readFrom([hostStateSttReferenceUtxo])
-        .collectFrom(
-          [hostUtxo],
-          Data.to(redeemer, HostStateRedeemer, { canonical: true }),
-        )
-        .pay.ToContract(
-          deployment.validators.hostStateStt.address,
-          {
-            kind: "inline",
-            value: Data.to(updatedDatum, HostStateDatum, { canonical: true }),
-          },
-          hostUtxo.assets,
-        )
-        .addSignerKey(signerKeyHash)
-        .validFrom(validFrom)
-        .validTo(validTo),
-    lucid,
-    "EnterDeploymentShutdown",
-  );
+  const registryReferences = await shutdownRegistryReference(lucid, deployment);
+  const signers = [
+    ...new Set([
+      signerKeyHash,
+      currentDatum.deployer,
+      ...(grace.signers ?? []),
+    ]),
+  ];
+  {
+    const registry = Data.from(registryReferences[0].datum!, Registry);
+    if (BigInt(gracePeriodEnd - validTo) < registry.governance.delay_ms) {
+      throw new Error("Shutdown grace must cover the governance delay");
+    }
+    if (
+      BigInt(
+        registry.governance.signers.filter((key) => signers.includes(key))
+          .length,
+      ) < registry.governance.quorum
+    ) {
+      throw new Error(
+        "Shutdown requires the governance quorum as required signers",
+      );
+    }
+  }
+  const build = () => {
+    const tx = lucid
+      .newTx()
+      .readFrom([hostStateSttReferenceUtxo, ...registryReferences])
+      .collectFrom(
+        [hostUtxo],
+        Data.to(redeemer, HostStateRedeemer, { canonical: true }),
+      )
+      .pay.ToContract(
+        deployment.validators.hostStateStt.address,
+        {
+          kind: "inline",
+          value: Data.to(updatedDatum, HostStateDatum, { canonical: true }),
+        },
+        hostUtxo.assets,
+      )
+      .addSignerKey(signerKeyHash)
+      .validFrom(validFrom)
+      .validTo(validTo);
+    for (const key of signers) tx.addSignerKey(key);
+    return withShutdownAuthority(tx, deployment);
+  };
+  return build();
+}
 
-  console.log(toJson({
-    txHash,
-    initiatedAt: validTo,
-    gracePeriodEnd,
-  }));
+export async function enterShutdown(
+  lucid: LucidEvolution,
+  deployment: DeploymentTemplate,
+  grace: Pick<
+    ScriptArgs,
+    "gracePeriodEnd" | "gracePeriodMs" | "signers" | "out"
+  >,
+) {
+  if (!grace.out) {
+    throw new Error(
+      "Shutdown requires --out for signing the exact transaction with the deployer and governance quorum",
+    );
+  }
+  const tx = await buildEnterShutdownTx(lucid, deployment, grace);
+  if (grace.out) {
+    const completed = await tx.complete({ localUPLCEval: false });
+    await Deno.writeTextFile(
+      grace.out,
+      toJson({
+        format: "cardano-ibc-shutdown-unsigned-v1",
+        cbor: completed.toCBOR(),
+      }),
+    );
+    console.log(`Unsigned shutdown transaction written to ${grace.out}`);
+    return;
+  }
 }
 
 async function recoveryStakeRegistered(
@@ -1241,12 +1269,14 @@ export function buildReclaimRecoveryStakeTx(
   hostUtxo: UTxO,
   signerKeyHash: string,
   validFrom: number,
+  registryReferences: UTxO[],
 ) {
   const recovery = deployment.validators.recoverClient;
   if (!recovery) throw new Error("Missing client recovery validator");
   const validators = shutdownStakeValidators(deployment);
   const tx = lucid.newTx().readFrom([
     hostUtxo,
+    ...registryReferences,
     ...validators.map((validator) => validator.refUtxo),
   ]);
   for (const validator of validators) {
@@ -1380,6 +1410,10 @@ async function reclaimState(
   }
   if (await recoveryStakeRegistered(deployment)) {
     const liveHostUtxo = await getHostStateUtxo(lucid, deployment);
+    const registryReferences = await shutdownRegistryReference(
+      lucid,
+      deployment,
+    );
     await submitTx(
       () =>
         buildReclaimRecoveryStakeTx(
@@ -1388,6 +1422,7 @@ async function reclaimState(
           liveHostUtxo,
           signer,
           requireGracePeriodElapsed(graceEnd),
+          registryReferences,
         ),
       lucid,
       "ReclaimRecoveryStakingDeposit",
@@ -1482,6 +1517,7 @@ async function finalizeShutdown(
     "Finalizing burns the HostState NFT permanently. Connected counterparty clients must already be closed or migrated.",
   );
 
+  const registryReferences = await shutdownRegistryReference(lucid, deployment);
   const txHash = await submitTx(
     () =>
       buildFinalizeShutdownTx(
@@ -1492,6 +1528,7 @@ async function finalizeShutdown(
         walletAddress,
         signerKeyHash,
         validFrom,
+        registryReferences,
       ),
     lucid,
     "FinalizeDeploymentShutdown",
@@ -1508,6 +1545,7 @@ export function buildFinalizeShutdownTx(
   walletAddress: string,
   signerKeyHash: string,
   validFrom: number,
+  registryReferences: UTxO[] = [],
 ) {
   const nftUnit = hostStateUnit(deployment);
   const nftPolicy = hostStateNftPolicy(deployment);
@@ -1518,12 +1556,12 @@ export function buildFinalizeShutdownTx(
   );
   const [referenceValidator] = readReferenceValidator(lucid, deployment);
 
-  return lucid
-    .newTx()
-    .attach.SpendingValidator({
-      type: "PlutusV3",
-      script: deployment.validators.hostStateStt.script,
-    })
+  const tx = lucid.newTx();
+  if (registryReferences.length) tx.readFrom(registryReferences);
+  return tx.attach.SpendingValidator({
+    type: "PlutusV3",
+    script: deployment.validators.hostStateStt.script,
+  })
     .attach.SpendingValidator(referenceValidator)
     .collectFrom(
       [hostUtxo],
@@ -1543,20 +1581,12 @@ export function buildFinalizeShutdownTx(
 
 async function main() {
   const args = parseArgs(Deno.args);
-  const deployment = await loadDeployment(args.handlerJsonPath);
-  if (deployment.migration && args.command !== "status") {
-    throw new Error(
-      "Shutdown and cleanup are disabled for this upgrade-capable profile; dependencies must remain available for outstanding claims. Use the migration commands.",
-    );
-  }
+  const deployment = await loadDeployment(args.manifestPath);
   const lucid = await buildOperationalLucid();
 
   switch (args.command) {
     case "status":
       await status(lucid, deployment);
-      break;
-    case "claim-backup":
-      await claimBackup(lucid, deployment);
       break;
     case "enter": {
       await enterShutdown(lucid, deployment, args);

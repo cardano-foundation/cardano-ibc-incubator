@@ -1,20 +1,17 @@
 use aiken/cbor
 use aiken/collection/list
-use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  SpendClientRedeemer, UpdateClient,
-}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/vote
 use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase}
 use ibc/client/ics_007_tendermint_client/test_fixtures/tendermint_update_capacity
+use ibc/testing/header_fixture.{HeaderFixture, UpdateClient}
 
 test prepared_votes_match_all_retained_timestamps_and_round_encodings() {
   expect Some(data) =
     cbor.deserialise(
       tendermint_update_capacity.non_adjacent_mixed_spend_client_redeemer_cbor,
     )
-  expect UpdateClient { msg: HeaderCase(header), .. }: SpendClientRedeemer =
-    data
+  expect UpdateClient { msg: HeaderCase(header), .. }: HeaderFixture = data
   list.all(
     [0, 1, 127, 128, 2_147_483_647],
     fn(round) {

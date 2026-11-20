@@ -50,9 +50,8 @@ preserve the vulnerability for those heights.
 the update state transition followed by real ICS-23 membership and non-membership
 verification. It covers backdated metadata, immediate proof rejection, the delay
 boundary, block-delay rounding, zero delays, and the finite upper bound required
-at creation. `spending_client_capacity.test.ak` separately exercises the signed
-UpdateClient validator, including rejection of lower-bound processing metadata
-and a missing upper bound.
+at creation. `cardano/offchain/scripts/tendermint-cache.test.ts` exercises signed
+cached updates and rejects forged processing metadata.
 
 Gateway tests cover slot normalization, initial and updated encoded metadata,
 passing the creation bound through to the builder, and retaining history according

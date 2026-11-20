@@ -24,6 +24,7 @@ function manifest(): BridgeManifest {
 
   return {
     schema_version: 6,
+    migration: { profile: 'cardano-ibc-compatible-v6', registryUnit: '11'.repeat(28) + '01', registryAddress: 'registry', generation: '1', compatibility: '22'.repeat(32), originalAddresses: ['host', 'client', 'connection', 'channel', 'transfer'] },
     packet_state: {
       format: 'packet-lanes-v1',
       receipt_storage: 'merkle-history-v1',

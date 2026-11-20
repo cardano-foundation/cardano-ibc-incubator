@@ -13,12 +13,13 @@ export function loadCachedTendermintValidators(
   lucid: LucidEvolution,
   hostPolicy: string,
   recoveryHash: string,
-  registryPolicy?: string,
+  registryPolicy: string,
 ) {
   const staged = loadStagedTendermintValidators(
     lucid,
     hostPolicy,
     recoveryHash,
+    registryPolicy,
   );
   const updateCore = readValidator(
     "verify_cached_client.verify_cached_client.withdraw",
@@ -43,12 +44,10 @@ export function loadCachedTendermintValidators(
     ],
   );
   const cacheSpend = readValidator(
-    registryPolicy
-      ? "upgradeable/validator_cache.validator_cache.spend"
-      : "spending_validator_cache.spend_validator_cache.spend",
+    "upgradeable/validator_cache.validator_cache.spend",
     lucid,
     [
-      ...(registryPolicy ? [registryPolicy] : []),
+      registryPolicy,
       staged.sessionMint.policyId,
       update[1],
       staged.updateClient.scriptHash,
@@ -61,12 +60,11 @@ export function loadCachedTendermintValidators(
     Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
   );
   const clientSpend = readValidator(
-    registryPolicy
-      ? "upgradeable/cached_client.cached_client.spend"
-      : "spending_cached_client.spend_cached_client.spend",
+    "upgradeable/cached_client.cached_client.spend",
     lucid,
     [
-      ...(registryPolicy ? [registryPolicy, 1n] : []),
+      registryPolicy,
+      1n,
       hostPolicy,
       staged.updateClient.scriptHash,
       update[1],
@@ -75,13 +73,9 @@ export function loadCachedTendermintValidators(
     ],
   );
   const clientMint = readValidator(
-    registryPolicy
-      ? "upgradeable/mint_cached_client.mint_cached_client.mint"
-      : "minting_cached_client.mint_cached_client.mint",
+    "upgradeable/mint_cached_client.mint_cached_client.mint",
     lucid,
-    registryPolicy
-      ? [registryPolicy, cacheMint[1]]
-      : [clientSpend[1], hostPolicy, cacheMint[1]],
+    [registryPolicy, cacheMint[1]],
   );
   // These credentials are registered once per deployment and must all be
   // deregistered with recovery authorization before the HostState is removed.

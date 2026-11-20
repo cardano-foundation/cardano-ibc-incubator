@@ -1,3 +1,5 @@
+import { Registry } from "../types/plutus/Migration.ts";
+import { DEPLOYMENT_PLAN_FIXTURE } from "./deployment-plan.ts";
 import {
   heartbeatWindowAllowed,
   nextHeartbeatTime,
@@ -44,7 +46,6 @@ const RELAYER_SEED =
 
 async function deploymentFixture(
   benchmarkVoucherEnabled = true,
-  backupOperatorKeyHash?: string,
 ) {
   const address = walletFromSeed(TEST_SEED, {
     addressType: "Base",
@@ -87,11 +88,11 @@ async function deploymentFixture(
     output_index: BigInt(index),
   });
   const plan = await loadDeploymentPlan(lucid, {
+    migration: DEPLOYMENT_PLAN_FIXTURE.migration,
     heartbeatSchedule: {
       epochOriginMs: TEST_TIME - 216_000_000,
       epochLengthMs: 432_000_000,
     },
-    backupOperatorKeyHash,
     hostStateNonce: outref(2),
     transferModuleNonce: outref(3),
     traceDirectoryNonce: outref(4),
@@ -109,7 +110,7 @@ function assertSignedTransactionFits(signed: TxSigned, label: string) {
   const signedBytes = signed.toCBOR().length / 2;
   // The HostState publication uses one dedicated funding input and one output.
   // Keep its tighter limit measured against the actual signed transaction.
-  const headroom = label === "host_state_stt.host_state_stt.spend" ? 50 : 200;
+  const headroom = 200;
   assert(
     signedBytes <= MAX_TX_SIZE - headroom,
     `${label}: signed transaction is ${signedBytes} bytes, leaving less than ${headroom} bytes below ${MAX_TX_SIZE}`,
@@ -125,19 +126,12 @@ Deno.test("every applied reference validator fits its signed production transact
     const { plan: inventory } = await deploymentFixture(
       benchmarkVoucherEnabled,
     );
-    const references = inventory.referenceValidators.flatMap(({ title }) => [
-      { title, backupOperatorKeyHash: undefined as string | undefined },
-      ...(title === "host_state_stt.host_state_stt.spend"
-        ? [{ title, backupOperatorKeyHash: "55".repeat(28) }]
-        : []),
-    ]);
-    for (const { title, backupOperatorKeyHash } of references) {
+    for (const { title } of inventory.referenceValidators) {
       await t.step(
-        `${mode}/${title}${backupOperatorKeyHash ? " with backup" : ""}`,
+        `${mode}/${title}`,
         async () => {
           const { lucid, emulator, address, plan } = await deploymentFixture(
             benchmarkVoucherEnabled,
-            backupOperatorKeyHash,
           );
           const validator = plan.referenceValidators.find((entry) =>
             entry.title === title
@@ -386,6 +380,22 @@ Deno.test("mock token mint fits with inline policy, wallet witness and token cha
 
 Deno.test("permissionless heartbeat agrees with Gateway timing and permits one per epoch", async () => {
   const { lucid, emulator, nonceUtxo, plan } = await deploymentFixture(false);
+  // This isolated heartbeat fixture seeds the authenticated registry reference.
+  // The full deployment model separately executes its one-shot mint.
+  const registryReference: UTxO = {
+    txHash: "ab".repeat(32),
+    outputIndex: 0,
+    address: plan.implementationRegistry.address,
+    assets: {
+      lovelace: 10_000_000n,
+      [plan.registry.token.policy_id + plan.registry.token.name]: 1n,
+    },
+    datum: Data.to(plan.registry, Registry),
+  };
+  emulator.ledger[registryReference.txHash + registryReference.outputIndex] = {
+    utxo: registryReference,
+    spent: false,
+  };
   const published = await completeReferenceBatchTx(
     lucid,
     plan.referenceHolder.address,
@@ -457,7 +467,7 @@ Deno.test("permissionless heartbeat agrees with Gateway timing and permits one p
         last_heartbeat_time: BigInt(to + (forgeClock ? 86_400_000 : 0)),
       },
     };
-    const tx = await lucid.newTx().readFrom([reference])
+    const tx = await lucid.newTx().readFrom([reference, registryReference])
       .collectFrom(
         [host],
         Data.to("Heartbeat", HostStateRedeemer, { canonical: true }),

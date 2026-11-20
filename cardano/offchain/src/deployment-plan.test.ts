@@ -1,3 +1,4 @@
+import { testDeploymentGovernance } from "./testing/deployment-governance.ts";
 import { readValidator } from "./utils.ts";
 import { loadCachedTendermintValidators } from "./tendermint-cache-validators.ts";
 import {
@@ -31,58 +32,13 @@ const lucidLoader = {
 } as unknown as LucidEvolution;
 const inputs = { ...DEPLOYMENT_PLAN_FIXTURE, benchmarkVoucherEnabled: false };
 
-Deno.test("mainnet requires a distinct backup operator before loading deployment scripts", async () => {
-  const mainnet = {
-    config: () => ({ network: "Mainnet" }),
-  } as unknown as LucidEvolution;
-  for (const backupOperatorKeyHash of [undefined, "", "   "]) {
-    await assertRejects(
-      () => loadDeploymentPlan(mainnet, { ...inputs, backupOperatorKeyHash }),
-      Error,
-      "Mainnet deployment requires DEPLOYER_BACKUP_PAYMENT_KEY_HASH",
-    );
-  }
-  for (
-    const backupOperatorKeyHash of [inputs.deployerPaymentKeyHash, "invalid"]
-  ) {
-    await assertRejects(
-      () => loadDeploymentPlan(mainnet, { ...inputs, backupOperatorKeyHash }),
-      Error,
-      "different 28-byte payment key hash",
-    );
-  }
-  await loadDeploymentPlan(mainnet, {
-    ...inputs,
-    backupOperatorKeyHash: "55".repeat(28),
-  });
-});
-
-Deno.test("the backup is fixed in the deployed HostState script", async () => {
-  const withoutBackup = await loadDeploymentPlan(lucidLoader, inputs);
-  const withBackup = await loadDeploymentPlan(lucidLoader, {
-    ...inputs,
-    backupOperatorKeyHash: "55".repeat(28),
-  });
-  assertNotEquals(withBackup.hostState.hash, withoutBackup.hostState.hash);
-  assertEquals(withBackup.hostNft.hash, withoutBackup.hostNft.hash);
-  await assertRejects(
-    () =>
-      loadDeploymentPlan(lucidLoader, {
-        ...inputs,
-        backupOperatorKeyHash: inputs.deployerPaymentKeyHash,
-      }),
-    Error,
-    "different 28-byte payment key hash",
+Deno.test("mainnet uses the same explicit governance model", async () => {
+  const plan = await loadDeploymentPlan(
+    { config: () => ({ network: "Mainnet" }) } as unknown as LucidEvolution,
+    inputs,
   );
-  await assertRejects(
-    () =>
-      loadDeploymentPlan(lucidLoader, {
-        ...inputs,
-        backupOperatorKeyHash: "not-a-key-hash",
-      }),
-    Error,
-    "different 28-byte payment key hash",
-  );
+  assertEquals(plan.hostState.title, "upgradeable/host_state.host_state.spend");
+  assertEquals(plan.registry.governance, inputs.migration.governance);
 });
 
 Deno.test("production plan is deterministic and partitions every loaded script by publication", async () => {
@@ -146,6 +102,7 @@ Deno.test("the standard client publishes direct verification and staged fallback
     lucidLoader,
     plan.hostNft.hash,
     plan.recoverClient.hash,
+    "ee".repeat(28),
   );
   assertEquals(plan.updateClient.hash, staged.updateClient.scriptHash);
   assertEquals(plan.sessionSpend.hash, staged.sessionSpend.scriptHash);
@@ -154,13 +111,14 @@ Deno.test("the standard client publishes direct verification and staged fallback
     lucidLoader,
     plan.hostNft.hash,
     plan.recoverClient.hash,
+    plan.mintImplementationRegistry.hash,
   );
   assertEquals(plan.spendClient.hash, cached.clientSpend[1]);
   assertEquals(plan.cacheMint.hash, cached.cacheMint[1]);
   assertEquals(plan.cachedUpdateClient.hash, cached.update[1]);
   assertEquals(
     plan.spendClient.title,
-    "spending_cached_client.spend_cached_client.spend",
+    "upgradeable/cached_client.cached_client.spend",
   );
   for (
     const validator of [
@@ -234,43 +192,27 @@ Deno.test("the plan carries nonce changes through the full applied dependency gr
   );
 });
 
-Deno.test("every reference in legacy and upgradeable deployment modes satisfies the publication guard", async () => {
-  for (const upgradeable of [false, true]) {
-    for (const benchmarkVoucherEnabled of [false, true]) {
-      const plan = await loadDeploymentPlan(lucidLoader, {
-        ...inputs,
-        benchmarkVoucherEnabled,
-        migration: upgradeable
-          ? {
-            registryNonce: {
-              transaction_id: "55".repeat(32),
-              output_index: 3n,
-            },
-            governance: {
-              signers: ["66".repeat(28)],
-              quorum: 1n,
-              delay_ms: 86_400_000n,
-            },
-            emergency: { signers: ["77".repeat(28)], quorum: 1n },
-          }
-          : undefined,
-      });
-      const report = buildReferenceValidatorSizeReport(
-        plan.referenceValidators.map(({ script }) => script),
-        16_384,
-      );
-      const intrinsicallyOversized = report.filter((
-        { intrinsicallyOversized },
-      ) => intrinsicallyOversized).map((entry) => ({
-        title: plan.referenceValidators[entry.index].title,
-        ...entry,
-      }));
-      assertEquals(
-        intrinsicallyOversized,
-        [],
-        `upgradeable=${upgradeable}, benchmarkVoucherEnabled=${benchmarkVoucherEnabled}`,
-      );
-    }
+Deno.test("every governed deployment reference satisfies the publication guard", async () => {
+  for (const benchmarkVoucherEnabled of [false, true]) {
+    const plan = await loadDeploymentPlan(lucidLoader, {
+      ...inputs,
+      benchmarkVoucherEnabled,
+    });
+    const report = buildReferenceValidatorSizeReport(
+      plan.referenceValidators.map(({ script }) => script),
+      16_384,
+    );
+    const intrinsicallyOversized = report.filter((
+      { intrinsicallyOversized },
+    ) => intrinsicallyOversized).map((entry) => ({
+      title: plan.referenceValidators[entry.index].title,
+      ...entry,
+    }));
+    assertEquals(
+      intrinsicallyOversized,
+      [],
+      `benchmarkVoucherEnabled=${benchmarkVoucherEnabled}`,
+    );
   }
 });
 
@@ -281,7 +223,7 @@ for (const splitRequired of [false, true]) {
     const address = walletFromSeed(seed, { network: "Custom" }).address;
     const funding = splitRequired
       ? [2_000_000_000n]
-      : Array(RESERVED_DEPLOYMENT_NONCE_COUNT + 16).fill(20_000_000n);
+      : Array(RESERVED_DEPLOYMENT_NONCE_COUNT + 16).fill(30_000_000n);
     const emulator = new Emulator(
       funding.map((lovelace) => ({
         seedPhrase: seed,
@@ -304,7 +246,10 @@ for (const splitRequired of [false, true]) {
       return Promise.reject(new Error("Preflight must stop before submission"));
     };
     await assertRejects(
-      () => createDeployment(lucid, undefined, { deploymentMode: "legacy" }),
+      async () =>
+        createDeployment(lucid, undefined, {
+          migration: await testDeploymentGovernance(lucid),
+        }),
       Error,
       "complete deployment validator preflight",
     );

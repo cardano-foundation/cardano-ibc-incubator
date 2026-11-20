@@ -5,7 +5,7 @@ import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/
 import { TendermintClientService } from '../tendermint-client.service';
 import { initializeClientState, normalizeClientStateFromDatum } from '../../shared/helpers/client-state';
 import { ClientDatum, decodeClientDatum, encodeClientDatum } from '../../shared/types/client-datum';
-import { decodeSpendClientRedeemer, encodeSpendClientRedeemer } from '../../shared/types/client-redeemer';
+import { encodeSpendClientRedeemer } from '../../shared/types/client-redeemer';
 import { decodeSpendMultitxClientRedeemer } from '../../shared/types/tendermint-update-session';
 
 function context(staged = false) {
@@ -127,7 +127,7 @@ describe('proof-backed Tendermint client upgrade', () => {
     const response = await service.upgradeClient(request);
     expect(MsgUpgradeClientResponse.decode(MsgUpgradeClientResponse.encode(response).finish())).toEqual(response);
     const args = lucid.createUnsignedUpgradeClientTransaction.mock.calls[0];
-    expect(staged ? decodeSpendMultitxClientRedeemer(args[3], Lucid) : decodeSpendClientRedeemer(args[3], Lucid)).toBe(
+    expect(decodeSpendMultitxClientRedeemer(args[3], Lucid)).toBe(
       'UpgradeClient',
     );
     const after = await decodeClientDatum(args[5], Lucid);

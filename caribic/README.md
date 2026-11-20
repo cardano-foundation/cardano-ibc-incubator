@@ -351,9 +351,9 @@ For preprod and preview, Caribic never starts its local `cardano-node`, Kupo, Og
 
 The built-in profiles carry the correct chain identities and protocol magic (`1` for preprod and `2` for preview), so no custom Caribic config is needed. Rebuild the CLI with `cargo install --path caribic --force` after changing branches.
 
-Preview is the only bundled bridge deployment. The obsolete Preprod manifest, handler and cost report have been removed. The Preprod profile's default artifact paths are output locations for a fresh deployment; joining an existing Preprod bridge requires supplying a compatible manifest with history-bootstrap metadata.
+Preview is the only bundled bridge deployment. The obsolete Preprod manifest and cost report have been removed. The Preprod profile's default artifact paths are output locations for a fresh deployment; joining an existing Preprod bridge requires supplying a compatible manifest with history-bootstrap metadata.
 
-To run a relayer for an existing deployment, set the selected network profile's `bridge_manifest_path` to that deployment's trusted public manifest and use `caribic start relayer --network preprod` (or `preview`). Relayer startup requires the manifest, signing key and configured endpoints; it does not require `handler.json`. Hermes snapshots the manifest and uses it for independent signing checks. This command starts the relayer against an already configured Gateway; it does not deploy contracts or synchronize the Gateway's history. Configure the Gateway and history services separately for the same deployment. Public manifests must include the verified `history` replay checkpoint and HostState creation output. Caribic uses that deployment checkpoint even when a recent checkpoint remains in the environment.
+To run a relayer for an existing deployment, set the selected network profile's `bridge_manifest_path` to that deployment's trusted public manifest and use `caribic start relayer --network preprod` (or `preview`). Relayer startup requires the manifest, signing key and configured endpoints; it does not require `bridge-manifest.json`. Hermes snapshots the manifest and uses it for independent signing checks. This command starts the relayer against an already configured Gateway; it does not deploy contracts or synchronize the Gateway's history. Configure the Gateway and history services separately for the same deployment. Public manifests must include the verified `history` replay checkpoint and HostState creation output. Caribic uses that deployment checkpoint even when a recent checkpoint remains in the environment.
 
 ### 2. Configure the preprod endpoints in the gateway env
 
@@ -392,17 +392,15 @@ caribic yaci-checkpoint --network preprod --write-env
 
 ```bash
 export DEPLOYER_SK=$(cat ~/.caribic/preprod-deployer.sk)   # or your own funded preprod signing key
-# For unattended deployment, set DEPLOYER_BACKUP_PAYMENT_KEY_HASH to the backup operator's payment key hash.
+export MIGRATION_GOVERNANCE_FILE=/path/to/governance.json
 caribic start --network preprod
 ```
 
-Before a new deployment, Caribic prompts for a backup operator's 56-character hexadecimal payment key hash unless `DEPLOYER_BACKUP_PAYMENT_KEY_HASH` is set. This must belong to a different operator than the deployer. For upgradeable deployments this records a nominee for governance to approve. It does not grant the nominee authority. Legacy deployments retain the direct single-key backup path.
+Every deployment requires an explicit `MIGRATION_GOVERNANCE_FILE`. It creates the same governed upgradeable bridge on each network. There is no legacy deployment option or backup-key claim command. Existing artifacts from earlier contract profiles require redeployment.
 
-Local, preprod and preview deployments can skip the backup with a warning. Unattended runs without the environment variable also continue with a warning. Reusing an existing public deployment does not prompt or change its backup. The shared deployment planner rejects mainnet deployments without a backup operator. Caribic does not yet support a mainnet runtime.
+To replace the deployer, use `caribic deployer nominate-deployer --manifest <bridge-manifest.json> --successor <payment-key-hash> --signers <governor-key-hashes> --expires-at <milliseconds> --out <approval.json>`. The governance quorum signs the exported body. Set the operational Ogmios/Kupo environment and use `--wallet-address` for unsigned export, or `MIGRATION_EXECUTOR_SK` with `--submit` for a locally signed transaction. `--submit` does not collect signatures from other governors.
 
-On an upgradeable deployment, use `caribic deployer nominate-deployer --handler <handler.json> --signers <governor-key-hashes> --expires-at <milliseconds> --out <approval.json>` to export a governance approval transaction. The configured backup is the default nominee. Pass `--successor <payment-key-hash>` to propose someone else. The existing governance quorum must sign the exact exported body. Set the operational Ogmios/Kupo environment and use `--wallet-address` for unsigned export, or `MIGRATION_EXECUTOR_SK` with `--submit` for a locally signed transaction. `--submit` does not collect signatures from other governors.
-
-After the on-chain activation delay, run `caribic deployer graduate-deployer --handler <handler.json> --submit` with a funded executor. Neither the deployer nor the governors need to sign this execution. `caribic deployer inspect --handler <handler.json>` shows the approval and its time bounds. Governance can cancel a pending approval with `caribic deployer cancel`. See [deployer graduation](../docs/state-preserving-redeployment.md#deployer-graduation) for authority and compatibility rules.
+After the on-chain activation delay, run `caribic deployer graduate-deployer --manifest <bridge-manifest.json> --submit` with a funded executor. Neither the deployer nor the governors need to sign this execution. `caribic deployer inspect --manifest <bridge-manifest.json>` shows the approval and its time bounds. Governance can cancel a pending approval with `caribic deployer cancel`. See [deployer graduation](../docs/state-preserving-redeployment.md#deployer-graduation) for authority and compatibility rules.
 
 This starts postgres and the Yaci history services, deploys the IBC validators to preprod (artifacts exported to `manifests/preprod/`), starts the Gateway (gRPC on 5001), Hermes daemon, and IBC Swap dapp, and injects the `injective-888` chain block (public sentry endpoints) into `~/.hermes/config.toml`. Verify with:
 
@@ -411,12 +409,6 @@ caribic health-check
 ```
 
 A successful deploy is cached via the artifacts in `manifests/preprod/`; set `CARIBIC_FORCE_PREPROD_DEPLOY=1` to force a redeploy.
-
-For legacy deployments only, the backup hash is baked into the deployed HostState validator. It cannot be
-added or changed later. The named backup wallet can take over at any time by
-setting `DEPLOYER_SK` to its signing key and running
-`cardano/offchain/scripts/shutdown-deployment.ts claim-backup` using the
-deployment's `handler.json`.
 
 ### 5. Add the Injective testnet relayer key
 

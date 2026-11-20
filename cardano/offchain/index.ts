@@ -560,7 +560,6 @@ try {
   lucid.selectWallet.fromPrivateKey(deployerSk);
 
   console.log("=".repeat(70));
-  console.log(`Deployment mode: ${deploymentOptions.deploymentMode}`);
   await createDeployment(lucid, KUPMIOS_ENV, deploymentOptions);
 } catch (error) {
   console.error("ERR: ", error);
