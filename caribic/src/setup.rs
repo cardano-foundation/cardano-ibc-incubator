@@ -1533,27 +1533,22 @@ fn write_gateway_env_for_network(
         }
     }
 
-    let manifest_container_path = profile
+    let manifest_path = profile
         .bridge_manifest_path
         .as_deref()
-        .filter(|path| Path::new(path).is_file())
-        .map(|path| prepare_gateway_manifest(project_root.as_path(), Path::new(path)))
-        .transpose()?;
-    let handler_container_path =
-        gateway_container_artifact_path(project_root.as_path(), profile.handler_json_path.as_str())
-            .ok_or("Failed to derive deployment artifact container path")?;
-
-    if let Some(manifest_path) = manifest_container_path {
-        set_or_append_env_var(&gateway_env, "BRIDGE_MANIFEST_PATH", manifest_path.as_str())?;
-        set_or_append_env_var(&gateway_env, "HANDLER_JSON_PATH", "")?;
+        .ok_or("Bridge manifest path is not configured")?;
+    let manifest_container_path = if Path::new(manifest_path).is_file() {
+        prepare_gateway_manifest(project_root.as_path(), Path::new(manifest_path))?
     } else {
-        set_or_append_env_var(
-            &gateway_env,
-            "HANDLER_JSON_PATH",
-            handler_container_path.as_str(),
-        )?;
-        set_or_append_env_var(&gateway_env, "BRIDGE_MANIFEST_PATH", "")?;
-    }
+        // Configuration is also prepared before the first deployment creates its manifest.
+        gateway_container_artifact_path(project_root.as_path(), manifest_path)
+            .ok_or("Bridge manifest must exist or use a Gateway-mounted artifact path")?
+    };
+    set_or_append_env_var(
+        &gateway_env,
+        "BRIDGE_MANIFEST_PATH",
+        &manifest_container_path,
+    )?;
 
     secure_env_file_permissions(&gateway_env)?;
 
@@ -1766,7 +1761,7 @@ pub fn prepare_gateway(
 #[cfg(test)]
 mod tests {
     #[test]
-    fn imported_manifest_is_available_in_the_gateway_mount_without_a_handler() {
+    fn imported_manifest_is_available_in_the_gateway_mount() {
         let root =
             std::env::temp_dir().join(format!("caribic-manifest-mount-{}", std::process::id()));
         std::fs::create_dir_all(root.join("project")).unwrap();
@@ -1784,9 +1779,6 @@ mod tests {
             .unwrap(),
             std::fs::read(source).unwrap()
         );
-        assert!(!root
-            .join("project/cardano/offchain/deployments/handler.json")
-            .exists());
         std::fs::remove_dir_all(root).unwrap();
     }
     use super::{

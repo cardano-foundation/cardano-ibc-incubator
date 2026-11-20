@@ -4,7 +4,7 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 import * as fs from 'fs';
 import * as Lucid from '@lucid-evolution/lucid';
-import { requireSttDeploymentConfig } from '../config/bridge-manifest';
+import { normalizeBridgeManifestConfig } from '../config/bridge-manifest';
 import { reconstructHistoricalIbcTree } from '../query/services/historical-ibc-tree';
 import type { IbcTreeLucidService } from '../shared/helpers/ibc-state-root';
 import { decodeHostStateDatum } from '../shared/types/host-state-datum';
@@ -18,13 +18,13 @@ import { decodeConsensusStateDatum } from '../shared/types/consensus-state-datum
  * The spending validator checks the exported witness again at activation.
  */
 async function main() {
-  const [handlerPath, outputPath] = process.argv.slice(2);
-  if (!handlerPath || !outputPath || process.argv.length !== 4)
-    throw new Error('Usage: export-migration-witness <handler.json> <new-witness.json>');
+  const [manifestPath, outputPath] = process.argv.slice(2);
+  if (!manifestPath || !outputPath || process.argv.length !== 4)
+    throw new Error('Usage: export-migration-witness <bridge-manifest.json> <new-witness.json>');
   const source = new YaciRestHistory(new YaciRestClient(process.env.YACI_STORE_ENDPOINT));
   fs.writeFileSync(
     outputPath,
-    JSON.stringify(await exportMigrationWitness(source, JSON.parse(fs.readFileSync(handlerPath, 'utf8'))), null, 2) +
+    JSON.stringify(await exportMigrationWitness(source, JSON.parse(fs.readFileSync(manifestPath, 'utf8'))), null, 2) +
       '\n',
     { flag: 'wx' },
   );
@@ -35,9 +35,9 @@ if (require.main === module)
     process.exitCode = 1;
   });
 
-export async function exportMigrationWitness(source: YaciRestHistory, handler: unknown) {
-  const deployment = requireSttDeploymentConfig(handler);
-  if (!deployment.migration) throw new Error('An upgrade-capable handler is required');
+export async function exportMigrationWitness(source: YaciRestHistory, manifest: unknown) {
+  const deployment = normalizeBridgeManifestConfig(manifest).deployment;
+  if (!deployment.migration) throw new Error('An upgrade-capable manifest is required');
   return source.snapshot('latest', async (tip) => {
     const token = deployment.hostStateNFT;
     const hosts = await source.outputs(

@@ -1,3 +1,4 @@
+import { deploymentFromManifest } from "../../cardano/offchain/src/deployment-artifacts.ts";
 import { assert } from "@std/assert";
 import {
   CML,
@@ -46,9 +47,9 @@ type Saved = {
 export async function createYanoPacketFixture(prepare = false) {
   const { lucid, provider, clock, address, base } = await createYanoContext();
   isolateEvaluation(lucid, provider);
-  const manifest = JSON.parse(
-    await Deno.readTextFile("deployments/handler.json"),
-  );
+  const manifest = deploymentFromManifest(JSON.parse(
+    await Deno.readTextFile("deployments/bridge-manifest.json"),
+  ));
   const saved: Partial<Saved> = prepare
     ? {}
     : parse(await Deno.readTextFile("packet-fixture.json"));

@@ -1,3 +1,4 @@
+import { createBridgeManifest } from '../../config/bridge-manifest';
 import { sqlRestHistoryFixture } from '../../test-config/sql-rest-history-fixture';
 import * as Lucid from '@lucid-evolution/lucid';
 import { Client, Pool, PoolClient } from 'pg';
@@ -131,9 +132,9 @@ const decoder = {
   },
 };
 
-// A complete handler shape drives the real exporter/config decoder. Script
+// A complete manifest drives the real exporter/config decoder. Script
 // references are inert fixture values: this suite never builds or submits a tx.
-function migrationHandler() {
+function migrationManifest() {
   const validator = (scriptHash = '88'.repeat(28), address = 'unused-address') => ({
     scriptHash,
     address,
@@ -153,63 +154,76 @@ function migrationHandler() {
     'chan_upgrade_handshake',
     'chan_upgrade_finish',
   ];
-  return {
-    packetState: {
-      format: 'packet-lanes-v1',
-      receiptStorage: 'merkle-history-v1',
-      laneCount: 16,
-      configToken: { policyId: '98'.repeat(28), name: hex('ibc_packet_config') },
-      state: validator(),
-      batch: validator(),
-      guard: validator(),
-      operations: Object.fromEntries(
-        ['send', 'acknowledge', 'timeout', 'reject', 'receive', 'prune', 'timeout_on_close', 'retire', 'funds', 'send_funds']
-          .map((name) => [name, validator()]),
-      ),
-    },
-    deployedAt: '2026-04-01T12:34:56.000Z',
-    consensusHistoryFormat: 'proof-backed-v1',
-    hostStateNFT: hostToken,
-    migration: {
-      profile: 'cardano-ibc-compatible-v3',
-      registryUnit: '99'.repeat(28) + hex('ibc_implementation_registry'),
-      registryAddress: 'registry-address',
-      generation: '1',
-      compatibility: hash(100),
-      originalAddresses: [
-        'host-address',
-        'client-address',
-        'connection-address',
-        'channel-address',
-        'transfer-address',
-      ],
-    },
-    validators: {
-      hostStateStt: validator(undefined, 'host-address'),
-      spendClient: validator(undefined, 'client-address'),
-      spendConnection: validator(undefined, 'connection-address'),
-      spendChannel: {
-        ...validator(undefined, 'channel-address'),
-        refValidator: Object.fromEntries(operations.map((key) => [key, validator()])),
+  return createBridgeManifest(
+    {
+      packetState: {
+        format: 'packet-lanes-v1',
+        receiptStorage: 'merkle-history-v1',
+        laneCount: 16,
+        configToken: { policyId: '98'.repeat(28), name: hex('ibc_packet_config') },
+        state: validator(),
+        batch: validator(),
+        guard: validator(),
+        operations: Object.fromEntries(
+          [
+            'send',
+            'acknowledge',
+            'timeout',
+            'reject',
+            'receive',
+            'prune',
+            'timeout_on_close',
+            'retire',
+            'funds',
+            'send_funds',
+          ].map((name) => [name, validator()]),
+        ),
       },
-      recoverClient: validator(),
-      spendTransferModule: validator(undefined, 'transfer-address'),
-      mintIdentifier: validator(),
-      verifyProof: validator(),
-      mintClientStt: validator(clientPolicy),
-      mintConnectionStt: validator(connectionPolicy),
-      mintChannelStt: validator(channelPolicy),
-      mintVoucher: validator(),
-      mintTransferEscrowShard: validator(),
-      mintPort: validator(),
-    },
-    modules: {
-      transfer: {
-        identifier: registration.module_token.policy_id + registration.module_token.name,
-        address: 'transfer-address',
+      deployedAt: '2026-04-01T12:34:56.000Z',
+      consensusHistoryFormat: 'proof-backed-v1',
+      hostStateNFT: hostToken,
+      migration: {
+        profile: 'cardano-ibc-compatible-v3',
+        registryUnit: '99'.repeat(28) + hex('ibc_implementation_registry'),
+        registryAddress: 'registry-address',
+        generation: '1',
+        compatibility: hash(100),
+        originalAddresses: [
+          'host-address',
+          'client-address',
+          'connection-address',
+          'channel-address',
+          'transfer-address',
+        ],
+      },
+      validators: {
+        hostStateStt: validator(undefined, 'host-address'),
+        spendClient: validator(undefined, 'client-address'),
+        spendConnection: validator(undefined, 'connection-address'),
+        spendChannel: {
+          ...validator(undefined, 'channel-address'),
+          refValidator: Object.fromEntries(operations.map((key) => [key, validator()])),
+        },
+        recoverClient: validator(),
+        spendTransferModule: validator(undefined, 'transfer-address'),
+        mintIdentifier: validator(),
+        verifyProof: validator(),
+        mintClientStt: validator(clientPolicy),
+        mintConnectionStt: validator(connectionPolicy),
+        mintChannelStt: validator(channelPolicy),
+        mintVoucher: validator(),
+        mintTransferEscrowShard: validator(),
+        mintPort: validator(),
+      },
+      modules: {
+        transfer: {
+          identifier: registration.module_token.policy_id + registration.module_token.name,
+          address: 'transfer-address',
+        },
       },
     },
-  };
+    { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
+  );
 }
 
 async function expectedTree(n: number) {
@@ -293,12 +307,22 @@ async function expectedTree(n: number) {
         },
         nft_policy: hostToken.policyId,
         deployer: '99'.repeat(28),
-        control: { port_registry: new Map([[hex('transfer'), registration]]), shutdown: 'Active', live_clients: 0n, live_connections: 0n, live_channels: 0n, last_heartbeat_time: 0n },
+        control: {
+          port_registry: new Map([[hex('transfer'), registration]]),
+          shutdown: 'Active',
+          live_clients: 0n,
+          live_connections: 0n,
+          live_channels: 0n,
+          last_heartbeat_time: 0n,
+        },
       } as HostStateDatum,
       Lucid,
     );
   const rebuild = (height = 2n, id = 30) =>
-    reconstructHistoricalIbcTree(sqlRestHistoryFixture(sql), deployment, 'Custom', decoder, height, { txHash: hash(id), outputIndex: 3 });
+    reconstructHistoricalIbcTree(sqlRestHistoryFixture(sql), deployment, 'Custom', decoder, height, {
+      txHash: hash(id),
+      outputIndex: 3,
+    });
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: databaseUrl, max: 1 });
@@ -413,10 +437,17 @@ async function expectedTree(n: number) {
       [2, 30],
       [3, 40],
     ]) {
-      const snapshot = await reconstructHistoricalIbcTree(sqlRestHistoryFixture(sql), migrated, 'Custom', decoder, BigInt(height), {
-        txHash: hash(id),
-        outputIndex: 3,
-      });
+      const snapshot = await reconstructHistoricalIbcTree(
+        sqlRestHistoryFixture(sql),
+        migrated,
+        'Custom',
+        decoder,
+        BigInt(height),
+        {
+          txHash: hash(id),
+          outputIndex: 3,
+        },
+      );
       expect(snapshot.root).toBe(roots[height - 1]);
       expect(snapshot.tree.get('clients/07-tendermint-0/consensusStates/0-1')).toBeDefined();
     }
@@ -478,7 +509,7 @@ async function expectedTree(n: number) {
 
     it('exports the populated canonical root and exact transfer-port witness', async () => {
       await commitFixture();
-      const result = await exportMigrationWitness(sqlRestHistoryFixture(db, true), migrationHandler());
+      const result = await exportMigrationWitness(sqlRestHistoryFixture(db, true), migrationManifest());
       expect(result).toEqual({
         format: 'cardano-ibc-migration-port-witness-v1',
         host: { txHash: hash(40), outputIndex: 3 },
@@ -498,8 +529,8 @@ async function expectedTree(n: number) {
       await spend(40, 0, 60, 4);
       await put(60, 0, 4, 'client-v2', clientPolicy + name, await encodeClientDatum(client(3), Lucid));
       await commitFixture();
-      // No replacement address is supplied in the handler or originalAddresses.
-      const result = await exportMigrationWitness(sqlRestHistoryFixture(db, true), migrationHandler());
+      // No replacement address is supplied in the manifest or originalAddresses.
+      const result = await exportMigrationWitness(sqlRestHistoryFixture(db, true), migrationManifest());
       expect(result.host).toEqual({ txHash: hash(50), outputIndex: 3 });
       expect(result.block).toEqual({ height: '4', hash: hash(4) });
       expect(result.root).toBe(roots[2]);
@@ -527,7 +558,7 @@ async function expectedTree(n: number) {
             hash(40),
           ]);
         await commitFixture();
-        await expect(exportMigrationWitness(sqlRestHistoryFixture(db, true), migrationHandler())).rejects.toThrow(
+        await expect(exportMigrationWitness(sqlRestHistoryFixture(db, true), migrationManifest())).rejects.toThrow(
           /Tree rebuild failed|Historical IBC tree unavailable|Canonical HostState/,
         );
         // Failure must close the read-only transaction; the lease remains usable.
@@ -540,7 +571,7 @@ async function expectedTree(n: number) {
     it('selects the surviving canonical snapshot after a successor rollback', async () => {
       await db.query('DELETE FROM block WHERE number=3');
       await commitFixture();
-      const result = await exportMigrationWitness(sqlRestHistoryFixture(db, true), migrationHandler());
+      const result = await exportMigrationWitness(sqlRestHistoryFixture(db, true), migrationManifest());
       expect(result.host).toEqual({ txHash: hash(30), outputIndex: 3 });
       expect(result.block).toEqual({ height: '2', hash: hash(2) });
       expect(result.root).toBe(roots[1]);
@@ -563,9 +594,9 @@ async function expectedTree(n: number) {
         },
       } as Pick<Client, 'query'>;
       try {
-        await expect(exportMigrationWitness(sqlRestHistoryFixture(reorgDuringCommit, true), migrationHandler())).rejects.toThrow(
-          /canonical|rollback|changed|orphan/i,
-        );
+        await expect(
+          exportMigrationWitness(sqlRestHistoryFixture(reorgDuringCommit, true), migrationManifest()),
+        ).rejects.toThrow(/canonical|rollback|changed|orphan/i);
         expect(removedTip).toBe(true);
       } finally {
         await rollback.end();

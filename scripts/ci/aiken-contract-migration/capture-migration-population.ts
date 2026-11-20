@@ -1,3 +1,4 @@
+import { deploymentFromManifest } from "../../../cardano/offchain/src/deployment-artifacts.ts";
 /** Read-only rehearsal evidence. Authenticated counts/root bound state discovery;
  * observations are not a finality certificate or permission to omit liabilities. */
 import {
@@ -26,16 +27,16 @@ import { canonicalMigrationJson } from "../../../cardano/offchain/src/migration-
 import { ownedRuntimeProviders } from "./owned-migration-runtime.ts";
 
 const root = resolve(import.meta.dirname!, "../../..");
-const [runtimeArg, handlerArg, outputArg] = Deno.args;
-if (!runtimeArg || !handlerArg || !outputArg) {
+const [runtimeArg, manifestArg, outputArg] = Deno.args;
+if (!runtimeArg || !manifestArg || !outputArg) {
   throw new Error(
-    "Usage: capture-migration-population.ts OWNED_RUNTIME HANDLER NEW_SNAPSHOT_JSON",
+    "Usage: capture-migration-population.ts OWNED_RUNTIME MANIFEST NEW_SNAPSHOT_JSON",
   );
 }
 const runtime = await Deno.realPath(runtimeArg),
-  handler = await Deno.realPath(handlerArg),
+  manifest = await Deno.realPath(manifestArg),
   output = resolve(outputArg);
-for (const p of [runtime, handler, output]) {
+for (const p of [runtime, manifest, output]) {
   if (!p.startsWith(join(root, ".deployment-smoke") + "/")) {
     throw new Error("Explicit disposable artifacts are required");
   }
@@ -60,9 +61,9 @@ Deno.env.set("KUPO_URL", `http://${providers.kupo}`);
 Deno.env.set("OGMIOS_URL", `http://${providers.ogmios}`);
 Deno.env.set("CARDANO_NETWORK_MAGIC", "42");
 const lucid = await buildOperationalLucid({ readOnly: true });
-const deployment: DeploymentTemplate = JSON.parse(
-  await Deno.readTextFile(handler),
-);
+const deployment: DeploymentTemplate = deploymentFromManifest(JSON.parse(
+  await Deno.readTextFile(manifest),
+));
 const { registry, utxo: registryUtxo } = await inspectMigration(
   lucid,
   deployment,

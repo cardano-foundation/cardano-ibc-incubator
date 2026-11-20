@@ -8,21 +8,23 @@ import time
 import urllib.request
 
 
-def manifest_references(handler, plan):
+def manifest_references(manifest, plan):
     scripts = {(v['script']['type'], script_payload(v['script']['script'])): v['hash'] for v in plan['referenceValidators']}
     references = {}
     def visit(value):
         if isinstance(value, dict):
-            if 'refUtxo' in value:
-                reference_script = value['refUtxo']['scriptRef']
+            if 'ref_utxo' in value:
+                reference_script = value['ref_utxo']['scriptRef']
                 payload = script_payload(reference_script['script'])
                 actual_hash = scripts.get((reference_script['type'], payload))
-                if value.get('scriptHash') != actual_hash or not isinstance(value.get('script'), str) or script_payload(value['script']) != payload:
+                if value.get('script_hash') != actual_hash or not isinstance(value.get('script'), str) or script_payload(value['script']) != payload:
                     raise ValueError('Validator role does not match its reference script')
             if 'registryReference' in value:
                 registry = next((v for v in plan['referenceValidators'] if v['title'] == 'implementation_registry.implementation_registry.spend'), None)
                 if not registry or value.get('registryAddress') != registry['address'] or script_payload(value['registryReference']['scriptRef']['script']) != script_payload(registry['script']['script']):
                     raise ValueError('Registry role does not match its reference script')
+            if 'tx_hash' in value and 'output_index' in value:
+                value = {('txHash' if k == 'tx_hash' else 'outputIndex' if k == 'output_index' else k): v for k, v in value.items()}
             if 'txHash' in value and 'outputIndex' in value and 'scriptRef' in value:
                 script_hash = scripts.get((value['scriptRef']['type'], script_payload(value['scriptRef']['script'])))
                 if not script_hash:
@@ -36,7 +38,7 @@ def manifest_references(handler, plan):
                 for child in value.values(): visit(child)
         elif isinstance(value, list):
             for child in value: visit(child)
-    visit(handler)
+    visit(manifest)
     if {v['scriptHash'] for v in references.values()} != set(scripts.values()):
         raise ValueError('Manifest omits planned reference scripts')
     return references
@@ -79,8 +81,8 @@ def verify_references(expected, indexed, ledger):
             raise ValueError(f'Reference {key} ledger script bytes mismatch')
 
 
-def inspect_references(handler, plan, compose, kupo, output):
-    expected = manifest_references(handler, plan)
+def inspect_references(manifest, plan, compose, kupo, output):
+    expected = manifest_references(manifest, plan)
     report = {'expected': {k: {'address': v['address'], 'scriptHash': v['scriptHash']} for k, v in expected.items()}}
     def cli(*args):
         return json.loads(subprocess.check_output(compose + ['exec', '-T', 'devkit', 'cardano-cli', 'conway', 'query', *args, '--testnet-magic', '42'], timeout=45))
@@ -143,4 +145,4 @@ if __name__ == '__main__':
     compose = ['docker', 'compose', '-p', result['project'], '-f', str(runtime / 'compose.json')]
     port = subprocess.check_output(compose + ['port', 'devkit', '1442'], text=True).strip()
     if not port.startswith('127.0.0.1:'): parser.error('Owned loopback Kupo required')
-    inspect_references(json.loads((artifacts / 'handler.json').read_text()), json.loads((artifacts / 'deployment-plan.json').read_text()), compose, 'http://' + port, output)
+    inspect_references(json.loads((artifacts / 'bridge-manifest.json').read_text()), json.loads((artifacts / 'deployment-plan.json').read_text()), compose, 'http://' + port, output)

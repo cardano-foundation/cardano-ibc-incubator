@@ -1,3 +1,4 @@
+import { deploymentFromManifest } from "../src/deployment-artifacts.ts";
 import {
   applyParamsToScript,
   Constr,
@@ -429,9 +430,11 @@ async function buildLucid(): Promise<LucidEvolution> {
 }
 
 function loadDeploymentInfo(): DeploymentInfo {
-  const handlerJsonPath = Deno.env.get("HANDLER_JSON_PATH") ??
-    "./deployments/handler.json";
-  return JSON.parse(Deno.readTextFileSync(handlerJsonPath)) as DeploymentInfo;
+  const manifestPath = Deno.env.get("BRIDGE_MANIFEST_PATH") ??
+    "./deployments/bridge-manifest.json";
+  return deploymentFromManifest(
+    JSON.parse(Deno.readTextFileSync(manifestPath)),
+  ) as unknown as DeploymentInfo;
 }
 
 function loadCurrentBlueprintValidators(): Record<
@@ -471,7 +474,7 @@ function assertBenchmarkDeploymentMatchesCurrentValidators(
   let expectedSpendTraceRegistryHash: string | undefined = undefined;
   if (traceRegistryBlueprint?.compiledCode) {
     // spendTraceRegistry is parameterized at deployment time, so comparing against the
-    // raw blueprint hash produces a false "stale handler" result even after a fresh
+    // raw blueprint hash produces a false "stale manifest" result even after a fresh
     // local redeploy. Recompute the current-branch script hash with the same runtime
     // parameters the deployer uses for this local deployment.
     const benchmarkVoucherPolicyId = deployment.validators
@@ -526,7 +529,7 @@ function assertBenchmarkDeploymentMatchesCurrentValidators(
     deployedSpendTraceRegistryHash !== expectedSpendTraceRegistryHash
   ) {
     throw new Error(
-      "Local handler.json is stale for spendTraceRegistry: deployed hash " +
+      "Local bridge-manifest.json is stale for spendTraceRegistry: deployed hash " +
         `${deployedSpendTraceRegistryHash} does not match current branch hash ` +
         `${expectedSpendTraceRegistryHash}. Delete cardano/offchain/deployments ` +
         "and redeploy the local bridge on feat/cardano-onchain-trace-registry.",
@@ -538,7 +541,7 @@ function assertBenchmarkDeploymentMatchesCurrentValidators(
     deployedBenchmarkVoucherHash !== expectedBenchmarkVoucherHash
   ) {
     throw new Error(
-      "Local handler.json is stale for mintTraceRegistryBenchmarkVoucher: " +
+      "Local bridge-manifest.json is stale for mintTraceRegistryBenchmarkVoucher: " +
         `deployed hash ${
           String(deployedBenchmarkVoucherHash)
         } does not match ` +
@@ -555,7 +558,7 @@ function getTraceRegistryConfig(
   if (
     !deployment.traceRegistry?.address || !deployment.traceRegistry.directory
   ) {
-    throw new Error("Trace registry is not configured in handler.json");
+    throw new Error("Trace registry is not configured in bridge-manifest.json");
   }
 
   return deployment.traceRegistry;
@@ -566,7 +569,7 @@ function benchmarkVoucherPolicyId(deployment: DeploymentInfo): string {
     ?.scriptHash;
   if (!policyId) {
     throw new Error(
-      "Local benchmark voucher policy is missing from handler.json. Re-run the bridge deployment on feat/cardano-onchain-trace-registry first.",
+      "Local benchmark voucher policy is missing from bridge-manifest.json. Re-run the bridge deployment on feat/cardano-onchain-trace-registry first.",
     );
   }
   return policyId;
@@ -828,17 +831,17 @@ function loadBenchmarkReferenceScripts(
     deployment.validators.mintTraceRegistryBenchmarkVoucher;
   if (!benchmarkPolicy?.script) {
     throw new Error(
-      "Local benchmark voucher policy script is missing from handler.json. Re-run the bridge deployment on feat/cardano-onchain-trace-registry first.",
+      "Local benchmark voucher policy script is missing from bridge-manifest.json. Re-run the bridge deployment on feat/cardano-onchain-trace-registry first.",
     );
   }
   if (!deployment.validators.spendTraceRegistry.script) {
     throw new Error(
-      "Trace-registry spending validator script is missing from handler.json",
+      "Trace-registry spending validator script is missing from bridge-manifest.json",
     );
   }
   if (!deployment.validators.mintIdentifier.script) {
     throw new Error(
-      "Identifier minting policy script is missing from handler.json",
+      "Identifier minting policy script is missing from bridge-manifest.json",
     );
   }
 

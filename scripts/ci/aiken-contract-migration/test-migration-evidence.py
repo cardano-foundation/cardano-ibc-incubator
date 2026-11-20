@@ -46,13 +46,13 @@ def fixture():
     policy = lambda n: f'{n:056x}'
     genesis = 'a' * 64
     a, b = policy(1) + '41', policy(1) + '42'
-    h = {'hostStateNFT': {'policyId': policy(2)}, 'migration': {'generation': '1', 'registryUnit': policy(3) + '01', 'compatibility': 'compatible'},
-         'tokens': {'mock': policy(4) + '01'}, 'validators': {name: {'scriptHash': policy(n)} for n, name in
-         enumerate(['mintChannelStt', 'mintClientStt', 'mintConnectionStt', 'mintTransferEscrowShard', 'mintVoucher', 'verifyProof'], 10)}}
-    h['validators'].update({'spendChannel': {'refValidator': {}}, 'spendClient': {}})
+    h = {'host_state_nft': {'policy_id': policy(2)}, 'migration': {'generation': '1', 'registryUnit': policy(3) + '01', 'compatibility': 'compatible'},
+         'tokens': {'mock': policy(4) + '01'}, 'validators': {name: {'script_hash': policy(n)} for n, name in
+         enumerate(['mint_channel_stt', 'mint_client_stt', 'mint_connection_stt', 'mint_transfer_escrow_shard', 'mint_voucher', 'verify_proof'], 10)}}
+    h['validators'].update({'spend_channel': {'ref_validator': {}}, 'spend_client': {}})
     p = {'genesisSha256': genesis, 'units': [a, b], 'primary': 'primary', 'secondary': 'secondary', 'mintedPerUnit': '1000000'}
-    identity = {role + '_policy': h['validators'][key]['scriptHash'] for role, key in
-                [('channel', 'mintChannelStt'), ('client', 'mintClientStt'), ('connection', 'mintConnectionStt'), ('escrow', 'mintTransferEscrowShard')]}
+    identity = {role + '_policy': h['validators'][key]['script_hash'] for role, key in
+                [('channel', 'mint_channel_stt'), ('client', 'mint_client_stt'), ('connection', 'mint_connection_stt'), ('escrow', 'mint_transfer_escrow_shard')]}
     registry = {'phase': 'Ready', 'host_policy': policy(2), 'token': {'policy_id': policy(3), 'name': '01'},
                 'current': {'generation': '1', 'compatibility': 'compatible'}, 'identity': identity}
     def utxo(i, assets):
@@ -63,7 +63,7 @@ def fixture():
         nft = identity['escrow_policy'] + oracle.shard_name(channel, unit)
         objects.append({'role': f'escrow/{channel.encode().hex()}/{unit.encode().hex()}', 'unit': nft,
                         'utxo': utxo(10 + i, {nft: 1, unit: amount})})
-    voucher = lambda i: h['validators']['mintVoucher']['scriptHash'] + '0014df10' + hashlib.blake2b(f'transfer/channel-{i}/stake'.encode(), digest_size=28).hexdigest()
+    voucher = lambda i: h['validators']['mint_voucher']['script_hash'] + '0014df10' + hashlib.blake2b(f'transfer/channel-{i}/stake'.encode(), digest_size=28).hexdigest()
     remote = lambda i, u: 'ibc/' + hashlib.sha256(f'transfer/channel-{i}/{u}'.encode()).hexdigest().upper()
     s = {'format': 'migration-rehearsal-population-v1', 'genesisSha256': genesis, 'registry': registry, 'objects': objects,
          'wallets': [{'address': 'primary', 'utxos': [utxo(30, {a: 889000, b: 892100, voucher(0): 900000})]},
@@ -84,7 +84,7 @@ def fixture():
 class Balances(unittest.TestCase):
     def test_valid_control_and_named_infrastructure(self):
         args = fixture()
-        args[0]['wallets'][0]['utxos'][0]['assets'][args[1]['validators']['verifyProof']['scriptHash']] = '3'
+        args[0]['wallets'][0]['utxos'][0]['assets'][args[1]['validators']['verify_proof']['script_hash']] = '3'
         self.assertTrue(oracle.verify(*args)['verified'])
 
     def test_swapped_shards_preserve_aggregate_but_fail(self):
@@ -119,10 +119,10 @@ class Balances(unittest.TestCase):
         args = fixture()
         with tempfile.TemporaryDirectory() as directory:
             paths = []
-            for name, value in zip(['snapshot', 'handler', 'population'], args[:3]):
+            for name, value in zip(['snapshot', 'manifest', 'population'], args[:3]):
                 path = Path(directory) / (name + '.json'); path.write_text(json.dumps(value)); paths.append(str(path))
             command = [sys.executable, '-O', str(DIRECTORY / 'verify-migration-traffic-balances.py'),
-                       '--snapshot', paths[0], '--handler', paths[1], '--wallet-population', paths[2],
+                       '--snapshot', paths[0], '--manifest', paths[1], '--wallet-population', paths[2],
                        '--cosmos-channels', *args[3], '--phase', args[4], '--generation', '1', '--genesis-sha256', args[6]]
             self.assertEqual(subprocess.run(command, capture_output=True).returncode, 0)
             args[0]['wallets'][0]['utxos'][0]['assets'][args[2]['units'][0]] = '889001'
@@ -236,28 +236,28 @@ class RehearsalEvidence(unittest.TestCase):
         rehearsal.preflight_gateway_ports([port])
 
     def test_handover_inventory_must_identify_the_selected_successor(self):
-        handler = Path('/owned/handler-v2.json')
+        manifest = Path('/owned/manifest-v2.json')
         valid = {'format': 'populated-migration-handover-v1', 'generation': 2,
-                 'handler': str(handler), 'transactions': ['a' * 64, 'b' * 64]}
-        self.assertEqual(rehearsal.handover_transactions(valid, 2, handler), valid['transactions'])
-        for key, value in [('format', 'unrelated'), ('generation', 3), ('handler', '/another/handler-v2.json'),
+                 'manifest': str(manifest), 'transactions': ['a' * 64, 'b' * 64]}
+        self.assertEqual(rehearsal.handover_transactions(valid, 2, manifest), valid['transactions'])
+        for key, value in [('format', 'unrelated'), ('generation', 3), ('manifest', '/another/manifest-v2.json'),
                            ('transactions', []), ('transactions', ['a' * 64, 'a' * 64]),
                            ('transactions', ['not-a-transaction']), ('transactions', [None])]:
             with self.subTest(key=key, value=value), self.assertRaises(RuntimeError):
-                rehearsal.handover_transactions({**valid, key: value}, 2, handler)
+                rehearsal.handover_transactions({**valid, key: value}, 2, manifest)
 
     def test_relabelled_v2_evidence_cannot_prove_v3_handover(self):
-        roles = ['hostStateStt', 'spendClient', 'spendConnection', 'spendChannel', 'spendTransferModule']
-        def handler(generation):
+        roles = ['host_state_stt', 'spend_client', 'spend_connection', 'spend_channel', 'spend_transfer_module']
+        def manifest(generation):
             return {'migration': {'registryUnit': 'registry', 'generation': generation, 'compatibility': 'abi'},
-                    'hostStateNFT': {'policyId': 'host', 'name': 'nft'},
-                    'validators': {role: {'scriptHash': f'{generation * 10 + i:056x}'} for i, role in enumerate(roles)}}
+                    'host_state_nft': {'policy_id': 'host', 'name': 'nft'},
+                    'validators': {role: {'script_hash': f'{generation * 10 + i:056x}'} for i, role in enumerate(roles)}}
         def snapshot(h):
             return {'genesisSha256': 'genesis', 'registry': {'token': {'policy_id': 'reg', 'name': 'istry'},
                     'host_policy': 'host', 'current': {'generation': h['migration']['generation'], 'compatibility': 'abi',
-                    'addresses': [{'payment_credential': {'Script': [h['validators'][r]['scriptHash']]},
+                    'addresses': [{'payment_credential': {'Script': [h['validators'][r]['script_hash']]},
                                    'stake_credential': None} for r in roles]}}}
-        h1, h2, h3 = [handler(g) for g in [1, 2, 3]]
+        h1, h2, h3 = [manifest(g) for g in [1, 2, 3]]
         before, approved, after = snapshot(h1), snapshot(h1), snapshot(h2)
         rehearsal.bind_handover_snapshots(before, approved, after, h1, h2, 2, 'genesis')
         with self.assertRaisesRegex(RuntimeError, 'generation'):

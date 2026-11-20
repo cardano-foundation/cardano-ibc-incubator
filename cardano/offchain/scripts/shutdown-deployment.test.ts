@@ -276,7 +276,7 @@ Deno.test("finalize shutdown atomically burns the HostState NFT and its referenc
   }]);
 });
 
-Deno.test("finalize shutdown rejects a handler without its NFT policy", () => {
+Deno.test("finalize shutdown rejects a deployment without its NFT policy", () => {
   const deployment = testDeployment();
   deployment.hostStateNFT!.script = undefined;
   const nftUnit = deployment.hostStateNFT!.policyId +

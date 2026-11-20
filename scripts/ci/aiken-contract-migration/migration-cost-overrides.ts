@@ -1,3 +1,4 @@
+import { deploymentFromManifest } from "../../../cardano/offchain/src/deployment-artifacts.ts";
 /** Offline comparison only: preserves captured context/IDs while swapping code
  * in Aiken's simulator. This is NEVER evidence of acceptance by deployed code. */
 import {
@@ -12,8 +13,10 @@ import {
   readValidator,
 } from "../../../cardano/offchain/src/utils.ts";
 import { loadMigrationBaseline } from "../../../cardano/offchain/src/migration.ts";
-const [handlerPath, blueprintPath, outputPath] = Deno.args;
-const h = JSON.parse(await Deno.readTextFile(handlerPath));
+const [manifestPath, blueprintPath, outputPath] = Deno.args;
+const h = deploymentFromManifest(
+  JSON.parse(await Deno.readTextFile(manifestPath)),
+);
 const b = await loadMigrationBaseline(h);
 const bp = JSON.parse(await Deno.readTextFile(blueprintPath));
 const lucid = await Lucid(new Emulator([]), "Custom");
