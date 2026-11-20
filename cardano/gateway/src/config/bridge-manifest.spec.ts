@@ -306,7 +306,7 @@ console.log(JSON.stringify(smokeManifest()))`,
     });
   });
 
-  it('normalizes bridge-manifest.json into the public manifest and internal deployment config', () => {
+  it('normalizes deployment configuration into public discovery fields', () => {
     const loaded = normalizeDeploymentConfig(buildDeploymentFixture(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
@@ -331,8 +331,6 @@ console.log(JSON.stringify(smokeManifest()))`,
     });
     expect(loaded.deployment.validators.voucherMetadata).toEqual({
       address: 'voucher-metadata-address',
-      scriptHash: 'legacy-voucher-metadata-hash',
-      refUtxo: { txHash: 'legacy-voucher-metadata-tx', outputIndex: 12 },
     });
     expect(loaded.bridgeManifest.validators.voucher_metadata).toEqual({
       address: 'voucher-metadata-address',

@@ -1,3 +1,4 @@
+import { normalizeBridgeManifestConfig } from "../../../packages/cardano-ibc-tx-builder-runtime/src/bridgeManifest.ts";
 import { assertEquals, assertRejects, assertThrows } from "@std/assert";
 import {
   deploymentFromManifest,
@@ -17,13 +18,16 @@ Deno.test("deployment publishes one complete manifest and preserves it on invali
     assertThrows(
       () => deploymentFromManifest(deployment),
       Error,
-      "schema_version",
+      "Invalid bridge config",
     );
     await writeDeploymentArtifacts(deployment, fixture.cardano, folder);
     const published = JSON.parse(
       await Deno.readTextFile(`${folder}/bridge-manifest.json`),
     );
     assertEquals(deploymentFromManifest(published), deployment);
+    const discovery = normalizeBridgeManifestConfig(published).bridgeManifest;
+    assertEquals("script" in discovery.validators.host_state_stt, false);
+    assertEquals("baseline" in discovery.migration!, false);
     assertEquals(published.migration.baseline, fixture.migration.baseline);
     assertEquals(
       published.migration.registryReference,

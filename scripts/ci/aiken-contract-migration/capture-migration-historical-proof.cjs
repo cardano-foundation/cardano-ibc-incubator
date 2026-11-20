@@ -64,7 +64,7 @@ async function main() {
     const readiness = await fetch('http://127.0.0.1:8800/health/ready', { signal: AbortSignal.timeout(30_000) });
     const evidence = {
       format: 'cardano-ibc-historical-proof-v1', clientId, height, channelId, sequence,
-      hostStateNFT: manifest.host_state_nft, consensus,
+      hostStateNFT: { policyId: manifest.host_state_nft.policy_id, name: manifest.host_state_nft.token_name }, consensus,
       channel: channel.channel, proofHeight: ack.proof_height,
       acknowledgementBase64: ack.acknowledgement.toString('base64'),
       acknowledgementProofBase64: ack.proof.toString('base64'),

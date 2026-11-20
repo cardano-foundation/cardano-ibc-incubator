@@ -33,7 +33,7 @@ async function main() {
   const result = JSON.parse(fs.readFileSync(path.join(runtime, 'result.json'), 'utf8'));
   assert.equal(result.artifacts, runtime, 'Pool aging requires the original owned baseline');
   const manifest = JSON.parse(fs.readFileSync(path.join(runtime, 'bridge-manifest.json'), 'utf8'));
-  const host = manifest.host_state_nft, unit = host.policyId + '.' + host.name;
+  const host = manifest.host_state_nft, unit = host.policy_id + '.' + host.token_name;
   async function json(url) {
     const deadline = Date.now() + 60000;
     for (;;) {
