@@ -234,7 +234,7 @@ describe('bridge manifest normalization', () => {
       2,
     );
   });
-  it('accepts the deployment used by the Gateway image smoke test', () => {
+  it('authenticates the Gateway image smoke registry through the real provider', () => {
     const fixtureUrl = pathToFileURL(resolve(__dirname, '../../../../scripts/ci/image-smoke-fixture.mjs')).href;
     const manifest = JSON.parse(
       execFileSync(
@@ -242,8 +242,38 @@ describe('bridge manifest normalization', () => {
         [
           '--input-type=module',
           '-e',
-          `import { smokeManifest } from ${JSON.stringify(fixtureUrl)}
-console.log(JSON.stringify(smokeManifest()))`,
+          `import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import { smokeManifest, smokeRegistryDatum, fixtureHandler } from ${JSON.stringify(fixtureUrl)};
+const require = createRequire(${JSON.stringify(resolve(__dirname, '../../package.json'))});
+const lucid = await import(pathToFileURL(require.resolve('@lucid-evolution/lucid')));
+const { migrationReference } = require('@cardano-ibc/tx-builder-runtime/migrationRuntime');
+const { normalizeBridgeManifestConfig } = require('@cardano-ibc/tx-builder-runtime/bridgeManifest');
+const manifest = smokeManifest();
+const deployment = normalizeBridgeManifestConfig(manifest).deployment;
+const server = createServer(fixtureHandler(manifest, 'd87980', {}, smokeRegistryDatum(manifest, lucid)));
+server.listen(0, '127.0.0.1');
+await once(server, 'listening');
+const origin = 'http://127.0.0.1:' + server.address().port;
+try {
+  const provider = new lucid.Kupmios(origin, origin);
+  const context = { config: () => ({ network: 'Custom' }), utxoByUnit: unit => provider.getUtxoByUnit(unit) };
+  const registry = await migrationReference(context, deployment);
+  assert.equal(registry.address, manifest.migration.registryAddress);
+  assert.equal(registry.assets[manifest.migration.registryUnit], 1n);
+  await assert.rejects(() => migrationReference(context, {
+    ...deployment, migration: { ...deployment.migration, generation: '2' },
+  }), /Stale implementation manifest/);
+  const observed = await fetch(origin + '/__smoke/status').then(response => response.json());
+  assert.ok(observed.registry > 0 && observed.registryDatum > 0);
+  assert.deepEqual(observed.unexpected, []);
+} finally {
+  await new Promise(resolve => server.close(resolve));
+}
+console.log(JSON.stringify(manifest))`,
         ],
         { encoding: 'utf8' },
       ),

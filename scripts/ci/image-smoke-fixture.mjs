@@ -22,6 +22,14 @@ export function smokeManifest() {
   validators.spend_client.address = 'addr_test1wrl99yd5drce2vh46fhe6ythtj9gqyn2wdetg4l834vc2sccpewa3';
   validators.spend_connection.address = 'addr_test1wpsgc8622dtnh0dkm54syqkk684tlxqhxcsnmht3s96y8ws4cq8qs';
   validators.spend_channel.address = 'addr_test1wqs9dmh4a0l5c4dwddh98yx5gztrx524flvq3mmpmpwzausapd287';
+  validators.spend_transfer_module.address = 'addr_test1wz42424242424242424242424242424242424242424242shfdwdy';
+  for (const [name, hash] of Object.entries({
+    host_state_stt: 'f594092fa8b22a91e6c4a5c038babb5c739d6ef1481507a0c776d925',
+    spend_client: 'fe5291b468f19532f5d26f9d11775c8a80126a7372b457e78d598543',
+    spend_connection: '608c1f4a53573bbdb6dd2b0202d6d1eabf981736213ddd71817443ba',
+    spend_channel: '2056eef5ebff4c55ae6b6e5390d440963351554fd808ef61d85c2ef2',
+    spend_transfer_module: 'aa'.repeat(28),
+  })) validators[name].script_hash = hash;
   validators.spend_channel.ref_validator = Object.fromEntries([
     'acknowledge_packet', 'chan_close_confirm', 'chan_close_init', 'chan_open_ack',
     'chan_open_confirm', 'recv_packet', 'prune_packet_history', 'send_packet', 'timeout_packet',
@@ -40,13 +48,38 @@ export function smokeManifest() {
   return {
     schema_version: 6,
     consensus_history_format: 'proof-backed-v1',
-    migration: { profile: 'cardano-ibc-compatible-v6', registryUnit: 'ab'.repeat(28) + '01', registryAddress: address, generation: '1', compatibility: 'cd'.repeat(32), originalAddresses: ['host', 'client', 'connection', 'channel', 'transfer'] },
+    migration: { profile: 'cardano-ibc-compatible-v6', registryUnit: 'ab'.repeat(28) + Buffer.from('ibc_implementation_registry').toString('hex'), registryAddress: 'addr_test1wz46h2at4w46h2at4w46h2at4w46h2at4w46h2at4w46h2c8u0yty', generation: '1', compatibility: 'cd'.repeat(32), originalAddresses: ['host_state_stt', 'spend_client', 'spend_connection', 'spend_channel', 'spend_transfer_module'].map(name => validators[name].address) },
     deployment_id: 'cardano-devnet:' + host_state_nft.policy_id + '.' + host_state_nft.token_name,
     deployed_at: '2026-01-01T00:00:00.000Z',
     cardano: { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
     host_state_nft, validators, packet_state,
-    modules: { transfer: { identifier: '33'.repeat(28), address } },
+    modules: { transfer: { identifier: '33'.repeat(28), address: validators.spend_transfer_module.address } },
   };
+}
+
+// Use the application's Plutus encoder so the fixture follows the runtime ABI.
+export function smokeRegistryDatum(manifest, { Constr, Data, getAddressDetails }) {
+  const record = (...fields) => new Constr(0, fields);
+  const address = value => {
+    const details = getAddressDetails(value);
+    assert.equal(details.type, 'Enterprise');
+    assert.equal(details.paymentCredential.type, 'Script');
+    return record(new Constr(1, [details.paymentCredential.hash]), new Constr(1, []));
+  };
+  const governance = record(['66'.repeat(28)], 1n, 86_400_000n);
+  const emergency = record(record(['67'.repeat(28)], 1n), 0n, 0n, new Constr(1, []));
+  return Data.to(record(
+    record(manifest.migration.registryUnit.slice(0, 56), manifest.migration.registryUnit.slice(56)),
+    manifest.host_state_nft.policy_id,
+    record(...['mint_client_stt', 'mint_connection_stt', 'mint_channel_stt', 'mint_transfer_escrow_shard']
+      .map(name => manifest.validators[name].script_hash), address(manifest.migration.registryAddress)),
+    governance,
+    0n,
+    record(BigInt(manifest.migration.generation), manifest.migration.originalAddresses.map(address), manifest.migration.compatibility),
+    record(), // Ready
+    emergency,
+    '68'.repeat(28),
+  ));
 }
 
 export function protocolParameters(costModels) {
@@ -67,8 +100,9 @@ export function protocolParameters(costModels) {
   };
 }
 
-export function fixtureHandler(manifest, datum, parameters) {
-  const requests = { protocol: 0, timing: 0, references: 0, host: 0, datum: 0, entities: 0, history: 0, unexpected: [] };
+export function fixtureHandler(manifest, datum, parameters, registryDatum) {
+  assert.ok(registryDatum, 'The governed smoke fixture requires a registry datum');
+  const requests = { protocol: 0, timing: 0, references: 0, host: 0, datum: 0, registry: 0, registryDatum: 0, entities: 0, history: 0, unexpected: [] };
   function rpcResponse(rpc) {
     let result;
     if (rpc?.method === 'queryLedgerState/protocolParameters') {
@@ -104,6 +138,13 @@ export function fixtureHandler(manifest, datum, parameters) {
     value: { coins: '2000000', assets: { [nft.policy_id + '.' + nft.token_name]: '1' } },
     datum_type: 'inline', datum_hash: datumHash, script_hash: null,
   };
+  const registryDatumHash = '99'.repeat(32);
+  const registryAsset = manifest.migration.registryUnit.slice(0, 56) + '.' + manifest.migration.registryUnit.slice(56);
+  const registry = {
+    transaction_id: 'aa'.repeat(32), output_index: 0, address: manifest.migration.registryAddress,
+    value: { coins: '10000000', assets: { [registryAsset]: '1' } },
+    datum_type: 'inline', datum_hash: registryDatumHash, script_hash: null,
+  };
   const handler = async (request, response) => {
     const url = new URL(request.url, 'http://fixture');
     let value;
@@ -124,8 +165,11 @@ export function fixtureHandler(manifest, datum, parameters) {
       let rpc;
       try { rpc = JSON.parse(body); } catch { /* Rejected below. */ }
       value = rpcResponse(rpc);
-    } else if (request.method === 'GET' && url.search === '?unspent') {
-      if (url.pathname === '/matches/' + nft.policy_id + '.' + nft.token_name ||
+    } else if (request.method === 'GET' && ['?unspent', '?unspent&resolve_hashes'].includes(url.search)) {
+      if (url.pathname === '/matches/' + registryAsset || url.pathname === '/matches/' + manifest.migration.registryAddress) {
+        requests.registry++;
+        value = [registry];
+      } else if (url.pathname === '/matches/' + nft.policy_id + '.' + nft.token_name ||
           url.pathname === '/matches/' + address) {
         requests.host++;
         value = [host];
@@ -138,6 +182,9 @@ export function fixtureHandler(manifest, datum, parameters) {
         requests.entities++;
         value = [];
       }
+    } else if (request.method === 'GET' && url.pathname === '/datums/' + registryDatumHash && url.search === '?inline') {
+      requests.registryDatum++;
+      value = { datum: registryDatum };
     } else if (request.method === 'GET' && url.pathname === '/datums/' + datumHash && url.search === '?inline') {
       requests.datum++;
       value = { datum };
@@ -147,6 +194,14 @@ export function fixtureHandler(manifest, datum, parameters) {
       response.writeHead(501);
       response.end('Unexpected smoke fixture request');
       return;
+    }
+    if (url.search === '?unspent&resolve_hashes' && Array.isArray(value)) {
+      value = value.map(utxo => {
+        if (utxo.datum_hash === registryDatumHash) requests.registryDatum++;
+        return { ...utxo, transaction_index: 0, created_at: { slot_no: 1, header_hash: '88'.repeat(32) },
+          spent_at: null, script: null,
+          datum: utxo.datum_hash === registryDatumHash ? registryDatum : utxo.datum_hash === datumHash ? datum : null };
+      });
     }
     response.writeHead(200, { 'content-type': 'application/json' });
     response.end(JSON.stringify(value));
@@ -178,7 +233,7 @@ async function main() {
     control: { port_registry: new Map(), shutdown: 'Active',
       live_clients: 0n, live_connections: 0n, live_channels: 0n, last_heartbeat_time: 0n },
   }, lucid);
-  const handler = fixtureHandler(manifest, datum, protocolParameters(lucid.PROTOCOL_PARAMETERS_DEFAULT.costModels));
+  const handler = fixtureHandler(manifest, datum, protocolParameters(lucid.PROTOCOL_PARAMETERS_DEFAULT.costModels), smokeRegistryDatum(manifest, lucid));
   const server = createServer(handler);
   const { WebSocketServer } = require('ws');
   new WebSocketServer({ server }).on('connection', socket => {
