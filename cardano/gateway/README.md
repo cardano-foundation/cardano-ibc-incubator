@@ -77,7 +77,9 @@ Related diagrams:
 
 ## Bridge Discovery Manifest
 
-The Gateway can expose a public bridge manifest at `GET /api/bridge-manifest` and the Cardano gRPC `Query/BridgeManifest` method. That manifest is the operator-facing bootstrap document for reconnecting another Gateway/relayer stack to the same deployed Cardano bridge, including the deployment timestamp, script hashes, reference UTxOs, modules, and auth tokens. Gateway startup requires `BRIDGE_MANIFEST_PATH`. Deployment writes `cardano/offchain/deployments/bridge-manifest.json` automatically and Caribic publishes it at the configured network path. `HANDLER_JSON_PATH` is no longer accepted at startup. For an existing deployment that only has `handler.json`, run `npm run export:bridge-manifest -- <handler-json-path> <output-path>` once and configure the resulting manifest. Conversion does not redeploy contracts or change bridge identity. The handler remains an internal artifact for deployment and maintenance tooling.
+The Gateway exposes the discovery fields of the bridge manifest at `GET /api/bridge-manifest` and the Cardano gRPC `Query/BridgeManifest` method. Deployment writes `cardano/offchain/deployments/bridge-manifest.json` and Caribic publishes it at the configured network path. Gateway requires `BRIDGE_MANIFEST_PATH`. The same document supplies deployment and maintenance tools with applied scripts, full reference UTxOs, migration metadata and the backup nominee. `npm run publish:bridge-manifest -- <manifest-path> <output-path>` validates an existing manifest against retained history before publishing a copy. It does not convert deployment formats.
+
+Publication installs missing or stale local dependencies and rebuilds their generated output. Dependency freshness is checked using a SHA-256 fingerprint of each package manifest and lockfile together with the Node major version, npm version, operating system and architecture. The fingerprint is saved only after installation succeeds.
 
 Manifest schema v4 adds the packet-history-prune reference validator and is intentionally incompatible with older deployments. The pruning replay floor and receive high-water mark extend `ChannelDatum`, so adopting v4 requires a fresh Cardano protocol deployment and new channels rather than reusing v2/v3 script UTxOs.
 
@@ -99,7 +101,7 @@ The public IBC tree has a separate cache: in-memory trees and compressed snapsho
 
 Historical public-tree reconstruction discovers NFT outputs and their consumers through indexed Yaci REST queries from deployment creation through the requested block. The bridge projection or a current UTxO snapshot alone is insufficient. Reconstruction pins and rechecks a REST block anchor, excludes failed/orphaned transactions and future outputs/spends, and checks for a rollback before returning. Incomplete history or a root mismatch stops the proof request; restore the provider's retained history before retrying. Concurrent requests for the same height and HostState share a rebuild, with at most four different rebuilds in progress and a 30-second timeout per REST request. The first request after cache loss takes longer as history grows.
 
-Public manifests and public handler startup require `history.format: "cardano-history-v1"`, an explicit replay checkpoint and the original HostState creation output. Startup verifies retained deployment history before restoring/rebuilding the tree, and waits for providers and verified tree state before serving requests.
+Public manifests require `history.format: "cardano-history-v1"`, an explicit replay checkpoint and the original HostState creation output. Startup verifies retained deployment history before restoring/rebuilding the tree, and waits for providers and verified tree state before serving requests.
 
 ## Cardano Data Plane
 

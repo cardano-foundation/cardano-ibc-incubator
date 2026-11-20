@@ -4,7 +4,7 @@
 Run begin and finish in separate processes to exercise the interruption boundary.
 This calls production transaction builders and the real node. It never approves
 code, changes a clock, starts packet workers or infers completion from a journal.
-Gateway must be quiescent; install/export the verified handler before settlement.
+Gateway must be quiescent; install/export the verified manifest before settlement.
 """
 import argparse
 import datetime
@@ -22,26 +22,26 @@ def main():
     parser.add_argument('phase', choices=['begin', 'finish'])
     parser.add_argument('--runtime', type=Path, required=True)
     parser.add_argument('--artifacts-dir', type=Path, required=True)
-    parser.add_argument('--handler', type=Path, required=True)
+    parser.add_argument('--manifest', type=Path, required=True)
     parser.add_argument('--plan', type=Path, required=True)
     parser.add_argument('--generation', type=int, choices=[2, 3], required=True)
     args = parser.parse_args()
-    runtime, artifacts, handler, plan = [p.resolve() for p in
-                                         [args.runtime, args.artifacts_dir, args.handler, args.plan]]
-    for path in [runtime, artifacts, handler, plan]:
+    runtime, artifacts, manifest, plan = [p.resolve() for p in
+                                         [args.runtime, args.artifacts_dir, args.manifest, args.plan]]
+    for path in [runtime, artifacts, manifest, plan]:
         if not path.is_relative_to(ROOT / '.deployment-smoke') or not path.exists():
             parser.error('Explicit existing disposable artifacts are required')
     result = json.loads((runtime / 'result.json').read_text())
     if result['networkRuntime'] != str(runtime):
         parser.error('Deployment result belongs to another runtime')
-    source = json.loads(handler.read_text())
+    source = json.loads(manifest.read_text())
     if int(source['migration']['generation']) != args.generation - 1:
-        parser.error('Source handler is not the preceding generation')
+        parser.error('Source manifest is not the preceding generation')
     prefix = f'v{args.generation}'
     evidence = artifacts / f'{prefix}-handover'
     evidence.mkdir(exist_ok=True)
     control = ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-control.py'), '--runtime', str(runtime),
-               '--artifacts-dir', str(artifacts), '--handler', str(handler), '--executor', 'migration', '--']
+               '--artifacts-dir', str(artifacts), '--manifest', str(manifest), '--executor', 'migration', '--']
     deno = ['deno', 'run', '-A', '--config', str(ROOT / 'cardano/offchain/deno.json'),
             '--import-map', str(artifacts / 'import-map.json')]
 
@@ -66,9 +66,9 @@ def main():
         text = run('inspect', control + ['inspect'])
         return json.loads(text.splitlines()[-1])['registry']
 
-    def capture(selected_handler, output):
+    def capture(selected_manifest, output):
         return run('capture', deno + [str(ROOT / 'scripts/ci/aiken-contract-migration/capture-migration-population.ts'),
-                                     str(runtime), str(selected_handler), str(output)])
+                                     str(runtime), str(selected_manifest), str(output)])
 
     registry = inspect()
     if registry['token']['policy_id'] + registry['token']['name'] != source['migration']['registryUnit']:
@@ -86,7 +86,7 @@ def main():
         observed = inspect()
         if not isinstance(observed['phase'], dict) or 'Moving' not in observed['phase']:
             raise RuntimeError('Begin did not establish the canonical migration boundary')
-        capture(handler, artifacts / f'population-moving-{prefix}.json')
+        capture(manifest, artifacts / f'population-moving-{prefix}.json')
         print(json.dumps({'generation': args.generation, 'phase': 'Moving',
                           'instruction': 'Process exits here. Inspect the paused bridge, then invoke finish separately.'}))
         return
@@ -95,9 +95,9 @@ def main():
         run('resume', control + ['resume', *options, '--max-steps', '20', '--port-witness', str(witness)])
     elif not (generation == args.generation and phase == 'Ready'):
         raise RuntimeError('Finish requires canonical Moving or the already activated target')
-    target = artifacts / f'handler-{prefix}.json'
+    target = artifacts / f'manifest-{prefix}.json'
     if target.exists():
-        raise RuntimeError('Verified target handler already exists; retain it and reconcile later evidence explicitly')
+        raise RuntimeError('Verified target manifest already exists; retain it and reconcile later evidence explicitly')
     run('verify', control + ['verify', '--plan', str(plan), '--out', str(target)])
     after = artifacts / f'population-after-{prefix}.json'
     capture(target, after)
@@ -138,7 +138,7 @@ def main():
         'scope': 'Measured canonical Begin-to-Activate interval, including interruption; Gateway restart is additional. Local clock acceleration elsewhere is excluded.',
     }
     receipt = {'format': 'populated-migration-handover-v1', 'generation': args.generation,
-               'handler': str(target), 'transactions': sorted(transactions),
+               'manifest': str(target), 'transactions': sorted(transactions),
                'funding': json.loads(funding.splitlines()[-1]), 'timing': timing,
                'scope': 'Canonical local custody and conservation; post-activation packet settlement is separate'}
     with (evidence / 'result.json').open('x') as output:

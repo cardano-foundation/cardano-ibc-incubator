@@ -13,7 +13,7 @@ if (Deno.env.get("YANO_ACTION") === "integration") {
 if (Deno.env.get("YANO_ACTION") === "smoke") {
   const started = performance.now();
   const manifest = JSON.parse(
-    await Deno.readTextFile("deployments/handler.json"),
+    await Deno.readTextFile("deployments/bridge-manifest.json"),
   );
   const [script] = readValidator(
     "minting_mock_token.mint_mock_token.mint",

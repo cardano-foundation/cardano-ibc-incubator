@@ -397,7 +397,7 @@ CARDANO_RECEIVER="${CARDANO_RECEIVER:-247570b8ba7dc725e9ff37e9757b8148b4d5a12595
 CARDANO_SEND_AMOUNT="${CARIBIC_TOKEN_TRANSFER_AMOUNT:-12345}"
 COSMOS_RETURN_AMOUNT="${COSMOS_RETURN_AMOUNT:-12345}"
 COSMOS_RETURN_DENOM="${COSMOS_RETURN_DENOM:-utest}"
-HANDLER_JSON="${HANDLER_JSON:-$repo_root/cardano/offchain/deployments/handler.json}"
+BRIDGE_MANIFEST="${BRIDGE_MANIFEST:-$repo_root/cardano/offchain/deployments/bridge-manifest.json}"
 POLL_INTERVAL_SECONDS="${DEMO_POLL_INTERVAL_SECONDS:-5}"
 SETTLEMENT_TIMEOUT_SECONDS="${DEMO_SETTLEMENT_TIMEOUT_SECONDS:-1800}"
 COMMAND_TIMEOUT_SECONDS="${DEMO_COMMAND_TIMEOUT_SECONDS:-1800}"
@@ -414,13 +414,13 @@ esac
 
 require_value "$CARDANO_COSMOS_CHANNEL_ID" "CARDANO_COSMOS_CHANNEL_ID is required."
 require_value "$COSMOS_CARDANO_CHANNEL_ID" "COSMOS_CARDANO_CHANNEL_ID is required."
-[[ -f "$HANDLER_JSON" ]] || {
-  echo "Could not find Cardano handler deployment at $HANDLER_JSON." >&2
+[[ -f "$BRIDGE_MANIFEST" ]] || {
+  echo "Could not find Cardano manifest deployment at $BRIDGE_MANIFEST." >&2
   exit 1
 }
 
-CARDANO_SEND_DENOM="${CARDANO_SEND_DENOM:-$(jq -r '.tokens.mock // empty' "$HANDLER_JSON" | head -n 1)}"
-require_value "$CARDANO_SEND_DENOM" "Could not resolve the Cardano mock token denom from handler.json."
+CARDANO_SEND_DENOM="${CARDANO_SEND_DENOM:-$(jq -r '.tokens.mock // empty' "$BRIDGE_MANIFEST" | head -n 1)}"
+require_value "$CARDANO_SEND_DENOM" "Could not resolve the Cardano mock token denom from bridge-manifest.json."
 
 key_output="$(hermes_cli keys list --chain "$COSMOS_CHAIN_ID" 2>&1)" || {
   printf '%s\n' "$key_output" >&2

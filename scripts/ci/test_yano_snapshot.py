@@ -80,7 +80,7 @@ class SnapshotCacheTests(unittest.TestCase):
     def test_corrupted_or_incomplete_fixture_is_rejected(self):
         fixture = self.root / "fixture"
         for name in ["checkpoint/CURRENT", "config/network/devnet/shelley-genesis.json",
-                     "deployments/handler.json", "wallet.key", "inventory.json", "scripts.json", "provider-state.json"]:
+                     "deployments/bridge-manifest.json", "wallet.key", "inventory.json", "scripts.json", "provider-state.json"]:
             path = fixture / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("original")
@@ -99,7 +99,7 @@ class SnapshotCacheTests(unittest.TestCase):
     def test_packet_checkpoint_expires_before_the_client_trusting_period(self):
         fixture = self.root / "fixture"
         for name in ["checkpoint/CURRENT", "config/network/devnet/shelley-genesis.json",
-                     "deployments/handler.json", "wallet.key", "inventory.json", "scripts.json", "provider-state.json"]:
+                     "deployments/bridge-manifest.json", "wallet.key", "inventory.json", "scripts.json", "provider-state.json"]:
             path = fixture / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("original")

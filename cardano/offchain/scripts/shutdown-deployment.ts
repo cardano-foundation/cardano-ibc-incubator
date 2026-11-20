@@ -3,6 +3,7 @@ import {
   shutdownRegistryReference,
   withShutdownAuthority,
 } from "../src/shutdown.ts";
+import { deploymentFromManifest } from "../src/deployment-artifacts.ts";
 import { toOgmiosScript } from "../src/ogmios-script.ts";
 import {
   assertNoDeploymentState,
@@ -60,7 +61,7 @@ type Command =
 
 type ScriptArgs = {
   command: Command;
-  handlerJsonPath: string;
+  manifestPath: string;
   gracePeriodEnd?: number;
   gracePeriodMs?: number;
   batchSize: number;
@@ -68,7 +69,7 @@ type ScriptArgs = {
   out?: string;
 };
 
-const DEFAULT_HANDLER_JSON_PATH = "./deployments/handler.json";
+const DEFAULT_BRIDGE_MANIFEST_PATH = "./deployments/bridge-manifest.json";
 const DEFAULT_REFERENCE_RECLAIM_BATCH_SIZE = 10;
 const DEFAULT_KUPMIOS_SUBMIT_TIMEOUT_MS = 60000;
 const TX_VALIDITY_WINDOW_MS = 10 * 60 * 1000;
@@ -548,11 +549,11 @@ function usage(): never {
   throw new Error(
     [
       "Usage:",
-      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts status [--handler-json <path>]",
-      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-write --allow-run --allow-ffi scripts/shutdown-deployment.ts enter (--grace-period-ms <ms> | --grace-period-end <unix-ms>) [--handler-json <path>] [--signers <key-hashes> --out <unsigned.json>]",
-      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts reclaim-state [--batch-size <n>] [--handler-json <path>]",
-      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts reclaim-reference-scripts [--batch-size <n>] [--handler-json <path>]",
-      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts finalize [--handler-json <path>]",
+      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts status [--manifest <path>]",
+      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-write --allow-run --allow-ffi scripts/shutdown-deployment.ts enter (--grace-period-ms <ms> | --grace-period-end <unix-ms>) [--manifest <path>] [--signers <key-hashes> --out <unsigned.json>]",
+      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts reclaim-state [--batch-size <n>] [--manifest <path>]",
+      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts reclaim-reference-scripts [--batch-size <n>] [--manifest <path>]",
+      "  deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts finalize [--manifest <path>]",
       "",
       "Before finalizing, close or migrate every connected counterparty client. Finalizing burns the HostState NFT and permanently stops state updates.",
     ].join("\n"),
@@ -582,7 +583,7 @@ function parseArgs(argv: string[]): ScriptArgs {
     usage();
   }
 
-  let handlerJsonPath = DEFAULT_HANDLER_JSON_PATH;
+  let manifestPath = DEFAULT_BRIDGE_MANIFEST_PATH;
   let gracePeriodEnd: number | undefined;
   let gracePeriodMs: number | undefined;
   let batchSize = DEFAULT_REFERENCE_RECLAIM_BATCH_SIZE;
@@ -604,8 +605,8 @@ function parseArgs(argv: string[]): ScriptArgs {
         out = argv[++index];
         if (!out) throw new Error("--out requires a path");
         break;
-      case "--handler-json":
-        handlerJsonPath = argv[index + 1];
+      case "--manifest":
+        manifestPath = argv[index + 1];
         index += 1;
         break;
       case "--grace-period-end":
@@ -633,7 +634,7 @@ function parseArgs(argv: string[]): ScriptArgs {
     throw new Error("--signers and --out are only valid for enter");
   }
 
-  if (!handlerJsonPath) {
+  if (!manifestPath) {
     usage();
   }
 
@@ -653,7 +654,7 @@ function parseArgs(argv: string[]): ScriptArgs {
 
   return {
     command,
-    handlerJsonPath,
+    manifestPath,
     gracePeriodEnd,
     gracePeriodMs,
     batchSize,
@@ -721,7 +722,7 @@ export async function buildOperationalLucid(
 }
 
 async function loadDeployment(path: string): Promise<DeploymentTemplate> {
-  return JSON.parse(await Deno.readTextFile(path)) as DeploymentTemplate;
+  return deploymentFromManifest(JSON.parse(await Deno.readTextFile(path)));
 }
 
 function normalizeAssets(
@@ -769,7 +770,7 @@ function deployerPaymentKeyHash(address: string): string {
 
 function hostStateUnit(deployment: DeploymentTemplate): string {
   if (!deployment.hostStateNFT) {
-    throw new Error("handler.json does not contain hostStateNFT");
+    throw new Error("bridge-manifest.json does not contain host_state_nft");
   }
   return deployment.hostStateNFT.policyId + deployment.hostStateNFT.name;
 }
@@ -778,7 +779,7 @@ function hostStateNftPolicy(deployment: DeploymentTemplate) {
   const hostStateNFT = deployment.hostStateNFT;
   if (!hostStateNFT?.script) {
     throw new Error(
-      "handler.json does not contain the burn-capable HostState NFT policy script. Deployments created before burn support must be migrated instead of finalized",
+      "bridge-manifest.json does not contain the burn-capable HostState NFT policy script. Deployments created before burn support must be migrated instead of finalized",
     );
   }
 
@@ -993,7 +994,7 @@ function readReferenceValidator(
   deployment: DeploymentTemplate,
 ) {
   if (!deployment.hostStateNFT) {
-    throw new Error("handler.json does not contain hostStateNFT");
+    throw new Error("bridge-manifest.json does not contain host_state_nft");
   }
   return readValidator(
     "reference_validator.refer_only.else",
@@ -1583,7 +1584,7 @@ export function buildFinalizeShutdownTx(
 
 async function main() {
   const args = parseArgs(Deno.args);
-  const deployment = await loadDeployment(args.handlerJsonPath);
+  const deployment = await loadDeployment(args.manifestPath);
   const lucid = await buildOperationalLucid();
 
   switch (args.command) {

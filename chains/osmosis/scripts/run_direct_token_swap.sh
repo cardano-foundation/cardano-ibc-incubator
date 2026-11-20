@@ -53,9 +53,9 @@ log_tx() {
 }
 
 get_mock_token_denom() {
-  local handler_file="$1"
-  [ -f "$handler_file" ] || return 1
-  jq -r '.tokens.mock // empty' "$handler_file" 2>/dev/null | head -n 1
+  local manifest_file="$1"
+  [ -f "$manifest_file" ] || return 1
+  jq -r '.tokens.mock // empty' "$manifest_file" 2>/dev/null | head -n 1
 }
 
 osmosis_query_json() {
@@ -291,14 +291,14 @@ OSMOSIS_GAS_PRICES="${OSMOSIS_GAS_PRICES:-0.1uosmo}"
 SENT_AMOUNT_NUM="${CARIBIC_TOKEN_SWAP_AMOUNT:-12345}"
 POOL_BOOTSTRAP_DENOM_AMOUNT_NUM="${OSMOSIS_POOL_BOOTSTRAP_DENOM_AMOUNT:-1000000}"
 POOL_BOOTSTRAP_UOSMO_AMOUNT_NUM="${OSMOSIS_POOL_BOOTSTRAP_UOSMO_AMOUNT:-1000000}"
-HANDLER_JSON="${HANDLER_JSON:-$repo_root/cardano/offchain/deployments/handler.json}"
-SENT_DENOM="$(get_mock_token_denom "$HANDLER_JSON" || true)"
+BRIDGE_MANIFEST="${BRIDGE_MANIFEST:-$repo_root/cardano/offchain/deployments/bridge-manifest.json}"
+SENT_DENOM="$(get_mock_token_denom "$BRIDGE_MANIFEST" || true)"
 SWAPROUTER_WASM="$repo_root/chains/osmosis/configuration/cosmwasm/wasm/swaprouter.wasm"
 CROSSCHAIN_SWAPS_WASM="$repo_root/chains/osmosis/configuration/cosmwasm/wasm/crosschain_swaps.wasm"
 
 check_string_empty "$CARDANO_OSMOSIS_CHANNEL_ID" "CARDANO_OSMOSIS_CHANNEL_ID is required."
 check_string_empty "$OSMOSIS_CARDANO_CHANNEL_ID" "OSMOSIS_CARDANO_CHANNEL_ID is required."
-check_string_empty "$SENT_DENOM" "Could not resolve mock token denom from handler.json."
+check_string_empty "$SENT_DENOM" "Could not resolve mock token denom from bridge-manifest.json."
 [ -f "$SWAPROUTER_WASM" ] || { echo "swaprouter wasm not found at $SWAPROUTER_WASM."; exit 1; }
 [ -f "$CROSSCHAIN_SWAPS_WASM" ] || { echo "crosschain_swaps wasm not found at $CROSSCHAIN_SWAPS_WASM."; exit 1; }
 

@@ -20,20 +20,17 @@
       "local": {
         "chain_id": "cardano-devnet",
         "network_magic": 42,
-        "handler_json_path": "../../cardano/offchain/deployments/handler.json",
         "bridge_manifest_path": "../../cardano/offchain/deployments/bridge-manifest.json"
       },
       "preprod": {
         "chain_id": "cardano-preprod",
         "network_magic": 1,
-        "handler_json_path": "../../manifests/preprod/cardano-preprod-handler.json",
         "bridge_manifest_path": "../../manifests/preprod/cardano-preprod-bridge-manifest.json",
         "mithril_aggregator_url": "https://aggregator.release-preprod.api.mithril.network/aggregator"
       },
       "preview": {
         "chain_id": "cardano-preview",
         "network_magic": 2,
-        "handler_json_path": "../../manifests/preview/cardano-preview-handler.json",
         "bridge_manifest_path": "../../manifests/preview/cardano-preview-bridge-manifest.json",
         "mithril_aggregator_url": "https://aggregator.pre-release-preview.api.mithril.network/aggregator"
       }

@@ -1263,7 +1263,6 @@ pub async fn deploy_contracts(
     validators_already_built: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let profile = config::cardano_network_profile(config::CoreCardanoNetwork::Local);
-    let handler_json_path = PathBuf::from(profile.handler_json_path.clone());
     let bridge_manifest_path = profile
         .bridge_manifest_path
         .clone()
@@ -1322,8 +1321,8 @@ pub async fn deploy_contracts(
         &optional_progress_bar,
     );
     // Local devnet deployments are ephemeral. A restarted or re-created local
-    // chain must not reuse the previous handler.json / bridge-manifest.json,
-    // because those artifacts point at UTxOs from an older chain instance.
+    // chain must not reuse the previous bridge-manifest.json,
+    // because that manifest points at UTxOs from an older chain instance.
     execute_script(
         offchain_dir.as_path(),
         "deno",
@@ -1370,17 +1369,6 @@ pub async fn deploy_contracts(
         return Err(format!(
             "ERROR: Offchain deployment failed while generating local deployment artifacts: {}",
             error
-        )
-        .into());
-    }
-
-    if !handler_json_path.exists() {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.finish_and_clear();
-        }
-        return Err(format!(
-            "ERROR: Offchain deployment finished but handler.json was not created at {}",
-            handler_json_path.display()
         )
         .into());
     }
@@ -1435,10 +1423,10 @@ fn publish_deployed_manifest(
     Ok(())
 }
 
-fn backup_handler_json(
-    handler_json_path: &Path,
+fn backup_deployment_manifest(
+    deployment_manifest_path: &Path,
 ) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
-    if !handler_json_path.exists() {
+    if !deployment_manifest_path.exists() {
         return Ok(None);
     }
 
@@ -1447,15 +1435,15 @@ fn backup_handler_json(
         .map(|duration| duration.as_nanos())
         .unwrap_or_default();
     let backup_path = std::env::temp_dir().join(format!(
-        "caribic-handler-backup-{}-{}.json",
+        "caribic-manifest-backup-{}-{}.json",
         std::process::id(),
         backup_suffix
     ));
 
-    fs::copy(handler_json_path, &backup_path).map_err(|error| {
+    fs::copy(deployment_manifest_path, &backup_path).map_err(|error| {
         format!(
-            "Failed to back up handler.json from {} to {}: {}",
-            handler_json_path.display(),
+            "Failed to back up bridge-manifest.json from {} to {}: {}",
+            deployment_manifest_path.display(),
             backup_path.display(),
             error
         )
@@ -1464,28 +1452,28 @@ fn backup_handler_json(
     Ok(Some(backup_path))
 }
 
-fn restore_handler_json(
-    handler_json_path: &Path,
+fn restore_deployment_manifest(
+    deployment_manifest_path: &Path,
     backup_path: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match backup_path {
         Some(backup_path) => {
-            fs::copy(&backup_path, handler_json_path).map_err(|error| {
+            fs::copy(&backup_path, deployment_manifest_path).map_err(|error| {
                 format!(
-                    "Failed to restore handler.json from {} to {}: {}",
+                    "Failed to restore bridge-manifest.json from {} to {}: {}",
                     backup_path.display(),
-                    handler_json_path.display(),
+                    deployment_manifest_path.display(),
                     error
                 )
             })?;
             let _ = fs::remove_file(backup_path);
         }
         None => {
-            if handler_json_path.exists() {
-                fs::remove_file(handler_json_path).map_err(|error| {
+            if deployment_manifest_path.exists() {
+                fs::remove_file(deployment_manifest_path).map_err(|error| {
                     format!(
-                        "Failed to remove temporary handler.json at {}: {}",
-                        handler_json_path.display(),
+                        "Failed to remove temporary bridge-manifest.json at {}: {}",
+                        deployment_manifest_path.display(),
                         error
                     )
                 })?;
@@ -1733,11 +1721,9 @@ pub async fn deploy_public_cardano_bridge(
     let profile = config::cardano_network_profile(network);
     let cardano_dir = project_root_path.join("chains/cardano");
     let offchain_dir = project_root_path.join("cardano/offchain");
-    let gateway_dir = project_root_path.join("cardano/gateway");
     let deployment_dir = offchain_dir.join("deployments");
-    let generic_handler_path = deployment_dir.join("handler.json");
+    let generic_manifest_path = deployment_dir.join("bridge-manifest.json");
     let generic_cost_report_path = deployment_dir.join("deployment-cost-report.json");
-    let public_handler_path = PathBuf::from(profile.handler_json_path.clone());
     let public_manifest_path = profile
         .bridge_manifest_path
         .clone()
@@ -1762,16 +1748,6 @@ pub async fn deploy_public_cardano_bridge(
             error
         )
     })?;
-    if let Some(parent) = public_handler_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed to create {} handler directory {}: {}",
-                network.as_str(),
-                parent.display(),
-                error
-            )
-        })?;
-    }
     if let Some(parent) = public_manifest_path.parent() {
         fs::create_dir_all(parent).map_err(|error| {
             format!(
@@ -1801,7 +1777,7 @@ pub async fn deploy_public_cardano_bridge(
     if !force_public_redeploy {
         if public_manifest_path.exists() {
             // Joining an existing bridge needs only its verified public manifest.
-            // A missing private handler must never trigger a fresh deployment.
+            // A missing manifest must never trigger a fresh deployment.
             crate::bridge_history::read_checkpoint(&public_manifest_path, network)?;
             log_or_show_progress(
                 &format!(
@@ -1813,63 +1789,6 @@ pub async fn deploy_public_cardano_bridge(
             );
             if let Some(progress_bar) = &optional_progress_bar {
                 progress_bar.finish_and_clear();
-            }
-            return Ok(());
-        }
-
-        if public_handler_path.exists() {
-            log_or_show_progress(
-                &format!(
-                    "{} Reusing existing {} handler.json",
-                    style("Step 1/3").bold().dim(),
-                    network.as_str()
-                ),
-                &optional_progress_bar,
-            );
-            log_or_show_progress(
-                &format!(
-                    "{} Exporting public bridge manifest from existing handler.json",
-                    style("Step 2/3").bold().dim()
-                ),
-                &optional_progress_bar,
-            );
-
-            let export_env = vec![
-                ("CARDANO_CHAIN_ID", profile.chain_id.as_str()),
-                ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
-                ("CARDANO_NETWORK", network.as_str()),
-            ];
-
-            ensure_gateway_dependencies(gateway_dir.as_path(), &optional_progress_bar)?;
-
-            let export_result = execute_script(
-                gateway_dir.as_path(),
-                "npm",
-                vec![
-                    "run",
-                    "export:bridge-manifest",
-                    "--",
-                    public_handler_path
-                        .to_str()
-                        .ok_or("Failed to stringify public-testnet handler path")?,
-                    public_manifest_path
-                        .to_str()
-                        .ok_or("Failed to stringify public-testnet bridge manifest path")?,
-                ],
-                Some(export_env),
-            );
-
-            if let Some(progress_bar) = &optional_progress_bar {
-                progress_bar.finish_and_clear();
-            }
-
-            if let Err(error) = export_result {
-                return Err(format!(
-                    "Failed to export {} bridge manifest: {}",
-                    network.as_str(),
-                    error
-                )
-                .into());
             }
             return Ok(());
         }
@@ -1951,7 +1870,7 @@ pub async fn deploy_public_cardano_bridge(
     )
     .await?;
 
-    let handler_backup = backup_handler_json(generic_handler_path.as_path())?;
+    let manifest_backup = backup_deployment_manifest(generic_manifest_path.as_path())?;
 
     log_or_show_progress(
         &format!(
@@ -2029,7 +1948,7 @@ pub async fn deploy_public_cardano_bridge(
     );
 
     if let Err(error) = deployment_result {
-        let _ = restore_handler_json(generic_handler_path.as_path(), handler_backup);
+        let _ = restore_deployment_manifest(generic_manifest_path.as_path(), manifest_backup);
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
         }
@@ -2041,36 +1960,21 @@ pub async fn deploy_public_cardano_bridge(
         .into());
     }
 
-    if !generic_handler_path.exists() {
-        let _ = restore_handler_json(generic_handler_path.as_path(), handler_backup);
+    if !generic_manifest_path.exists() {
+        let _ = restore_deployment_manifest(generic_manifest_path.as_path(), manifest_backup);
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
         }
         return Err(format!(
-            "Offchain deployment finished but handler.json was not created at {}",
-            generic_handler_path.display()
-        )
-        .into());
-    }
-
-    if let Err(error) = fs::copy(&generic_handler_path, &public_handler_path) {
-        let _ = restore_handler_json(generic_handler_path.as_path(), handler_backup);
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.finish_and_clear();
-        }
-        return Err(format!(
-            "Failed to publish {} handler.json from {} to {}: {}",
-            network.as_str(),
-            generic_handler_path.display(),
-            public_handler_path.display(),
-            error
+            "Offchain deployment finished but bridge-manifest.json was not created at {}",
+            generic_manifest_path.display()
         )
         .into());
     }
 
     if generic_cost_report_path.exists() {
         if let Err(error) = fs::copy(&generic_cost_report_path, &public_cost_report_path) {
-            let _ = restore_handler_json(generic_handler_path.as_path(), handler_backup);
+            let _ = restore_deployment_manifest(generic_manifest_path.as_path(), manifest_backup);
             if let Some(progress_bar) = &optional_progress_bar {
                 progress_bar.finish_and_clear();
             }
@@ -2103,7 +2007,7 @@ pub async fn deploy_public_cardano_bridge(
 
     let export_result = publish_deployed_manifest(&offchain_dir, &public_manifest_path);
 
-    restore_handler_json(generic_handler_path.as_path(), handler_backup)?;
+    restore_deployment_manifest(generic_manifest_path.as_path(), manifest_backup)?;
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();
@@ -2189,64 +2093,6 @@ fn ensure_gateway_dependencies(
     Ok(())
 }
 
-fn ensure_gateway_built(
-    gateway_dir: &Path,
-    optional_progress_bar: &Option<ProgressBar>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if gateway_dir.join("dist/main.js").exists() {
-        return Ok(());
-    }
-
-    let project_root = gateway_dir
-        .parent()
-        .and_then(|p| p.parent())
-        .ok_or("Failed to derive project root from gateway directory")?;
-
-    log_or_show_progress(
-        "Building gateway and file: dependencies (first run only)",
-        optional_progress_bar,
-    );
-
-    let proto_types_dir = project_root.join("proto-types");
-
-    if proto_types_dir.exists() && !proto_types_dir.join("build").exists() {
-        if !proto_types_dir.join("node_modules").exists() {
-            execute_script(&proto_types_dir, "npm", vec!["ci"], None)?;
-        }
-
-        execute_script(&proto_types_dir, "npm", vec!["run", "build"], None)?;
-    }
-
-    for package_name in [
-        "cardano-ibc-trace-registry",
-        "cardano-ibc-planner",
-        "cardano-ibc-tx-builder",
-        "cardano-ibc-tx-builder-runtime",
-    ] {
-        let package_dir = project_root.join("packages").join(package_name);
-
-        if !package_dir.exists() {
-            continue;
-        }
-
-        if !package_dir.join("node_modules").exists() {
-            execute_script(&package_dir, "npm", vec!["ci"], None)?;
-        }
-
-        // Reuse package output from an earlier local build.
-        if package_dir.join("dist").exists() {
-            continue;
-        }
-
-        execute_script(&package_dir, "npm", vec!["run", "build"], None)?;
-    }
-
-    ensure_gateway_dependencies(gateway_dir, optional_progress_bar)?;
-    execute_script(gateway_dir, "npm", vec!["run", "build"], None)?;
-
-    Ok(())
-}
-
 pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
     let shared_cardano_network =
         crate::setup::read_gateway_env_value(&gateway_dir.join(".env"), "CARDANO_DOCKER_NETWORK")?
@@ -2267,8 +2113,6 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     } else {
         log("Starting Gateway ...");
     }
-
-    ensure_gateway_built(gateway_dir, &optional_progress_bar)?;
 
     let network_exists = DockerCli::new(Path::new("."))
         .raw_output(["network", "inspect", shared_cardano_network.as_str()].as_slice())

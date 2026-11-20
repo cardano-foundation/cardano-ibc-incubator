@@ -18,14 +18,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--runtime', type=Path, required=True)
     parser.add_argument('--artifacts-dir', type=Path, required=True)
-    parser.add_argument('--handler', type=Path)
+    parser.add_argument('--manifest', type=Path)
     parser.add_argument('--executor', choices=['primary', 'secondary', 'migration'], default='primary', help='Owned public fixtures; migration is a distinct ADA-only executor with no holder assets or governance authority')
     args, command = parser.parse_known_args()
     if command and command[0] == '--':
         command = command[1:]
     runtime, artifacts = args.runtime.resolve(), args.artifacts_dir.resolve()
-    handler = args.handler.resolve() if args.handler else artifacts / 'handler.json'
-    for path in (runtime, artifacts, handler):
+    manifest = args.manifest.resolve() if args.manifest else artifacts / 'bridge-manifest.json'
+    for path in (runtime, artifacts, manifest):
         if not path.is_relative_to(ROOT / '.deployment-smoke'):
             parser.error('Only explicit disposable migration artifacts are supported')
     if not (runtime / 'compose.json').is_file():
@@ -38,10 +38,10 @@ def main():
         'activate-authority', 'execute', 'resume', 'verify', 'restrict', 'propose-restoration', 'rotate-emergency', 'restore', 'cancel-restoration',
     }:
         parser.error('Supply an explicit production migration CLI command after --')
-    if '--handler' in command:
-        parser.error('Select the handler through the wrapper option before --')
-    identity = json.loads(handler.read_text())
-    if identity.get('migration', {}).get('profile') not in ('cardano-ibc-compatible-v6',):
+    if '--manifest' in command:
+        parser.error('Select the manifest through the wrapper option before --')
+    identity = json.loads(manifest.read_text())
+    if identity.get('migration', {}).get('profile') not in ('cardano-ibc-compatible-v6'):
         parser.error('The selected deployment has no supported migration baseline')
     public_key = re.search(r'ed25519_sk[0-9a-z]+', (ROOT / 'cardano/offchain/.env.default').read_text())
     if not public_key:
@@ -67,7 +67,7 @@ def main():
         '--allow-run', '--allow-ffi', '--config', str(ROOT / 'cardano/offchain/deno.json'),
         '--import-map', str(artifacts / 'import-map.json'),
         str(ROOT / 'cardano/offchain/scripts/migrate-deployment.ts'),
-        command[0], '--handler', str(handler), *command[1:],
+        command[0], '--manifest', str(manifest), *command[1:],
     ], env=env, cwd=ROOT, check=True)
 
 

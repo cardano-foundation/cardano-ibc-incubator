@@ -399,7 +399,7 @@ fake_hermes_bin="$test_dir/fake-hermes"
 fake_simd_bin="$test_dir/fake-simd"
 fake_direct_script="$test_dir/fake-direct-token-transfer"
 fake_deno_bin="$test_dir/fake-deno"
-printf '{}\n' >"$test_dir/handler.json"
+printf '{}\n' >"$test_dir/bridge-manifest.json"
 ln -s "$script_dir/$(basename "$0")" "$fake_hermes_bin"
 ln -s "$script_dir/$(basename "$0")" "$fake_simd_bin"
 ln -s "$script_dir/$(basename "$0")" "$fake_direct_script"
@@ -414,7 +414,7 @@ run_recovery() {
     SIMD_BIN="$fake_simd_bin" \
     DIRECT_TOKEN_TRANSFER_SCRIPT="$fake_direct_script" \
     DENO_BIN="$fake_deno_bin" \
-    HANDLER_JSON="$test_dir/handler.json" \
+    BRIDGE_MANIFEST="$test_dir/bridge-manifest.json" \
     ESCROW_READER_SCRIPT="$script_dir/../../../cardano/offchain/scripts/recovery-escrow.ts" \
     COSMOS_PROFILE="$profile" \
     CARDANO_CHAIN_ID="cardano-devnet" \

@@ -449,6 +449,9 @@ jobs:
             packages/cardano-ibc-trace-registry/package-lock.json
             packages/cardano-ibc-tx-builder-runtime/package-lock.json
 
+      - name: Test local dependency preparation
+        run: node --test cardano/gateway/scripts/prepare-local-deps.test.cjs
+
       - name: Build proto types
         run: |
           npm ci --prefix proto-types

@@ -1549,7 +1549,6 @@ fn write_gateway_env_for_network(
         "BRIDGE_MANIFEST_PATH",
         &manifest_container_path,
     )?;
-    remove_env_var(&gateway_env, "HANDLER_JSON_PATH")?;
 
     secure_env_file_permissions(&gateway_env)?;
 
@@ -1762,7 +1761,7 @@ pub fn prepare_gateway(
 #[cfg(test)]
 mod tests {
     #[test]
-    fn imported_manifest_is_available_in_the_gateway_mount_without_a_handler() {
+    fn imported_manifest_is_available_in_the_gateway_mount() {
         let root =
             std::env::temp_dir().join(format!("caribic-manifest-mount-{}", std::process::id()));
         std::fs::create_dir_all(root.join("project")).unwrap();
@@ -1780,9 +1779,6 @@ mod tests {
             .unwrap(),
             std::fs::read(source).unwrap()
         );
-        assert!(!root
-            .join("project/cardano/offchain/deployments/handler.json")
-            .exists());
         std::fs::remove_dir_all(root).unwrap();
     }
     use super::{

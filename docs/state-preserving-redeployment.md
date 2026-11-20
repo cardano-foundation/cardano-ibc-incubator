@@ -32,33 +32,33 @@ Every deployment uses the governed upgradeable model. Supply `MIGRATION_GOVERNAN
 
 Entering shutdown requires the current deployer and the governance quorum. The registry must be `Ready` with no pending proposal or active migration. Shutdown immediately stops new work. Reclamation waits until a grace period of at least 24 hours and at least the configured governance delay has passed. Existing packet obligations and voucher returns still need to drain before their dependencies can be reclaimed. Shutdown cannot be cancelled.
 
-Run `deno task shutdown:deployment enter --handler-json <handler.json> --grace-period-ms <milliseconds> --signers <governor-key-hashes> --out <unsigned.json>` to export the exact transaction body. Collect the deployer and quorum signatures before submitting it. The export does not submit a partially signed transaction. After draining and the grace period, use `reclaim-state`, `reclaim-reference-scripts` and `finalize`. Finalization burns the HostState NFT. Governance and client-verifier staking deposits are reclaimed before finalization. The immutable implementation-registry NFT and its minimum ADA remain as the permanent deployment identity. Its one-shot policy does not permit burning that identity.
+Run `deno task shutdown:deployment enter --manifest <bridge-manifest.json> --grace-period-ms <milliseconds> --signers <governor-key-hashes> --out <unsigned.json>` to export the exact transaction body. Collect the deployer and quorum signatures before submitting it. The export does not submit a partially signed transaction. After draining and the grace period, use `reclaim-state`, `reclaim-reference-scripts` and `finalize`. Finalization burns the HostState NFT. Governance and client-verifier staking deposits are reclaimed before finalization. The immutable implementation-registry NFT and its minimum ADA remain as the permanent deployment identity. Its one-shot policy does not permit burning that identity.
 
 ## Migration procedure
 
-Retain the original handler, applied policies, full canonical history and reviewed successor blueprint. Use Aiken `1.1.24` and Deno `2.9.6` with locked dependencies. Set `KUPO_URL`, `OGMIOS_URL` and `CARDANO_NETWORK_MAGIC` explicitly. The migration CLI does not load `.env.default`. Submission uses the explicitly supplied `MIGRATION_EXECUTOR_SK`. Ensure the counterparty can catch up and its trust window accommodates the pause. Fund the executor separately for fees, collateral and deposits.
+Retain the original manifest, applied policies, full canonical history and reviewed successor blueprint. Use Aiken `1.1.24` and Deno `2.9.6` with locked dependencies. Set `KUPO_URL`, `OGMIOS_URL` and `CARDANO_NETWORK_MAGIC` explicitly. The migration CLI does not load `.env.default`. Submission uses the explicitly supplied `MIGRATION_EXECUTOR_SK`. Ensure the counterparty can catch up and its trust window accommodates the pause. Fund the executor separately for fees, collateral and deposits.
 
 From `cardano/offchain`, inspect and prepare the reviewed plan:
 
 ```sh
-deno task migrate:deployment inspect --handler /artifacts/handler-v1.json
-deno task migrate:deployment prepare --handler /artifacts/handler-v1.json \
+deno task migrate:deployment inspect --manifest /artifacts/bridge-manifest-v1.json
+deno task migrate:deployment prepare --manifest /artifacts/bridge-manifest-v1.json \
   --blueprint /artifacts/reviewed-v2/plutus.json --out /artifacts/migration-v2.json
 ```
 
-Retain the reported plan digest. `publish` uses `--handler`, `--plan`, `--outbox` and `--submit` to publish references with the explicitly configured executor. `authorize` uses `--handler`, `--plan`, `--signers`, `--expires-at`, `--wallet-address` and `--out` to export an unsigned approval for the normal quorum-signing workflow. Expiry is a POSIX millisecond timestamp beyond the approval delay and intended start. A stale approval transaction needs rebuilding and fresh signatures over its exact body.
+Retain the reported plan digest. `publish` uses `--manifest`, `--plan`, `--outbox` and `--submit` to publish references with the explicitly configured executor. `authorize` uses `--manifest`, `--plan`, `--signers`, `--expires-at`, `--wallet-address` and `--out` to export an unsigned approval for the normal quorum-signing workflow. Expiry is a POSIX millisecond timestamp beyond the approval delay and intended start. A stale approval transaction needs rebuilding and fresh signatures over its exact body.
 
 After approval matures, execute bounded steps:
 
 ```sh
-deno task migrate:deployment execute --handler /artifacts/handler-v1.json \
+deno task migrate:deployment execute --manifest /artifacts/bridge-manifest-v1.json \
   --plan /artifacts/migration-v2.json --outbox /artifacts/v2-outbox \
   --max-steps 20 --submit
 ```
 
 Use `resume` with the same arguments after interruption. Every step reads canonical registry state, waits for provider inclusion and verifies output adoption. This does not establish irreversible finality or pipeline unconfirmed transactions. The disposable inventory cache verifies its root against the registry and rebuilds after unexpected progress, restart or rollback. Stale or incomplete inventory stops execution. Preserve the outbox and signed revisions, and inspect canonical state before retrying an unresolved submission.
 
-Before activation, use Gateway's `export:migration-witness` command with the original handler and an output path. It reconstructs and authenticates the transfer-port proof from retained history. Supply that path through `--port-witness` when resuming. After activation, `verify --handler ... --plan ... --out ...` produces the successor handler. Export Gateway's normalized bridge manifest, update Gateway and Hermes' pinned manifest, then restart them. Recheck historical proofs, old redemption/refund/remint and new traffic on the existing routes. Retain original addresses and history. Repeat from the verified successor handler for the next migration.
+Before activation, use Gateway's `export:migration-witness` command with the original manifest and an output path. It reconstructs and authenticates the transfer-port proof from retained history. Supply that path through `--port-witness` when resuming. After activation, `verify --manifest ... --plan ... --out ...` produces the successor manifest. Update Gateway and Hermes' pinned manifest, then restart them. Recheck historical proofs, old redemption/refund/remint and new traffic on the existing routes. Retain original addresses and history. Repeat from the verified successor manifest for the next migration.
 
 ## Executed evidence
 
@@ -84,7 +84,7 @@ The migration rehearsal uses the same five-producer Yaci DevKit provisioner as C
 
 ## Light client recovery
 
-The same registry quorum can approve recovery of a frozen or expired Aiken Tendermint client. Create and review an active substitute first. The subject and substitute must already exist at the current client implementation. From `cardano/offchain`, use `deno task migrate:deployment nominate-client-recovery --handler <handler.json> --subject-client-unit <unit> --substitute-client-unit <unit> --signers <governor-key-hashes> --expires-at <milliseconds> --wallet-address <address> --out <approval.json>`. Units include the client policy ID and asset name. The quorum signs the exact exported transaction.
+The same registry quorum can approve recovery of a frozen or expired Aiken Tendermint client. Create and review an active substitute first. The subject and substitute must already exist at the current client implementation. From `cardano/offchain`, use `deno task migrate:deployment nominate-client-recovery --manifest <bridge-manifest.json> --subject-client-unit <unit> --substitute-client-unit <unit> --signers <governor-key-hashes> --expires-at <milliseconds> --wallet-address <address> --out <approval.json>`. Units include the client policy ID and asset name. The quorum signs the exact exported transaction.
 
 The proposal binds the two client identities and current implementation generation. It shares the existing proposal slot and delay of at least 24 hours with deployer graduation and contract replacement. The substitute may continue normal verified updates while approval matures. Execution checks its current state rather than pinning an old checkpoint.
 

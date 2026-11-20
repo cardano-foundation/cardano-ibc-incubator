@@ -95,7 +95,7 @@ def main():
         if artifacts.exists() and any(artifacts.iterdir()):
             parser.error("--artifacts-dir must be empty; keep every previous baseline intact")
         artifacts.mkdir(parents=True, exist_ok=True)
-    elif (artifacts / "handler.json").exists() or (artifacts / "deployment.log").exists():
+    elif (artifacts / "bridge-manifest.json").exists() or (artifacts / "deployment.log").exists():
         parser.error("This network already has deployment artifacts; select a fresh --artifacts-dir for a new baseline")
     docker = ["docker"] + (["--context", args.docker_context] if args.docker_context else [])
     compose = docker + ["compose", "-p", project, "-f", str(compose_file)]
@@ -218,8 +218,8 @@ def main():
                 entry = artifacts / "deployment-clock.ts"
                 entry.write_text(f"// Disposable chain clock only; the production delay and scripts are unchanged.\nconst realNow = Date.now.bind(Date);\nDate.now = () => realNow() + {args.clock_offset_seconds * 1000};\nawait import({json.dumps((OFFCHAIN / 'index.ts').as_uri())});\n")
             subprocess.run(["deno", "run", "--config", str(OFFCHAIN / "deno.json"), "--import-map", str(import_map_path), "--allow-net", "--allow-env", "--allow-read", "--allow-run", "--allow-ffi", "--allow-write", str(entry)], cwd=artifacts, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-        manifest = artifacts / "deployments/handler.json"
-        shutil.copy2(manifest, artifacts / "handler.json")
+        manifest = artifacts / "deployments/bridge-manifest.json"
+        shutil.copy2(manifest, artifacts / "bridge-manifest.json")
         plan = json.loads(inventory_path.read_text())
         expected = {validator["hash"] for validator in plan["referenceValidators"]}
         holder = next(validator["address"] for validator in plan["inlineValidators"] if validator["title"] == "reference_validator.refer_only.else")

@@ -1,3 +1,4 @@
+import { deploymentFromManifest } from "../../cardano/offchain/src/deployment-artifacts.ts";
 // Run unchanged against a fresh deployment and each restored baseline.
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import {
@@ -18,9 +19,9 @@ export async function testShutdown(
   ownerKey: string,
 ) {
   const started = performance.now();
-  const deployment: DeploymentTemplate = JSON.parse(
-    await Deno.readTextFile("deployments/handler.json"),
-  );
+  const deployment = deploymentFromManifest(JSON.parse(
+    await Deno.readTextFile("deployments/bridge-manifest.json"),
+  ));
   const nft = deployment.hostStateNFT!;
   const readHost = async () => {
     const utxo = await lucid.utxoByUnit(nft.policyId + nft.name);

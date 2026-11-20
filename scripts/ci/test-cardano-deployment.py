@@ -141,8 +141,8 @@ def main():
         print(f"Running production deployment; log: {log_path}", flush=True)
         with log_path.open("w") as log:
             subprocess.run(["deno", "run", "--config", str(OFFCHAIN / "deno.json"), "--import-map", str(import_map_path), "--allow-net", "--allow-env", "--allow-read", "--allow-run", "--allow-ffi", "--allow-write", str(OFFCHAIN / "index.ts")], cwd=runtime_root, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-        manifest = runtime_root / "deployments/handler.json"
-        shutil.copy2(manifest, runtime_root / "handler.json")
+        manifest = runtime_root / "deployments/bridge-manifest.json"
+        shutil.copy2(manifest, runtime_root / "bridge-manifest.json")
         plan = json.loads(inventory_path.read_text())
         expected = {validator["hash"] for validator in plan["referenceValidators"]}
         holder = next(validator["address"] for validator in plan["inlineValidators"] if validator["title"] == "reference_validator.refer_only.else")

@@ -1,62 +1,69 @@
-import { assertEquals, assertRejects } from "@std/assert";
-import { writeDeploymentArtifacts } from "./deployment-artifacts.ts";
 import { normalizeBridgeManifestConfig } from "../../../packages/cardano-ibc-tx-builder-runtime/src/bridgeManifest.ts";
-import previousHandler from "../../../manifests/preview/cardano-preview-handler.json" with {
+import { assertEquals, assertRejects, assertThrows } from "@std/assert";
+import {
+  deploymentFromManifest,
+  writeDeploymentArtifacts,
+} from "./deployment-artifacts.ts";
+import previousFixture from "../../../manifests/preview/cardano-preview-bridge-manifest.json" with {
   type: "json",
 };
 
-const handler = {
-  ...previousHandler,
+const fixture = {
+  ...previousFixture,
   migration: {
-    ...previousHandler.migration,
+    ...previousFixture.migration,
     profile: "cardano-ibc-compatible-v6",
   },
 };
 
-Deno.test("deployment publishes a usable public manifest beside its internal artifacts", async () => {
+Deno.test("deployment publishes one complete manifest and preserves it on invalid input", async () => {
   const folder = await Deno.makeTempDir();
   try {
-    await writeDeploymentArtifacts(
-      handler,
-      { chain_id: "cardano-preview", network_magic: 2, network: "Preview" },
-      folder,
-      "test",
+    const deployment = deploymentFromManifest(fixture);
+    assertThrows(
+      () => deploymentFromManifest(deployment),
+      Error,
+      "Invalid bridge config",
     );
-    const manifest = JSON.parse(
+    await writeDeploymentArtifacts(deployment, fixture.cardano, folder);
+    const published = JSON.parse(
       await Deno.readTextFile(`${folder}/bridge-manifest.json`),
     );
+    assertEquals(deploymentFromManifest(published), deployment);
+    const discovery = normalizeBridgeManifestConfig(published).bridgeManifest;
+    assertEquals("script" in discovery.validators.host_state_stt, false);
+    assertEquals("baseline" in discovery.migration!, false);
+    assertEquals(published.migration.baseline, fixture.migration.baseline);
+    assertEquals(
+      published.migration.registryReference,
+      fixture.migration.registryReference,
+    );
+    assertEquals("backup_operator_key_hash" in published, false);
+    assertEquals("deploymentMode" in published, false);
+    assertEquals(
+      published.validators.host_state_stt.script,
+      fixture.validators.host_state_stt.script,
+    );
+    assertEquals(
+      published.validators.host_state_stt.ref_utxo,
+      fixture.validators.host_state_stt.ref_utxo,
+    );
+    assertEquals(published.history, fixture.history);
+    const files = [];
+    for await (const entry of Deno.readDir(folder)) files.push(entry.name);
+    assertEquals(files, ["bridge-manifest.json"]);
     if (Deno.build.os !== "windows") {
       assertEquals(
         (await Deno.stat(`${folder}/bridge-manifest.json`)).mode! & 0o777,
         0o644,
       );
     }
-    const loaded = normalizeBridgeManifestConfig(manifest);
-    assertEquals(
-      loaded.deployment.hostStateNFT.policyId,
-      handler.hostStateNFT.policyId,
-    );
-    assertEquals(
-      loaded.deployment.hostStateNFT.name,
-      handler.hostStateNFT.name,
-    );
-    assertEquals(manifest.cardano.chain_id, "cardano-preview");
-    assertEquals(manifest.history, handler.history);
-    assertEquals(manifest.validators.host_state_stt.script, undefined);
-    assertEquals(
-      JSON.parse(await Deno.readTextFile(`${folder}/handler.json`)),
-      handler,
-    );
-    assertEquals(
-      JSON.parse(await Deno.readTextFile(`${folder}/handler_test.json`)),
-      handler,
-    );
     await assertRejects(() =>
-      writeDeploymentArtifacts({}, manifest.cardano, folder, "invalid")
+      writeDeploymentArtifacts({}, fixture.cardano, folder)
     );
     assertEquals(
       JSON.parse(await Deno.readTextFile(`${folder}/bridge-manifest.json`)),
-      manifest,
+      published,
     );
   } finally {
     await Deno.remove(folder, { recursive: true });
