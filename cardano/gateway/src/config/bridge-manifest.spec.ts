@@ -2,13 +2,12 @@ import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
-  DEFAULT_HANDLER_JSON_PATH,
   CONSENSUS_HISTORY_FORMAT,
   ICS20_PACKET_CODEC,
   bridgeManifestsEqual,
   loadBridgeConfigFromEnv,
   normalizeBridgeManifestConfig,
-  normalizeHandlerJsonDeploymentConfig,
+  normalizeDeploymentConfig,
 } from './bridge-manifest';
 
 function buildValidator(name: string) {
@@ -24,7 +23,7 @@ function buildValidator(name: string) {
   };
 }
 
-function buildHandlerJsonDeployment() {
+function buildDeploymentFixture() {
   return {
     packetState: {
       operations: Object.fromEntries(
@@ -125,8 +124,8 @@ function buildHandlerJsonDeployment() {
   };
 }
 
-function buildStagedHandlerJsonDeployment() {
-  const deployment = buildHandlerJsonDeployment();
+function buildStagedDeploymentFixture() {
+  const deployment = buildDeploymentFixture();
   return {
     ...deployment,
     validators: {
@@ -140,57 +139,100 @@ function buildStagedHandlerJsonDeployment() {
 
 describe('bridge manifest normalization', () => {
   it('retains an optional membership verifier through both manifest formats', () => {
-    const source = buildHandlerJsonDeployment();
+    const source = buildDeploymentFixture();
     const membership = buildValidator('verifyMembership');
     const deployment = { ...source, validators: { ...source.validators, verifyMembership: membership } };
-    const normalized = normalizeHandlerJsonDeploymentConfig(deployment, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' });
-    expect(normalized.deployment.validators.verifyMembership).toEqual(expect.objectContaining({ scriptHash: membership.scriptHash, refUtxo: membership.refUtxo }));
-    expect(normalized.bridgeManifest.validators.verify_membership).toEqual(expect.objectContaining({ script_hash: membership.scriptHash }));
-    expect(normalizeBridgeManifestConfig(normalized.bridgeManifest).deployment.validators.verifyMembership).toEqual(normalized.deployment.validators.verifyMembership);
-    const legacy = normalizeHandlerJsonDeploymentConfig(source, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' });
+    const normalized = normalizeDeploymentConfig(deployment, {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+    expect(normalized.deployment.validators.verifyMembership).toEqual(
+      expect.objectContaining({ scriptHash: membership.scriptHash, refUtxo: membership.refUtxo }),
+    );
+    expect(normalized.bridgeManifest.validators.verify_membership).toEqual(
+      expect.objectContaining({ script_hash: membership.scriptHash }),
+    );
+    expect(normalizeBridgeManifestConfig(normalized.bridgeManifest).deployment.validators.verifyMembership).toEqual(
+      normalized.deployment.validators.verifyMembership,
+    );
+    const legacy = normalizeDeploymentConfig(source, {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
     expect(legacy.bridgeManifest.validators.verify_membership).toBeUndefined();
     expect(normalizeBridgeManifestConfig(legacy.bridgeManifest).deployment.validators.verifyMembership).toBeUndefined();
   });
 
   it('rejects malformed membership verifier entries in either format', () => {
-    const source = buildHandlerJsonDeployment();
-    expect(() => normalizeHandlerJsonDeploymentConfig({ ...source, validators: { ...source.validators, verifyMembership: null } }, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' })).toThrow('validators.verifyMembership');
-    const normalized = normalizeHandlerJsonDeploymentConfig(source, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' });
-    expect(() => normalizeBridgeManifestConfig({ ...normalized.bridgeManifest, validators: { ...normalized.bridgeManifest.validators, verify_membership: {} } })).toThrow('validators.verify_membership');
+    const source = buildDeploymentFixture();
+    expect(() =>
+      normalizeDeploymentConfig(
+        { ...source, validators: { ...source.validators, verifyMembership: null } },
+        { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
+      ),
+    ).toThrow('validators.verifyMembership');
+    const normalized = normalizeDeploymentConfig(source, {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+    expect(() =>
+      normalizeBridgeManifestConfig({
+        ...normalized.bridgeManifest,
+        validators: { ...normalized.bridgeManifest.validators, verify_membership: {} },
+      }),
+    ).toThrow('validators.verify_membership');
   });
 
   it('retains the applied heartbeat timing through both deployment formats', () => {
     const heartbeatSchedule = { epochOriginMs: 1_700_000_000_000, epochLengthMs: 432_000_000 };
-    const normalized = normalizeHandlerJsonDeploymentConfig(
-      { ...buildHandlerJsonDeployment(), heartbeatSchedule },
+    const normalized = normalizeDeploymentConfig(
+      { ...buildDeploymentFixture(), heartbeatSchedule },
       { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
     );
     const restored = normalizeBridgeManifestConfig(normalized.bridgeManifest);
     expect(restored.deployment.heartbeatSchedule).toEqual(heartbeatSchedule);
-    expect(restored.bridgeManifest.heartbeat_schedule).toEqual({ epoch_origin_ms: heartbeatSchedule.epochOriginMs, epoch_length_ms: heartbeatSchedule.epochLengthMs });
-    expect(() => normalizeHandlerJsonDeploymentConfig(
-      { ...buildHandlerJsonDeployment(), heartbeatSchedule: { ...heartbeatSchedule, epochLengthMs: 0 } },
-      { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
-    )).toThrow('heartbeat epoch timing');
+    expect(restored.bridgeManifest.heartbeat_schedule).toEqual({
+      epoch_origin_ms: heartbeatSchedule.epochOriginMs,
+      epoch_length_ms: heartbeatSchedule.epochLengthMs,
+    });
+    expect(() =>
+      normalizeDeploymentConfig(
+        { ...buildDeploymentFixture(), heartbeatSchedule: { ...heartbeatSchedule, epochLengthMs: 0 } },
+        { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
+      ),
+    ).toThrow('heartbeat epoch timing');
   });
 
   it('rejects legacy packet receipt storage rather than interpreting it as history-backed state', () => {
-    const deployment = buildHandlerJsonDeployment();
+    const deployment = buildDeploymentFixture();
     delete (deployment.packetState as any).receiptStorage;
-    expect(() => normalizeHandlerJsonDeploymentConfig(deployment, {
-      chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom',
-    })).toThrow('fresh history-backed packet-lane deployment');
+    expect(() =>
+      normalizeDeploymentConfig(deployment, {
+        chain_id: 'cardano-devnet',
+        network_magic: 42,
+        network: 'Custom',
+      }),
+    ).toThrow('fresh history-backed packet-lane deployment');
   });
   it('advertises acknowledgement batching only for deployments that enable it', () => {
-    const deployment = buildHandlerJsonDeployment();
+    const deployment = buildDeploymentFixture();
     const options = { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' as const };
-    const legacy = normalizeHandlerJsonDeploymentConfig(deployment, options);
+    const legacy = normalizeDeploymentConfig(deployment, options);
     expect(legacy.bridgeManifest.packet_state.acknowledgement_batch_size).toBeUndefined();
-    const enabled = normalizeHandlerJsonDeploymentConfig({
-      ...deployment, packetState: { ...deployment.packetState, acknowledgementBatchSize: 2 },
-    }, options);
+    const enabled = normalizeDeploymentConfig(
+      {
+        ...deployment,
+        packetState: { ...deployment.packetState, acknowledgementBatchSize: 2 },
+      },
+      options,
+    );
     expect(enabled.bridgeManifest.packet_state.acknowledgement_batch_size).toBe(2);
-    expect(normalizeBridgeManifestConfig(enabled.bridgeManifest).deployment.packetState.acknowledgementBatchSize).toBe(2);
+    expect(normalizeBridgeManifestConfig(enabled.bridgeManifest).deployment.packetState.acknowledgementBatchSize).toBe(
+      2,
+    );
   });
   it('accepts the deployment used by the Gateway image smoke test', () => {
     const fixtureUrl = pathToFileURL(resolve(__dirname, '../../../../scripts/ci/image-smoke-fixture.mjs')).href;
@@ -217,9 +259,9 @@ console.log(JSON.stringify(smokeManifest()))`,
   it.each([undefined, null, '', 'archive-nft-v1', 'proof-backed-v2'])(
     'rejects missing or unsupported history format %s before accepting old contracts',
     (format) => {
-      const current = buildHandlerJsonDeployment();
+      const current = buildDeploymentFixture();
       expect(() =>
-        normalizeHandlerJsonDeploymentConfig(
+        normalizeDeploymentConfig(
           { ...current, consensusHistoryFormat: format },
           {
             chain_id: 'cardano-devnet',
@@ -228,7 +270,7 @@ console.log(JSON.stringify(smokeManifest()))`,
           },
         ),
       ).toThrow('fresh proof-backed deployment is required');
-      const normalized = normalizeHandlerJsonDeploymentConfig(current, {
+      const normalized = normalizeDeploymentConfig(current, {
         chain_id: 'cardano-devnet',
         network_magic: 42,
         network: 'Custom',
@@ -239,12 +281,10 @@ console.log(JSON.stringify(smokeManifest()))`,
     },
   );
 
-  it('requires public manifests and handlers to declare the deployment history boundary', () => {
+  it('requires public manifests and deployment configurations to declare the deployment history boundary', () => {
     const cardano = { chain_id: 'cardano-preview', network_magic: 2, network: 'Preview' };
-    expect(() => normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), cardano)).toThrow(
-      'history is required',
-    );
-    const local = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+    expect(() => normalizeDeploymentConfig(buildDeploymentFixture(), cardano)).toThrow('history is required');
+    const local = normalizeDeploymentConfig(buildDeploymentFixture(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -255,7 +295,7 @@ console.log(JSON.stringify(smokeManifest()))`,
       start: { slot: 100, block_height: 5, block_hash: 'aa'.repeat(32) },
       host_state_nft_mint: { tx_hash: 'bb'.repeat(32), output_index: 0 },
     };
-    const loaded = normalizeHandlerJsonDeploymentConfig({ ...buildHandlerJsonDeployment(), history }, cardano);
+    const loaded = normalizeDeploymentConfig({ ...buildDeploymentFixture(), history }, cardano);
     expect(loaded.bridgeManifest).toMatchObject({
       consensus_history_format: CONSENSUS_HISTORY_FORMAT,
       history,
@@ -266,8 +306,8 @@ console.log(JSON.stringify(smokeManifest()))`,
     });
   });
 
-  it('normalizes handler.json into the public manifest and internal deployment config', () => {
-    const loaded = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+  it('normalizes deployment configuration into public discovery fields', () => {
+    const loaded = normalizeDeploymentConfig(buildDeploymentFixture(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -335,7 +375,7 @@ console.log(JSON.stringify(smokeManifest()))`,
   });
 
   it('normalizes a public manifest back into the internal deployment config', () => {
-    const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+    const legacy = normalizeDeploymentConfig(buildDeploymentFixture(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -348,15 +388,15 @@ console.log(JSON.stringify(smokeManifest()))`,
   });
 
   it('rejects obsolete archive-NFT deployment fields rather than silently dropping them', () => {
-    const current = buildHandlerJsonDeployment();
+    const current = buildDeploymentFixture();
     const identity = { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' };
     expect(() =>
-      normalizeHandlerJsonDeploymentConfig(
+      normalizeDeploymentConfig(
         { ...current, validators: { ...current.validators, spendConsensusState: buildValidator('archive') } },
         identity,
       ),
     ).toThrow(/fresh proof-backed deployment is required/);
-    const normalized = normalizeHandlerJsonDeploymentConfig(current, {
+    const normalized = normalizeDeploymentConfig(current, {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -370,18 +410,20 @@ console.log(JSON.stringify(smokeManifest()))`,
   });
 
   it('round-trips staged Tendermint session validators', () => {
-    const staged = normalizeHandlerJsonDeploymentConfig(buildStagedHandlerJsonDeployment(), {
+    const staged = normalizeDeploymentConfig(buildStagedDeploymentFixture(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
     });
 
     expect(staged.deployment.validators.updateClient).toEqual({
-      scriptHash: 'updateClient-hash', address: 'updateClient-address',
+      scriptHash: 'updateClient-hash',
+      address: 'updateClient-address',
       refUtxo: { txHash: 'updateClient-tx', outputIndex: 1 },
     });
     expect(staged.bridgeManifest.validators.update_client).toEqual({
-      script_hash: 'updateClient-hash', address: 'updateClient-address',
+      script_hash: 'updateClient-hash',
+      address: 'updateClient-address',
       ref_utxo: { tx_hash: 'updateClient-tx', output_index: 1 },
     });
     expect(staged.deployment.validators.spendTendermintUpdateSession).toEqual({
@@ -407,33 +449,69 @@ console.log(JSON.stringify(smokeManifest()))`,
   });
 
   it('retains all cached and staged scripts across both manifest formats', () => {
-    const deployment = buildStagedHandlerJsonDeployment();
+    const deployment = buildStagedDeploymentFixture();
     const roles = ['update', 'updateCore', 'generalUpdateCore', 'stagedUpdate', 'cacheSpend', 'cacheMint'];
-    const cachedTendermint = { format: 'authenticated-validator-cache-v1', validators: Object.fromEntries(roles.map((role) => [role, role === 'stagedUpdate' ? deployment.validators.updateClient : buildValidator(role)])) };
-    const loaded = normalizeHandlerJsonDeploymentConfig({ ...deployment, cachedTendermint }, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' });
+    const cachedTendermint = {
+      format: 'authenticated-validator-cache-v1',
+      validators: Object.fromEntries(
+        roles.map((role) => [
+          role,
+          role === 'stagedUpdate' ? deployment.validators.updateClient : buildValidator(role),
+        ]),
+      ),
+    };
+    const loaded = normalizeDeploymentConfig(
+      { ...deployment, cachedTendermint },
+      { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
+    );
     expect(loaded.deployment.cachedTendermint?.validators.cacheMint.scriptHash).toBe('cacheMint-hash');
     expect(normalizeBridgeManifestConfig(loaded.bridgeManifest).deployment).toEqual(loaded.deployment);
     for (const role of roles) {
       const incomplete = { ...cachedTendermint, validators: { ...cachedTendermint.validators, [role]: undefined } };
-      expect(() => normalizeHandlerJsonDeploymentConfig({ ...deployment, cachedTendermint: incomplete }, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' })).toThrow();
+      expect(() =>
+        normalizeDeploymentConfig(
+          { ...deployment, cachedTendermint: incomplete },
+          { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
+        ),
+      ).toThrow();
     }
-    expect(() => normalizeHandlerJsonDeploymentConfig({ ...deployment, cachedTendermint: { ...cachedTendermint, validators: { ...cachedTendermint.validators, stagedUpdate: buildValidator('another-staged-verifier') } } }, { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' })).toThrow('different staged verifier');
+    expect(() =>
+      normalizeDeploymentConfig(
+        {
+          ...deployment,
+          cachedTendermint: {
+            ...cachedTendermint,
+            validators: { ...cachedTendermint.validators, stagedUpdate: buildValidator('another-staged-verifier') },
+          },
+        },
+        { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
+      ),
+    ).toThrow('different staged verifier');
   });
 
   it('rejects ordinary forwarding support without staged sessions', () => {
-    const deployment = buildHandlerJsonDeployment();
+    const deployment = buildDeploymentFixture();
     const options = { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' as const };
-    expect(() => normalizeHandlerJsonDeploymentConfig({
-      ...deployment, validators: { ...deployment.validators, updateClient: buildValidator('updateClient') },
-    }, options)).toThrow('Ordinary client forwarding requires staged Tendermint sessions');
-    const manifest = normalizeHandlerJsonDeploymentConfig(deployment, options).bridgeManifest;
-    expect(() => normalizeBridgeManifestConfig({
-      ...manifest, validators: { ...manifest.validators, update_client: manifest.validators.recover_client },
-    })).toThrow('Ordinary client forwarding requires staged Tendermint sessions');
+    expect(() =>
+      normalizeDeploymentConfig(
+        {
+          ...deployment,
+          validators: { ...deployment.validators, updateClient: buildValidator('updateClient') },
+        },
+        options,
+      ),
+    ).toThrow('Ordinary client forwarding requires staged Tendermint sessions');
+    const manifest = normalizeDeploymentConfig(deployment, options).bridgeManifest;
+    expect(() =>
+      normalizeBridgeManifestConfig({
+        ...manifest,
+        validators: { ...manifest.validators, update_client: manifest.validators.recover_client },
+      }),
+    ).toThrow('Ordinary client forwarding requires staged Tendermint sessions');
   });
 
   it('accepts legacy deployments without Tendermint session validators', () => {
-    const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+    const legacy = normalizeDeploymentConfig(buildDeploymentFixture(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -445,19 +523,19 @@ console.log(JSON.stringify(smokeManifest()))`,
     expect(legacy.bridgeManifest.validators.mint_tendermint_update_session).toBeUndefined();
   });
 
-  it('rejects handler files with only one Tendermint session validator', () => {
-    const staged = buildStagedHandlerJsonDeployment();
+  it('rejects deployment configurations with only one Tendermint session validator', () => {
+    const staged = buildStagedDeploymentFixture();
     const { mintTendermintUpdateSession: _mintSession, ...withoutMintSession } = staged.validators;
     const { spendTendermintUpdateSession: _spendSession, ...withoutSpendSession } = staged.validators;
 
     expect(() =>
-      normalizeHandlerJsonDeploymentConfig(
+      normalizeDeploymentConfig(
         { ...staged, validators: withoutMintSession },
         { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
       ),
     ).toThrow('staged Tendermint spend and mint session validators must be configured together');
     expect(() =>
-      normalizeHandlerJsonDeploymentConfig(
+      normalizeDeploymentConfig(
         { ...staged, validators: withoutSpendSession },
         { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },
       ),
@@ -465,7 +543,7 @@ console.log(JSON.stringify(smokeManifest()))`,
   });
 
   it('rejects public manifests with only one Tendermint session validator', () => {
-    const staged = normalizeHandlerJsonDeploymentConfig(buildStagedHandlerJsonDeployment(), {
+    const staged = normalizeDeploymentConfig(buildStagedDeploymentFixture(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -481,11 +559,11 @@ console.log(JSON.stringify(smokeManifest()))`,
     );
   });
 
-  it('keeps handler files without a recovery validator loadable', () => {
-    const current = buildHandlerJsonDeployment();
+  it('keeps deployment configurations without a recovery validator loadable', () => {
+    const current = buildDeploymentFixture();
     const { recoverClient: _recoverClient, ...legacyValidators } = current.validators;
 
-    const loaded = normalizeHandlerJsonDeploymentConfig(
+    const loaded = normalizeDeploymentConfig(
       { ...current, validators: legacyValidators },
       {
         chain_id: 'cardano-devnet',
@@ -499,7 +577,7 @@ console.log(JSON.stringify(smokeManifest()))`,
   });
 
   it('keeps manifests without a recovery validator loadable', () => {
-    const current = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+    const current = normalizeDeploymentConfig(buildDeploymentFixture(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -515,10 +593,10 @@ console.log(JSON.stringify(smokeManifest()))`,
     expect(loaded.bridgeManifest.validators.recover_client).toBeUndefined();
   });
 
-  it('defaults a proof-backed handler without a packet codec to legacy packet encoding', () => {
-    const { ics20PacketCodec: _codec, ...legacyHandler } = buildHandlerJsonDeployment();
+  it('defaults a proof-backed deployment without a packet codec to legacy packet encoding', () => {
+    const { ics20PacketCodec: _codec, ...deploymentWithoutCodec } = buildDeploymentFixture();
 
-    const loaded = normalizeHandlerJsonDeploymentConfig(legacyHandler, {
+    const loaded = normalizeDeploymentConfig(deploymentWithoutCodec, {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -529,7 +607,7 @@ console.log(JSON.stringify(smokeManifest()))`,
   });
 
   it('defaults a proof-backed schema-v4 manifest without a packet codec to legacy packet encoding', () => {
-    const current = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+    const current = normalizeDeploymentConfig(buildDeploymentFixture(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -543,7 +621,7 @@ console.log(JSON.stringify(smokeManifest()))`,
   });
 
   it('rejects unknown codec capabilities', () => {
-    const current = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+    const current = normalizeDeploymentConfig(buildDeploymentFixture(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -557,11 +635,11 @@ console.log(JSON.stringify(smokeManifest()))`,
     ).toThrow('Invalid bridge config: "ics20_packet_codec"');
   });
 
-  it('rejects handler.json files without a deployment timestamp', () => {
-    const { deployedAt: _deployedAt, ...legacyHandlerJson } = buildHandlerJsonDeployment();
+  it('rejects bridge-manifest.json files without a deployment timestamp', () => {
+    const { deployedAt: _deployedAt, ...deploymentWithoutTimestamp } = buildDeploymentFixture();
 
     expect(() =>
-      normalizeHandlerJsonDeploymentConfig(legacyHandlerJson, {
+      normalizeDeploymentConfig(deploymentWithoutTimestamp, {
         chain_id: 'cardano-devnet',
         network_magic: 42,
         network: 'Custom',
@@ -570,7 +648,7 @@ console.log(JSON.stringify(smokeManifest()))`,
   });
 
   it('rejects bridge manifests without deployed_at', () => {
-    const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+    const legacy = normalizeDeploymentConfig(buildDeploymentFixture(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -584,7 +662,7 @@ console.log(JSON.stringify(smokeManifest()))`,
   });
 
   it('rejects bridge manifests with an old schema version', () => {
-    const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+    const legacy = normalizeDeploymentConfig(buildDeploymentFixture(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -598,8 +676,8 @@ console.log(JSON.stringify(smokeManifest()))`,
     ).toThrow('Invalid bridge config: "schema_version" must be 6');
   });
 
-  it('accepts legacy voucher_metadata validator payloads and normalizes them to address-only', () => {
-    const current = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+  it('retains voucher metadata for maintenance and exposes its address for discovery', () => {
+    const current = normalizeDeploymentConfig(buildDeploymentFixture(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -625,32 +703,16 @@ console.log(JSON.stringify(smokeManifest()))`,
 
     expect(loaded.deployment.validators.voucherMetadata).toEqual({
       address: 'voucher-metadata-address',
+      scriptHash: 'legacy-voucher-metadata-hash',
+      refUtxo: { txHash: 'legacy-voucher-metadata-tx', outputIndex: 12 },
     });
     expect(loaded.bridgeManifest.validators.voucher_metadata).toEqual({
       address: 'voucher-metadata-address',
     });
   });
 
-  it('fails startup resolution if both manifest and handler paths are set', () => {
-    const fs = {
-      readFileSync: jest.fn(),
-    };
-
-    expect(() =>
-      loadBridgeConfigFromEnv(
-        {
-          BRIDGE_MANIFEST_PATH: '/tmp/bridge-manifest.json',
-          HANDLER_JSON_PATH: '/tmp/handler.json',
-        },
-        fs,
-      ),
-    ).toThrow('BRIDGE_MANIFEST_PATH and HANDLER_JSON_PATH are mutually exclusive');
-
-    expect(fs.readFileSync).not.toHaveBeenCalled();
-  });
-
-  it('uses the manifest as the explicit alternative startup source', () => {
-    const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+  it('uses the public manifest as the startup source', () => {
+    const legacy = normalizeDeploymentConfig(buildDeploymentFixture(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -670,26 +732,20 @@ console.log(JSON.stringify(smokeManifest()))`,
     expect(loaded.deployment).toEqual(legacy.deployment);
   });
 
-  it('falls back to the default handler.json path when no explicit startup source is set', () => {
-    const handlerJsonDeployment = buildHandlerJsonDeployment();
-    const fs = {
-      readFileSync: jest.fn().mockReturnValue(JSON.stringify(handlerJsonDeployment)),
-    };
-
-    const loaded = loadBridgeConfigFromEnv({}, fs);
-
-    expect(fs.readFileSync).toHaveBeenCalledWith(DEFAULT_HANDLER_JSON_PATH, 'utf8');
-    expect(loaded.deployment.hostStateNFT).toEqual(handlerJsonDeployment.hostStateNFT);
+  it.each([{}, { BRIDGE_MANIFEST_PATH: '' }])('rejects startup without a manifest: %j', (env) => {
+    const fs = { readFileSync: jest.fn() };
+    expect(() => loadBridgeConfigFromEnv(env, fs)).toThrow(/BRIDGE_MANIFEST_PATH/);
+    expect(fs.readFileSync).not.toHaveBeenCalled();
   });
 });
 
 describe('migration operational counterparty boundary', () => {
-  const matrix = ['handler', 'manifest'].flatMap((source) =>
+  const matrix = ['manifest'].flatMap((source) =>
     [false, true].flatMap((migration) => [false, true].map((readOnly) => [source, migration, readOnly] as const)),
   );
   it.each(matrix)('%s migration=%s historical-only=%s', (source, migration, readOnly) => {
-    const handler = {
-      ...buildStagedHandlerJsonDeployment(),
+    const deployment = {
+      ...buildStagedDeploymentFixture(),
       deploymentMode: migration ? 'upgradeable' : 'legacy',
       ...(migration
         ? {
@@ -704,14 +760,14 @@ describe('migration operational counterparty boundary', () => {
           }
         : {}),
     };
-    const manifest = normalizeHandlerJsonDeploymentConfig(handler, {
+    const manifest = normalizeDeploymentConfig(deployment, {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
     }).bridgeManifest;
-    const fs = { readFileSync: jest.fn(() => JSON.stringify(source === 'handler' ? handler : manifest)) };
+    const fs = { readFileSync: jest.fn(() => JSON.stringify(manifest)) };
     const env = {
-      [source === 'handler' ? 'HANDLER_JSON_PATH' : 'BRIDGE_MANIFEST_PATH']: 'fixture.json',
+      BRIDGE_MANIFEST_PATH: 'fixture.json',
       GATEWAY_HISTORICAL_READ_ONLY: String(readOnly),
     };
     expect(loadBridgeConfigFromEnv(env, fs).deployment.migration?.profile).toBe(
@@ -723,26 +779,38 @@ describe('migration operational counterparty boundary', () => {
 describe('deployment recovery capability selection', () => {
   it('rejects an upgradeable label with missing recovery configuration', () => {
     expect(() =>
-      normalizeHandlerJsonDeploymentConfig(
-        { ...buildHandlerJsonDeployment(), deploymentMode: 'upgradeable' },
+      normalizeDeploymentConfig(
+        { ...buildDeploymentFixture(), deploymentMode: 'upgradeable' },
         { chain_id: 'devnet', network_magic: 42, network: 'Custom' },
       ),
     ).toThrow('recovery configuration disagree');
   });
   it('requires explicit legacy selection for old unlabelled manifests at startup', () => {
-    const handler = buildHandlerJsonDeployment();
-    const { deploymentMode: _mode, ...old } = handler;
+    const { deploymentMode: _mode, ...old } = normalizeDeploymentConfig(buildDeploymentFixture(), {
+      chain_id: 'devnet',
+      network_magic: 42,
+      network: 'Custom',
+    }).bridgeManifest;
     const fs = { readFileSync: () => JSON.stringify(old) };
-    expect(() => loadBridgeConfigFromEnv({}, fs)).toThrow('recovery configuration disagree');
-    expect(loadBridgeConfigFromEnv({ IBC_DEPLOYMENT_MODE: 'legacy' }, fs).deployment.migration).toBeUndefined();
+    expect(() => loadBridgeConfigFromEnv({ BRIDGE_MANIFEST_PATH: 'fixture.json' }, fs)).toThrow(
+      'recovery configuration disagree',
+    );
+    expect(
+      loadBridgeConfigFromEnv({ IBC_DEPLOYMENT_MODE: 'legacy', BRIDGE_MANIFEST_PATH: 'fixture.json' }, fs).deployment
+        .migration,
+    ).toBeUndefined();
   });
 });
 
 it('publishes explicit legacy selection through Gateway into the actual SDK normalizer', async () => {
   const { normalizeBridgeManifest } = await import('@cardano-ibc/tx-builder-runtime');
-  const { deploymentMode: _mode, ...old } = buildHandlerJsonDeployment();
+  const { deploymentMode: _mode, ...old } = normalizeDeploymentConfig(buildDeploymentFixture(), {
+    chain_id: 'devnet',
+    network_magic: 42,
+    network: 'Custom',
+  }).bridgeManifest;
   const loaded = loadBridgeConfigFromEnv(
-    { IBC_DEPLOYMENT_MODE: 'legacy' },
+    { IBC_DEPLOYMENT_MODE: 'legacy', BRIDGE_MANIFEST_PATH: 'fixture.json' },
     { readFileSync: () => JSON.stringify(old) },
   );
   const wire = JSON.parse(JSON.stringify(loaded.bridgeManifest));
@@ -752,6 +820,9 @@ it('publishes explicit legacy selection through Gateway into the actual SDK norm
     'recovery configuration disagree',
   );
   expect(() =>
-    loadBridgeConfigFromEnv({ IBC_DEPLOYMENT_MODE: 'upgradeable' }, { readFileSync: () => JSON.stringify(old) }),
+    loadBridgeConfigFromEnv(
+      { IBC_DEPLOYMENT_MODE: 'upgradeable', BRIDGE_MANIFEST_PATH: 'fixture.json' },
+      { readFileSync: () => JSON.stringify(old) },
+    ),
   ).toThrow('recovery configuration disagree');
 });

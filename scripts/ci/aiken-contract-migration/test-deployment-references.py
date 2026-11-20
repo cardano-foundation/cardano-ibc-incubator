@@ -150,19 +150,19 @@ class References(unittest.TestCase):
     def fixture(self):
         unit = {'txHash': 'ab' * 32, 'outputIndex': 0, 'address': 'holder', 'scriptRef': {'type': 'PlutusV3', 'script': '43420100'}}
         plan = {'referenceValidators': [{'script': {'type': 'PlutusV3', 'script': '420100'}, 'hash': 'cd' * 28}]}
-        wanted = refs.manifest_references({'validators': {'test': {'scriptHash': 'cd' * 28, 'script': '420100', 'refUtxo': unit}}}, plan)
+        wanted = refs.manifest_references({'validators': {'test': {'script_hash': 'cd' * 28, 'script': '420100', 'ref_utxo': {**{k: v for k, v in unit.items() if k not in ('txHash', 'outputIndex')}, 'tx_hash': unit['txHash'], 'output_index': unit['outputIndex']}}}}, plan)
         indexed = [{'transaction_id': unit['txHash'], 'output_index': 0, 'address': 'holder', 'script_hash': 'cd' * 28, 'spent_at': None}]
         ledger = {unit['txHash'] + '#0': {'address': 'holder', 'referenceScript': {'script': {'type': 'PlutusScriptV3', 'cborHex': '420100'}}}}
         return wanted, indexed, ledger
 
     def test_swapped_canonical_references_cannot_satisfy_the_wrong_roles(self):
         scripts = [{'script': {'type': 'PlutusV3', 'script': '4201' + f'{i:02x}'}, 'hash': f'{i:02x}' * 28} for i in [1, 2]]
-        validators = {f'role{i}': {'scriptHash': s['hash'], 'script': s['script']['script'], 'refUtxo': {
+        validators = {f'role{i}': {'script_hash': s['hash'], 'script': s['script']['script'], 'ref_utxo': {
             'txHash': f'{i:02x}' * 32, 'outputIndex': 0, 'address': 'holder', 'scriptRef': s['script']}} for i, s in enumerate(scripts, 1)}
         plan = {'referenceValidators': scripts}
         refs.manifest_references({'validators': validators}, plan)
         a, b = validators.values()
-        a['refUtxo'], b['refUtxo'] = b['refUtxo'], a['refUtxo']
+        a['ref_utxo'], b['ref_utxo'] = b['ref_utxo'], a['ref_utxo']
         with self.assertRaisesRegex(ValueError, 'Validator role'):
             refs.manifest_references({'validators': validators}, plan)
 

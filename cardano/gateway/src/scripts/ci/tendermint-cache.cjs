@@ -21,7 +21,7 @@ const { validatorCacheToken, readValidatorCache } = require('@cardano-ibc/tx-bui
 const { Any } = require('@cardano-ibc/proto-types/build/google/protobuf/any');
 const { Header, ClientState, ConsensusState } = require('@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint');
 const { MsgCreateClient, MsgUpdateClient } = require('@cardano-ibc/proto-types/build/ibc/core/client/v1/tx');
-const { normalizeHandlerJsonDeploymentConfig } = require('../../../dist/config/bridge-manifest');
+const { normalizeDeploymentConfig } = require('../../../dist/config/bridge-manifest');
 const { BinaryReader } = require('@cardano-ibc/proto-types/build/binary');
 const encode = (v) => JSON.stringify(v, (_, n) => typeof n === 'bigint' ? { bigint: n.toString() } : n);
 const decode = (s) => JSON.parse(s, (_, n) => n && typeof n.bigint === 'string' ? BigInt(n.bigint) : n);
@@ -149,7 +149,7 @@ async function runtime(fixture, includePacketState = false) {
 async function main() {
   const fixture = await rpc('fixture');
   const report = [];
-  const manifest = normalizeHandlerJsonDeploymentConfig(fixture.deployment, { chain_id: 'cardano-cache-test', network_magic: 42, network: 'Custom' }).bridgeManifest;
+  const manifest = normalizeDeploymentConfig(fixture.deployment, { chain_id: 'cardano-cache-test', network_magic: 42, network: 'Custom' }).bridgeManifest;
   await rpc('policyManifest', manifest);
   for (const scenario of fixture.scenarios) {
     // Valid transactions above the engineering fee target must still progress.

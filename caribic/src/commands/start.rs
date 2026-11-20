@@ -41,21 +41,18 @@ fn ensure_public_testnet_relayer_route(
 fn require_public_gateway_bootstrap_artifact(
     network: config::CoreCardanoNetwork,
     manifest_path: Option<&str>,
-    handler_path: &Path,
 ) -> Result<(), String> {
     if manifest_path
         .map(Path::new)
         .is_some_and(|path| path.exists())
-        || handler_path.exists()
     {
         return Ok(());
     }
 
     Err(format!(
-        "ERROR: Missing required {} gateway bootstrap artifact.\nExpected either bridge manifest at {} or handler.json at {}.",
+        "ERROR: Missing required {} gateway bootstrap artifact.\nExpected bridge manifest at {}.",
         network.as_str(),
         manifest_path.unwrap_or("<unset>"),
-        handler_path.display()
     ))
 }
 
@@ -174,7 +171,6 @@ pub async fn run_start(
             require_public_gateway_bootstrap_artifact(
                 core_cardano_network,
                 core_cardano_profile.bridge_manifest_path.as_deref(),
-                Path::new(core_cardano_profile.handler_json_path.as_str()),
             )?;
             crate::start::ensure_managed_cardano_runtime(
                 project_root_path,

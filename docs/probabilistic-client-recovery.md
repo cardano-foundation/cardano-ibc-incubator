@@ -78,8 +78,8 @@ and Hermes IBC v2 route adapter is deferred.
 The scenario also uses Deno to read the transfer-escrow shard directly from
 Kupo. `KUPO_URL` and `OGMIOS_URL` default to the local endpoints on ports `1442`
 and `1337`. Set them explicitly when using different host ports. The reader
-uses the transfer address and shard policy from `HANDLER_JSON`, which defaults
-to `cardano/offchain/deployments/handler.json`.
+uses the transfer address and shard policy from `BRIDGE_MANIFEST`, which defaults
+to `cardano/offchain/deployments/bridge-manifest.json`.
 
 The test owns packet delivery while it runs. It stops the Hermes daemon if the
 daemon was already running and restarts it afterward. It also temporarily

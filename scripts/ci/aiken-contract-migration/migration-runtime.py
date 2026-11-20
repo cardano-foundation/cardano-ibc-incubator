@@ -27,7 +27,7 @@ def main():
     p.add_argument('--runtime', type=Path, required=True)
     p.add_argument('--project', required=True)
     p.add_argument('--clock-offset-seconds', type=int, required=True)
-    p.add_argument('--handler', type=Path)
+    p.add_argument('--manifest', type=Path)
     p.add_argument('--out', type=Path, help='New activation witness file; only valid with witness')
     p.add_argument('--gateway-database', default='migration_gateway')
     p.add_argument('--history-schema', help='Private schema for the rehearsal Gateway application cache')
@@ -86,8 +86,8 @@ def main():
             subprocess.run(compose + ['exec', '-T', 'gateway-db', 'createdb', '-U', 'postgres', args.gateway_database], check=True)
         subprocess.run(compose + ['up', '-d', 'cosmos'], check=True)
         return
-    handler = args.handler.resolve() if args.handler else runtime / 'handler.json'
-    if not handler.is_file(): raise RuntimeError('Wait for the genuine baseline deployment manifest')
+    manifest = args.manifest.resolve() if args.manifest else runtime / 'bridge-manifest.json'
+    if not manifest.is_file(): raise RuntimeError('Wait for the genuine baseline deployment manifest')
     if args.command == 'init-history':
         if not args.history_schema:
             p.error('init-history requires an explicit private --history-schema')
@@ -100,11 +100,11 @@ def main():
 const fs = require('fs');
 const { Client } = require('pg');
 (async () => {
-  const [schema, handlerPath, databaseName, databasePort] = process.argv.slice(2);
+  const [schema, manifestPath, databaseName, databasePort] = process.argv.slice(2);
   if (!/^migration_[a-z0-9_]+$/.test(schema)) throw new Error('Invalid private schema');
-  const handler = JSON.parse(fs.readFileSync(handlerPath, 'utf8'));
-  const identity = handler.hostStateNFT.policyId + handler.hostStateNFT.name;
-  if (!/^[0-9a-f]+$/.test(identity) || !handler.migration?.registryUnit) throw new Error('Expected upgrade-capable baseline');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  const identity = manifest.host_state_nft.policy_id + manifest.host_state_nft.token_name;
+  if (!/^[0-9a-f]+$/.test(identity) || !manifest.migration?.registryUnit) throw new Error('Expected upgrade-capable baseline');
   const db = new Client({ host: '127.0.0.1', port: Number(databasePort), database: databaseName, user: 'postgres', password: 'postgres' });
   await db.connect();
   try {
@@ -112,9 +112,9 @@ const { Client } = require('pg');
     await db.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
     await db.query(`SET LOCAL search_path TO ${schema}`);
     await db.query('CREATE TABLE IF NOT EXISTS rehearsal_bridge_identity (singleton boolean PRIMARY KEY CHECK (singleton), host_state_unit text NOT NULL, registry_unit text NOT NULL)');
-    await db.query('INSERT INTO rehearsal_bridge_identity VALUES (true, $1, $2) ON CONFLICT DO NOTHING', [identity, handler.migration.registryUnit]);
+    await db.query('INSERT INTO rehearsal_bridge_identity VALUES (true, $1, $2) ON CONFLICT DO NOTHING', [identity, manifest.migration.registryUnit]);
     const { rows } = await db.query('SELECT host_state_unit, registry_unit FROM rehearsal_bridge_identity');
-    if (rows.length !== 1 || rows[0].host_state_unit !== identity || rows[0].registry_unit !== handler.migration.registryUnit) {
+    if (rows.length !== 1 || rows[0].host_state_unit !== identity || rows[0].registry_unit !== manifest.migration.registryUnit) {
       throw new Error('Projection schema belongs to another bridge; select a fresh private schema');
     }
     await db.query('COMMIT');
@@ -125,7 +125,7 @@ const { Client } = require('pg');
   } finally { await db.end(); }
 })().catch(error => { console.error(error.message); process.exitCode = 1; });
 '''
-        subprocess.run(['node', '-', args.history_schema, str(handler), args.gateway_database, str(gateway_port)], input=initialization,
+        subprocess.run(['node', '-', args.history_schema, str(manifest), args.gateway_database, str(gateway_port)], input=initialization,
             text=True, cwd=ROOT / 'cardano/gateway', check=True)
         return
     genesis = json.loads((runtime / 'runtime/genesis-shelley.json').read_text())
@@ -151,7 +151,7 @@ const { Client } = require('pg');
         'KUPO_ENDPOINT': 'http://' + loopback_address(config, 'devkit', 1442),
         'YACI_STORE_ENDPOINT': 'http://' + loopback_address(config, 'history', 8080),
         'GATEWAY_DB_HOST': '127.0.0.1', 'GATEWAY_DB_PORT': str(gateway_port), 'GATEWAY_DB_NAME': args.gateway_database, 'GATEWAY_DB_USERNAME': 'postgres', 'GATEWAY_DB_PASSWORD': 'postgres', 'GATEWAY_DB_SYNCHRONIZE': 'true',
-        'HANDLER_JSON_PATH': str(handler), 'CONSENSUS_HISTORY_CACHE_DIR': str(handler.parent / 'consensus-history'),
+        'BRIDGE_MANIFEST_PATH': str(manifest.parent / f'bridge-manifest-{json.loads(manifest.read_text())["migration"]["generation"]}.json'), 'CONSENSUS_HISTORY_CACHE_DIR': str(manifest.parent / 'consensus-history'),
         'FAKETIME_DONT_FAKE_MONOTONIC': '1'})
     if args.command == 'gateway':
         # This explicitly owned public-fixture rehearsal retains bounded unsigned
@@ -162,10 +162,10 @@ const { Client } = require('pg');
         env['PGOPTIONS'] = f'-c search_path={args.history_schema},public'
     else:
         env.pop('PGOPTIONS', None)
-    script = {'gateway': 'dist/main.js', 'export': 'dist/scripts/export-bridge-manifest.js', 'witness': 'dist/scripts/export-migration-witness.js'}[args.command]
+    script = {'gateway': 'dist/main.js', 'export': 'dist/scripts/publish-bridge-manifest.js', 'witness': 'dist/scripts/export-migration-witness.js'}[args.command]
     command = ['faketime', '-f', f'{args.clock_offset_seconds:+d}s', 'node', script]
-    if args.command == 'export': command += [str(handler), str(handler.parent / f'bridge-manifest-{json.loads(handler.read_text())["migration"]["generation"]}.json')]
-    if args.command == 'witness': command += [str(handler), str(args.out.resolve())]
+    if args.command == 'export': command += [str(manifest), str(manifest.parent / f'bridge-manifest-{json.loads(manifest.read_text())["migration"]["generation"]}.json')]
+    if args.command == 'witness': command += [str(manifest), str(args.out.resolve())]
     subprocess.run(command, env=env, cwd=ROOT / 'cardano/gateway', check=True)
 
 if __name__ == '__main__': main()

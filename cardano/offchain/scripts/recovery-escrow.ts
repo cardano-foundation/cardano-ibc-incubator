@@ -1,3 +1,4 @@
+import { deploymentFromManifest } from "../src/deployment-artifacts.ts";
 import { Buffer } from "node:buffer";
 import { Data, fromText, Kupmios, type UTxO } from "@lucid-evolution/lucid";
 import {
@@ -160,13 +161,15 @@ async function main(args: string[]) {
   }
   if (command !== "snapshot" || values.length !== 3) {
     throw new Error(
-      "Usage: recovery-escrow.ts snapshot <handler.json> <channel> <denom> | assert-increase <before-json> <after-json> <amount>",
+      "Usage: recovery-escrow.ts snapshot <bridge-manifest.json> <channel> <denom> | assert-increase <before-json> <after-json> <amount>",
     );
   }
-  const [handlerFile, channel, denom] = values;
-  const handler = JSON.parse(await Deno.readTextFile(handlerFile));
-  const address = handler.modules?.transfer?.address;
-  const policy = handler.validators?.mintTransferEscrowShard?.scriptHash;
+  const [manifestFile, channel, denom] = values;
+  const manifest = deploymentFromManifest(
+    JSON.parse(await Deno.readTextFile(manifestFile)),
+  );
+  const address = manifest.modules?.transfer?.address;
+  const policy = manifest.validators?.mintTransferEscrowShard?.scriptHash;
   if (typeof address !== "string" || !address || typeof policy !== "string") {
     throw new Error(
       "Deployment is missing the transfer address or escrow shard policy",

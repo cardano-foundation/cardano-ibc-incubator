@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
-SCHEMA = 3
+SCHEMA = 4
 # Leave one hour for the suite and transaction TTLs inside Yano's two-hour
 # devnet forecast horizon. Restoring RocksDB does not rewind the wall clock.
 MAX_RESTORE_AGE_SECONDS = 3600
@@ -197,7 +197,7 @@ def validate_fixture(fixture, key):
         if age < 0 or age > 24 * 60 * 60 * 1000:
             raise ValueError("Packet checkpoint is outside its one-day cache lifetime")
     for name in ["checkpoint/CURRENT", "config/network/devnet/shelley-genesis.json",
-                 "deployments/handler.json", "wallet.key", "inventory.json", "scripts.json", "provider-state.json"]:
+                 "deployments/bridge-manifest.json", "wallet.key", "inventory.json", "scripts.json", "provider-state.json"]:
         if not (fixture / name).is_file():
             raise ValueError(f"Incomplete snapshot: {name}")
 

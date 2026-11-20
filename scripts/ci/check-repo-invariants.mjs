@@ -70,7 +70,6 @@ function isManifestCandidate(path) {
   const name = basename(path).toLowerCase();
   return (
     name.includes('manifest') ||
-    name === 'handler.json' ||
     name === 'deployment.json'
   );
 }

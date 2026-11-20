@@ -32,8 +32,8 @@ async function main() {
   const providers = ownedRuntimeProviders(runtime, true);
   const result = JSON.parse(fs.readFileSync(path.join(runtime, 'result.json'), 'utf8'));
   assert.equal(result.artifacts, runtime, 'Pool aging requires the original owned baseline');
-  const handler = JSON.parse(fs.readFileSync(path.join(runtime, 'handler.json'), 'utf8'));
-  const host = handler.hostStateNFT, unit = host.policyId + '.' + host.name;
+  const manifest = JSON.parse(fs.readFileSync(path.join(runtime, 'bridge-manifest.json'), 'utf8'));
+  const host = manifest.host_state_nft, unit = host.policy_id + '.' + host.token_name;
   async function json(url) {
     const deadline = Date.now() + 60000;
     for (;;) {
@@ -50,7 +50,7 @@ async function main() {
   const outputs = await json(`http://${providers.kupo}/matches/${unit}?unspent`);
   assert.equal(outputs.length, 1, 'Unique owned HostState NFT is required');
   assert.equal(outputs[0].value.assets[unit], 1, 'Owned HostState NFT quantity differs');
-  assert.equal(outputs[0].address, handler.validators.hostStateStt.address, 'Owned HostState implementation differs');
+  assert.equal(outputs[0].address, manifest.validators.host_state_stt.address, 'Owned HostState implementation differs');
   const datum = await json(`http://${providers.kupo}/datums/${outputs[0].datum_hash}`);
   const root = path.resolve(__dirname, '../../..');
   const req = createRequire(path.join(root, 'cardano/gateway/package.json'));

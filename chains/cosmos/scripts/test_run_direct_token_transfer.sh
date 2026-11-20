@@ -164,13 +164,13 @@ fake_binary="$test_dir/fake-hermes"
 ln -s "$script_dir/$(basename "$0")" "$fake_binary"
 
 mkdir -p "$test_dir/repo/cardano/offchain/deployments"
-printf '{"tokens":{"mock":"mock-token"}}\n' >"$test_dir/repo/cardano/offchain/deployments/handler.json"
+printf '{"tokens":{"mock":"mock-token"}}\n' >"$test_dir/repo/cardano/offchain/deployments/bridge-manifest.json"
 
 run_demo() {
   env \
     CARIBIC_PROJECT_ROOT="$test_dir/repo" \
     HERMES_BIN="$fake_binary" \
-    HANDLER_JSON="$test_dir/repo/cardano/offchain/deployments/handler.json" \
+    BRIDGE_MANIFEST="$test_dir/repo/cardano/offchain/deployments/bridge-manifest.json" \
     COSMOS_PROFILE="v8-classic" \
     CARDANO_CHAIN_ID="cardano-devnet" \
     COSMOS_CHAIN_ID="v8-classic-1" \

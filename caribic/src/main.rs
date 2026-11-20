@@ -146,7 +146,7 @@ enum Commands {
     Deployer {
         #[arg(value_parser = ["nominate-deployer", "graduate-deployer", "inspect", "cancel"])]
         action: String,
-        /// Operator arguments such as --handler, --signers, --successor and --out
+        /// Operator arguments such as --manifest, --signers, --successor and --out
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -532,7 +532,7 @@ mod cli_tests {
             "caribic",
             "deployer",
             "nominate-deployer",
-            "--handler",
+            "--manifest",
             "deployment.json",
             "--signers",
             "key1,key2",
@@ -546,7 +546,7 @@ mod cli_tests {
                 assert_eq!(
                     args,
                     [
-                        "--handler",
+                        "--manifest",
                         "deployment.json",
                         "--signers",
                         "key1,key2",

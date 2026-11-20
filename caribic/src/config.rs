@@ -110,7 +110,6 @@ pub struct CardanoNetworkProfiles {
 pub struct CardanoNetworkProfile {
     pub chain_id: String,
     pub network_magic: u64,
-    pub handler_json_path: String,
     pub bridge_manifest_path: Option<String>,
     /// Public Mithril aggregator. The local network runs its own.
     #[serde(default)]
@@ -143,7 +142,6 @@ fn default_cardano_network_profiles() -> CardanoNetworkProfiles {
             chain_id: "cardano-devnet".to_string(),
             network_magic: 42,
             mithril_aggregator_url: None,
-            handler_json_path: "../../cardano/offchain/deployments/handler.json".to_string(),
             bridge_manifest_path: Some(
                 "../../cardano/offchain/deployments/bridge-manifest.json".to_string(),
             ),
@@ -154,7 +152,6 @@ fn default_cardano_network_profiles() -> CardanoNetworkProfiles {
             mithril_aggregator_url: Some(
                 "https://aggregator.release-preprod.api.mithril.network/aggregator".to_string(),
             ),
-            handler_json_path: "../../manifests/preprod/cardano-preprod-handler.json".to_string(),
             bridge_manifest_path: Some(
                 "../../manifests/preprod/cardano-preprod-bridge-manifest.json".to_string(),
             ),
@@ -170,7 +167,6 @@ fn default_preview_network_profile() -> CardanoNetworkProfile {
         mithril_aggregator_url: Some(
             "https://aggregator.pre-release-preview.api.mithril.network/aggregator".to_string(),
         ),
-        handler_json_path: "../../manifests/preview/cardano-preview-handler.json".to_string(),
         bridge_manifest_path: Some(
             "../../manifests/preview/cardano-preview-bridge-manifest.json".to_string(),
         ),
@@ -205,18 +201,6 @@ impl Config {
 
     fn resolve_runtime_paths(mut config: Self, config_path: &Path) -> Self {
         config.project_root = Self::resolve_path_from_config_dir(config_path, &config.project_root);
-        config.cardano.networks.local.handler_json_path = Self::resolve_path_from_config_dir(
-            config_path,
-            &config.cardano.networks.local.handler_json_path,
-        );
-        config.cardano.networks.preprod.handler_json_path = Self::resolve_path_from_config_dir(
-            config_path,
-            &config.cardano.networks.preprod.handler_json_path,
-        );
-        config.cardano.networks.preview.handler_json_path = Self::resolve_path_from_config_dir(
-            config_path,
-            &config.cardano.networks.preview.handler_json_path,
-        );
         config.cardano.networks.local.bridge_manifest_path = config
             .cardano
             .networks
