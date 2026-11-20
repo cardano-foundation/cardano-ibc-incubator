@@ -1,3 +1,12 @@
+import { withMigrationReference } from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
+
+// These tests inspect transaction wiring. Registry authentication is exercised
+// against a real provider in bridge-manifest.spec.ts.
+jest.mock('@cardano-ibc/tx-builder-runtime/migrationRuntime', () => ({
+  ...jest.requireActual('@cardano-ibc/tx-builder-runtime/migrationRuntime'),
+  withMigrationReference: jest.fn(async (_lucid, tx) => tx),
+}));
+
 import * as LucidImporter from '@lucid-evolution/lucid';
 
 import { LucidService } from './lucid.service';
@@ -56,6 +65,9 @@ describe('LucidService HostState heartbeat wiring', () => {
     );
 
     expect(result).toBe(txBuilder);
+    expect(withMigrationReference).toHaveBeenCalledWith(
+      service.lucid, txBuilder, service.configService.getOrThrow('deployment'), false, 4n,
+    );
     expect(txBuilder.readFrom).toHaveBeenCalledWith([service.referenceScripts.hostStateStt]);
     expect(txBuilder.collectFrom).toHaveBeenCalledWith(
       [

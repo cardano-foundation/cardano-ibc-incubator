@@ -1,3 +1,12 @@
+import { withMigrationReference } from '@cardano-ibc/tx-builder-runtime/migrationRuntime';
+
+// These tests inspect transaction wiring. Registry authentication is exercised
+// against a real provider in bridge-manifest.spec.ts.
+jest.mock('@cardano-ibc/tx-builder-runtime/migrationRuntime', () => ({
+  ...jest.requireActual('@cardano-ibc/tx-builder-runtime/migrationRuntime'),
+  withMigrationReference: jest.fn(async (_lucid, tx) => tx),
+}));
+
 import { LucidService } from './lucid.service';
 
 function createBuilder(): any {
@@ -160,6 +169,9 @@ describe('LucidService staged Tendermint transaction wiring', () => {
       evidence ? [{ utxo: secondSession, tokenUnit: 'second-session-unit' }] : [],
     );
 
+    expect(withMigrationReference).toHaveBeenCalledWith(
+      service.lucid, builder, service.configService.getOrThrow('deployment'), false, 2n,
+    );
     expect(builder.readFrom).toHaveBeenCalledWith([
       service.referenceScripts.hostStateStt,
       service.referenceScripts.spendClient,
