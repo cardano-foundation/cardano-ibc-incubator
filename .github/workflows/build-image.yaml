@@ -78,9 +78,20 @@ jobs:
           fi
           echo "registries=${selected}" >> "${GITHUB_OUTPUT}"
 
+      - name: Read component version
+        id: version
+        shell: bash
+        env:
+          VERSION_DIRECTORY: ${{ inputs.version-directory }}
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/image-metadata.py" --read-version
+
       - name: Set up trusted publishing credentials
         id: baseline
-        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@9d6fdaf043772b4f9eb1ea4bcc994dc30b515a96
+        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@2928a2219ebc75071358b2d2981d2aa759b0e192
+        env:
+          # Keep Git metadata in this checkout, outside the relayer submodule.
+          # Read the selected component's version from its manifest instead.
+          GUESSED_ARTIFACT_VERSION: ${{ steps.version.outputs.version }}
         with:
           GITHUB_TOKEN: ${{ github.token }}
           PRIVATE_DOCKER_REGISTRY_URL: ${{ secrets.PRIVATE_DOCKER_REGISTRY_URL }}
@@ -89,7 +100,6 @@ jobs:
           HUB_DOCKER_COM_USER: ${{ secrets.HUB_DOCKER_COM_USER }}
           HUB_DOCKER_COM_PASS: ${{ secrets.HUB_DOCKER_COM_PASS }}
           DOCKER_REGISTRIES: ${{ steps.registries.outputs.registries }}
-          artifact-version-directory: ${{ inputs.version-directory }}
 
       - name: Validate component version
         env:
@@ -99,14 +109,23 @@ jobs:
         shell: bash
         run: python3 scripts/ci/image-metadata.py --check-version
 
+      - name: Normalize image tags
+        id: image_tags
+        shell: bash
+        env:
+          COMPONENT: ${{ inputs.component }}
+          IMAGE_TAG: ${{ steps.baseline.outputs.DOCKER_TAG }}
+          EXTRA_TAGS: ${{ steps.baseline.outputs.EARTH_DOCKER_IMAGES_EXTRA_TAGS }}
+        run: python3 "$GITHUB_WORKSPACE/scripts/ci/image-metadata.py" --normalize-tags
+
       - name: Require unused release image tags
         if: github.ref_type == 'tag'
         shell: bash
         env:
           COMPONENT: ${{ inputs.component }}
-          IMAGE_TAG: ${{ steps.baseline.outputs.DOCKER_TAG }}
+          IMAGE_TAG: ${{ steps.image_tags.outputs.IMAGE_TAG }}
           REGISTRIES: ${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}
-          EXTRA_TAGS: ${{ steps.baseline.outputs.EARTHLY_DOCKER_IMAGES_EXTRA_TAGS }}
+          EXTRA_TAGS: ${{ steps.image_tags.outputs.EXTRA_TAGS }}
         run: node scripts/ci/release-image.mjs --preflight-only
 
       - name: Build image without publishing
@@ -117,7 +136,7 @@ jobs:
           # Avoid registry proxy EOFs when loading large image layers into Docker.
           EARTHLY_DISABLE_REMOTE_REGISTRY_PROXY: "true"
         run: |
-          earthly "+${COMPONENT}" --PUSH=false
+          earth "+${COMPONENT}" --PUSH=false
           image_id=$(docker image inspect "cardano-ibc-${COMPONENT}:latest" --format '{{.Id}}')
           echo "id=${image_id}" >> "${GITHUB_OUTPUT}"
 
@@ -135,8 +154,8 @@ jobs:
           COMPONENT: ${{ inputs.component }}
           IMAGE_ID: ${{ steps.image.outputs.id }}
           REGISTRIES: ${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}
-          IMAGE_TAG: ${{ steps.baseline.outputs.DOCKER_TAG }}
-          EXTRA_TAGS: ${{ steps.baseline.outputs.EARTHLY_DOCKER_IMAGES_EXTRA_TAGS }}
+          IMAGE_TAG: ${{ steps.image_tags.outputs.IMAGE_TAG }}
+          EXTRA_TAGS: ${{ steps.image_tags.outputs.EXTRA_TAGS }}
           COMMIT_TAG: ${{ steps.baseline.outputs.GIT_SHORT_COMMIT }}
         run: |
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
@@ -158,7 +177,7 @@ jobs:
         shell: bash
         env:
           REGISTRIES: ${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}
-          IMAGE_TAG: ${{ steps.baseline.outputs.DOCKER_TAG }}
+          IMAGE_TAG: ${{ steps.image_tags.outputs.IMAGE_TAG }}
         run: |
           release_dir="${RUNNER_TEMP}/gateway-release"
           mkdir -p "${release_dir}"
