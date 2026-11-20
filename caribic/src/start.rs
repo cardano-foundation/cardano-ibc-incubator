@@ -2108,64 +2108,6 @@ fn ensure_gateway_dependencies(
     Ok(())
 }
 
-fn ensure_gateway_built(
-    gateway_dir: &Path,
-    optional_progress_bar: &Option<ProgressBar>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if gateway_dir.join("dist/main.js").exists() {
-        return Ok(());
-    }
-
-    let project_root = gateway_dir
-        .parent()
-        .and_then(|p| p.parent())
-        .ok_or("Failed to derive project root from gateway directory")?;
-
-    log_or_show_progress(
-        "Building gateway and file: dependencies (first run only)",
-        optional_progress_bar,
-    );
-
-    let proto_types_dir = project_root.join("proto-types");
-
-    if proto_types_dir.exists() && !proto_types_dir.join("build").exists() {
-        if !proto_types_dir.join("node_modules").exists() {
-            execute_script(&proto_types_dir, "npm", vec!["ci"], None)?;
-        }
-
-        execute_script(&proto_types_dir, "npm", vec!["run", "build"], None)?;
-    }
-
-    for package_name in [
-        "cardano-ibc-trace-registry",
-        "cardano-ibc-planner",
-        "cardano-ibc-tx-builder",
-        "cardano-ibc-tx-builder-runtime",
-    ] {
-        let package_dir = project_root.join("packages").join(package_name);
-
-        if !package_dir.exists() {
-            continue;
-        }
-
-        if !package_dir.join("node_modules").exists() {
-            execute_script(&package_dir, "npm", vec!["ci"], None)?;
-        }
-
-        // Reuse package output from an earlier local build.
-        if package_dir.join("dist").exists() {
-            continue;
-        }
-
-        execute_script(&package_dir, "npm", vec!["run", "build"], None)?;
-    }
-
-    ensure_gateway_dependencies(gateway_dir, optional_progress_bar)?;
-    execute_script(gateway_dir, "npm", vec!["run", "build"], None)?;
-
-    Ok(())
-}
-
 pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
     let shared_cardano_network =
         crate::setup::read_gateway_env_value(&gateway_dir.join(".env"), "CARDANO_DOCKER_NETWORK")?
@@ -2186,8 +2128,6 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     } else {
         log("Starting Gateway ...");
     }
-
-    ensure_gateway_built(gateway_dir, &optional_progress_bar)?;
 
     let network_exists = DockerCli::new(Path::new("."))
         .raw_output(["network", "inspect", shared_cardano_network.as_str()].as_slice())
