@@ -1774,24 +1774,21 @@ pub async fn deploy_public_cardano_bridge(
         })
         .unwrap_or(false);
 
-    if !force_public_redeploy {
-        if public_manifest_path.exists() {
-            // Joining an existing bridge needs only its verified public manifest.
-            // A missing manifest must never trigger a fresh deployment.
-            crate::bridge_history::read_checkpoint(&public_manifest_path, network)?;
-            log_or_show_progress(
-                &format!(
-                    "{} Reusing existing {} bridge artifacts",
-                    style("Step 1/3").bold().dim(),
-                    network.as_str()
-                ),
-                &optional_progress_bar,
-            );
-            if let Some(progress_bar) = &optional_progress_bar {
-                progress_bar.finish_and_clear();
-            }
-            return Ok(());
+    if !force_public_redeploy && public_manifest_path.exists() {
+        // Joining an existing bridge needs only its verified public manifest.
+        crate::bridge_history::read_checkpoint(&public_manifest_path, network)?;
+        log_or_show_progress(
+            &format!(
+                "{} Reusing existing {} bridge artifacts",
+                style("Step 1/3").bold().dim(),
+                network.as_str()
+            ),
+            &optional_progress_bar,
+        );
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.finish_and_clear();
         }
+        return Ok(());
     }
 
     if validators_already_built {
@@ -2073,24 +2070,6 @@ pub async fn ensure_managed_cardano_runtime(
     }
 
     start_local_cardano_network(project_root_path, clean, network).await
-}
-
-fn ensure_gateway_dependencies(
-    gateway_dir: &Path,
-    optional_progress_bar: &Option<ProgressBar>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if gateway_dir.join("node_modules/.bin/ts-node").exists() {
-        return Ok(());
-    }
-
-    log_or_show_progress(
-        "Installing gateway npm dependencies (first run only)",
-        optional_progress_bar,
-    );
-
-    execute_script(gateway_dir, "npm", vec!["ci"], None)?;
-
-    Ok(())
 }
 
 pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
