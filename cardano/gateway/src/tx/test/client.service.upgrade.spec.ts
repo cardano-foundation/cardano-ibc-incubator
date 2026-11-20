@@ -5,7 +5,7 @@ import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/
 import { TendermintClientService } from '../tendermint-client.service';
 import { initializeClientState, normalizeClientStateFromDatum } from '../../shared/helpers/client-state';
 import { ClientDatum, decodeClientDatum, encodeClientDatum } from '../../shared/types/client-datum';
-import { decodeSpendClientRedeemer, encodeSpendClientRedeemer } from '../../shared/types/client-redeemer';
+import { encodeSpendClientRedeemer } from '../../shared/types/client-redeemer';
 import { decodeSpendMultitxClientRedeemer } from '../../shared/types/tendermint-update-session';
 
 function context(staged = false) {

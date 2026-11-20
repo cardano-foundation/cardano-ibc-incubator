@@ -22,7 +22,8 @@ validator host_state(
   shutdown_host_policy: ByteArray,
 ) {
   spend(
-    _datum: Option<Data>,
+    // Keep the canonical datum schema in the blueprint for the wire schema lock.
+    _datum: Option<host.HostStateDatum>,
     raw: Data,
     own_ref: OutputReference,
     transaction: Transaction,

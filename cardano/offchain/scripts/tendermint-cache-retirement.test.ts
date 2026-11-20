@@ -4,6 +4,10 @@ import { generateEmulatorAccount } from "@lucid-evolution/provider";
 import { shutdownFixture } from "../src/testing/shutdown-fixture.ts";
 import { evaluatedUpdateBudget } from "../src/tendermint-cache-routing.ts";
 import { HostStateDatum, HostStateRedeemer } from "../types/index.ts";
+import {
+  shutdownRegistryReference,
+  withShutdownAuthority,
+} from "../src/shutdown.ts";
 
 type Mutation =
   | "none"
@@ -42,6 +46,7 @@ async function retirement(mutation: Mutation) {
   const refund = f.client.assets.lovelace + f.cache.assets.lovelace;
   const other = generateEmulatorAccount({}).address;
   let tx: TxBuilder = f.lucid.newTx().readFrom([
+    ...await shutdownRegistryReference(f.lucid, f.deployment),
     host.refUtxo!,
     spend.refUtxo!,
     mint.refUtxo!,
@@ -70,6 +75,7 @@ async function retirement(mutation: Mutation) {
     );
   }
   if (mutation !== "no-authority") tx = tx.addSignerKey(f.hostDatum.deployer);
+  tx = withShutdownAuthority(tx, f.deployment);
   const built = await tx.complete({
     localUPLCEval: true,
     changeAddress: mutation === "short-refund" || mutation === "wrong-owner"
