@@ -136,7 +136,7 @@ const { Client } = require('pg');
     nonce_port = int(nonce_ports[0]['published'])
     env = dict(os.environ)
     # Explicit local values; never load operator .env or Hermes home keys.
-    for key in ['KUPO_API_KEY', 'OGMIOS_API_KEY', 'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', 'CARDANO_EPOCH_PARAMS_ENDPOINT', 'CARDANO_STABILITY_ASSUME_STATIC_STAKE', 'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT', 'BRIDGE_MANIFEST_PATH']:
+    for key in ['KUPO_API_KEY', 'OGMIOS_API_KEY', 'CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE', 'CARDANO_EPOCH_PARAMS_ENDPOINT', 'CARDANO_STABILITY_ASSUME_STATIC_STAKE', 'CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT', 'BRIDGE_MANIFEST_PATH', 'HANDLER_JSON_PATH']:
         env.pop(key, None)
     env.update({'PORT': '8800', 'GRPC_HOST': '127.0.0.1', 'GRPC_PORT': '5501', 'CARDANO_NETWORK_MAGIC': '42',
         'CARDANO_CHAIN_HOST': '127.0.0.1', 'CARDANO_CHAIN_PORT': loopback_address(config, 'devkit', 3001).rsplit(':', 1)[1],
@@ -151,7 +151,7 @@ const { Client } = require('pg');
         'KUPO_ENDPOINT': 'http://' + loopback_address(config, 'devkit', 1442),
         'YACI_STORE_ENDPOINT': 'http://' + loopback_address(config, 'history', 8080),
         'GATEWAY_DB_HOST': '127.0.0.1', 'GATEWAY_DB_PORT': str(gateway_port), 'GATEWAY_DB_NAME': args.gateway_database, 'GATEWAY_DB_USERNAME': 'postgres', 'GATEWAY_DB_PASSWORD': 'postgres', 'GATEWAY_DB_SYNCHRONIZE': 'true',
-        'HANDLER_JSON_PATH': str(handler), 'CONSENSUS_HISTORY_CACHE_DIR': str(handler.parent / 'consensus-history'),
+        'BRIDGE_MANIFEST_PATH': str(handler.parent / f'bridge-manifest-{json.loads(handler.read_text())["migration"]["generation"]}.json'), 'CONSENSUS_HISTORY_CACHE_DIR': str(handler.parent / 'consensus-history'),
         'FAKETIME_DONT_FAKE_MONOTONIC': '1'})
     if args.command == 'gateway':
         # This explicitly owned public-fixture rehearsal retains bounded unsigned

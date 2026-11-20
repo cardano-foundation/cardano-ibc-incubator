@@ -1,3 +1,5 @@
+import { writeDeploymentArtifacts } from "./deployment-artifacts.ts";
+import { deriveCardanoNetwork } from "../../../packages/cardano-ibc-tx-builder-runtime/src/bridgeManifest.ts";
 import { Buffer } from "node:buffer";
 import {
   type BucketEntry,
@@ -40,7 +42,6 @@ import {
   type IdentifierThreadMint,
   verifyReferencePublications,
 } from "./deployment-transactions.ts";
-import { ensureDir } from "@std/fs";
 import {
   CML,
   Constr,
@@ -1204,17 +1205,23 @@ export const createDeployment = async (
   };
 
   if (mode !== undefined && mode != EMULATOR_ENV) {
-    const jsonConfig = JSON.stringify(deploymentInfo);
-
-    const folder = "./deployments";
-    await ensureDir(folder);
-
-    const filePath = folder + "/handler_" +
-      formatTimestamp(Date.parse(deployedAt)) + ".json";
-
-    await Deno.writeTextFile(filePath, jsonConfig);
-    await Deno.writeTextFile(folder + "/handler.json", jsonConfig);
-    console.log("Deploy info saved to:", filePath);
+    const network = deriveCardanoNetwork(networkMagic);
+    await writeDeploymentArtifacts(
+      deploymentInfo,
+      {
+        chain_id: Deno.env.get("CARDANO_CHAIN_ID") ||
+          (network === "Custom"
+            ? "cardano-devnet"
+            : `cardano-${network.toLowerCase()}`),
+        network_magic: networkMagic,
+        network,
+      },
+      "./deployments",
+      formatTimestamp(Date.parse(deployedAt)),
+    );
+    console.log(
+      "Deployment artifacts and public bridge manifest saved to ./deployments",
+    );
   }
 
   return deploymentInfo;

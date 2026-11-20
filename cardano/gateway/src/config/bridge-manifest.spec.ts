@@ -2,7 +2,6 @@ import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
-  DEFAULT_HANDLER_JSON_PATH,
   CONSENSUS_HISTORY_FORMAT,
   ICS20_PACKET_CODEC,
   bridgeManifestsEqual,
@@ -631,7 +630,7 @@ console.log(JSON.stringify(smokeManifest()))`,
     });
   });
 
-  it('fails startup resolution if both manifest and handler paths are set', () => {
+  it('rejects the removed handler startup setting even with a manifest', () => {
     const fs = {
       readFileSync: jest.fn(),
     };
@@ -644,12 +643,12 @@ console.log(JSON.stringify(smokeManifest()))`,
         },
         fs,
       ),
-    ).toThrow('BRIDGE_MANIFEST_PATH and HANDLER_JSON_PATH are mutually exclusive');
+    ).toThrow('HANDLER_JSON_PATH is no longer supported');
 
     expect(fs.readFileSync).not.toHaveBeenCalled();
   });
 
-  it('uses the manifest as the explicit alternative startup source', () => {
+  it('uses the public manifest as the startup source', () => {
     const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
@@ -670,21 +669,15 @@ console.log(JSON.stringify(smokeManifest()))`,
     expect(loaded.deployment).toEqual(legacy.deployment);
   });
 
-  it('falls back to the default handler.json path when no explicit startup source is set', () => {
-    const handlerJsonDeployment = buildHandlerJsonDeployment();
-    const fs = {
-      readFileSync: jest.fn().mockReturnValue(JSON.stringify(handlerJsonDeployment)),
-    };
-
-    const loaded = loadBridgeConfigFromEnv({}, fs);
-
-    expect(fs.readFileSync).toHaveBeenCalledWith(DEFAULT_HANDLER_JSON_PATH, 'utf8');
-    expect(loaded.deployment.hostStateNFT).toEqual(handlerJsonDeployment.hostStateNFT);
+  it.each([{}, { HANDLER_JSON_PATH: '/tmp/handler.json' }])('rejects startup without a manifest: %j', (env) => {
+    const fs = { readFileSync: jest.fn() };
+    expect(() => loadBridgeConfigFromEnv(env, fs)).toThrow(/BRIDGE_MANIFEST_PATH/);
+    expect(fs.readFileSync).not.toHaveBeenCalled();
   });
 });
 
 describe('migration operational counterparty boundary', () => {
-  const matrix = ['handler', 'manifest'].flatMap((source) =>
+  const matrix = ['manifest'].flatMap((source) =>
     [false, true].flatMap((migration) => [false, true].map((readOnly) => [source, migration, readOnly] as const)),
   );
   it.each(matrix)('%s migration=%s historical-only=%s', (source, migration, readOnly) => {
@@ -709,9 +702,9 @@ describe('migration operational counterparty boundary', () => {
       network_magic: 42,
       network: 'Custom',
     }).bridgeManifest;
-    const fs = { readFileSync: jest.fn(() => JSON.stringify(source === 'handler' ? handler : manifest)) };
+    const fs = { readFileSync: jest.fn(() => JSON.stringify(manifest)) };
     const env = {
-      [source === 'handler' ? 'HANDLER_JSON_PATH' : 'BRIDGE_MANIFEST_PATH']: 'fixture.json',
+      BRIDGE_MANIFEST_PATH: 'fixture.json',
       GATEWAY_HISTORICAL_READ_ONLY: String(readOnly),
     };
     expect(loadBridgeConfigFromEnv(env, fs).deployment.migration?.profile).toBe(
@@ -730,19 +723,18 @@ describe('deployment recovery capability selection', () => {
     ).toThrow('recovery configuration disagree');
   });
   it('requires explicit legacy selection for old unlabelled manifests at startup', () => {
-    const handler = buildHandlerJsonDeployment();
-    const { deploymentMode: _mode, ...old } = handler;
+    const { deploymentMode: _mode, ...old } = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), { chain_id: 'devnet', network_magic: 42, network: 'Custom' }).bridgeManifest;
     const fs = { readFileSync: () => JSON.stringify(old) };
-    expect(() => loadBridgeConfigFromEnv({}, fs)).toThrow('recovery configuration disagree');
-    expect(loadBridgeConfigFromEnv({ IBC_DEPLOYMENT_MODE: 'legacy' }, fs).deployment.migration).toBeUndefined();
+    expect(() => loadBridgeConfigFromEnv({ BRIDGE_MANIFEST_PATH: 'fixture.json' }, fs)).toThrow('recovery configuration disagree');
+    expect(loadBridgeConfigFromEnv({ IBC_DEPLOYMENT_MODE: 'legacy', BRIDGE_MANIFEST_PATH: 'fixture.json' }, fs).deployment.migration).toBeUndefined();
   });
 });
 
 it('publishes explicit legacy selection through Gateway into the actual SDK normalizer', async () => {
   const { normalizeBridgeManifest } = await import('@cardano-ibc/tx-builder-runtime');
-  const { deploymentMode: _mode, ...old } = buildHandlerJsonDeployment();
+  const { deploymentMode: _mode, ...old } = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), { chain_id: 'devnet', network_magic: 42, network: 'Custom' }).bridgeManifest;
   const loaded = loadBridgeConfigFromEnv(
-    { IBC_DEPLOYMENT_MODE: 'legacy' },
+    { IBC_DEPLOYMENT_MODE: 'legacy', BRIDGE_MANIFEST_PATH: 'fixture.json' },
     { readFileSync: () => JSON.stringify(old) },
   );
   const wire = JSON.parse(JSON.stringify(loaded.bridgeManifest));
@@ -752,6 +744,6 @@ it('publishes explicit legacy selection through Gateway into the actual SDK norm
     'recovery configuration disagree',
   );
   expect(() =>
-    loadBridgeConfigFromEnv({ IBC_DEPLOYMENT_MODE: 'upgradeable' }, { readFileSync: () => JSON.stringify(old) }),
+    loadBridgeConfigFromEnv({ IBC_DEPLOYMENT_MODE: 'upgradeable', BRIDGE_MANIFEST_PATH: 'fixture.json' }, { readFileSync: () => JSON.stringify(old) }),
   ).toThrow('recovery configuration disagree');
 });

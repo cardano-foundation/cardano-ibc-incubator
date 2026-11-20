@@ -15,6 +15,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./bridgeManifest": { "types": "./dist/bridgeManifest.d.ts", "default": "./dist/bridgeManifest.js" },
     "./heartbeatSchedule": { "types": "./dist/heartbeatSchedule.d.ts", "default": "./dist/heartbeatSchedule.js" },
     "./yaciRest": { "types": "./dist/yaciRest.d.ts", "default": "./dist/yaciRest.js" },
     "./yaciRestHistory": { "types": "./dist/yaciRestHistory.d.ts", "default": "./dist/yaciRestHistory.js" },
@@ -36,6 +37,7 @@
   },
   "typesVersions": {
     "*": {
+      "bridgeManifest": ["dist/bridgeManifest.d.ts"],
       "heartbeatSchedule": ["dist/heartbeatSchedule.d.ts"],
       "yaciRest": ["dist/yaciRest.d.ts"],
       "yaciRestHistory": ["dist/yaciRestHistory.d.ts"],

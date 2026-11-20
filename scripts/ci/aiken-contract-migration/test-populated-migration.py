@@ -333,8 +333,8 @@ def main():
                         '--runtime', str(runtime), '--project', project, '--file-clock', '--pool-aging',
                         '--step-seconds', '86400', '--until-ms', str(mature_ms)])
                 history(source)
-                gateway(source, proof_ready=False)
                 run('manifest-v1', runtime_command('export', source))
+                gateway(source, proof_ready=False)
                 run('hermes-setup', ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-hermes.py'), 'setup',
                     '--runtime', str(runtime), '--artifacts-dir', str(artifacts), '--clock-offset-seconds', str(offset())])
                 # The original HostState was published before its pools aged.

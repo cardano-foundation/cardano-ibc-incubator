@@ -1270,7 +1270,6 @@ pub async fn deploy_contracts(
         .clone()
         .map(PathBuf::from)
         .ok_or("Local bridge manifest path is not configured")?;
-    let gateway_dir = project_root_path.join("cardano").join("gateway");
     let offchain_dir = project_root_path.join("cardano").join("offchain");
     let network_magic = profile.network_magic.to_string();
     let optional_progress_bar = match logger::get_verbosity() {
@@ -1346,6 +1345,7 @@ pub async fn deploy_contracts(
     let local_kupo = crate::local_network::endpoint(project_root_path, "KUPO_URL")?;
     let local_ogmios = crate::local_network::endpoint(project_root_path, "OGMIOS_URL")?;
     let mut offchain_env = local_offchain_environment(&local_kupo, &local_ogmios, &network_magic);
+    offchain_env.push(("CARDANO_CHAIN_ID", profile.chain_id.as_str()));
     offchain_env.push((
         "DEPLOYER_BACKUP_PAYMENT_KEY_HASH",
         backup_operator.as_deref().unwrap_or(""),
@@ -1398,28 +1398,7 @@ pub async fn deploy_contracts(
         &optional_progress_bar,
     );
 
-    ensure_gateway_dependencies(gateway_dir.as_path(), &optional_progress_bar)?;
-
-    let export_result = execute_script(
-        gateway_dir.as_path(),
-        "npm",
-        vec![
-            "run",
-            "export:bridge-manifest",
-            "--",
-            handler_json_path
-                .to_str()
-                .ok_or("Failed to stringify local handler path")?,
-            bridge_manifest_path
-                .to_str()
-                .ok_or("Failed to stringify local bridge manifest path")?,
-        ],
-        Some(vec![
-            ("CARDANO_CHAIN_ID", profile.chain_id.as_str()),
-            ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
-            ("CARDANO_NETWORK", "local"),
-        ]),
-    );
+    let export_result = publish_deployed_manifest(&offchain_dir, &bridge_manifest_path);
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();
@@ -1441,6 +1420,23 @@ pub async fn deploy_contracts(
         .into());
     }
 
+    Ok(())
+}
+
+fn publish_deployed_manifest(
+    offchain_dir: &Path,
+    destination: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let source = offchain_dir.join("deployments/bridge-manifest.json");
+    let source = source.canonicalize().map_err(|error| {
+        format!("Deployment did not produce its public bridge manifest: {error}")
+    })?;
+    if destination.canonicalize().ok().as_ref() != Some(&source) {
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(source, destination)?;
+    }
     Ok(())
 }
 
@@ -1984,6 +1980,7 @@ pub async fn deploy_public_cardano_bridge(
         .as_deref()
         .ok_or("Deployment requires YACI_SYNC_START_BLOCK_NO")?;
     let mut offchain_env = vec![
+        ("CARDANO_CHAIN_ID", profile.chain_id.as_str()),
         ("YACI_SYNC_START_SLOT", history_checkpoint.slot.as_str()),
         (
             "YACI_SYNC_START_BLOCKHASH",
@@ -2119,30 +2116,7 @@ pub async fn deploy_public_cardano_bridge(
         &optional_progress_bar,
     );
 
-    let export_env = vec![
-        ("CARDANO_CHAIN_ID", profile.chain_id.as_str()),
-        ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
-        ("CARDANO_NETWORK", network.as_str()),
-    ];
-
-    ensure_gateway_dependencies(gateway_dir.as_path(), &optional_progress_bar)?;
-
-    let export_result = execute_script(
-        gateway_dir.as_path(),
-        "npm",
-        vec![
-            "run",
-            "export:bridge-manifest",
-            "--",
-            public_handler_path
-                .to_str()
-                .ok_or("Failed to stringify public-testnet handler path")?,
-            public_manifest_path
-                .to_str()
-                .ok_or("Failed to stringify public-testnet bridge manifest path")?,
-        ],
-        Some(export_env),
-    );
+    let export_result = publish_deployed_manifest(&offchain_dir, &public_manifest_path);
 
     restore_handler_json(generic_handler_path.as_path(), handler_backup)?;
 
@@ -3611,6 +3585,29 @@ mod tests {
     };
     use crate::config::Services;
     use std::path::Path;
+
+    #[test]
+    fn publishes_the_deployer_manifest_without_reexporting_or_truncating_it() {
+        let root = std::env::temp_dir().join(format!(
+            "caribic-deployed-manifest-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let source = root.join("deployments/bridge-manifest.json");
+        let destination = root.join("network/bridge-manifest.json");
+        assert!(super::publish_deployed_manifest(&root, &destination).is_err());
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        let bytes = br#"{"deployment_id":"published-bridge"}"#;
+        std::fs::write(&source, bytes).unwrap();
+        super::publish_deployed_manifest(&root, &destination).unwrap();
+        assert_eq!(std::fs::read(&destination).unwrap(), bytes);
+        super::publish_deployed_manifest(&root, &source).unwrap();
+        assert_eq!(std::fs::read(&source).unwrap(), bytes);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     fn all_services_enabled() -> Services {
         Services {
