@@ -20,7 +20,7 @@ Using `||` for byte concatenation:
 host_state_token_unit = host_state_nft_policy_id || utf8("ibc_host_state")
 ```
 
-The [HostState spending validator](../onchain/validators/host_state_stt.ak)
+The [HostState spending validator](../onchain/validators/upgradeable/host_state.ak)
 authenticates state transitions and preserves the NFT in the successor HostState
 UTXO during normal operation. Final shutdown uses `FinalizeShutdown` together
 with the NFT policy's `BurnFinal` redeemer to destroy the singleton.

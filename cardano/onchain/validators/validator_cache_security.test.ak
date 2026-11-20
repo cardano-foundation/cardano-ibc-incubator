@@ -19,8 +19,8 @@ use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, host_state_token_name,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{CreateClient}
+use ibc/implementation/spending_validator_cache as spending_validator_cache
 use ibc/migration/types.{registry_token_name} as migration_types
-use spending_validator_cache
 use upgradeable/validator_cache as upgradeable_cache
 
 const client_script =
@@ -258,7 +258,7 @@ test registry_cache_guard_cannot_use_migration_to_skip_the_client_move() fail {
 test cache_guard_requires_pinned_verifier_even_for_captured_client() fail {
   let cache = datum()
   let tx = cache_tx(cache)
-  spending_validator_cache.spend_validator_cache.spend(
+  spending_validator_cache.validate(
     policy,
     update_script,
     policy,
@@ -271,7 +271,7 @@ test cache_guard_requires_pinned_verifier_even_for_captured_client() fail {
 
 test cache_guard_accepts_authorized_unchanged_identity() {
   let cache = datum()
-  spending_validator_cache.spend_validator_cache.spend(
+  spending_validator_cache.validate(
     policy,
     update_script,
     policy,
@@ -286,7 +286,7 @@ test cache_guard_rejects_changed_client_token_without_client_guard() fail {
   let cache = datum()
   let tx = cache_tx(cache)
   expect [output] = tx.outputs
-  spending_validator_cache.spend_validator_cache.spend(
+  spending_validator_cache.validate(
     policy,
     update_script,
     policy,
@@ -314,7 +314,7 @@ test cache_guard_rejects_changed_client_address_without_client_guard() fail {
   let cache = datum()
   let tx = cache_tx(cache)
   expect [output] = tx.outputs
-  spending_validator_cache.spend_validator_cache.spend(
+  spending_validator_cache.validate(
     policy,
     update_script,
     policy,
@@ -339,7 +339,7 @@ test cache_guard_rejects_changed_cache_identity_without_client_guard() fail {
   let cache = datum()
   let tx = cache_tx(cache)
   expect [output] = tx.outputs
-  spending_validator_cache.spend_validator_cache.spend(
+  spending_validator_cache.validate(
     policy,
     update_script,
     policy,
@@ -375,7 +375,7 @@ test cache_guard_rejects_unrelated_name_claiming_subject() fail {
         ),
       },
     }
-  spending_validator_cache.spend_validator_cache.spend(
+  spending_validator_cache.validate(
     policy,
     update_script,
     policy,

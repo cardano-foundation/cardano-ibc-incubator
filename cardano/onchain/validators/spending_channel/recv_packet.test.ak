@@ -1,15 +1,19 @@
+use aiken/builtin as fixture_builtin
 use aiken/builtin
 use aiken/cbor
 use aiken/collection/pairs
 use aiken/interval
 use aiken/primitive/bytearray
+use cardano/address as fixture_address
 use cardano/address.{from_script}
 use cardano/assets.{add, from_asset}
+use cardano/transaction as fixture_transaction
 use cardano/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
   ScriptPurpose, Spend, Transaction,
 }
-use host_state_stt
+use governance_authority as fixture_authority_entry
+use host_state_nft as fixture_nft_entry
 use ibc/apps/transfer/types/fungible_token_packet_data
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -54,18 +58,24 @@ use ibc/core/ics_023_vector_commitments/merkle.{
 }
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/packet_keys
+use ibc/core/ics_025_handler_interface/heartbeat as fixture_heartbeat
 use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
+use ibc/core/ics_025_handler_interface/host_state as fixture_datum
 use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
   empty_ibc_state_root, host_state_token_name,
 }
+use ibc/core/ics_025_handler_interface/host_state_redeemer as fixture_redeemer
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{HandlePacket}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/migration/auth as fixture_migration
 use ibc/utils/bits
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
 use spending_channel/recv_packet
 use spending_channel/spending_channel_fixture.{MockData, setup}
+use testing/host as governed_host
+use upgradeable/host_state as fixture_host_entry
 
 fn repeat_bytearray(value: ByteArray, count: Int) -> List<ByteArray> {
   if count <= 0 {
@@ -706,7 +716,7 @@ fn check_recv_packet_with_proof(
   if compose_host_state {
     and {
       recv_packet_valid?,
-      host_state_stt.host_state_stt.spend(
+      spend_governed_host(
         host_nft_policy,
         "unused client script hash",
         "unused connection script hash",
@@ -714,7 +724,6 @@ fn check_recv_packet_with_proof(
         mock_data.client_minting_policy_id,
         mock_data.connection_minting_policy_id,
         mock_data.channel_minting_policy_id,
-        "",
         HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
         None,
         host_state_redeemer,
@@ -1624,4 +1633,66 @@ test recv_packet_accepts_opaque_list_proof() {
 
 test recv_packet_rejects_mismatched_opaque_proof() fail {
   check_opaque_recv_proof(#"010203", False)
+}
+
+fn spend_governed_host(
+  host_policy: ByteArray,
+  clients: Data,
+  connection: ByteArray,
+  channel: ByteArray,
+  client_policy: ByteArray,
+  connection_policy: ByteArray,
+  channel_policy: ByteArray,
+  schedule: fixture_heartbeat.HeartbeatSchedule,
+  datum: Option<fixture_datum.HostStateDatum>,
+  redeemer: fixture_redeemer.HostStateRedeemer,
+  own_ref: fixture_transaction.OutputReference,
+  transaction: fixture_transaction.Transaction,
+) -> Bool {
+  let (registry, tx) =
+    governed_host.context(
+      host_policy,
+      clients,
+      connection,
+      channel,
+      client_policy,
+      connection_policy,
+      channel_policy,
+      schedule,
+      datum,
+      redeemer,
+      own_ref,
+      transaction,
+    )
+  let raw: Data = redeemer
+  and {
+    fixture_host_entry.host_state.spend(
+      registry.token.policy_id,
+      1,
+      schedule,
+      registry.approval_authority,
+      host_policy,
+      None,
+      raw,
+      own_ref,
+      tx,
+    ),
+    if fixture_migration.is_host_control(raw) && redeemer != fixture_redeemer.FinalizeShutdown {
+      fixture_authority_entry.governance_authority.withdraw(
+        registry.token.policy_id,
+        fixture_builtin.constr_data(1, []),
+        fixture_address.Script(registry.approval_authority),
+        tx,
+      )
+    } else if redeemer == fixture_redeemer.FinalizeShutdown {
+      fixture_nft_entry.host_state_nft.mint(
+        own_ref,
+        fixture_nft_entry.BurnFinal,
+        host_policy,
+        tx,
+      )
+    } else {
+      True
+    },
+  }
 }

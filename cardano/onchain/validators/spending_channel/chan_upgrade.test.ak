@@ -1,16 +1,20 @@
+use aiken/builtin as fixture_builtin
 use aiken/builtin
 use aiken/cbor
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/interval
 use aiken/primitive/bytearray
+use cardano/address as fixture_address
 use cardano/address.{from_script}
 use cardano/assets
+use cardano/transaction as fixture_transaction
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, Spend,
   Transaction, ValidityRange,
 }
-use host_state_stt
+use governance_authority as fixture_authority_entry
+use host_state_nft as fixture_nft_entry
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -54,18 +58,24 @@ use ibc/core/ics_004/types/upgrade.{
 }
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_024_host_requirements/channel_keys
+use ibc/core/ics_025_handler_interface/heartbeat as fixture_heartbeat
 use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
+use ibc/core/ics_025_handler_interface/host_state as fixture_datum
 use ibc/core/ics_025_handler_interface/host_state.{HostState, HostStateDatum}
+use ibc/core/ics_025_handler_interface/host_state_redeemer as fixture_redeemer
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   HandlePacket, HostStateRedeemer, UpgradeChannel,
 }
+use ibc/implementation/spending_channel as spending_channel
+use ibc/migration/auth as fixture_migration
 use ibc/testing/sparse_tree
 use ibc/utils/validator_utils
-use spending_channel
 use spending_channel/chan_upgrade
 use spending_channel/chan_upgrade_finish
 use spending_channel/chan_upgrade_handshake
 use spending_channel/spending_channel_fixture.{MockData, setup}
+use testing/host as governed_host
+use upgradeable/host_state as fixture_host_entry
 
 // Composed transactions for each upgrade step. They run the upgrade
 // operation, the channel validator and the HostState validator together.
@@ -703,7 +713,8 @@ fn run_channel(step: Step, tx: Transaction, redeemer: Data) -> Bool {
   let mock = setup()
   expect [channel_input, ..] = tx.inputs
   expect redeemer: SpendChannelRedeemer = redeemer
-  spending_channel.spend_channel.spend(
+  spending_channel.validate(
+    True,
     packet_config_policy,
     mock.chan_open_ack_policy_id,
     mock.chan_open_confirm_policy_id,
@@ -728,7 +739,7 @@ fn run_channel(step: Step, tx: Transaction, redeemer: Data) -> Bool {
 fn run_host(tx: Transaction, redeemer: HostStateRedeemer) -> Bool {
   let mock = setup()
   expect [_, host_input] = tx.inputs
-  host_state_stt.host_state_stt.spend(
+  spend_governed_host(
     mock.host_state_nft_policy_id,
     "unused client script",
     "unused connection script",
@@ -736,7 +747,6 @@ fn run_host(tx: Transaction, redeemer: HostStateRedeemer) -> Bool {
     mock.client_minting_policy_id,
     mock.connection_minting_policy_id,
     mock.channel_minting_policy_id,
-    "",
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
     None,
     redeemer,
@@ -1897,7 +1907,7 @@ test host_state_redeemer_index_is_stable() {
       packet_acknowledgement_siblings: [],
     }
   and {
-    builtin.fst_pair(builtin.un_constr_data(raw)) == 14,
+    builtin.fst_pair(builtin.un_constr_data(raw)) == 13,
     builtin.fst_pair(builtin.un_constr_data(previous)) == 7,
   }
 }
@@ -1966,7 +1976,7 @@ test gateway_flush_upgrade_redeemer_matches() {
 
 test gateway_upgrade_channel_host_redeemer_matches() {
   let redeemer: Data = UpgradeChannel
-  cbor.deserialise(#"d9050780") == Some(redeemer)
+  cbor.deserialise(#"d9050680") == Some(redeemer)
 }
 
 // Fixture baselines for the budget report, one per accepted step above.
@@ -2026,4 +2036,66 @@ fn deployment_flush_step() -> Step {
 
 test flush_certifies_eight_lanes_of_a_deployment() {
   accepted(deployment_flush_step())
+}
+
+fn spend_governed_host(
+  host_policy: ByteArray,
+  clients: Data,
+  connection: ByteArray,
+  channel: ByteArray,
+  client_policy: ByteArray,
+  connection_policy: ByteArray,
+  channel_policy: ByteArray,
+  schedule: fixture_heartbeat.HeartbeatSchedule,
+  datum: Option<fixture_datum.HostStateDatum>,
+  redeemer: fixture_redeemer.HostStateRedeemer,
+  own_ref: fixture_transaction.OutputReference,
+  transaction: fixture_transaction.Transaction,
+) -> Bool {
+  let (registry, tx) =
+    governed_host.context(
+      host_policy,
+      clients,
+      connection,
+      channel,
+      client_policy,
+      connection_policy,
+      channel_policy,
+      schedule,
+      datum,
+      redeemer,
+      own_ref,
+      transaction,
+    )
+  let raw: Data = redeemer
+  and {
+    fixture_host_entry.host_state.spend(
+      registry.token.policy_id,
+      1,
+      schedule,
+      registry.approval_authority,
+      host_policy,
+      None,
+      raw,
+      own_ref,
+      tx,
+    ),
+    if fixture_migration.is_host_control(raw) && redeemer != fixture_redeemer.FinalizeShutdown {
+      fixture_authority_entry.governance_authority.withdraw(
+        registry.token.policy_id,
+        fixture_builtin.constr_data(1, []),
+        fixture_address.Script(registry.approval_authority),
+        tx,
+      )
+    } else if redeemer == fixture_redeemer.FinalizeShutdown {
+      fixture_nft_entry.host_state_nft.mint(
+        own_ref,
+        fixture_nft_entry.BurnFinal,
+        host_policy,
+        tx,
+      )
+    } else {
+      True
+    },
+  }
 }

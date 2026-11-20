@@ -382,11 +382,6 @@ Deno.test("compiled governance graduates the deployer without its signature and 
     );
     lucid.selectWallet.fromSeed(seeds[3]);
     lucid.clearUTxOOverride();
-    await assertRejects(
-      () => heartbeat(keys[3], "ClaimBackup"),
-      Error,
-      "failed script execution",
-    );
     await (await (await heartbeat(keys[3])).sign.withWallet().complete())
       .submit();
     lucid.clearUTxOOverride();

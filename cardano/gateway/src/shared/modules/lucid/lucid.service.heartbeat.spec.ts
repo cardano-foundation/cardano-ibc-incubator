@@ -14,7 +14,7 @@ describe('LucidService HostState heartbeat wiring', () => {
     const service: any = Object.create(LucidService.prototype);
     service.LucidImporter = LucidImporter;
 
-    await expect(service.encode('UpgradeChannel', 'host_state_redeemer')).resolves.toBe('d9050780');
+    await expect(service.encode('UpgradeChannel', 'host_state_redeemer')).resolves.toBe('d9050680');
   });
 
   it('preserves surplus ADA and unrelated assets in the HostState heartbeat output', async () => {

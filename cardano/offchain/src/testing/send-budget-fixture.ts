@@ -147,16 +147,17 @@ export async function sendPacketFixture(
     ],
   );
   const [moduleScript, moduleHash, moduleAddress] = readValidator(
-    "spending_transfer_module.spend_transfer_module.spend",
+    "upgradeable/transfer.transfer.spend",
     lucid,
     [
+      "ee".repeat(28),
+      1n,
+      context.hostPolicy,
+      channelPolicy,
+      escrowPolicy,
       record(context.portToken.policy_id, context.portToken.name),
       record(context.moduleToken.policy_id, context.moduleToken.name),
-      fromText("transfer"),
-      escrowPolicy,
-      channelPolicy,
       voucherPolicy,
-      context.hostPolicy,
       context.shutdownScriptHash,
     ],
   );

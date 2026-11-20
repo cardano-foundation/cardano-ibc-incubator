@@ -127,7 +127,7 @@ describe('proof-backed Tendermint client upgrade', () => {
     const response = await service.upgradeClient(request);
     expect(MsgUpgradeClientResponse.decode(MsgUpgradeClientResponse.encode(response).finish())).toEqual(response);
     const args = lucid.createUnsignedUpgradeClientTransaction.mock.calls[0];
-    expect(staged ? decodeSpendMultitxClientRedeemer(args[3], Lucid) : decodeSpendClientRedeemer(args[3], Lucid)).toBe(
+    expect(decodeSpendMultitxClientRedeemer(args[3], Lucid)).toBe(
       'UpgradeClient',
     );
     const after = await decodeClientDatum(args[5], Lucid);

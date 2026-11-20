@@ -42,9 +42,9 @@ use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
+use ibc/implementation/spending_connection as spending_connection
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
-use spending_connection
 
 type MockData {
   host_state_nft_policy_id: PolicyId,
@@ -438,7 +438,8 @@ test conn_open_ack_accepts_authenticated_history_witness() {
       validity_range,
     }
 
-  spending_connection.spend_connection.spend(
+  spending_connection.validate(
+    True,
     mock.client_minting_policy_id,
     mock.verify_proof_policy_id,
     mock.host_state_nft_policy_id,
@@ -569,7 +570,8 @@ fn run_conn_open_confirm(client_is_active: Bool) -> Bool {
       validity_range,
     }
 
-  spending_connection.spend_connection.spend(
+  spending_connection.validate(
+    True,
     mock.client_minting_policy_id,
     mock.verify_proof_policy_id,
     mock.host_state_nft_policy_id,
@@ -727,7 +729,8 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
       validity_range,
     }
 
-  spending_connection.spend_connection.spend(
+  spending_connection.validate(
+    True,
     mock.client_minting_policy_id,
     mock.verify_proof_policy_id,
     mock.host_state_nft_policy_id,

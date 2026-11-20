@@ -108,7 +108,7 @@ async function context(input?: ClientDatum) {
     }),
     generateTokenName: jest.fn().mockReturnValue('01'),
     createUnsignedCreateClientTransaction: jest.fn().mockReturnValue({}),
-    createUnsignedUpdateClientTransaction: jest.fn().mockReturnValue({}),
+    createUnsignedFinalizeTendermintSessionTransaction: jest.fn().mockReturnValue({}),
     tryFindUtxosAt: jest.fn().mockResolvedValue([{ assets: { lovelace: 2_000_000n } }]),
     selectWalletFromAddress: jest.fn(),
   };
@@ -215,6 +215,7 @@ describe('ClientService connection-delay processing metadata', () => {
     header.signedHeader.header.height = 3n;
     header.signedHeader.header.time = validFromNs + 1_000_000_000n;
 
+    jest.spyOn(service as any, 'requireLiveTendermintFinalizationInputs').mockResolvedValue(undefined);
     await service.buildUnsignedUpdateClientTx({
       clientId: '0',
       header,
@@ -224,15 +225,15 @@ describe('ClientService connection-delay processing metadata', () => {
       currentClientUtxo: {} as Lucid.UTxO,
       txValidFrom: validFromNs,
       txValidTo: validToNs,
-    });
+    }, { datum: { sessionToken: { policyId: '11'.repeat(28), name: '01' } }, utxo: {}, tokenUnit: '11'.repeat(28) + '01', signerKeyHash: '44'.repeat(28), processedTimeNs: validToNs } as any);
 
-    const cbor = lucid.createUnsignedUpdateClientTransaction.mock.calls[0][5];
+    const cbor = lucid.createUnsignedFinalizeTendermintSessionTransaction.mock.calls[0][8];
     const output = await decodeClientDatum(cbor, Lucid);
     expect([...output.state.consensusStates.keys()]).toEqual([height(3n)]);
     expect([...output.state.processedTimes.values()]).toEqual([validToNs]);
     expect([...output.state.processedHeights.values()]).toEqual([validToNs / 4_000_000_000n]);
     expect(output.history_root).toBe('66'.repeat(32));
-    const hostOutput = await decodeHostStateDatum(lucid.createUnsignedUpdateClientTransaction.mock.calls[0][4], Lucid);
+    const hostOutput = await decodeHostStateDatum(lucid.createUnsignedFinalizeTendermintSessionTransaction.mock.calls[0][7], Lucid);
     const hostInput = await lucid.decodeDatum();
     expect(hostOutput.control).toEqual(hostInput.control);
   });
@@ -296,7 +297,7 @@ describe('ClientService connection-delay processing metadata', () => {
         count === 1 ? { BurnSession: { tokenName: '01' } } : { BurnSessions: { tokenNames: ['01', '02'] } },
       );
       expect(args[13]).toEqual(sessions.slice(1));
-      expect(lucid.createUnsignedUpdateClientTransaction).not.toHaveBeenCalled();
+      expect(lucid.createUnsignedFinalizeTendermintSessionTransaction).toHaveBeenCalledTimes(1);
     },
   );
 });

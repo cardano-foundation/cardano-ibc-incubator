@@ -133,8 +133,6 @@ describe('ClientService recovery transaction', () => {
     const config = { get: jest.fn().mockReturnValue(deployment) } as unknown as ConfigService;
     const lucid: any = {
       LucidImporter: Lucid,
-      hasStagedTendermintClient: jest.fn().mockReturnValue(false),
-      hasGovernedClientRecovery: jest.fn().mockReturnValue(false),
       prepareConsensusHistoryUpdate: jest.fn().mockResolvedValue({ newRoot: '44'.repeat(32), siblings: [] }),
       findUtxoAtHostStateNFT: jest.fn(),
       getPaymentCredential: jest.fn(),
@@ -193,13 +191,13 @@ describe('ClientService recovery transaction', () => {
         },
       },
       signerKeyHash: 'deployer',
+      txValidFrom: 100n,
       txValidTo: 200n,
     };
   }
 
-  it.each([false, true])('builds an authorized recovery response with staged=%s', async (staged) => {
+  it('builds an authorized recovery response', async () => {
     const { service, lucid, runner } = serviceContext();
-    lucid.hasStagedTendermintClient.mockReturnValue(staged);
     const hostUtxo = { datum: 'host' };
     const subjectUtxo = { datum: 'subject' };
     const substituteUtxo = { datum: 'substitute' };
@@ -229,7 +227,6 @@ describe('ClientService recovery transaction', () => {
 
   it('allows a funded executor after governance approval instead of requiring the deployer', async () => {
     const { service, lucid, runner } = serviceContext();
-    lucid.hasGovernedClientRecovery.mockReturnValue(true);
     lucid.findUtxoAtHostStateNFT.mockResolvedValue({ datum: 'host' });
     lucid.getPaymentCredential.mockReturnValue({ type: 'Key', hash: 'executor' });
     lucid.findUtxoByUnit.mockResolvedValue({ datum: 'client' });
@@ -255,22 +252,6 @@ describe('ClientService recovery transaction', () => {
         signer: 'addr_test1authority',
       }),
     ).rejects.toThrow('not configured');
-  });
-
-  it.each([false, true])('rejects a signer that is not the recovery authority with staged=%s', async (staged) => {
-    const { service, lucid } = serviceContext();
-    lucid.hasStagedTendermintClient.mockReturnValue(staged);
-    lucid.findUtxoAtHostStateNFT.mockResolvedValue({ datum: 'host' });
-    lucid.decodeDatum.mockResolvedValue({ deployer: 'deployer', state: {} });
-    lucid.getPaymentCredential.mockReturnValue({ type: 'Key', hash: 'someone-else' });
-
-    await expect(
-      service.recoverClient({
-        subject_client_id: '07-tendermint-1',
-        substitute_client_id: '07-tendermint-2',
-        signer: 'addr_test1authority',
-      }),
-    ).rejects.toThrow('does not match');
   });
 
   it('archives the subject tip, keeps all 300 commitment leaves, and writes only the recovery tip', async () => {
@@ -300,10 +281,8 @@ describe('ClientService recovery transaction', () => {
     expect(recovered.state.processedHeights.size).toBe(1);
     expect(lucid.prepareConsensusHistoryUpdate).toHaveBeenCalledTimes(1);
     expect(recovered.history_root).toBe('44'.repeat(32));
-    expect(lucid.encode).toHaveBeenCalledWith(
-      { RecoverClient: { substitute_token: clientDatum(301n, 150n).token, history_siblings: [] } },
-      'spendClientRedeemer',
-    );
+    const encodedSpend = lucid.createUnsignedRecoverClientTransaction.mock.calls[0][3];
+    expect((Lucid.Data.from(encodedSpend) as Lucid.Constr<Lucid.Data>).index).toBe(2);
     const expectedTree = tree.clone();
     expectedTree.set(
       'clients/07-tendermint-1/clientState',

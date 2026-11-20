@@ -11,13 +11,15 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  UpgradeClient, UpgradeClientWithdrawal,
+  UpgradeClientWithdrawal,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/upgrade_pb
 use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/multitx/client_redeemer.{UpgradeClient} as staged_redeemer
+use ibc/client/ics_007_tendermint_client/recovery as recovery_logic
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
   UncheckedRational,
 }
@@ -33,7 +35,6 @@ use ibc/core/ics_023_vector_commitments/merkle.{
   MerklePath, MerkleProof, MerkleRoot,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
-use recover_client
 use verifying_membership
 use verifying_proof
 
@@ -462,12 +463,12 @@ test upgrade_proof_policy_checks_history_and_both_proofs() {
 test upgrade_withdrawal_binds_exact_spent_and_created_datums() {
   let (tx, _) = transaction_fixture()
   let (before, _, _) = fixture_for(proposed())
-  recover_client.recover_client.withdraw(
+  recovery_logic.validate(
     "host",
     "proof",
     UpgradeClientWithdrawal { subject_token: before.token },
-    address.Script("recovery"),
     tx,
+    fn(host, tx) { list.has(tx.extra_signatories, host.deployer) },
   )
 }
 
@@ -475,12 +476,12 @@ test upgrade_withdrawal_rejects_another_proof_policy() fail {
   let (tx, _) = transaction_fixture()
   let (before, _, _) = fixture_for(proposed())
   expect
-    recover_client.recover_client.withdraw(
+    recovery_logic.validate(
       "host",
       "fake-proof",
       UpgradeClientWithdrawal { subject_token: before.token },
-      address.Script("recovery"),
       tx,
+      fn(host, tx) { list.has(tx.extra_signatories, host.deployer) },
     )
 }
 
@@ -499,12 +500,12 @@ test upgrade_withdrawal_rejects_output_substitution() fail {
       ],
     }
   expect
-    recover_client.recover_client.withdraw(
+    recovery_logic.validate(
       "host",
       "proof",
       UpgradeClientWithdrawal { subject_token: before.token },
-      address.Script("recovery"),
       forged,
+      fn(host, tx) { list.has(tx.extra_signatories, host.deployer) },
     )
 }
 

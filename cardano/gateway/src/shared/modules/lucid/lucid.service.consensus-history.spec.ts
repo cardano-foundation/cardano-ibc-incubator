@@ -133,29 +133,6 @@ describe('Lucid proof-backed consensus history', () => {
     expect(builder.pay.ToContract).toHaveBeenCalledTimes(2);
     expect(builder.addSignerKey).not.toHaveBeenCalled();
 
-    builder.pay.ToContract.mockClear();
-    const substitute = { ...clientUtxo, txHash: '66'.repeat(32) };
-    await service.createUnsignedRecoverClientTransaction(
-      clientUtxo,
-      'host',
-      clientUtxo,
-      'spend',
-      substitute,
-      'recover',
-      'new-host',
-      'new-client',
-      token.policyId + token.name,
-      'authority',
-    );
-    expect(builder.readFrom).toHaveBeenLastCalledWith([
-      refs.hostStateStt,
-      refs.spendClient,
-      refs.recoverClient,
-      substitute,
-    ]);
-    expect(builder.collectFrom.mock.calls.flatMap((args: any[]) => args[0])).not.toContain(substitute);
-    expect(builder.mintAssets).not.toHaveBeenCalled();
-    expect(builder.pay.ToContract).toHaveBeenCalledTimes(2);
-    expect(builder.addSignerKey).toHaveBeenCalledWith('authority');
+
   });
 });

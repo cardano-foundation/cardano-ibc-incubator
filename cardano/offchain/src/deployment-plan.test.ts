@@ -102,6 +102,7 @@ Deno.test("the standard client publishes direct verification and staged fallback
     lucidLoader,
     plan.hostNft.hash,
     plan.recoverClient.hash,
+    "ee".repeat(28),
   );
   assertEquals(plan.updateClient.hash, staged.updateClient.scriptHash);
   assertEquals(plan.sessionSpend.hash, staged.sessionSpend.scriptHash);

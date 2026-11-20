@@ -238,7 +238,7 @@ header and must be rejected, checking these invariants:
 ### Connection Delay Anchors
 
 Fixed regressions in `validators/client_delay.test.ak` and
-`validators/spending_client_capacity.test.ak` enforce the processing-time anchor:
+`cardano/offchain/scripts/tendermint-cache.test.ts` enforce the processing-time anchor:
 
 - Creation and updates record the finite upper validity bound, in nanoseconds,
   and derive processing height from it.

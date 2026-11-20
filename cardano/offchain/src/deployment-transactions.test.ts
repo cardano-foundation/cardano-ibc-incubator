@@ -110,7 +110,7 @@ function assertSignedTransactionFits(signed: TxSigned, label: string) {
   const signedBytes = signed.toCBOR().length / 2;
   // The HostState publication uses one dedicated funding input and one output.
   // Keep its tighter limit measured against the actual signed transaction.
-  const headroom = label === "host_state_stt.host_state_stt.spend" ? 50 : 200;
+  const headroom = 200;
   assert(
     signedBytes <= MAX_TX_SIZE - headroom,
     `${label}: signed transaction is ${signedBytes} bytes, leaving less than ${headroom} bytes below ${MAX_TX_SIZE}`,

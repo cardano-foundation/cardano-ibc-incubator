@@ -8,9 +8,6 @@ use cardano/transaction.{
   Transaction,
 }
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  SpendClientRedeemer, UpdateClient as UpdateTendermintClient,
-}
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
   BlockID, PartSetHeader,
 }
@@ -48,6 +45,9 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{UpdateClient}
+use ibc/testing/header_fixture.{
+  HeaderFixture, UpdateClient as UpdateTendermintClient,
+}
 use spending_tendermint_update_session
 
 const validator_root =
@@ -180,7 +180,7 @@ fn take_target_entries(
 fn real_adjacent_batch_size(size: Int) -> (SessionDatum, List<TargetEntry>) {
   expect Some(data) =
     cbor.deserialise(adjacent_all_signed_spend_client_redeemer_cbor)
-  expect redeemer: SpendClientRedeemer = data
+  expect redeemer: HeaderFixture = data
   expect UpdateTendermintClient { msg: HeaderCase(header), .. } = redeemer
   let target_validators = header.validator_set.validators
   let signed_header = header.signed_header
@@ -490,7 +490,7 @@ fn accumulate_expected_non_adjacent_entries(
 fn real_non_adjacent_batch() -> (SessionDatum, List<TargetEntry>) {
   expect Some(data) =
     cbor.deserialise(non_adjacent_mixed_spend_client_redeemer_cbor)
-  expect redeemer: SpendClientRedeemer = data
+  expect redeemer: HeaderFixture = data
   expect UpdateTendermintClient { msg: HeaderCase(header), .. } = redeemer
   let target_validators = header.validator_set.validators
   let trusted_validators = header.trusted_validators.validators
@@ -683,7 +683,7 @@ fn take_target_entries_with_precomputed_memberships(
 fn depth_eight_non_adjacent_batch() -> (SessionDatum, List<TargetEntry>) {
   expect Some(data) =
     cbor.deserialise(non_adjacent_mixed_spend_client_redeemer_cbor)
-  expect redeemer: SpendClientRedeemer = data
+  expect redeemer: HeaderFixture = data
   expect UpdateTendermintClient { msg: HeaderCase(header), .. } = redeemer
   let target_validators = header.validator_set.validators
   let signed_header = header.signed_header

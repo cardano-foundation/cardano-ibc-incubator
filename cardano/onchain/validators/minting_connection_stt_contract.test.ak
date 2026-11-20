@@ -1,12 +1,16 @@
+use aiken/builtin as fixture_builtin
 use aiken/cbor
 use aiken/interval
+use cardano/address as fixture_address
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
+use cardano/transaction as fixture_transaction
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
   Spend, Transaction, placeholder,
 }
-use host_state_stt
+use governance_authority as fixture_authority_entry
+use host_state_nft as fixture_nft_entry
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -34,18 +38,24 @@ use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix
 use ibc/core/ics_024_host_requirements/client_keys as host_client_keys
 use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
+use ibc/core/ics_025_handler_interface/heartbeat as fixture_heartbeat
 use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
+use ibc/core/ics_025_handler_interface/host_state as fixture_datum
 use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, empty_ibc_state_root,
   host_state_token_name,
 }
+use ibc/core/ics_025_handler_interface/host_state_redeemer as fixture_redeemer
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   CreateConnection, HostStateRedeemer,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/implementation/minting_connection_stt as minting_connection_stt
+use ibc/migration/auth as fixture_migration
 use ibc/testing/fuzz_dsl
 use ibc/utils/validator_utils
-use minting_connection_stt
+use testing/host as governed_host
+use upgradeable/host_state as fixture_host_entry
 
 const trusted_deployer =
   #"00000000000000000000000000000000000000000000000000000000"
@@ -424,7 +434,8 @@ fn run_conn_open_try_transition(
   )
     |> fuzz_dsl.with_protocol_validator_check(
         "minting_connection_stt",
-        minting_connection_stt.mint_connection_stt.mint(
+        minting_connection_stt.validate(
+          True,
           fixture.client_minting_policy_id,
           fixture.verify_proof_policy_id,
           fixture.spend_connection_script_hash,
@@ -436,7 +447,7 @@ fn run_conn_open_try_transition(
       )
     |> fuzz_dsl.with_protocol_validator_check(
         "host_state_stt.create_connection",
-        host_state_stt.host_state_stt.spend(
+        spend_governed_host(
           fixture.host_state_nft_policy_id,
           "client script hash",
           fixture.spend_connection_script_hash,
@@ -444,7 +455,6 @@ fn run_conn_open_try_transition(
           fixture.client_minting_policy_id,
           fixture.connection_minting_policy_id,
           "unused channel minting policy",
-          "",
           HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
           None,
           fixture.host_redeemer,
@@ -483,4 +493,66 @@ test regression_conn_open_try_rejects_wrong_counterparty_client_state() {
   )
     |> run_conn_open_try_transition
     |> fuzz_dsl.assert_protocol_checks_reject
+}
+
+fn spend_governed_host(
+  host_policy: ByteArray,
+  clients: Data,
+  connection: ByteArray,
+  channel: ByteArray,
+  client_policy: ByteArray,
+  connection_policy: ByteArray,
+  channel_policy: ByteArray,
+  schedule: fixture_heartbeat.HeartbeatSchedule,
+  datum: Option<fixture_datum.HostStateDatum>,
+  redeemer: fixture_redeemer.HostStateRedeemer,
+  own_ref: fixture_transaction.OutputReference,
+  transaction: fixture_transaction.Transaction,
+) -> Bool {
+  let (registry, tx) =
+    governed_host.context(
+      host_policy,
+      clients,
+      connection,
+      channel,
+      client_policy,
+      connection_policy,
+      channel_policy,
+      schedule,
+      datum,
+      redeemer,
+      own_ref,
+      transaction,
+    )
+  let raw: Data = redeemer
+  and {
+    fixture_host_entry.host_state.spend(
+      registry.token.policy_id,
+      1,
+      schedule,
+      registry.approval_authority,
+      host_policy,
+      None,
+      raw,
+      own_ref,
+      tx,
+    ),
+    if fixture_migration.is_host_control(raw) && redeemer != fixture_redeemer.FinalizeShutdown {
+      fixture_authority_entry.governance_authority.withdraw(
+        registry.token.policy_id,
+        fixture_builtin.constr_data(1, []),
+        fixture_address.Script(registry.approval_authority),
+        tx,
+      )
+    } else if redeemer == fixture_redeemer.FinalizeShutdown {
+      fixture_nft_entry.host_state_nft.mint(
+        own_ref,
+        fixture_nft_entry.BurnFinal,
+        host_policy,
+        tx,
+      )
+    } else {
+      True
+    },
+  }
 }

@@ -1,4 +1,3 @@
-use aiken/builtin
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/primitive/bytearray
@@ -14,15 +13,13 @@ use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/client_datum as client_datum_mod
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
-  CheckClientHistory, CheckStagedClientHistory, ReclaimStateWithdrawal,
-  ReclaimTransferWithdrawal, RecoverClient, RecoverClientWithdrawal,
-  RecoverClientWithdrawalRedeemer, SpendClientRedeemer, UpdateClient,
-  UpgradeClient, UpgradeClientWithdrawal,
+  CheckStagedClientHistory, DirectHistoryDisabled, ReclaimStateWithdrawal,
+  ReclaimTransferWithdrawal, RecoverClientWithdrawal,
+  RecoverClientWithdrawalRedeemer, UpgradeClientWithdrawal,
 }
 use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
 use ibc/client/ics_007_tendermint_client/consensus_history
 use ibc/client/ics_007_tendermint_client/height
-use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase}
 use ibc/client/ics_007_tendermint_client/multitx/client_redeemer as staged_client
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   VerifyClientUpgrade, VerifyProofEnvelope,
@@ -113,7 +110,6 @@ pub fn validate(
         when redeemer is {
           RecoverClientWithdrawal { subject_token, .. } -> subject_token
           UpgradeClientWithdrawal { subject_token } |
-          CheckClientHistory { subject_token } |
           CheckStagedClientHistory { subject_token } -> subject_token
           _ -> fail
         }
@@ -140,16 +136,14 @@ pub fn validate(
       let valid_to = validator_utils.get_tx_valid_to(validity_range) * 1_000_000
 
       when redeemer is {
-        ReclaimStateWithdrawal | ReclaimTransferWithdrawal { .. } -> fail
+        DirectHistoryDisabled |
+        ReclaimStateWithdrawal |
+        ReclaimTransferWithdrawal { .. } -> fail
         UpgradeClientWithdrawal { .. } -> {
           // TODO: Decide whether source-chain client upgrades should also require
           // the bridge registry quorum alongside the source-chain upgrade proofs.
-          if builtin.fst_pair(builtin.un_constr_data(raw_spend_redeemer)) == 3 {
-            expect UpgradeClient: SpendClientRedeemer = raw_spend_redeemer
-          } else {
-            expect staged_client.UpgradeClient: staged_client.SpendMultitxClientRedeemer =
-              raw_spend_redeemer
-          }
+          expect staged_client.UpgradeClient: staged_client.SpendMultitxClientRedeemer =
+            raw_spend_redeemer
           expect Some(raw_proof) =
             pairs.get_first(redeemers, Mint(upgrade_proof_policy))
           expect envelope: VerifyProofEnvelope = raw_proof
@@ -198,53 +192,6 @@ pub fn validate(
             Less -> False
           }
         }
-        CheckClientHistory { .. } -> {
-          expect spend_redeemer: SpendClientRedeemer = raw_spend_redeemer
-          expect UpdateClient { msg, history_witnesses, history_siblings } =
-            spend_redeemer
-          // This forces every bounded witness authentication, including relevance,
-          // distinctness, full client/height identity, metadata and expiry checks.
-          expect
-            list.length(
-              consensus_history.consensus_states_for_message(
-                subject_datum,
-                history_witnesses,
-                valid_to,
-                msg,
-              ),
-            ) == 1 + list.length(history_witnesses)
-          when
-            height.compare(
-              recovered_datum.state.client_state.latest_height,
-              subject_datum.state.client_state.latest_height,
-            )
-          is {
-            Equal -> and {
-                history_siblings == [],
-                client_datum_mod.update_state_on_misbehaviour(
-                  subject_datum,
-                  recovered_datum,
-                ),
-              }
-            Greater -> {
-              expect HeaderCase(header) = msg
-              and {
-                client_datum_mod.update_state(
-                  subject_datum,
-                  recovered_datum,
-                  header,
-                  valid_to / 1_000_000,
-                ),
-                preserve_checkpoint(
-                  subject_datum,
-                  recovered_datum,
-                  history_siblings,
-                ),
-              }
-            }
-            Less -> False
-          }
-        }
         RecoverClientWithdrawal { substitute_token, .. } -> {
           // The wrapper supplies the deployment-specific recovery authority.
           expect [host_input] =
@@ -267,18 +214,10 @@ pub fn validate(
           expect subject_token.policy_id == substitute_token.policy_id
 
           // The client spend must name the same substitute as the withdrawal.
-          let (spend_substitute_token, history_siblings) =
-            if builtin.fst_pair(builtin.un_constr_data(raw_spend_redeemer)) == 1 {
-              expect RecoverClient { substitute_token, history_siblings }: SpendClientRedeemer =
-                raw_spend_redeemer
-              (substitute_token, history_siblings)
-            } else {
-              expect staged_client.RecoverClient {
-                substitute_token,
-                history_siblings,
-              }: staged_client.SpendMultitxClientRedeemer = raw_spend_redeemer
-              (substitute_token, history_siblings)
-            }
+          expect staged_client.RecoverClient {
+            substitute_token: spend_substitute_token,
+            history_siblings,
+          }: staged_client.SpendMultitxClientRedeemer = raw_spend_redeemer
           expect spend_substitute_token == substitute_token
 
           expect [substitute_input] =

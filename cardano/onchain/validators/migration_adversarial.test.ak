@@ -1,3 +1,4 @@
+use aiken/builtin as fixture_builtin
 // Independent kernel fixtures. These tests call the real validators; they do
 // not claim ledger balance, script dispatch, or populated bridge integration.
 use aiken/builtin
@@ -5,14 +6,17 @@ use aiken/cbor
 use aiken/collection/list
 use aiken/interval
 use aiken/primitive/bytearray
+use cardano/address as fixture_address
 use cardano/address.{Address, Inline, Script, VerificationKey, from_script}
 use cardano/assets
+use cardano/transaction as fixture_transaction
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Spend, Transaction, Withdraw,
   placeholder,
 }
+use governance_authority as fixture_authority_entry
 use governance_authority
-use host_state_stt as legacy_host
+use host_state_nft as fixture_nft_entry
 use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/types/transfer_module_datum.{TransferModuleDatum}
@@ -30,17 +34,21 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
   UncheckedRational,
 }
 use ibc/core/ics_005/types/ibc_module_redeemer.{ReclaimModule}
+use ibc/core/ics_025_handler_interface/heartbeat as fixture_heartbeat
 use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
+use ibc/core/ics_025_handler_interface/host_state as fixture_datum
 use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
   ShuttingDown, host_state_token_name, min_shutdown_grace_period_ms,
 }
+use ibc/core/ics_025_handler_interface/host_state_redeemer as fixture_redeemer
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, ClaimBackup, EnterShutdown, Heartbeat, UpdateClient,
+  BindPort, EnterShutdown, Heartbeat, UpdateClient,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment as tree
 use ibc/implementation/spending_multitx_client as client_dispatch
 use ibc/implementation/spending_transfer_module as transfer_dispatch
+use ibc/migration/auth as fixture_migration
 use ibc/migration/auth as migration
 use ibc/migration/types.{
   Activate, Authority, Begin, Cancel, CancelRestoration, Counts, Emergency,
@@ -54,7 +62,9 @@ use ibc/migration/types.{
 use ibc/utils/text_bytes
 use implementation_registry
 use minting_implementation_registry
+use testing/host as governed_host
 use upgradeable/client as client_wrapper
+use upgradeable/host_state as fixture_host_entry
 use upgradeable/host_state as host_wrapper
 use upgradeable/transfer as transfer_wrapper
 
@@ -1528,7 +1538,7 @@ test migration_adversarial_channel_creation_rejects_approved_phase() fail {
       ..placeholder,
       reference_inputs: [input(1, registry_output(registry))],
     }
-  let (host_policy, _, _, _) =
+  let (host_policy, _, _, _, _) =
     migration.channel_creation_context(transaction, registry.token.policy_id)
   host_policy == registry.host_policy
 }
@@ -1582,7 +1592,7 @@ test migration_adversarial_cleanup_control_has_valid_legacy_authority_and_state(
       let active = migration.active_spend(transaction, hash(1), 1, 0, ref(2))
       and {
         active.host_policy == hash(2),
-        legacy_host.host_state_stt.spend(
+        spend_governed_host(
           hash(2),
           hash(101),
           hash(102),
@@ -1590,7 +1600,6 @@ test migration_adversarial_cleanup_control_has_valid_legacy_authority_and_state(
           hash(3),
           hash(4),
           hash(5),
-          "",
           HeartbeatSchedule {
             epoch_origin_ms: 0,
             epoch_length_ms: 2 * ready_at,
@@ -2782,8 +2791,8 @@ test graduation_old_deployer_cannot_bind_a_port() fail {
   graduated_bind_port(hash(11))
 }
 
-test graduation_backup_key_cannot_bypass_governance() fail {
-  graduated_heartbeat(hash(44), ClaimBackup)
+test graduation_rejects_unknown_host_operations() fail {
+  graduated_heartbeat(hash(44), builtin.constr_data(99, []))
 }
 
 test graduation_old_admin_cannot_shutdown_upgradeable_bridge() fail {
@@ -2819,7 +2828,7 @@ test graduation_emergency_key_cannot_veto_admin_replacement() {
   )
 }
 
-test emergency_client_retirement_stays_disabled_after_size_optimization() {
+test governed_client_retirement_delegates_authorization_to_token_burn() {
   let token = AuthToken { policy_id: hash(3), name: "client" }
   let zero = Height { revision_number: 0, revision_height: 0 }
   let datum =
@@ -2871,7 +2880,7 @@ test emergency_client_retirement_stays_disabled_after_size_optimization() {
     )
   expect migration.operation_allowed(tx, hash(1), 1, 2)
   let raw: Data = ReclaimClient
-  !client_wrapper.client.spend(
+  client_wrapper.client.spend(
     hash(1),
     1,
     hash(2),
@@ -3231,4 +3240,66 @@ test governed_shutdown_rejects_grace_shorter_than_governance_delay() fail {
     },
     [hash(11), hash(12)],
   )
+}
+
+fn spend_governed_host(
+  host_policy: ByteArray,
+  clients: Data,
+  connection: ByteArray,
+  channel: ByteArray,
+  client_policy: ByteArray,
+  connection_policy: ByteArray,
+  channel_policy: ByteArray,
+  schedule: fixture_heartbeat.HeartbeatSchedule,
+  datum: Option<fixture_datum.HostStateDatum>,
+  redeemer: fixture_redeemer.HostStateRedeemer,
+  own_ref: fixture_transaction.OutputReference,
+  transaction: fixture_transaction.Transaction,
+) -> Bool {
+  let (registry, tx) =
+    governed_host.context(
+      host_policy,
+      clients,
+      connection,
+      channel,
+      client_policy,
+      connection_policy,
+      channel_policy,
+      schedule,
+      datum,
+      redeemer,
+      own_ref,
+      transaction,
+    )
+  let raw: Data = redeemer
+  and {
+    fixture_host_entry.host_state.spend(
+      registry.token.policy_id,
+      1,
+      schedule,
+      registry.approval_authority,
+      host_policy,
+      None,
+      raw,
+      own_ref,
+      tx,
+    ),
+    if fixture_migration.is_host_control(raw) && redeemer != fixture_redeemer.FinalizeShutdown {
+      fixture_authority_entry.governance_authority.withdraw(
+        registry.token.policy_id,
+        fixture_builtin.constr_data(1, []),
+        fixture_address.Script(registry.approval_authority),
+        tx,
+      )
+    } else if redeemer == fixture_redeemer.FinalizeShutdown {
+      fixture_nft_entry.host_state_nft.mint(
+        own_ref,
+        fixture_nft_entry.BurnFinal,
+        host_policy,
+        tx,
+      )
+    } else {
+      True
+    },
+  }
 }

@@ -366,7 +366,7 @@ async function encodeRepresentativeDatums(
     processedTime: 0n, processedHeight: 0n,
   });
   const states = outputConsensusStates(header);
-  // Match the upper bound in spending_client_capacity.test.ak.
+  // Encode processing metadata using a finite upper validity bound.
   const txValidToNs =
     ((trustedConsensusState.timestamp + 1_209_600_000_000_000n) / 1_000_000n - 1_000n) * 1_000_000n;
   const processedTimes = new Map<Height, bigint>([

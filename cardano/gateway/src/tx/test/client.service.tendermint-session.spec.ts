@@ -1171,54 +1171,11 @@ describe('ClientService staged Tendermint update validation and recovery', () =>
     expect(buildFinal).not.toHaveBeenCalled();
   });
 
-  it('keeps legacy deployments on the direct single-transaction behavior', async () => {
-    const { service, lucidService, runnerSpy, computeValidityWindow } = makeHarness();
-    const directBuilder = createTxBuilder('direct-hash');
-    const pending = { expectedNewRoot: '71'.repeat(32), commit: jest.fn() };
+  it('rejects a deployment without the governed client before building transactions', async () => {
+    const { service, lucidService, runnerSpy } = makeHarness();
     lucidService.hasStagedTendermintClient.mockReturnValue(false);
-    jest.spyOn(ClientMessageCodec, 'getClientMessageFromTendermint').mockReturnValue({ HeaderCase: [HEADER] });
-    verifyClientMessage.mockReturnValue(true);
-    checkForMisbehaviour.mockReturnValue(false);
-    jest.spyOn(HeaderCodec, 'decodeHeader').mockReturnValue({} as any);
-    jest.spyOn(HeaderCodec, 'initializeHeader').mockReturnValue(HEADER);
-    jest.spyOn(service as any, 'refreshWalletContext').mockResolvedValue(undefined);
-    computeValidityWindow.mockResolvedValue({
-      currentSlot: 1,
-      currentLedgerTime: 1_000,
-      validFromTime: 1_000,
-      validToSlot: 2,
-      validToTime: 2_000,
-      slotConfig: TEST_SLOT_CONFIG,
-    });
-    const buildDirect = jest
-      .spyOn(service, 'buildUnsignedUpdateClientTx')
-      .mockResolvedValue({ unsignedTx: directBuilder, pendingTreeUpdate: pending });
-
-    const response = await service.updateClient(UPDATE_MESSAGE);
-    const unsignedTx = response.unsigned_tx;
-    if (!unsignedTx) throw new Error('expected an unsigned transaction');
-
-    expect(verifyClientMessage).toHaveBeenCalled();
-    expect(buildDirect).toHaveBeenCalledTimes(1);
-    expect(buildDirect.mock.calls[0]).toHaveLength(1);
-    expect(lucidService.createUnsignedTendermintSessionTransaction).not.toHaveBeenCalled();
-    expect(unsignedTx.type_url).toBe('');
-    expect(runnerSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ operationName: 'updateClient', pendingTreeUpdate: pending }),
-    );
-  });
-
-  it('keeps legacy deployments gated by the existing JS verifier', async () => {
-    const { service, lucidService } = makeHarness();
-    lucidService.hasStagedTendermintClient.mockReturnValue(false);
-    jest.spyOn(ClientMessageCodec, 'getClientMessageFromTendermint').mockReturnValue({ HeaderCase: [HEADER] });
-    verifyClientMessage.mockReturnValue(false);
-    jest.spyOn(console, 'error').mockImplementation(() => undefined);
-
-    await expect(service.updateClient(UPDATE_MESSAGE)).rejects.toThrow('Invalid client message');
-
-    expect(verifyClientMessage).toHaveBeenCalledWith(UPDATE_MESSAGE.client_message, CLIENT_DATUM);
-    expect(checkForMisbehaviour).not.toHaveBeenCalled();
+    await expect(service.updateClient(UPDATE_MESSAGE)).rejects.toThrow('requires the governed Tendermint client');
+    expect(runnerSpy).not.toHaveBeenCalled();
     expect(lucidService.createUnsignedTendermintSessionTransaction).not.toHaveBeenCalled();
   });
 

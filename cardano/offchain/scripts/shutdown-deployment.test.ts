@@ -15,7 +15,7 @@ import { createCardanoScalusEvaluator } from "../src/scalus-evaluator.ts";
 import { shutdownFixture } from "../src/testing/shutdown-fixture.ts";
 import { evaluatedUpdateBudget } from "../src/tendermint-cache-routing.ts";
 import { type DeploymentTemplate, readValidator } from "../src/utils.ts";
-import { loadHostStateValidator } from "../src/deployment-plan.ts";
+import { governedHostFixture } from "../src/testing/governed-host.ts";
 import {
   HostStateDatum,
   HostStateNftRedeemer,
@@ -345,17 +345,17 @@ Deno.test("atomic finalization stays below the mainnet transaction size", async 
     Data.Tuple([OutputReferenceSchema]) as unknown as [typeof nonce],
   );
   const dummyHash = "20".repeat(28);
-  const [hostValidator, hostValidatorHash, hostAddress] =
-    loadHostStateValidator(
-      lucid,
-      nftPolicyId,
-      dummyHash,
-      dummyHash,
-      dummyHash,
-      "21".repeat(28),
-      "22".repeat(28),
-      "23".repeat(28),
-    );
+  const [hostValidator, hostValidatorHash, hostAddress] = governedHostFixture(
+    lucid,
+    emulator,
+    nftPolicyId,
+    dummyHash,
+    dummyHash,
+    dummyHash,
+    "21".repeat(28),
+    "22".repeat(28),
+    "23".repeat(28),
+  );
   const [, referenceValidatorHash, referenceAddress] = readValidator(
     "reference_validator.refer_only.else",
     lucid,
@@ -446,7 +446,7 @@ Deno.test("atomic finalization stays below the mainnet transaction size", async 
   const signed = await completed.sign.withWallet().complete();
   const transaction = signed.toTransaction();
 
-  assertEquals(transaction.body().reference_inputs()?.len() ?? 0, 0);
+  assertEquals(transaction.body().reference_inputs()?.len() ?? 0, 1);
   const inputs = transaction.body().inputs();
   assert(
     Array.from({ length: inputs.len() }, (_, index) => inputs.get(index)).some(

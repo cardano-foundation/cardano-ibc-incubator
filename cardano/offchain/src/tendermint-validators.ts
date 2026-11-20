@@ -5,6 +5,7 @@ export const loadStagedTendermintValidators = (
   lucid: LucidEvolution,
   hostStateNftPolicyId: string,
   recoveryScriptHash: string,
+  registryPolicy: string,
 ) => {
   const [sessionSpendValidator, sessionSpendScriptHash, sessionSpendAddress] =
     readValidator(
@@ -35,19 +36,21 @@ export const loadStagedTendermintValidators = (
 
   const [clientSpendValidator, clientSpendScriptHash, clientSpendAddress] =
     readValidator(
-      "spending_multitx_client.spend_multitx_client.spend",
+      "upgradeable/client.client.spend",
       lucid,
-      [hostStateNftPolicyId, updateHash, {
+      [registryPolicy, 1n, hostStateNftPolicyId, updateHash, {
         Script: [recoveryScriptHash],
       }],
       Data.Tuple([
+        Data.Bytes(),
+        Data.Integer(),
         Data.Bytes(),
         Data.Bytes(),
         Data.Enum([
           Data.Object({ VerificationKey: Data.Tuple([Data.Bytes()]) }),
           Data.Object({ Script: Data.Tuple([Data.Bytes()]) }),
         ]),
-      ]) as unknown as [string, string, { Script: [string] }],
+      ]) as unknown as [string, bigint, string, string, { Script: [string] }],
     );
 
   return {

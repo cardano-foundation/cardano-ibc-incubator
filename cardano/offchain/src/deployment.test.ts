@@ -119,80 +119,20 @@ Deno.test("chan_close_confirm is a mint-only policy in the compiled blueprint", 
   );
 });
 
-Deno.test("legacy client validator pins the recovery withdrawal validator", () => {
-  const recoveryValidator = blueprint.validators.find(
-    ({ title }) => title === "recover_client.recover_client.withdraw",
-  ) as { title: string; parameters?: Array<{ title: string }> } | undefined;
-  const spendClientValidator = blueprint.validators.find(
-    ({ title }) => title === "spending_client.spend_client.spend",
-  ) as { title: string; parameters?: Array<{ title: string }> } | undefined;
-
-  assertEquals(
-    recoveryValidator?.parameters?.map(({ title }) => title) ?? [],
-    ["host_state_nft_policy_id", "upgrade_proof_policy"],
+Deno.test("HostState deployment pins the governed registry and control authority", () => {
+  const validator = blueprint.validators.find(({ title }) =>
+    title === "upgradeable/host_state.host_state.spend"
   );
-  assertEquals(
-    spendClientValidator?.parameters?.map(({ title }) => title) ?? [],
-    ["host_state_nft_policy_id", "recover_client_credential"],
-  );
+  assertEquals(validator?.parameters?.map(({ title }) => title), [
+    "registry_policy",
+    "generation",
+    "heartbeat_schedule",
+    "shutdown_authority",
+    "shutdown_host_policy",
+  ]);
 });
 
-Deno.test("HostState deployment pins the state-token minting policies", () => {
-  const hostStateValidator = blueprint.validators.find(
-    ({ title }) => title === "host_state_stt.host_state_stt.spend",
-  ) as { title: string; parameters?: Array<{ title: string }> } | undefined;
-
-  assertEquals(
-    hostStateValidator?.parameters?.map(({ title }) => title) ?? [],
-    [
-      "nft_policy",
-      "client_registry",
-      "spend_connection_script_hash",
-      "spend_channel_script_hash",
-      "client_policy_id",
-      "connection_policy_id",
-      "channel_policy_id",
-      "backup_operator",
-      "heartbeat_schedule",
-    ],
-  );
-});
-
-Deno.test("applied legacy client validator fits a mainnet reference-script transaction", () => {
-  const lucid = {
-    config: () => ({ network: "Preview" }),
-  } as unknown as LucidEvolution;
-  const hostPolicy = "11".repeat(28);
-  const [recoveryValidator, recoveryScriptHash] = readValidator(
-    "recover_client.recover_client.withdraw",
-    lucid,
-    [hostPolicy, "22".repeat(28)],
-    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
-  );
-  const [spendClientValidator, spendClientScriptHash] = readValidator(
-    "spending_client.spend_client.spend",
-    lucid,
-    [hostPolicy, { Script: [recoveryScriptHash] }],
-    Data.Tuple([
-      Data.Bytes(),
-      Data.Enum([
-        Data.Object({ VerificationKey: Data.Tuple([Data.Bytes()]) }),
-        Data.Object({ Script: Data.Tuple([Data.Bytes()]) }),
-      ]),
-    ]) as unknown as [string, { Script: [string] }],
-  );
-  const report = buildReferenceValidatorSizeReport(
-    [recoveryValidator, spendClientValidator],
-    16_384,
-  );
-  const spendClientReport = report.find(
-    ({ scriptHash }) => scriptHash === spendClientScriptHash,
-  );
-
-  assertEquals(spendClientReport?.exceedsEstimatedSingleTxBudget, false);
-});
-
-Deno.test("fully applied production HostState with backup fits the reference publication guard", async () => {
+Deno.test("fully applied production governed HostState fits the reference publication guard", async () => {
   const lucid = {
     config: () => ({ network: "Preview" }),
   } as unknown as LucidEvolution;
@@ -294,6 +234,7 @@ Deno.test("staged Tendermint validators preserve their hash dependencies", () =>
     lucid,
     hostPolicy,
     recoveryScriptHash,
+    "ee".repeat(28),
   );
 
   const [, expectedSessionMintPolicyId] = readValidator(
@@ -303,19 +244,21 @@ Deno.test("staged Tendermint validators preserve their hash dependencies", () =>
     Data.Tuple([Data.Bytes()]) as unknown as [string],
   );
   const [, expectedClientSpendScriptHash] = readValidator(
-    "spending_multitx_client.spend_multitx_client.spend",
+    "upgradeable/client.client.spend",
     lucid,
-    [hostPolicy, staged.updateClient.scriptHash, {
+    ["ee".repeat(28), 1n, hostPolicy, staged.updateClient.scriptHash, {
       Script: [recoveryScriptHash],
     }],
     Data.Tuple([
+      Data.Bytes(),
+      Data.Integer(),
       Data.Bytes(),
       Data.Bytes(),
       Data.Enum([
         Data.Object({ VerificationKey: Data.Tuple([Data.Bytes()]) }),
         Data.Object({ Script: Data.Tuple([Data.Bytes()]) }),
       ]),
-    ]) as unknown as [string, string, { Script: [string] }],
+    ]) as unknown as [string, bigint, string, string, { Script: [string] }],
   );
 
   assertEquals(staged.sessionMint.policyId, expectedSessionMintPolicyId);
@@ -325,6 +268,7 @@ Deno.test("staged Tendermint validators preserve their hash dependencies", () =>
     lucid,
     "22".repeat(28),
     recoveryScriptHash,
+    "ee".repeat(28),
   );
   assertNotEquals(
     staged.sessionSpend.scriptHash,
@@ -339,6 +283,7 @@ Deno.test("staged Tendermint validators preserve their hash dependencies", () =>
     lucid,
     hostPolicy,
     "44".repeat(28),
+    "ee".repeat(28),
   );
   assertEquals(
     staged.sessionSpend.scriptHash,
@@ -570,4 +515,27 @@ Deno.test("deployment collision witnesses and incremental removal preserve the o
   await tree.remove(populated.key);
   assertEquals(await tree.getRoot(), missing.root);
   assertEquals(await tree.getSiblings(populated.key), missing.siblings);
+});
+
+Deno.test("blueprint exposes no immutable deployment entry points", () => {
+  const removed = new Set([
+    "host_state_stt",
+    "spending_client",
+    "recover_client",
+    "spending_multitx_client",
+    "spending_cached_client",
+    "spending_validator_cache",
+    "minting_cached_client",
+    "minting_client_stt",
+    "minting_connection_stt",
+    "minting_channel_stt",
+    "spending_connection",
+    "spending_transfer_module",
+    "spending_channel",
+  ]);
+  assertEquals(
+    blueprint.validators.filter(({ title }) => removed.has(title.split(".")[0]))
+      .map(({ title }) => title),
+    [],
+  );
 });

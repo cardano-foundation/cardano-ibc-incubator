@@ -68,6 +68,7 @@ export const buildChannelValidators = (
   mintPortPolicyId: string,
   verifyProofScriptHash: string,
   hostStateNftPolicyId: string,
+  registryPolicy: string,
   packetConfigPolicy = "",
 ) => {
   const names = CHANNEL_OPERATION_NAMES;
@@ -99,42 +100,15 @@ export const buildChannelValidators = (
     if (name !== "prune_packet_history") args.push(hostStateNftPolicyId);
     referredScripts[name] = load(`spending_channel/${name}.${name}.mint`, args);
   }
-  const base = load("spending_channel.spend_channel.spend", [
-    packetConfigPolicy,
-    ...CHANNEL_OPERATION_NAMES.map((name) => referredScripts[name].hash),
+  const base = load("upgradeable/channel.channel.spend", [
+    registryPolicy,
+    1n,
     hostStateNftPolicyId,
+    CHANNEL_OPERATION_NAMES.map((name) => referredScripts[name].hash),
+    packetConfigPolicy,
   ]);
   return { base, referredScripts };
 };
-
-/** Historical HostState implementation for isolated validator tests. */
-export const loadHostStateValidator = (
-  lucid: LucidEvolution,
-  hostPolicy: string,
-  clientRegistry: Data,
-  connectionHash: string,
-  channelHash: string,
-  clientMintPolicyId: string,
-  connectionMintPolicyId: string,
-  channelMintPolicyId: string,
-  backupOperatorKeyHash = "",
-  heartbeatSchedule = deploymentHeartbeatSchedule(lucid),
-) =>
-  readValidator(
-    "host_state_stt.host_state_stt.spend",
-    lucid,
-    [
-      hostPolicy,
-      clientRegistry,
-      connectionHash,
-      channelHash,
-      clientMintPolicyId,
-      connectionMintPolicyId,
-      channelMintPolicyId,
-      backupOperatorKeyHash,
-      heartbeatScheduleData(heartbeatSchedule),
-    ],
-  );
 
 /**
  * Complete, deterministic script graph for a deployment. This performs no
@@ -346,6 +320,7 @@ export const loadDeploymentPlan = async (
     mintPort.hash,
     verifyProof.hash,
     hostPolicy,
+    registryPolicy,
     packetConfig.hash,
   );
   validators.push(...Object.values(referredScripts));

@@ -31,12 +31,12 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{HandlePacket}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/implementation/spending_channel as spending_channel
+use ibc/implementation/spending_transfer_module as spending_transfer_module
 use ibc/utils/test_utils
 use minting_transfer_escrow_shard
-use spending_channel
 use spending_channel/send_packet
 use spending_channel/spending_channel_fixture.{MockData, setup}
-use spending_transfer_module
 
 type CallbackMutation {
   ValidCallback
@@ -386,7 +386,8 @@ fn check_send_packet_with_data(
       ReferenceBoundShard -> True
       WrongModuleCredential -> True
       _ -> and {
-          spending_transfer_module.spend_transfer_module.spend(
+          spending_transfer_module.validate(
+            True,
             port_token,
             module_token,
             mock_data.port_id,
@@ -420,7 +421,8 @@ fn check_send_packet_with_data(
       mock_data.send_packet_policy_id,
       transaction,
     )?,
-    spending_channel.spend_channel.spend(
+    spending_channel.validate(
+      True,
       #"",
       mock_data.chan_open_ack_policy_id,
       mock_data.chan_open_confirm_policy_id,

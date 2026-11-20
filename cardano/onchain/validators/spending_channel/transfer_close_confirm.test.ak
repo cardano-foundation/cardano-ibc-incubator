@@ -1,14 +1,18 @@
+use aiken/builtin as fixture_builtin
 use aiken/cbor
 use aiken/collection/pairs
 use aiken/interval
+use cardano/address as fixture_address
 use cardano/address.{from_verification_key}
 use cardano/assets
 use cardano/script_context.{ScriptContext, Spending}
+use cardano/transaction as fixture_transaction
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, Spend,
   Transaction,
 }
-use host_state_stt
+use governance_authority as fixture_authority_entry
+use host_state_nft as fixture_nft_entry
 use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/types/transfer_module_datum.{TransferModuleDatum}
@@ -50,22 +54,28 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof,
   MerkleRoot} as merkle
 use ibc/core/ics_024_host_requirements/channel_keys
+use ibc/core/ics_025_handler_interface/heartbeat as fixture_heartbeat
 use ibc/core/ics_025_handler_interface/heartbeat.{HeartbeatSchedule}
+use ibc/core/ics_025_handler_interface/host_state as fixture_datum
 use ibc/core/ics_025_handler_interface/host_state.{
   HostState, HostStateControl, HostStateDatum, ModuleRegistration,
 }
+use ibc/core/ics_025_handler_interface/host_state_redeemer as fixture_redeemer
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   HostStateRedeemer, UpdateChannel, UpgradeChannel,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/implementation/spending_channel as spending_channel
+use ibc/implementation/spending_transfer_module as spending_transfer_module
+use ibc/migration/auth as fixture_migration
 use ibc/testing/sparse_tree
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
-use spending_channel
 use spending_channel/chan_close_confirm
 use spending_channel/chan_upgrade_finish
 use spending_channel/spending_channel_fixture.{MockData} as fixtures
-use spending_transfer_module
+use testing/host as governed_host
+use upgradeable/host_state as fixture_host_entry
 use verifying_proof
 
 const shard_policy_id = "mock transfer shard policy id"
@@ -390,7 +400,8 @@ fn check_module(f: Fixture) -> Bool {
       policy_id: mock.port_minting_policy_id,
       name: port_keys.port_token_name(mock.port_id),
     }
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     port_token,
     mock.module_token,
     mock.port_id,
@@ -481,7 +492,8 @@ fn check_close(f: Fixture) -> Bool {
     check_module(f)?,
     check_marker(f)?,
     check_proof(f)?,
-    spending_channel.spend_channel.spend(
+    spending_channel.validate(
+      True,
       #"",
       mock.chan_open_ack_policy_id,
       mock.chan_open_confirm_policy_id,
@@ -501,7 +513,7 @@ fn check_close(f: Fixture) -> Bool {
       channel_input.output_reference,
       f.tx,
     )?,
-    host_state_stt.host_state_stt.spend(
+    spend_governed_host(
       mock.host_state_nft_policy_id,
       "unused client script",
       "unused connection script",
@@ -509,7 +521,6 @@ fn check_close(f: Fixture) -> Bool {
       mock.client_minting_policy_id,
       mock.connection_minting_policy_id,
       mock.channel_minting_policy_id,
-      "",
       HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
       None,
       f.host_redeemer,
@@ -776,7 +787,8 @@ fn cancel_after_close(authority: Bool) -> Bool {
       tx,
     )
   expect
-    spending_channel.spend_channel.spend(
+    spending_channel.validate(
+      True,
       "mock packet config policy",
       mock.chan_open_ack_policy_id,
       mock.chan_open_confirm_policy_id,
@@ -797,7 +809,7 @@ fn cancel_after_close(authority: Bool) -> Bool {
       tx,
     )
   expect
-    host_state_stt.host_state_stt.spend(
+    spend_governed_host(
       mock.host_state_nft_policy_id,
       "unused client script",
       "unused connection script",
@@ -805,7 +817,6 @@ fn cancel_after_close(authority: Bool) -> Bool {
       mock.client_minting_policy_id,
       mock.connection_minting_policy_id,
       mock.channel_minting_policy_id,
-      "",
       HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
       None,
       UpgradeChannel,
@@ -1212,4 +1223,66 @@ test transfer_close_confirm_rejects_spending_purpose() fail {
       info: Spending { output: mock.module_input.output_reference, datum: None },
     },
   )
+}
+
+fn spend_governed_host(
+  host_policy: ByteArray,
+  clients: Data,
+  connection: ByteArray,
+  channel: ByteArray,
+  client_policy: ByteArray,
+  connection_policy: ByteArray,
+  channel_policy: ByteArray,
+  schedule: fixture_heartbeat.HeartbeatSchedule,
+  datum: Option<fixture_datum.HostStateDatum>,
+  redeemer: fixture_redeemer.HostStateRedeemer,
+  own_ref: fixture_transaction.OutputReference,
+  transaction: fixture_transaction.Transaction,
+) -> Bool {
+  let (registry, tx) =
+    governed_host.context(
+      host_policy,
+      clients,
+      connection,
+      channel,
+      client_policy,
+      connection_policy,
+      channel_policy,
+      schedule,
+      datum,
+      redeemer,
+      own_ref,
+      transaction,
+    )
+  let raw: Data = redeemer
+  and {
+    fixture_host_entry.host_state.spend(
+      registry.token.policy_id,
+      1,
+      schedule,
+      registry.approval_authority,
+      host_policy,
+      None,
+      raw,
+      own_ref,
+      tx,
+    ),
+    if fixture_migration.is_host_control(raw) && redeemer != fixture_redeemer.FinalizeShutdown {
+      fixture_authority_entry.governance_authority.withdraw(
+        registry.token.policy_id,
+        fixture_builtin.constr_data(1, []),
+        fixture_address.Script(registry.approval_authority),
+        tx,
+      )
+    } else if redeemer == fixture_redeemer.FinalizeShutdown {
+      fixture_nft_entry.host_state_nft.mint(
+        own_ref,
+        fixture_nft_entry.BurnFinal,
+        host_policy,
+        tx,
+      )
+    } else {
+      True
+    },
+  }
 }

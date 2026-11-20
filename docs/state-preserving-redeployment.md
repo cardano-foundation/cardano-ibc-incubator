@@ -102,7 +102,7 @@ The governance quorum can replace the bridge admin after its configured delay. T
 
 Execution changes the HostState deployer key and increments its version. It preserves the IBC commitment, all counters and live-state counts, port registrations, shutdown status, address, reference script and protected assets. Other bridge objects cannot be spent in the handover transaction. Existing clients, channels, escrow and outstanding voucher obligations remain in place. The old admin loses admin-only operations such as port binding. Heartbeat remains permissionless. The successor does not acquire migration-governance votes. Code migration still requires the configured governance quorum and delay. If the outgoing admin is separately a named governor, graduation does not remove that independent vote. Use the existing governance rotation process to change the voter set.
 
-The new deployer can enter shutdown only with the governance quorum and a Ready registry. Existing emergency restrictions remain in force. The HostState rejects `ClaimBackup` before and after graduation. A single nominated key cannot bypass quorum approval.
+The new deployer can enter shutdown only with the governance quorum and a Ready registry. Existing emergency restrictions remain in force. Deployer replacement always requires governance approval.
 
 The current `v6` profile includes deployer graduation, quorum client recovery and governed shutdown. Runtime readers reject earlier profiles. Updating a manifest does not upgrade deployed scripts and cannot replace redeployment.
 

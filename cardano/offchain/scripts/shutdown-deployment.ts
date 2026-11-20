@@ -811,7 +811,7 @@ const CACHED_SCRIPT_TITLES = {
   generalUpdateCore:
     "verify_general_cached_client.verify_general_cached_client.withdraw",
   stagedUpdate: "update_staged_client.update_staged_client.withdraw",
-  cacheSpend: "spending_validator_cache.spend_validator_cache.spend",
+  cacheSpend: "upgradeable/validator_cache.validator_cache.spend",
   cacheMint: "minting_validator_cache.mint_validator_cache.mint",
 } as const;
 
@@ -820,7 +820,6 @@ function cachedShutdownValidators(
 ): CachedTendermintDeployment["validators"] | undefined {
   const cached = deployment.cachedTendermint;
   const usesCachedClient = [
-    "spending_cached_client.spend_cached_client.spend",
     "upgradeable/cached_client.cached_client.spend",
   ].includes(deployment.validators.spendClient?.title) ||
     deployment.validators.updateClient?.title === CACHED_SCRIPT_TITLES.update;
@@ -837,9 +836,7 @@ function cachedShutdownValidators(
     Object.entries(CACHED_SCRIPT_TITLES).some(([role, title]) => {
       const validator = cached.validators
         ?.[role as keyof typeof CACHED_SCRIPT_TITLES];
-      const expected = role === "cacheSpend" && Boolean(deployment.migration)
-        ? "upgradeable/validator_cache.validator_cache.spend"
-        : title;
+      const expected = title;
       return !validator || validator.title !== expected || !validator.refUtxo;
     })
   ) {

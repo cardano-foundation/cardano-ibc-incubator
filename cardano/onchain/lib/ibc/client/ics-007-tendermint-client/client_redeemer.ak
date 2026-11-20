@@ -1,23 +1,7 @@
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/consensus_history.{Witness}
-use ibc/client/ics_007_tendermint_client/msgs.{ClientMessage}
 
 pub type MintClientRedeemer {
   MintClient
-}
-
-pub type SpendClientRedeemer {
-  UpdateClient {
-    msg: ClientMessage,
-    history_witnesses: List<Witness>,
-    history_siblings: List<ByteArray>,
-  }
-  RecoverClient {
-    substitute_token: AuthToken,
-    history_siblings: List<ByteArray>,
-  }
-  ReclaimClient
-  UpgradeClient
 }
 
 /// The existing recovery credential also authenticates update history. Keeping
@@ -28,7 +12,7 @@ pub type RecoverClientWithdrawalRedeemer {
     subject_token: AuthToken,
     substitute_token: AuthToken,
   }
-  CheckClientHistory { subject_token: AuthToken }
+  DirectHistoryDisabled
   ReclaimStateWithdrawal
   ReclaimTransferWithdrawal {
     port_unit: ByteArray,

@@ -39,7 +39,7 @@ async function context() {
     findUtxoAtHostStateNFT: jest.fn().mockResolvedValue(hostStateUtxo),
     decodeDatum: jest.fn().mockResolvedValue(hostState),
     encode: jest.fn().mockImplementation((_value, type) => Promise.resolve(`encoded-${type}`)),
-    createUnsignedUpdateClientTransaction: jest.fn().mockReturnValue({}),
+    createUnsignedFinalizeTendermintSessionTransaction: jest.fn().mockReturnValue({}),
   };
   const service: ClientService = Object.assign(Object.create(ClientService.prototype), { lucidService: lucid, ibcTreeStore: treeContext.store });
   return { service, lucid, client, clientUtxo, tree, treeContext };
@@ -48,21 +48,23 @@ async function context() {
 describe('ClientService consensus history transitions', () => {
   it('commits the previous tip in the private root and retains all public consensus leaves', async () => {
     const { service, lucid, client, clientUtxo, tree } = await context();
+    jest.spyOn(service as any, 'requireLiveTendermintFinalizationInputs').mockResolvedValue(undefined);
     await service.buildUnsignedUpdateClientTx({
       clientId: '0', clientDatum: client, clientTokenUnit: 'client-unit', currentClientUtxo: clientUtxo,
       constructedAddress: 'funding-address', txValidFrom: 350n, txValidTo: 450n,
       header: { trustedHeight: height(2n), signedHeader: { header: { height: 3n, time: 360n, nextValidatorsHash: '44'.repeat(32), appHash: '55'.repeat(32) } } } as any,
-    });
+    }, { datum: { sessionToken: token }, utxo: clientUtxo, tokenUnit: token.policyId + token.name, signerKeyHash: "44".repeat(28), processedTimeNs: 450n } as any);
     const output = lucid.encode.mock.calls.find(([, type]) => type === 'client')![0] as ClientDatum;
     expect([...output.state.consensusStates.keys()]).toEqual([height(3n)]);
     expect([...output.state.processedTimes.values()]).toEqual([450n]);
     expect(output.history_root).toBe('66'.repeat(32));
-    const spend = lucid.encode.mock.calls.find(([, type]) => type === 'spendClientRedeemer')![0] as any;
-    expect(spend.UpdateClient.history_siblings).toHaveLength(64);
-    expect(spend.UpdateClient.history_witnesses).toEqual([]);
+    const spend = Lucid.Data.from(lucid.createUnsignedFinalizeTendermintSessionTransaction.mock.calls[0][3]) as Lucid.Constr<Lucid.Data>;
+    expect(spend.index).toBe(0);
+    expect(spend.fields[2]).toHaveLength(64);
+    expect(spend.fields[1]).toEqual([]);
     const host = lucid.encode.mock.calls.find(([, type]) => type === 'host_state_redeemer')![0] as any;
     expect(Object.keys(host.UpdateClient).sort()).toEqual(['client_state_siblings', 'consensus_state_siblings']);
-    expect(lucid.encode).toHaveBeenCalledWith({ CheckClientHistory: { subject_token: token } }, 'recoverClientWithdrawalRedeemer');
+    expect(lucid.encode).toHaveBeenCalledWith({ CheckStagedClientHistory: { subject_token: token } }, 'recoverClientWithdrawalRedeemer');
     expect(tree.get('clients/07-tendermint-0/consensusStates/0-1')).toBeDefined();
   });
 

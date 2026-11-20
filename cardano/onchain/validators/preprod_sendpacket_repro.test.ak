@@ -14,7 +14,7 @@ use cardano/transaction.{
 }
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/types/ibc_module_redeemer.{IBCModuleRedeemer}
-use spending_transfer_module
+use ibc/implementation/spending_transfer_module as spending_transfer_module
 
 fn datum_data(bytes: ByteArray) -> Data {
   expect Some(d) = cbor.deserialise(bytes)
@@ -253,7 +253,8 @@ test preprod_second_transfer_shard_spend_repro() fail {
       name: #"b428ace988dc5ed617737f0cd3456c77171741959c2364295b190a55cfc77eb0",
     }
 
-  spending_transfer_module.spend_transfer_module.spend(
+  spending_transfer_module.validate(
+    True,
     port_token,
     module_token,
     "port-100",

@@ -841,7 +841,6 @@ export class LucidService implements OnModuleInit {
                 token_name: LucidData.Bytes(),
               }),
             }),
-            LucidData.Literal('ClaimBackup'),
             LucidData.Literal('UpgradeChannel'),
           ]);
           return LucidData.to(data as any, HostStateRedeemerSchema as any, {
@@ -887,10 +886,6 @@ export class LucidService implements OnModuleInit {
     const hostStateNFT: AuthToken = this.configService.get('deployment').hostStateNFT;
     const clientTokenName = this.generateTokenName(hostStateNFT, CLIENT_PREFIX, BigInt(clientId));
     return mintClientPolicyId + clientTokenName;
-  }
-
-  public hasGovernedClientRecovery(): boolean {
-    return this.configService.get('deployment')?.migration?.profile === 'cardano-ibc-compatible-v6';
   }
 
   public hasCachedTendermintClient(): boolean {
@@ -1189,8 +1184,9 @@ export class LucidService implements OnModuleInit {
     encodedRecoveredClientDatum: string,
     subjectClientTokenUnit: string,
     signerKeyHash: string,
-    approval?: { substituteUnit: string; validFrom: number; validTo: number },
+    approval: { substituteUnit: string; validFrom: number; validTo: number },
   ): Promise<TxBuilder> {
+    if (!approval) throw new GrpcFailedPreconditionException('Recovery execution requires the approved client pair and validity bounds');
     const deploymentConfig = this.configService.get('deployment');
     const recoveryConfig = deploymentConfig.validators.recoverClient;
     const recoveryReferenceScript = this.referenceScripts.recoverClient;
@@ -1204,7 +1200,7 @@ export class LucidService implements OnModuleInit {
       datumHash: undefined,
     };
 
-    let tx = (this.hasGovernedClientRecovery() ? this.lucid.newTx() : await this.newTxBuilder(false, 2n))
+    let tx = this.lucid.newTx()
       .readFrom([
         this.referenceScripts.hostStateStt,
         this.referenceScripts.spendClient,
@@ -1225,16 +1221,13 @@ export class LucidService implements OnModuleInit {
       )
       .withdraw(recoveryConfig.address, 0n, encodedRecoverClientWithdrawalRedeemer)
       .addSignerKey(signerKeyHash);
-    if (this.hasGovernedClientRecovery()) {
-      if (!approval) throw new GrpcInternalException('Recovery execution requires the approved client pair and validity bounds');
-      try {
-        tx = await withClientRecoveryApproval(
-          this.lucid, tx, deploymentConfig, subjectClientTokenUnit,
-          approval.substituteUnit, approval.validFrom, approval.validTo,
-        );
-      } catch (error) {
-        throw new GrpcFailedPreconditionException(error.message);
-      }
+    try {
+      tx = await withClientRecoveryApproval(
+        this.lucid, tx, deploymentConfig, subjectClientTokenUnit,
+        approval.substituteUnit, approval.validFrom, approval.validTo,
+      );
+    } catch (error) {
+      throw new GrpcFailedPreconditionException(error.message);
     }
     return tx;
   }

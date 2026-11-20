@@ -9,11 +9,13 @@ use ibc/core/ics_004/channel_redeemer.{
   ChanOpenConfirm, ChanUpgrade, PrunePacketHistory, ReclaimChannel, RecvPacket,
   SendPacket, SpendChannelRedeemer, TimeoutOnClose, TimeoutPacket,
 }
+use ibc/core/ics_004/packet_shutdown
 use ibc/utils/shutdown
 use ibc/utils/validator_utils
 
 pub fn validate(
   allow_retirement: Bool,
+  packet_config_policy: PolicyId,
   chan_open_ack_policy_id: PolicyId,
   chan_open_confirm_policy_id: PolicyId,
   chan_close_init_policy_id: PolicyId,
@@ -37,6 +39,16 @@ pub fn validate(
   expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
   expect Some(datum) = optional_datum
   let spent_output = spent_input.output
+  expect
+    if redeemer == ReclaimChannel {
+      datum.port_id != "transfer" || packet_shutdown.channel_drained(
+        transaction,
+        packet_config_policy,
+        datum,
+      )
+    } else {
+      True
+    }
   expect
     if datum.port_id == "transfer" {
       when redeemer is {

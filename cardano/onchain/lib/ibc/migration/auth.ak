@@ -316,7 +316,7 @@ pub fn creation_address(
 pub fn channel_creation_context(
   transaction: Transaction,
   registry_policy: ByteArray,
-) -> (ByteArray, ByteArray, ByteArray, Data) {
+) -> (ByteArray, ByteArray, ByteArray, Data, Data) {
   let input =
     unique_input(
       transaction.reference_inputs,
@@ -335,12 +335,13 @@ pub fn channel_creation_context(
   expect builtin.un_constr_data(phase).1st == 0
   expect [client, connection, ..] = builtin.un_constr_data(identity).2nd
   expect [_, addresses, ..] = builtin.un_constr_data(current).2nd
-  expect Some(address) = list.at(builtin.un_list_data(addresses), 3)
+  expect [_, client_address, _, address, ..] = builtin.un_list_data(addresses)
   (
     builtin.un_b_data(host),
     builtin.un_b_data(client),
     builtin.un_b_data(connection),
     address,
+    client_address,
   )
 }
 

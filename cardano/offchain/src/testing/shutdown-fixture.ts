@@ -239,6 +239,7 @@ export async function shutdownFixture(
     mintPort.scriptHash,
     hash("55"),
     hostPolicy,
+    registryPolicy,
     hash("ba"),
   );
   const spendChannel = validator("upgradeable/channel.channel.spend", [
