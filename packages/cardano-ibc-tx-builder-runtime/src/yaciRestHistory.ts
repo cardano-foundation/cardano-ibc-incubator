@@ -691,13 +691,19 @@ export class YaciRestHistory {
     if (filter.unspent) {
       // Asset history lists producing transactions. Address history also includes
       // consumers with no replacement NFT output, including burns and cancellation.
-      const addresses = new Set(
-        [...found.values()].map((output) => output.address),
-      );
-      for (const address of addresses)
+      // A consumer cannot precede the output it spends. Keep the creation
+      // block itself because a later transaction in that block can consume it.
+      const addresses = new Map<string, number>();
+      for (const output of found.values())
+        addresses.set(
+          output.address,
+          Math.min(addresses.get(output.address) ?? output.block, output.block),
+        );
+      for (const [address, firstOutputHeight] of addresses)
         for (const tx of await this.transactionsFor(
           `addresses/${encodeURIComponent(address)}/transactions`,
           at,
+          firstOutputHeight,
         )) {
           for (const input of tx.inputs) found.delete(ref(input));
         }
