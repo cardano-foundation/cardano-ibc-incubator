@@ -144,7 +144,6 @@ try {
   deployment = Deno.env.get("YANO_URL")
     ? JSON.parse(await Deno.readTextFile("deployments/handler.json"))
     : await createDeployment(lucid, "emulator", {
-      deploymentMode: "upgradeable",
       migration: {
         governance: { signers: [authority], quorum: 1n, delay_ms: 86_400_000n },
         emergency: { signers: ["77".repeat(28)], quorum: 1n },

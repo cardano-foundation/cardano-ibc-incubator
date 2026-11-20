@@ -13,7 +13,6 @@ import { assertExecutionBudget, parseExecutionLimit } from "./executionBudget";
 import type { HistoryBootstrap } from "./historyBootstrap";
 import { LucidIbcAdapter } from "./lucidIbcAdapter";
 import {
-  checkedDeploymentMode,
   requireMigrationConfig,
   type MigrationRuntimeConfig,
 } from "./migrationRuntime";
@@ -108,8 +107,7 @@ type DeploymentTraceRegistry = {
 
 type DeploymentConfig = {
   packetState?: { guardAddress: string };
-  deploymentMode?: 'upgradeable' | 'legacy';
-  migration?: MigrationRuntimeConfig;
+  migration: MigrationRuntimeConfig;
   deployedAt: string;
   consensusHistoryFormat: 'proof-backed-v1';
   history?: HistoryBootstrap;
@@ -141,8 +139,7 @@ type DeploymentConfig = {
 
 type BridgeManifest = {
   packet_state?: { format: string; guard: { address: string } };
-  deploymentMode?: 'upgradeable' | 'legacy';
-  migration?: MigrationRuntimeConfig;
+  migration: MigrationRuntimeConfig;
   schema_version: number;
   consensus_history_format?: 'proof-backed-v1';
   deployed_at: string;
@@ -515,9 +512,8 @@ export function normalizeBridgeManifest(manifest: BridgeManifest): {
     },
     deployment: {
       ...(manifest.packet_state?.format === 'packet-lanes-v1' ? { packetState: { guardAddress: manifest.packet_state.guard.address } } : {}),
-      deploymentMode: checkedDeploymentMode(manifest.deploymentMode ?? 'upgradeable', manifest.migration),
       deployedAt: manifest.deployed_at,
-      ...(manifest.migration !== undefined ? { migration: requireMigrationConfig(manifest.migration) } : {}),
+      migration: requireMigrationConfig(manifest.migration),
       consensusHistoryFormat: manifest.consensus_history_format,
       ...(manifest.history ? { history: manifest.history } : {}),
       ics20PacketCodec,

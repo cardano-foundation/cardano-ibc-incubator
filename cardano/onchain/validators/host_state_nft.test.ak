@@ -1,3 +1,4 @@
+use aiken/interval
 use cardano/address.{Address, Script}
 use cardano/assets.{PolicyId, Value, add, from_asset}
 use cardano/transaction.{
@@ -6,7 +7,8 @@ use cardano/transaction.{
 }
 use host_state_nft.{BurnFinal, MintInitial}
 use ibc/core/ics_025_handler_interface/host_state.{
-  Active, HostState, HostStateControl, HostStateDatum, host_state_token_name,
+  Active, HostState, HostStateControl, HostStateDatum, ShuttingDown,
+  host_state_token_name,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   FinalizeShutdown, Heartbeat, HostStateRedeemer,
@@ -54,7 +56,7 @@ fn test_host_datum() -> HostStateDatum {
     control: HostStateControl {
       last_heartbeat_time: 0,
       port_registry: [],
-      shutdown: Active,
+      shutdown: ShuttingDown { initiated_at: 0, grace_period_end: 86_400_000 },
       live_clients: 0,
       live_connections: 0,
       live_channels: 0,
@@ -103,6 +105,8 @@ fn validate_final_burn_with_datum(
     Transaction {
       ..transaction.placeholder,
       inputs: [host_input],
+      extra_signatories: ["deployer"],
+      validity_range: interval.between(86_400_000, 86_460_000),
       mint,
       redeemers: [Pair(Spend(test_host_ref()), spend_redeemer)],
     },
@@ -233,5 +237,41 @@ test host_state_nft_initial_mint_rejects_burn_quantity() fail {
       inputs: [test_nonce_input()],
       mint: from_asset(test_policy_id(), host_state_token_name, -1),
     },
+  )
+}
+
+test host_state_nft_final_burn_rejects_active_bridge() {
+  let datum = test_host_datum()
+  !validate_final_burn_with_datum(
+    from_asset(test_policy_id(), host_state_token_name, -1),
+    FinalizeShutdown,
+    HostStateDatum {
+      ..datum,
+      control: HostStateControl { ..datum.control, shutdown: Active },
+    },
+  )
+}
+
+test host_state_nft_final_burn_rejects_unelapsed_grace() {
+  let datum = test_host_datum()
+  !validate_final_burn_with_datum(
+    from_asset(test_policy_id(), host_state_token_name, -1),
+    FinalizeShutdown,
+    HostStateDatum {
+      ..datum,
+      control: HostStateControl {
+        ..datum.control,
+        shutdown: ShuttingDown { initiated_at: 0, grace_period_end: 86_500_000 },
+      },
+    },
+  )
+}
+
+test host_state_nft_final_burn_rejects_missing_deployer() {
+  let datum = test_host_datum()
+  !validate_final_burn_with_datum(
+    from_asset(test_policy_id(), host_state_token_name, -1),
+    FinalizeShutdown,
+    HostStateDatum { ..datum, deployer: "other" },
   )
 }

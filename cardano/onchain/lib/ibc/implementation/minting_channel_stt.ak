@@ -93,24 +93,13 @@ pub fn validate(
     transaction.mint,
     channel_minting_policy_id,
   ) {
-    expect Some(withdrawal_redeemer) =
-      pairs.get_first(
-        transaction.redeemers,
-        Withdraw(address.Script(shutdown_script_hash)),
-      )
-    let expected: Data = ReclaimStateWithdrawal
-    and {
-      withdrawal_redeemer == expected,
-      list.any(
-        transaction.inputs,
-        fn(input) {
-          input.output.address.payment_credential == address.Script(
-            spend_channel_script_hash,
-          ) && assets.tokens(input.output.value, channel_minting_policy_id) != dict.empty
-        },
-      ),
-      shutdown.transfer_is_drained(transaction, host_state_nft_policy_id),
-    }
+    validate_retire(
+      spend_channel_script_hash,
+      host_state_nft_policy_id,
+      shutdown_script_hash,
+      channel_minting_policy_id,
+      transaction,
+    )
   } else {
     validate_create(
       client_registry,
@@ -124,6 +113,33 @@ pub fn validate(
       channel_minting_policy_id,
       transaction,
     )
+  }
+}
+
+pub fn validate_retire(
+  spend_channel_script_hash: Hash<Blake2b_224, Script>,
+  host_state_nft_policy_id: PolicyId,
+  shutdown_script_hash: ByteArray,
+  channel_minting_policy_id: PolicyId,
+  transaction: Transaction,
+) -> Bool {
+  expect Some(withdrawal_redeemer) =
+    pairs.get_first(
+      transaction.redeemers,
+      Withdraw(address.Script(shutdown_script_hash)),
+    )
+  let expected: Data = ReclaimStateWithdrawal
+  and {
+    withdrawal_redeemer == expected,
+    list.any(
+      transaction.inputs,
+      fn(input) {
+        input.output.address.payment_credential == address.Script(
+          spend_channel_script_hash,
+        ) && assets.tokens(input.output.value, channel_minting_policy_id) != dict.empty
+      },
+    ),
+    shutdown.transfer_is_drained(transaction, host_state_nft_policy_id),
   }
 }
 

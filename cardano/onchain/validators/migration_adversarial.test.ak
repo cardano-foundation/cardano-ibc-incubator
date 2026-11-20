@@ -1616,6 +1616,8 @@ fn attempt_upgradeable_shutdown(registry: Registry) -> Bool {
     hash(1),
     1,
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2 * ready_at },
+    initial().approval_authority,
+    initial().host_policy,
     None,
     raw,
     ref(2),
@@ -1916,7 +1918,7 @@ test emergency_rotation_rejects_retaining_outgoing_restoration() fail {
   )
 }
 
-test emergency_transfer_retirement_stays_disabled_after_size_optimization() {
+test governed_transfer_retirement_forwards_to_fixed_shutdown_authority() {
   let r = registration()
   let withdrawal: Data =
     ReclaimTransferWithdrawal {
@@ -1934,7 +1936,7 @@ test emergency_transfer_retirement_stays_disabled_after_size_optimization() {
       redeemers: [Pair(Withdraw(Script(hash(900))), withdrawal)],
     }
   // Exact retained dispatch with retirement enabled accepts this witness.
-  // Therefore rejection below is its explicit False flag, not a missing witness.
+  // The upgradeable wrapper now delegates to the same fixed shutdown authority.
   expect
     transfer_dispatch.validate(
       True,
@@ -1953,7 +1955,7 @@ test emergency_transfer_retirement_stays_disabled_after_size_optimization() {
     )
   expect migration.operation_allowed(tx, hash(1), 1, 1)
   let raw: Data = ReclaimModule
-  !transfer_wrapper.transfer.spend(
+  transfer_wrapper.transfer.spend(
     hash(1),
     1,
     hash(2),
@@ -1962,6 +1964,7 @@ test emergency_transfer_retirement_stays_disabled_after_size_optimization() {
     r.port_token,
     r.module_token,
     hash(10),
+    hash(900),
     None,
     raw,
     ref(2),
@@ -2508,6 +2511,8 @@ test graduation_executes_without_deployer_or_governance_signatures() {
       hash(1),
       1,
       HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2 * ready_at },
+      initial().approval_authority,
+      initial().host_policy,
       None,
       raw,
       ref(2),
@@ -2671,6 +2676,8 @@ fn graduated_heartbeat(signer: ByteArray, redeemer: Data) -> Bool {
     hash(1),
     1,
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2 * ready_at },
+    initial().approval_authority,
+    initial().host_policy,
     None,
     redeemer,
     ref(2),
@@ -2729,22 +2736,42 @@ fn graduated_bind_port(signer: ByteArray) -> Bool {
       registration: registration(),
       port_siblings: siblings(),
     }
-  host_wrapper.host_state.spend(
-    hash(1),
-    1,
-    HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2 * ready_at },
-    None,
-    redeemer,
-    ref(2),
+  let transaction =
     Transaction {
       ..placeholder,
       inputs: [input(2, host_output(previous, 1))],
       outputs: [host_output(next, 1), module_output(tree.empty_hash, 1)],
       reference_inputs: [input(1, registry_output(new_registry(graduation())))],
       extra_signatories: [signer],
+      withdrawals: [Pair(Script(initial().approval_authority), 0)],
+      redeemers: [
+        Pair(Spend(ref(2)), redeemer),
+        Pair(
+          Withdraw(Script(initial().approval_authority)),
+          builtin.constr_data(1, []),
+        ),
+      ],
       validity_range: interval.between(ready_at, execution_upper),
-    },
-  )
+    }
+  and {
+    host_wrapper.host_state.spend(
+      hash(1),
+      1,
+      HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2 * ready_at },
+      initial().approval_authority,
+      initial().host_policy,
+      None,
+      redeemer,
+      ref(2),
+      transaction,
+    ),
+    governance_authority.governance_authority.withdraw(
+      hash(1),
+      builtin.constr_data(1, []),
+      Script(initial().approval_authority),
+      transaction,
+    ),
+  }
 }
 
 test graduation_successor_can_bind_a_port() {
@@ -3128,5 +3155,80 @@ test registry_client_recovery_rejects_stale_nonce() fail {
       with_registry_input(case, old),
       Registry { ..old, phase: Ready },
     ),
+  )
+}
+
+fn governed_shutdown_attempt(
+  registry: Registry,
+  signers: List<ByteArray>,
+) -> Bool {
+  let original = legacy_shutdown_attempt(registry)
+  let raw: Data =
+    EnterShutdown {
+      grace_period_end: approval_upper + min_shutdown_grace_period_ms,
+    }
+  let callback = builtin.constr_data(1, [])
+  let credential = Script(registry.approval_authority)
+  let transaction =
+    Transaction {
+      ..original,
+      extra_signatories: signers,
+      withdrawals: [Pair(credential, 0)],
+      redeemers: [
+        Pair(Spend(ref(2)), raw),
+        Pair(Withdraw(credential), callback),
+      ],
+    }
+  and {
+    host_wrapper.host_state.spend(
+      hash(1),
+      1,
+      HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2 * ready_at },
+      initial().approval_authority,
+      initial().host_policy,
+      None,
+      raw,
+      ref(2),
+      transaction,
+    ),
+    governance_authority.governance_authority.withdraw(
+      hash(1),
+      callback,
+      credential,
+      transaction,
+    ),
+  }
+}
+
+test governed_shutdown_accepts_deployer_and_governance_quorum() {
+  governed_shutdown_attempt(initial(), [hash(11), hash(12)])
+}
+
+test governed_shutdown_rejects_missing_deployer() fail {
+  governed_shutdown_attempt(initial(), [hash(12), hash(13)])
+}
+
+test governed_shutdown_rejects_pending_migration_even_with_quorum() fail {
+  governed_shutdown_attempt(approved(proposal()), [hash(11), hash(12)])
+}
+
+test governed_shutdown_rejects_active_migration_even_with_quorum() fail {
+  governed_shutdown_attempt(
+    moving(zeros(), tree.empty_hash, True),
+    [hash(11), hash(12)],
+  )
+}
+
+test governed_shutdown_rejects_grace_shorter_than_governance_delay() fail {
+  let registry = initial()
+  governed_shutdown_attempt(
+    Registry {
+      ..registry,
+      governance: Governance {
+        ..registry.governance,
+        delay_ms: 2 * minimum_delay_ms,
+      },
+    },
+    [hash(11), hash(12)],
   )
 }

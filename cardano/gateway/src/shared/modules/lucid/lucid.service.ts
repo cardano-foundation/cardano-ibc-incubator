@@ -890,7 +890,7 @@ export class LucidService implements OnModuleInit {
   }
 
   public hasGovernedClientRecovery(): boolean {
-    return this.configService.get('deployment')?.migration?.profile === 'cardano-ibc-compatible-v5';
+    return this.configService.get('deployment')?.migration?.profile === 'cardano-ibc-compatible-v6';
   }
 
   public hasCachedTendermintClient(): boolean {

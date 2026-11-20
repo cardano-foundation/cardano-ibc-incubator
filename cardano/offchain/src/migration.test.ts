@@ -453,7 +453,6 @@ Deno.test("real deployment stack bootstraps an explicitly authorized upgrade-cap
       epochOriginMs: emulator.now() - 21_600_000,
       epochLengthMs: 43_200_000,
     },
-    deploymentMode: "upgradeable",
     migration: {
       governance: { signers: [authority], quorum: 1n, delay_ms: 86_400_000n },
       emergency: { signers: [EMERGENCY_AUTHORITY], quorum: 1n },

@@ -5621,6 +5621,8 @@ fn containment_restricted(
       1
     },
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
+    registry.approval_authority,
+    registry.host_policy,
     None,
     raw,
     test_host_ref(),
@@ -5649,6 +5651,8 @@ fn registry_bound_heartbeat(
     registry.token.policy_id,
     generation,
     HeartbeatSchedule { epoch_origin_ms: 0, epoch_length_ms: 2001 },
+    registry.approval_authority,
+    registry.host_policy,
     None,
     raw,
     own_ref,

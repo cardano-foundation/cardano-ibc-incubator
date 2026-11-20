@@ -8,8 +8,7 @@ use reqwest::Client;
 use serde_json::Value;
 use std::error::Error;
 use std::fs::File;
-use std::io::IsTerminal;
-use std::io::{self, BufReader, Write};
+use std::io::{self, BufReader, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
@@ -59,45 +58,6 @@ pub fn prompt_runtime_deployer_sk() -> Result<String, Box<dyn Error>> {
         "DEPLOYER_SK is required for this operation. Set DEPLOYER_SK in the environment for non-interactive runs."
             .into(),
     )
-}
-
-fn parse_backup_operator(value: &str) -> Result<Option<String>, String> {
-    let value = value.trim();
-    if value.is_empty() {
-        return Ok(None);
-    }
-    if value.len() != 56 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err("Backup operator must be a 56-character hexadecimal payment key hash".into());
-    }
-    Ok(Some(value.to_ascii_lowercase()))
-}
-
-pub fn prompt_backup_operator() -> Result<Option<String>, Box<dyn Error>> {
-    let configured = std::env::var("DEPLOYER_BACKUP_PAYMENT_KEY_HASH");
-    let backup = match configured {
-        Ok(value) if !value.trim().is_empty() => parse_backup_operator(&value)?,
-        Err(std::env::VarError::NotUnicode(_)) => {
-            return Err("DEPLOYER_BACKUP_PAYMENT_KEY_HASH contains invalid Unicode".into());
-        }
-        _ if io::stdin().is_terminal() && io::stderr().is_terminal() => {
-            eprintln!("Upgradeable deployments require governance approval and its activation delay before a backup nominee can become admin. Legacy deployments let the backup key claim admin directly. Use a different operator's payment key hash.");
-            loop {
-                eprint!("Backup operator payment key hash (Enter to skip on local or testnet): ");
-                io::stderr().flush()?;
-                let mut input = String::new();
-                io::stdin().read_line(&mut input)?;
-                match parse_backup_operator(&input) {
-                    Ok(backup) => break backup,
-                    Err(error) => eprintln!("{error}"),
-                }
-            }
-        }
-        _ => None,
-    };
-    if backup.is_none() {
-        eprintln!("WARNING: Deploying without a backup operator. No successor is preselected. Upgradeable deployments can still nominate one through governance. Legacy deployments will have no backup handover path. Set DEPLOYER_BACKUP_PAYMENT_KEY_HASH for unattended deployments.");
-    }
-    Ok(backup)
 }
 
 pub struct IndicatorMessage {
@@ -450,32 +410,6 @@ pub fn get_user_ids() -> (String, String) {
     {
         // Default UID/GID for other systems (Windows, etc.)
         ("1000".to_string(), "1000".to_string())
-    }
-}
-
-#[cfg(test)]
-mod backup_operator_tests {
-    use super::parse_backup_operator;
-
-    #[test]
-    fn backup_operator_accepts_optional_input_and_normalizes_hashes() {
-        assert_eq!(parse_backup_operator(" \n").unwrap(), None);
-        assert_eq!(
-            parse_backup_operator(&format!(" {}\n", "AB".repeat(28))).unwrap(),
-            Some("ab".repeat(28))
-        );
-    }
-
-    #[test]
-    fn backup_operator_rejects_addresses_and_malformed_hashes() {
-        for value in [
-            "addr_test1example".to_string(),
-            "aa".repeat(27),
-            "aa".repeat(29),
-            "zz".repeat(28),
-        ] {
-            assert!(parse_backup_operator(&value).is_err());
-        }
     }
 }
 

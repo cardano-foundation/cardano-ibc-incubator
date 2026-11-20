@@ -12,7 +12,7 @@ function fixture(phase = 0, generation = 1n, mask = 0n) {
   const registryUnit = hash(9) + '6962635f696d706c656d656e746174696f6e5f7265676973747279';
   const compatibility = 'ab'.repeat(32);
   const deployment: MigrationRuntimeDeployment = {
-    migration: {profile: 'cardano-ibc-compatible-v3', registryUnit, registryAddress: scriptAddress(10), generation: '1', compatibility, originalAddresses: addresses},
+    migration: {profile: 'cardano-ibc-compatible-v6', registryUnit, registryAddress: scriptAddress(10), generation: '1', compatibility, originalAddresses: addresses},
     hostStateNFT: {policyId: hash(8), name: '6962635f686f73745f7374617465'},
     validators: {
       hostStateStt: {address: addresses[0]}, spendClient: {address: addresses[1]}, spendConnection: {address: addresses[2]},
@@ -21,7 +21,7 @@ function fixture(phase = 0, generation = 1n, mask = 0n) {
     }, modules: {transfer: {address: addresses[4]}},
   };
   const datum = rec(rec(hash(9), registryUnit.slice(56)), hash(8), rec(hash(11), hash(12), hash(13), hash(14), rawAddress(15)),
-    rec([hash(16)], 1n, 86_400_000n), 0n, rec(generation, [1, 2, 3, 4, 5].map(rawAddress), compatibility), new Constr(phase, []), rec(rec([hash(17)], 1n), 0n, mask, new Constr(1, [])));
+    rec([hash(16)], 1n, 86_400_000n), 0n, rec(generation, [1, 2, 3, 4, 5].map(rawAddress), compatibility), new Constr(phase, []), rec(rec([hash(17)], 1n), 0n, mask, new Constr(1, [])), hash(19));
   const utxo: UTxO = {txHash: 'aa'.repeat(32), outputIndex: 0, address: scriptAddress(10), assets: {[registryUnit]: 1n, lovelace: 5_000_000n}, datum: Data.to(datum)};
   const lucid = {config: () => ({network: 'Custom'}), utxoByUnit: async (unit: string) => { assert.equal(unit, registryUnit); return utxo; }} as unknown as LucidEvolution;
   return {deployment, utxo, lucid};
@@ -73,25 +73,17 @@ test('migration manifests fail closed instead of silently losing the feature mar
   }
 });
 
-test('authority-enabled registries preserve runtime checks without changing legacy decoding', async () => {
+test('old or missing deployment configurations are rejected', async () => {
   const f = fixture();
-  assert.equal(await migrationReference(f.lucid, f.deployment), f.utxo);
-  f.deployment.migration!.profile = 'cardano-ibc-compatible-v4';
-  await assert.rejects(migrationReference(f.lucid, f.deployment), /Unsupported migration registry datum/);
+  for (const profile of ['cardano-ibc-compatible-v3', 'cardano-ibc-compatible-v4', 'cardano-ibc-compatible-v5']) {
+    await assert.rejects(migrationReference(f.lucid, { ...f.deployment, migration: { ...f.deployment.migration!, profile } } as never), /Unsupported or incomplete/);
+  }
+  await assert.rejects(migrationReference(f.lucid, { ...f.deployment, migration: undefined }), /Unsupported or incomplete/);
   const datum = Data.from(f.utxo.datum!) as Constr<Data>;
-  datum.fields.push(hash(19));
-  f.utxo.datum = Data.to(datum);
-  assert.equal(await migrationReference(f.lucid, f.deployment), f.utxo);
   datum.fields[8] = '';
   f.utxo.datum = Data.to(datum);
   await assert.rejects(migrationReference(f.lucid, f.deployment), /Invalid fixed governance authority/);
 });
-
-
-test('recovery capability cannot be stripped from an explicitly upgradeable deployment', async () => {
-  await assert.rejects(() => migrationReference({} as never, {deploymentMode:'upgradeable'} as never), /missing its recovery/);
-});
-
 
 test('emergency traffic restriction preserves client and heartbeat builder availability', async () => {
   for (const phase of [0, 1]) {
@@ -110,13 +102,12 @@ test('emergency traffic restriction preserves client and heartbeat builder avail
 
 function recoveryFixture() {
   const f = fixture();
-  f.deployment.migration!.profile = 'cardano-ibc-compatible-v5';
+  f.deployment.migration!.profile = 'cardano-ibc-compatible-v6';
   const script = {type: 'PlutusV3' as const, script: '49480100002221200101'};
   const address = credentialToAddress('Custom', {type: 'Script', hash: validatorToScriptHash(script)});
   f.deployment.migration!.registryAddress = address;
   f.utxo.address = address;
   const datum = Data.from(f.utxo.datum!) as Constr<Data>;
-  datum.fields.push(hash(19));
   datum.fields[4] = 1n;
   datum.fields[6] = new Constr(1, [new Constr(3, [1n, 1n, rec(hash(11), 'aa'), rec(hash(11), 'bb')]), 2000n, 10000n]);
   f.utxo.datum = Data.to(datum);
@@ -171,6 +162,6 @@ test('recovery rejects unapproved, stale, early, expired and retargeted decision
   const f = recoveryFixture();
   await assert.rejects(f.build(hash(11)+'cc'), /different subject/);
   await assert.rejects(f.build(undefined, hash(11)+'cc'), /different subject/);
-  f.deployment.migration!.profile = 'cardano-ibc-compatible-v4';
-  await assert.rejects(f.build(), /does not support quorum/);
+  Object.assign(f.deployment.migration!, { profile: 'cardano-ibc-compatible-v4' });
+  await assert.rejects(f.build(), /Unsupported or incomplete/);
 });

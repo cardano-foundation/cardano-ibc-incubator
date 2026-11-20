@@ -5,7 +5,9 @@ use aiken/collection/pairs
 use aiken/primitive/bytearray
 use cardano/address.{Address, Script}
 use cardano/assets
-use cardano/transaction.{Input, Output, OutputReference, Spend, Transaction}
+use cardano/transaction.{
+  Input, Output, OutputReference, Spend, Transaction, Withdraw,
+}
 use ibc/auth.{AuthToken}
 use ibc/migration/types.{
   ActiveRegistry, Authority, ExecuteClientRecovery, Governance, Implementation,
@@ -331,8 +333,8 @@ pub fn channel_creation_context(
     _] =
     builtin.un_constr_data(validator_utils.get_inline_datum(input.output)).2nd
   expect builtin.un_constr_data(phase).1st == 0
-  expect [client, connection, _, _, _] = builtin.un_constr_data(identity).2nd
-  expect [_, addresses, _] = builtin.un_constr_data(current).2nd
+  expect [client, connection, ..] = builtin.un_constr_data(identity).2nd
+  expect [_, addresses, ..] = builtin.un_constr_data(current).2nd
   expect Some(address) = list.at(builtin.un_list_data(addresses), 3)
   (
     builtin.un_b_data(host),
@@ -452,7 +454,8 @@ pub fn operation_allowed_from_inputs(
         builtin.tail_list(builtin.tail_list(builtin.tail_list(fields))),
       ),
     )
-  expect [current_generation, _, _] = builtin.un_constr_data(current).2nd
+  let current_generation =
+    builtin.head_list(builtin.un_constr_data(current).2nd)
   expect [mask,
     _] =
     builtin.tail_list(builtin.tail_list(builtin.un_constr_data(emergency).2nd))
@@ -461,4 +464,24 @@ pub fn operation_allowed_from_inputs(
     builtin.un_i_data(current_generation) == generation,
     permitted(builtin.un_i_data(mask), bit),
   }
+}
+
+// Governance authorizes entry into draining. No state can be reclaimed until
+// both its configured delay and the ordinary shutdown grace have elapsed.
+pub fn host_control_witness(
+  transaction: Transaction,
+  authority: ByteArray,
+) -> Bool {
+  let credential = Script(authority)
+  and {
+    pairs.get_first(transaction.withdrawals, credential) == Some(0),
+    pairs.get_first(transaction.redeemers, Withdraw(credential)) == Some(
+      builtin.constr_data(1, []),
+    ),
+  }
+}
+
+pub fn is_host_control(raw: Data) -> Bool {
+  let tag = builtin.un_constr_data(raw).1st
+  tag == 3 || tag == 8 || tag == 9 || tag == 11 || tag == 12
 }

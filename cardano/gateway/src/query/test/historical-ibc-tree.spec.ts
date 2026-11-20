@@ -171,7 +171,7 @@ function migrationHandler() {
     consensusHistoryFormat: 'proof-backed-v1',
     hostStateNFT: hostToken,
     migration: {
-      profile: 'cardano-ibc-compatible-v3',
+      profile: 'cardano-ibc-compatible-v6',
       registryUnit: '99'.repeat(28) + hex('ibc_implementation_registry'),
       registryAddress: 'registry-address',
       generation: '1',
@@ -400,7 +400,7 @@ async function expectedTree(n: number) {
     ]);
     const migrated: HistoricalTreeDeployment = {
       ...deployment,
-      migration: { profile: 'cardano-ibc-compatible-v3' },
+      migration: { profile: 'cardano-ibc-compatible-v6' },
       validators: {
         ...deployment.validators,
         spendClient: { address: 'client-v3' },

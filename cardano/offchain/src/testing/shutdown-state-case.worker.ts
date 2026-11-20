@@ -18,14 +18,13 @@ export interface ShutdownSnapshotCase {
   settledPackets: number;
   extraLovelace: bigint;
   order: number[];
-  legacy: boolean;
   mutation: ClientReclaimMutation;
 }
 
 async function checkCase(sample: ShutdownSnapshotCase) {
   const f = await shutdownFixture(
     0n,
-    sample.legacy ? "legacy" : "staged",
+    "staged",
     sample,
   );
   await rejectClientReclaimMutation(f, sample.mutation);

@@ -11,6 +11,7 @@ import {
   generateIdentifierTokenName,
   readValidator,
 } from "../../../cardano/offchain/src/utils.ts";
+import { heartbeatScheduleData } from "../../../cardano/offchain/src/heartbeat-schedule.ts";
 import { loadMigrationBaseline } from "../../../cardano/offchain/src/migration.ts";
 const [handlerPath, blueprintPath, outputPath] = Deno.args;
 const h = JSON.parse(await Deno.readTextFile(handlerPath));
@@ -39,10 +40,24 @@ function add(
   });
   overrides.push(`${originalHash}:${hash}`);
 }
-add("upgradeable/host_state.host_state.spend", b.hostState.hash, [
-  b.mintImplementationRegistry!.hash,
-  1n,
-], Data.Tuple([Data.Bytes(), Data.Integer()]));
+add(
+  "upgradeable/host_state.host_state.spend",
+  b.hostState.hash,
+  [
+    b.mintImplementationRegistry!.hash,
+    1n,
+    heartbeatScheduleData(b.inputs.heartbeatSchedule!),
+    b.governanceAuthority.hash,
+    b.hostNft.hash,
+  ],
+  Data.Tuple([
+    Data.Bytes(),
+    Data.Integer(),
+    Data.Any(),
+    Data.Bytes(),
+    Data.Bytes(),
+  ]),
+);
 add(
   "minting_voucher.mint_voucher.mint",
   b.mintVoucher.hash,

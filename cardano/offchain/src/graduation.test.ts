@@ -1,6 +1,7 @@
 import { nextHeartbeatTime } from "../../../packages/cardano-ibc-tx-builder-runtime/src/heartbeatSchedule.ts";
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import {
+  Constr,
   Data,
   fromText,
   getAddressDetails,
@@ -86,7 +87,6 @@ Deno.test("compiled governance graduates the deployer without its signature and 
   };
   try {
     const deployment = await createDeployment(lucid, "emulator", {
-      deploymentMode: "upgradeable",
       migration: {
         governance: {
           signers: [keys[1], keys[2]],
@@ -329,7 +329,12 @@ Deno.test("compiled governance graduates the deployer without its signature and 
         deployment.validators.hostStateStt.refUtxo,
         deployment.validators.mintPort.refUtxo,
         deployment.validators.mintIdentifier.refUtxo,
-      ]).collectFrom([nonce]).collectFrom(
+        authorityReference,
+      ]).withdraw(
+        validatorToRewardAddress("Custom", authority.script),
+        0n,
+        Data.to(new Constr(1, [])),
+      ).collectFrom([nonce]).collectFrom(
         [host],
         Data.to({
           BindPort: {

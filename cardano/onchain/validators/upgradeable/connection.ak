@@ -1,7 +1,7 @@
 use cardano/transaction.{OutputReference, Transaction}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/connection_redeemer.{
-  ReclaimConnection, SpendConnectionRedeemer,
+  SpendConnectionRedeemer,
 }
 use ibc/implementation/spending_connection
 use ibc/migration/auth as migration
@@ -27,9 +27,8 @@ validator connection(
       expect
         migration.operation_allowed(transaction, registry_policy, generation, 1)
       expect redeemer: SpendConnectionRedeemer = raw
-      expect redeemer != ReclaimConnection
       spending_connection.validate(
-        False,
+        True,
         client_policy,
         proof_policy,
         host_policy,

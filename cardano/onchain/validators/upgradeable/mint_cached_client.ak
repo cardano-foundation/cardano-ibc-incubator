@@ -4,9 +4,11 @@ use cardano/assets
 use cardano/transaction.{Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/cached/identity
+use ibc/client/ics_007_tendermint_client/cached/retirement
 use ibc/implementation/minting_client_stt
 use ibc/migration/auth as migration
 use ibc/migration/types.{client_role}
+use ibc/utils/shutdown
 
 validator mint_cached_client(
   registry_policy: ByteArray,
@@ -16,16 +18,30 @@ validator mint_cached_client(
     let registry = migration.active_registry(tx, registry_policy)
     expect !registry.preparing
     expect registry.identity.client_policy == policy
-    expect migration.no_burn(tx, policy)
-    expect migration.creation_address(tx, registry.current, client_role)
     expect
-      minting_client_stt.validate_create(
-        migration.active_role_hash(registry.current, client_role),
-        registry.host_policy,
-        redeemer,
-        policy,
+      shutdown.burns_only(tx.mint, policy) || migration.creation_address(
         tx,
+        registry.current,
+        client_role,
       )
+    expect
+      if shutdown.burns_only(tx.mint, policy) {
+        retirement.validate(
+          migration.active_role_hash(registry.current, client_role),
+          registry.host_policy,
+          cache_policy,
+          policy,
+          tx,
+        )
+      } else {
+        minting_client_stt.validate_create(
+          migration.active_role_hash(registry.current, client_role),
+          registry.host_policy,
+          redeemer,
+          policy,
+          tx,
+        )
+      }
     list.all(
       dict.to_pairs(assets.tokens(tx.mint, policy)),
       fn(entry) {

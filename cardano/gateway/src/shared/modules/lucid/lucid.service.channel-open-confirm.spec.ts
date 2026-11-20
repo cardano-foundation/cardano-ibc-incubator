@@ -94,6 +94,8 @@ const createService = (txBuilder: ChainableTxBuilder): any => {
   service.lucid = {
     newTx: jest.fn().mockReturnValue(txBuilder),
   };
+  // Registry authentication is covered by the migration runtime and restriction tests.
+  service.newTxBuilder = jest.fn().mockResolvedValue(txBuilder);
   service.referenceScripts = {
     spendChannel: buildRefUtxo('ref-spend-channel', 0),
     spendMockModule: buildRefUtxo('ref-spend-mock-module', 1),

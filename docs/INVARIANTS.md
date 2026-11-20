@@ -1499,8 +1499,9 @@ Shutdown is covered by `lib/ibc/utils/shutdown.test.ak`,
 `cardano/offchain/src/shutdown.fuzz.test.ts` and `shutdown-drain.test.ts`.
 The checks include:
 
-- Entering shutdown requires the deployment authority and a finite upper
-  validity bound. The grace period is at least 24 hours from that bound.
+- Entering shutdown requires the deployer and governance quorum with a Ready
+  registry and a finite upper validity bound. The grace period covers both
+  24 hours and the governance delay from that bound.
   New objects are blocked while permitted existing-state updates can drain
   outstanding work.
 - Reclamation burns the exact state identity, preserves unrelated assets and

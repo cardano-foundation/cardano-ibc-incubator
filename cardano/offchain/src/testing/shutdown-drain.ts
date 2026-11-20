@@ -513,6 +513,7 @@ export async function checkShutdownDrain(
             )).complete({ localUPLCEval: true }),
           Error,
           "failed script execution",
+          `Outstanding packet must block ${kind} cleanup`,
         );
       }
     }

@@ -40,7 +40,7 @@ export function smokeManifest() {
   return {
     schema_version: 6,
     consensus_history_format: 'proof-backed-v1',
-    deploymentMode: 'legacy',
+    migration: { profile: 'cardano-ibc-compatible-v6', registryUnit: 'ab'.repeat(28) + '01', registryAddress: address, generation: '1', compatibility: 'cd'.repeat(32), originalAddresses: ['host', 'client', 'connection', 'channel', 'transfer'] },
     deployment_id: 'cardano-devnet:' + host_state_nft.policy_id + '.' + host_state_nft.token_name,
     deployed_at: '2026-01-01T00:00:00.000Z',
     cardano: { chain_id: 'cardano-devnet', network_magic: 42, network: 'Custom' },

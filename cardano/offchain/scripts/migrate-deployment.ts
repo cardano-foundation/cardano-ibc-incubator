@@ -248,7 +248,6 @@ export async function main(args = Deno.args) {
     console.log(canonicalMigrationJson({
       registry: observed.registry,
       deployer: Data.from(host.datum!, HostStateDatum).deployer,
-      backupNominee: deployment.backupOperatorKeyHash ?? null,
       outref: {
         txHash: observed.utxo.txHash,
         outputIndex: observed.utxo.outputIndex,
@@ -355,12 +354,11 @@ export async function main(args = Deno.args) {
     return;
   }
   if (command === "nominate-deployer") {
-    const successor =
-      (flags.successor ?? deployment.backupOperatorKeyHash ?? "").trim()
-        .toLowerCase();
+    const successor = (flags.successor ?? "").trim()
+      .toLowerCase();
     if (!/^[0-9a-f]{56}$/.test(successor)) {
       throw new Error(
-        "nominate-deployer requires --successor payment key hash or a configured backup nominee",
+        "nominate-deployer requires --successor payment key hash",
       );
     }
     const host = await lucid.utxoByUnit(

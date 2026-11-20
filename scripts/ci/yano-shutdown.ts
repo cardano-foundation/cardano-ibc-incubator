@@ -8,7 +8,7 @@ import {
 import { HostStateDatum } from "../../cardano/offchain/types/index.ts";
 import { type DeploymentTemplate } from "../../cardano/offchain/src/utils.ts";
 import {
-  enterShutdown,
+  buildEnterShutdownTx,
   MIN_SHUTDOWN_GRACE_PERIOD_MS,
 } from "../../cardano/offchain/scripts/shutdown-deployment.ts";
 
@@ -25,6 +25,12 @@ export async function testShutdown(
   const readHost = async () => {
     const utxo = await lucid.utxoByUnit(nft.policyId + nft.name);
     return { utxo, datum: Data.from(utxo.datum!, HostStateDatum) };
+  };
+  const submitShutdown = async (grace: { gracePeriodMs: number }) => {
+    const tx = await buildEnterShutdownTx(lucid, deployment, grace);
+    const signed = await (await tx.complete()).sign.withWallet().complete();
+    const hash = await signed.submit();
+    await lucid.awaitTx(hash);
   };
   const before = await readHost();
   assertEquals(before.datum.control.shutdown, "Active");
@@ -47,23 +53,26 @@ export async function testShutdown(
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   const rejection = await assertRejects(() =>
-    enterShutdown(lucid, deployment, {
+    submitShutdown({
       gracePeriodMs: MIN_SHUTDOWN_GRACE_PERIOD_MS,
     })
   );
-  // Require a validator failure, not an unrelated transport or balancing error.
-  if (!/EvaluationFailure.*Script evaluation failed/.test(String(rejection))) {
+  // Require an authorization rejection, not a transport or balancing error.
+  if (
+    !/governance quorum|EvaluationFailure.*Script evaluation failed|MissingVKeyWitnesses|MissingRequiredSigners|[Mm]issing.*[Ww]itness/
+      .test(String(rejection))
+  ) {
     throw rejection;
   }
   assertEquals(await readHost(), before);
 
   lucid.selectWallet.fromPrivateKey(ownerKey);
   await assertRejects(
-    () => enterShutdown(lucid, deployment, { gracePeriodMs: 1 }),
+    () => submitShutdown({ gracePeriodMs: 1 }),
     Error,
     "Shutdown requires at least",
   );
-  await enterShutdown(lucid, deployment, {
+  await submitShutdown({
     gracePeriodMs: MIN_SHUTDOWN_GRACE_PERIOD_MS,
   });
   const after = await readHost();
@@ -84,7 +93,7 @@ export async function testShutdown(
   );
   await assertRejects(
     () =>
-      enterShutdown(lucid, deployment, {
+      submitShutdown({
         gracePeriodMs: MIN_SHUTDOWN_GRACE_PERIOD_MS,
       }),
     Error,

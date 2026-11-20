@@ -831,10 +831,9 @@ async function fixture(
         lucid,
         recoveryBuilder(),
         {
-          deploymentMode: "upgradeable",
           hostStateNFT: { policyId: hostPolicy, name: HOST_NAME },
           migration: {
-            profile: "cardano-ibc-compatible-v5",
+            profile: "cardano-ibc-compatible-v6",
             registryUnit,
             registryAddress: governedPlan.implementationRegistry!.address,
             generation: "1",

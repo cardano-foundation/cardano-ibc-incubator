@@ -164,7 +164,7 @@ def main():
                 env[key] = value.strip().strip('"')
         for key in ["KUPO_API_KEY", "OGMIOS_API_KEY"]:
             env.pop(key, None)
-        env["IBC_DEPLOYMENT_MODE"] = "upgradeable" if args.migration_baseline else "legacy"
+        env.pop("IBC_DEPLOYMENT_MODE", None)
         inventory_path = artifacts / "deployment-plan.json"
         cost_path = artifacts / "deployment-cost-report.json"
         env.update({"KUPO_URL": kupo, "OGMIOS_URL": ogmios, "CARDANO_NETWORK_MAGIC": "42", "DEPLOYMENT_PLAN_OUTPUT": str(inventory_path), "DEPLOYMENT_COST_REPORT_PATH": str(cost_path)})
@@ -187,21 +187,18 @@ def main():
                 **funding,
                 'scope': 'Disposable funding diagnostic; no bridge deployed'}) + '\n')
             return
-        if args.migration_baseline:
-            address_info = json.loads(cli("address", "info", "--address", wallet))
-            address_bytes = bytes.fromhex(address_info["base16"])
-            if address_bytes[0] >> 4 not in {0, 2, 6}:
-                raise RuntimeError("Isolated migration authority must be an explicit payment key address")
-            authority = address_bytes[1:29].hex()
-            # Public BIP-39 fixture used only on this isolated magic-42 network.
-            # Distinct from replacement authority and holder/executor fixtures.
-            derive_emergency = "const {walletFromSeed,getAddressDetails}=require('@lucid-evolution/lucid');process.stdout.write(getAddressDetails(walletFromSeed('zoo '.repeat(11)+'wrong',{network:'Custom'}).address).paymentCredential.hash)"
-            emergency = subprocess.check_output(['node', '-e', derive_emergency], cwd=ROOT / 'cardano/gateway', text=True).strip()
-            governance_path = artifacts / "migration-governance.json"
-            governance_path.write_text(json.dumps({"signers": [authority], "quorum": "1", "delay_ms": "86400000", "emergency":{"signers":[emergency],"quorum":"1"}}) + "\n")
-            env["MIGRATION_GOVERNANCE_FILE"] = str(governance_path)
-        else:
-            env.pop("MIGRATION_GOVERNANCE_FILE", None)
+        address_info = json.loads(cli("address", "info", "--address", wallet))
+        address_bytes = bytes.fromhex(address_info["base16"])
+        if address_bytes[0] >> 4 not in {0, 2, 6}:
+            raise RuntimeError("Isolated migration authority must be an explicit payment key address")
+        authority = address_bytes[1:29].hex()
+        # Public BIP-39 fixture used only on this isolated magic-42 network.
+        # Distinct from replacement authority and holder/executor fixtures.
+        derive_emergency = "const {walletFromSeed,getAddressDetails}=require('@lucid-evolution/lucid');process.stdout.write(getAddressDetails(walletFromSeed('zoo '.repeat(11)+'wrong',{network:'Custom'}).address).paymentCredential.hash)"
+        emergency = subprocess.check_output(['node', '-e', derive_emergency], cwd=ROOT / 'cardano/gateway', text=True).strip()
+        governance_path = artifacts / "migration-governance.json"
+        governance_path.write_text(json.dumps({"signers": [authority], "quorum": "1", "delay_ms": "86400000", "emergency":{"signers":[emergency],"quorum":"1"}}) + "\n")
+        env["MIGRATION_GOVERNANCE_FILE"] = str(governance_path)
         # Pin the exact blueprint for the whole run, even if a developer builds
         # another candidate while this network confirms its transactions.
         blueprint_path = ROOT / "cardano/onchain/plutus.json"

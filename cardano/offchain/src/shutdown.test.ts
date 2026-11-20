@@ -1,3 +1,4 @@
+import { shutdownRegistryReference } from "./shutdown.ts";
 import { assert, assertEquals, assertRejects, assertThrows } from "@std/assert";
 import { Constr, Data, fromText } from "@lucid-evolution/lucid";
 import {
@@ -17,7 +18,7 @@ const record = (...fields: Data[]) => new Constr(0, fields);
 const encode = (data: Data) => Data.to(data);
 const EMPTY_ROOT = "00".repeat(32);
 
-for (const clientMode of ["legacy", "staged", "cached"] as const) {
+for (const clientMode of ["staged", "cached"] as const) {
   Deno.test(`shutdown reclaims every state family and its recovery staking deposit (${clientMode})`, async () => {
     const f = await fixture(0n, clientMode);
     let groups = await scanDeploymentState(f.lucid, f.deployment);
@@ -111,6 +112,7 @@ for (const clientMode of ["legacy", "staged", "cached"] as const) {
         ),
         f.hostDatum.deployer,
         f.emulator.now(),
+        await shutdownRegistryReference(f.lucid, f.deployment),
       ),
     );
     // The pinned emulator only updates its stake map for pre-Conway certificates.
@@ -119,7 +121,7 @@ for (const clientMode of ["legacy", "staged", "cached"] as const) {
       { length: body.certs()!.len() },
       (_, index) => body.certs()!.get(index).as_unreg_cert()!,
     );
-    assertEquals(certificates.length, clientMode === "cached" ? 5 : 2);
+    assertEquals(certificates.length, clientMode === "cached" ? 6 : 3);
     const certificate = certificates.find((entry) =>
       entry.stake_credential().as_script()!.to_hex() === credential.scriptHash
     )!;
@@ -139,7 +141,7 @@ for (const clientMode of ["legacy", "staged", "cached"] as const) {
     );
     assertEquals(
       await balance(),
-      before + BigInt(clientMode === "cached" ? 5 : 2) * certificate.deposit() -
+      before + BigInt(clientMode === "cached" ? 6 : 3) * certificate.deposit() -
         body.fee(),
     );
   });

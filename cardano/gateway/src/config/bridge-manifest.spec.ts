@@ -47,7 +47,7 @@ function buildHandlerJsonDeployment() {
       batch: buildValidator('packetBatch'),
       guard: buildValidator('packetGuard'),
     },
-    deploymentMode: 'legacy',
+    migration: { profile: 'cardano-ibc-compatible-v6', registryUnit: 'ab'.repeat(28) + '01', registryAddress: 'registry-address', generation: '1', compatibility: 'cd'.repeat(32), originalAddresses: ['host', 'client', 'connection', 'channel', 'transfer'] },
     deployedAt: '2026-04-01T12:34:56.000Z',
     consensusHistoryFormat: CONSENSUS_HISTORY_FORMAT,
     ics20PacketCodec: ICS20_PACKET_CODEC.STRICT,
@@ -676,74 +676,23 @@ console.log(JSON.stringify(smokeManifest()))`,
   });
 });
 
-describe('migration operational counterparty boundary', () => {
-  const matrix = ['manifest'].flatMap((source) =>
-    [false, true].flatMap((migration) => [false, true].map((readOnly) => [source, migration, readOnly] as const)),
-  );
-  it.each(matrix)('%s migration=%s historical-only=%s', (source, migration, readOnly) => {
-    const handler = {
-      ...buildStagedHandlerJsonDeployment(),
-      deploymentMode: migration ? 'upgradeable' : 'legacy',
-      ...(migration
-        ? {
-            migration: {
-              profile: 'cardano-ibc-compatible-v3',
-              registryUnit: 'ab'.repeat(28) + '01',
-              registryAddress: 'registry-address',
-              generation: '1',
-              compatibility: 'cd'.repeat(32),
-              originalAddresses: ['host', 'client', 'connection', 'channel', 'transfer'],
-            },
-          }
-        : {}),
-    };
-    const manifest = normalizeHandlerJsonDeploymentConfig(handler, {
-      chain_id: 'cardano-devnet',
-      network_magic: 42,
-      network: 'Custom',
-    }).bridgeManifest;
-    const fs = { readFileSync: jest.fn(() => JSON.stringify(manifest)) };
-    const env = {
-      BRIDGE_MANIFEST_PATH: 'fixture.json',
-      GATEWAY_HISTORICAL_READ_ONLY: String(readOnly),
-    };
-    expect(loadBridgeConfigFromEnv(env, fs).deployment.migration?.profile).toBe(
-      migration ? 'cardano-ibc-compatible-v3' : undefined,
-    );
+describe('single governed deployment model', () => {
+  it('rejects missing governance configuration at both normalization boundaries', () => {
+    const handler = buildHandlerJsonDeployment();
+    expect(() => normalizeHandlerJsonDeploymentConfig({ ...handler, migration: undefined }, { chain_id: 'devnet', network_magic: 42, network: 'Custom' })).toThrow('Unsupported or incomplete migration manifest');
+    const manifest = normalizeHandlerJsonDeploymentConfig(handler, { chain_id: 'devnet', network_magic: 42, network: 'Custom' }).bridgeManifest;
+    expect(() => normalizeBridgeManifestConfig({ ...manifest, migration: undefined })).toThrow('Unsupported or incomplete migration manifest');
   });
-});
-
-describe('deployment recovery capability selection', () => {
-  it('rejects an upgradeable label with missing recovery configuration', () => {
-    expect(() =>
-      normalizeHandlerJsonDeploymentConfig(
-        { ...buildHandlerJsonDeployment(), deploymentMode: 'upgradeable' },
-        { chain_id: 'devnet', network_magic: 42, network: 'Custom' },
-      ),
-    ).toThrow('recovery configuration disagree');
+  it.each(['legacy', 'upgradeable'])('rejects the removed deployment switch %s', (mode) => {
+    expect(() => loadBridgeConfigFromEnv({ IBC_DEPLOYMENT_MODE: mode, BRIDGE_MANIFEST_PATH: 'fixture.json' }, { readFileSync: () => '' })).toThrow('IBC_DEPLOYMENT_MODE was removed');
   });
-  it('requires explicit legacy selection for old unlabelled manifests at startup', () => {
-    const { deploymentMode: _mode, ...old } = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), { chain_id: 'devnet', network_magic: 42, network: 'Custom' }).bridgeManifest;
-    const fs = { readFileSync: () => JSON.stringify(old) };
-    expect(() => loadBridgeConfigFromEnv({ BRIDGE_MANIFEST_PATH: 'fixture.json' }, fs)).toThrow('recovery configuration disagree');
-    expect(loadBridgeConfigFromEnv({ IBC_DEPLOYMENT_MODE: 'legacy', BRIDGE_MANIFEST_PATH: 'fixture.json' }, fs).deployment.migration).toBeUndefined();
+  it.each(['cardano-ibc-compatible-v3', 'cardano-ibc-compatible-v4', 'cardano-ibc-compatible-v5'])('rejects artifacts from the old contract profile %s', (profile) => {
+    const handler = buildHandlerJsonDeployment();
+    expect(() => normalizeHandlerJsonDeploymentConfig({ ...handler, migration: { ...handler.migration, profile } }, { chain_id: 'devnet', network_magic: 42, network: 'Custom' })).toThrow('Unsupported or incomplete migration manifest');
   });
-});
-
-it('publishes explicit legacy selection through Gateway into the actual SDK normalizer', async () => {
-  const { normalizeBridgeManifest } = await import('@cardano-ibc/tx-builder-runtime');
-  const { deploymentMode: _mode, ...old } = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), { chain_id: 'devnet', network_magic: 42, network: 'Custom' }).bridgeManifest;
-  const loaded = loadBridgeConfigFromEnv(
-    { IBC_DEPLOYMENT_MODE: 'legacy', BRIDGE_MANIFEST_PATH: 'fixture.json' },
-    { readFileSync: () => JSON.stringify(old) },
-  );
-  const wire = JSON.parse(JSON.stringify(loaded.bridgeManifest));
-  expect(wire.deploymentMode).toBe('legacy');
-  expect(normalizeBridgeManifest(wire).deployment.deploymentMode).toBe('legacy');
-  expect(() => normalizeBridgeManifest({ ...wire, deploymentMode: undefined })).toThrow(
-    'recovery configuration disagree',
-  );
-  expect(() =>
-    loadBridgeConfigFromEnv({ IBC_DEPLOYMENT_MODE: 'upgradeable', BRIDGE_MANIFEST_PATH: 'fixture.json' }, { readFileSync: () => JSON.stringify(old) }),
-  ).toThrow('recovery configuration disagree');
+  it('publishes the same governed configuration to the SDK', async () => {
+    const { normalizeBridgeManifest } = await import('@cardano-ibc/tx-builder-runtime');
+    const manifest = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), { chain_id: 'devnet', network_magic: 42, network: 'Custom' }).bridgeManifest;
+    expect(normalizeBridgeManifest(manifest).deployment.migration.profile).toBe('cardano-ibc-compatible-v6');
+  });
 });

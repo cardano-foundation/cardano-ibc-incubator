@@ -1041,12 +1041,8 @@ export type DeploymentTemplate = {
       refUtxo: UTxO;
     };
   };
-  deploymentMode?: "upgradeable" | "legacy";
   migration?: {
-    profile:
-      | "cardano-ibc-compatible-v3"
-      | "cardano-ibc-compatible-v4"
-      | "cardano-ibc-compatible-v5";
+    profile: "cardano-ibc-compatible-v6";
     registryUnit: string;
     generation: string;
     compatibility: string;
@@ -1064,7 +1060,6 @@ export type DeploymentTemplate = {
       }
     >;
   };
-  backupOperatorKeyHash?: string;
   clientRegistrations?: import("./client-registry.ts").ClientRegistration[];
   history:
     import("../../../packages/cardano-ibc-tx-builder-runtime/src/historyBootstrap.ts").HistoryBootstrap;

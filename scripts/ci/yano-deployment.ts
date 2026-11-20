@@ -70,20 +70,17 @@ try {
   await createDeployment(
     lucid,
     "yano",
-    ["gateway", "packets"].includes(Deno.env.get("YANO_SUITE") ?? "")
-      ? {
-        deploymentMode: "upgradeable",
-        migration: {
-          governance: {
-            signers: [authority],
-            quorum: 1n,
-            delay_ms: 86_400_000n,
-          },
-          emergency: { signers: ["77".repeat(28)], quorum: 1n },
-          bootstrapSigners: [authority],
+    {
+      migration: {
+        governance: {
+          signers: [authority],
+          quorum: 1n,
+          delay_ms: 86_400_000n,
         },
-      }
-      : { deploymentMode: "legacy" },
+        emergency: { signers: ["77".repeat(28)], quorum: 1n },
+        bootstrapSigners: [authority],
+      },
+    },
   );
   await Deno.writeTextFile(
     "timing.json",

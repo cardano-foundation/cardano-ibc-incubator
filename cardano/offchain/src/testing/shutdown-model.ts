@@ -1,3 +1,4 @@
+import { testDeploymentGovernance } from "./deployment-governance.ts";
 import { nextHeartbeatTime } from "../../../../packages/cardano-ibc-tx-builder-runtime/src/heartbeatSchedule.ts";
 import { initializeValidatorCache } from "../tendermint-cache.ts";
 import { assert, assertEquals, assertRejects } from "@std/assert";
@@ -23,9 +24,9 @@ import {
 
 import { HostStateRedeemer } from "../../types/plutus/HostStateRedeemer.ts";
 import {
+  buildEnterShutdownTx,
   buildFinalizeShutdownTx,
   buildReclaimRecoveryStakeTx,
-  enterShutdown,
   partitionShutdownReferences,
 } from "../../scripts/shutdown-deployment.ts";
 import {
@@ -33,6 +34,7 @@ import {
   buildRetirePacketLanesTx,
   packetShutdownReferences,
   scanDeploymentState,
+  shutdownRegistryReference,
 } from "../shutdown.ts";
 import { membershipProof } from "./channel-fixture.ts";
 import { generateTokenName, readValidator } from "../utils.ts";
@@ -148,9 +150,11 @@ export async function deploymentScenario() {
   };
   // The emulator provider echoes budgets. Force actual UPLC evaluation, including
   // production builders that normally delegate evaluation to Ogmios.
+  let registryReferences: UTxO[] = [];
   const newTx = lucid.newTx.bind(lucid);
   lucid.newTx = () => {
     const tx = newTx();
+    if (registryReferences.length) tx.readFrom(registryReferences);
     const complete = tx.complete.bind(tx);
     const chain = tx.chain.bind(tx);
     tx.complete = (options) => complete({ ...options, localUPLCEval: true });
@@ -162,8 +166,9 @@ export async function deploymentScenario() {
   try {
     const deployment = await createDeployment(lucid, EMULATOR_ENV, {
       heartbeatSchedule: { epochOriginMs: 0, epochLengthMs: 3_600_000 },
-      deploymentMode: "legacy",
+      migration: await testDeploymentGovernance(lucid),
     });
+    registryReferences = await shutdownRegistryReference(lucid, deployment);
     lucid.overrideUTxOs(await emulator.getUtxos(address));
     const tree = new DeploymentIbcTree();
     const hostUnit = deployment.hostStateNFT!.policyId +
@@ -595,9 +600,11 @@ export async function deploymentScenario() {
         );
       },
       async enter(days: number) {
-        await enterShutdown(lucid, deployment, {
+        await (await buildEnterShutdownTx(lucid, deployment, {
           gracePeriodMs: days * 86_400_000,
-        });
+        })).complete().then((tx) => tx.sign.withWallet().complete()).then(
+          (tx) => tx.submit(),
+        );
       },
       async waitForGrace() {
         const datum = await hostDatum();
@@ -703,6 +710,7 @@ export async function deploymentScenario() {
             await host(),
             datum.deployer,
             emulator.now(),
+            registryReferences,
           ),
           "recovery deposit",
         );
@@ -741,6 +749,7 @@ export async function deploymentScenario() {
             address,
             datum.deployer,
             emulator.now(),
+            registryReferences,
           ),
           "final burn",
         );
@@ -768,7 +777,7 @@ export async function deploymentScenario() {
         ).map(({ utxo }) => utxo);
         assertEquals(
           remaining.filter((utxo) => !walletAddresses.has(utxo.address)),
-          [],
+          registryReferences,
         );
         assertEquals(
           remaining.reduce((sum, utxo) => sum + utxo.assets.lovelace, 0n),

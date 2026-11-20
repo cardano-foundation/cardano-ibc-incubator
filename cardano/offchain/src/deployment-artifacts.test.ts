@@ -1,8 +1,16 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { writeDeploymentArtifacts } from "./deployment-artifacts.ts";
 import { normalizeBridgeManifestConfig } from "../../../packages/cardano-ibc-tx-builder-runtime/src/bridgeManifest.ts";
-import handler from "../../../manifests/preview/cardano-preview-handler.json" with {
+import previousHandler from "../../../manifests/preview/cardano-preview-handler.json" with {
   type: "json",
+};
+
+const handler = {
+  ...previousHandler,
+  migration: {
+    ...previousHandler.migration,
+    profile: "cardano-ibc-compatible-v6",
+  },
 };
 
 Deno.test("deployment publishes a usable public manifest beside its internal artifacts", async () => {

@@ -107,8 +107,7 @@ def main():
                 env[key] = value.strip().strip('"')
         for key in ["KUPO_API_KEY", "OGMIOS_API_KEY"]:
             env.pop(key, None)
-        env["IBC_DEPLOYMENT_MODE"] = "legacy"
-        env.pop("MIGRATION_GOVERNANCE_FILE", None)
+        env.pop("IBC_DEPLOYMENT_MODE", None)
         inventory_path = runtime_root / "deployment-plan.json"
         cost_path = runtime_root / "deployment-cost-report.json"
         env.update({"KUPO_URL": kupo, "OGMIOS_URL": ogmios, "CARDANO_NETWORK_MAGIC": "42", "DEPLOYMENT_PLAN_OUTPUT": str(inventory_path), "DEPLOYMENT_COST_REPORT_PATH": str(cost_path)})
@@ -118,6 +117,11 @@ def main():
             str(OFFCHAIN / "scripts/get-wallet-address.ts"),
         ], cwd=runtime_root, env=env)
         wallet = json.loads(address_output)["address"]
+        address_info = json.loads(cli("address", "info", "--address", wallet))
+        authority = bytes.fromhex(address_info["base16"])[1:29].hex()
+        governance_path = runtime_root / "migration-governance.json"
+        governance_path.write_text(json.dumps({"signers": [authority], "quorum": "1", "delay_ms": "86400000", "emergency": {"signers": ["ee" * 28], "quorum": "1"}}) + "\n")
+        env["MIGRATION_GOVERNANCE_FILE"] = str(governance_path)
         runtime.fund(wallet, 100_000_000_000)
         wait_for("deployer funding", lambda: sum(
             output["value"]["coins"] for output in get_json(kupo + "/matches/" + wallet + "?unspent")

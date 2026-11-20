@@ -1,43 +1,28 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { deploymentOptionsFromEnvironment } from "./deployment-mode.ts";
-Deno.test("deployment mode is explicit and governance omission fails before provider access", async () => {
+Deno.test("governance is required and removed deployment mode switches are rejected", async () => {
   const resolve = (vars: Record<string, string>, text = "{}") =>
     deploymentOptionsFromEnvironment(
       (key) => vars[key],
       () => Promise.resolve(text),
     );
-  await assertRejects(() => resolve({}), Error, "IBC_DEPLOYMENT_MODE");
+  await assertRejects(() => resolve({}), Error, "MIGRATION_GOVERNANCE_FILE");
+  for (const mode of ["legacy", "upgradeable", "upgradable"]) {
+    await assertRejects(
+      () =>
+        resolve({
+          IBC_DEPLOYMENT_MODE: mode,
+          MIGRATION_GOVERNANCE_FILE: "keys",
+        }),
+      Error,
+      "IBC_DEPLOYMENT_MODE was removed",
+    );
+  }
   await assertRejects(
-    () => resolve({ IBC_DEPLOYMENT_MODE: "upgradable" }),
-    Error,
-    "IBC_DEPLOYMENT_MODE",
-  );
-  await assertRejects(
-    () => resolve({ IBC_DEPLOYMENT_MODE: "upgradeable" }),
-    Error,
-    "MIGRATION_GOVERNANCE_FILE",
-  );
-  await assertRejects(
-    () =>
-      resolve({
-        IBC_DEPLOYMENT_MODE: "upgradeable",
-        MIGRATION_GOVERNANCE_FILE: "keys",
-      }),
+    () => resolve({ MIGRATION_GOVERNANCE_FILE: "keys" }),
     Error,
     "Invalid MIGRATION_GOVERNANCE_FILE",
   );
-  await assertRejects(
-    () =>
-      resolve({
-        IBC_DEPLOYMENT_MODE: "legacy",
-        MIGRATION_GOVERNANCE_FILE: "keys",
-      }),
-    Error,
-    "conflicts",
-  );
-  assertEquals(await resolve({ IBC_DEPLOYMENT_MODE: "legacy" }), {
-    deploymentMode: "legacy",
-  });
   const valid = {
     emergency: { signers: ["ee".repeat(28)], quorum: "1" },
     signers: ["aa".repeat(28)],
@@ -45,10 +30,8 @@ Deno.test("deployment mode is explicit and governance omission fails before prov
     delay_ms: "86400000",
   };
   const configured = await resolve({
-    IBC_DEPLOYMENT_MODE: "upgradeable",
     MIGRATION_GOVERNANCE_FILE: "keys",
   }, JSON.stringify(valid));
-  assertEquals(configured.deploymentMode, "upgradeable");
   assertEquals(configured.migration!.governance.delay_ms, 86400000n);
   for (
     const bad of [
@@ -66,7 +49,6 @@ Deno.test("deployment mode is explicit and governance omission fails before prov
     await assertRejects(
       () =>
         resolve({
-          IBC_DEPLOYMENT_MODE: "upgradeable",
           MIGRATION_GOVERNANCE_FILE: "keys",
         }, JSON.stringify(bad)),
       Error,

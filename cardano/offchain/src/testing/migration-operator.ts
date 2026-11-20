@@ -38,7 +38,6 @@ export async function runOperatorPopulation(
   // Only migration fields are consumed by this operator; retain the real full
   // applied baseline so production alias/hash/compatibility checks still run.
   const deployment = {
-    deploymentMode: "upgradeable",
     migration: {
       profile: MIGRATION_PROFILE,
       registryUnit: f.registryUnit,

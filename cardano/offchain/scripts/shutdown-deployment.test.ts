@@ -1,3 +1,4 @@
+import { shutdownRegistryReference } from "../src/shutdown.ts";
 import { assert, assertEquals, assertThrows } from "@std/assert";
 import {
   Data,
@@ -476,7 +477,7 @@ Deno.test("atomic finalization stays below the mainnet transaction size", async 
 Deno.test("cached shutdown refunds every forwarded credential deposit before HostState removal", async () => {
   const f = await shutdownFixture(0n, "cached");
   const validators = shutdownStakeValidators(f.deployment);
-  assertEquals(validators.length, 5);
+  assertEquals(validators.length, 6);
   for (const validator of validators) {
     assertEquals(
       (await f.emulator.getRewardAccount(validator.address)).registered,
@@ -495,6 +496,7 @@ Deno.test("cached shutdown refunds every forwarded credential deposit before Hos
     f.hostUtxo,
     f.hostDatum.deployer,
     f.emulator.now(),
+    await shutdownRegistryReference(f.lucid, f.deployment),
   ).complete({ localUPLCEval: true });
   const signed = await completed.sign.withWallet().complete();
   assert(

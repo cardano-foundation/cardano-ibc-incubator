@@ -25,7 +25,7 @@ const commands = fc.tuple(
   [active, enter, grace, wait, cleanup],
 ) => [...active, enter, ...grace, wait, ...cleanup]);
 
-Deno.test("stateful main lifecycle returns all deployment ADA after shutdown", async () => {
+Deno.test("stateful lifecycle conserves ADA through shutdown", async () => {
   await fc.assert(
     fc.asyncProperty(commands, async (commands) => {
       await runTransactionCase(
@@ -45,7 +45,6 @@ Deno.test("settled snapshots permit full deployment reclamation", async () => {
         settledPackets: fc.integer({ min: 0, max: 16 }),
         extraLovelace: fc.bigInt({ min: 0n, max: 100_000_000n }),
         order: fc.array(fc.nat(100), { minLength: 1, maxLength: 12 }),
-        legacy: fc.boolean(),
         mutation: fc.constantFrom(
           "active",
           "grace-period",

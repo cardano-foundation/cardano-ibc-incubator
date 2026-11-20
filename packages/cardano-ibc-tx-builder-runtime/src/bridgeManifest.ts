@@ -1,5 +1,4 @@
 import { checkedHeartbeatSchedule, type HeartbeatSchedule } from './heartbeatSchedule.ts';
-import { checkedDeploymentMode } from './migrationRuntime.ts';
 import { requireMigrationConfig, type MigrationRuntimeConfig } from './migrationRuntime.ts';
 import { requireHistoryBootstrap, type HistoryBootstrap } from './historyBootstrap.ts';
 type RefUtxo = {
@@ -128,8 +127,7 @@ export type DeploymentConfig = {
   heartbeatSchedule?: HeartbeatSchedule;
   cachedTendermint?: CachedTendermintConfig;
   packetState: PacketStateDeployment;
-  deploymentMode?: 'upgradeable' | 'legacy';
-  migration?: MigrationRuntimeConfig;
+  migration: MigrationRuntimeConfig;
   deployedAt: string;
   consensusHistoryFormat: typeof CONSENSUS_HISTORY_FORMAT;
   history?: HistoryBootstrap;
@@ -235,8 +233,7 @@ export type BridgeManifest = {
   heartbeat_schedule?: ManifestHeartbeatSchedule;
   cached_tendermint?: CachedTendermintManifest;
   packet_state: PacketStateManifest;
-  deploymentMode?: 'upgradeable' | 'legacy';
-  migration?: MigrationRuntimeConfig;
+  migration: MigrationRuntimeConfig;
   schema_version: number;
   consensus_history_format: typeof CONSENSUS_HISTORY_FORMAT;
   deployment_id: string;
@@ -826,9 +823,8 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
     ...(deploymentAny.cachedTendermint ? { cachedTendermint: cachedTendermintConfig(deploymentAny.cachedTendermint) } : {}),
     ...(deploymentAny.heartbeatSchedule ? { heartbeatSchedule: checkedHeartbeatSchedule(deploymentAny.heartbeatSchedule) } : {}),
     packetState: requirePacketState(deploymentAny.packetState),
-    deploymentMode: checkedDeploymentMode(deploymentAny.deploymentMode, deploymentAny.migration),
     deployedAt: requireIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
-    ...(deploymentAny.migration !== undefined ? { migration: requireMigrationConfig(deploymentAny.migration) } : {}),
+    migration: requireMigrationConfig(deploymentAny.migration),
     consensusHistoryFormat,
     ...(deploymentAny.history ? { history: requireHistoryBootstrap(deploymentAny.history, 42) } : {}),
     // Packet wire encoding is independent of the required client-history ABI.
@@ -924,8 +920,7 @@ export function normalizeHandlerJsonDeploymentConfig(
       schema_version: 6,
       ...(normalizedDeployment.cachedTendermint ? { cached_tendermint: cachedTendermintToManifest(normalizedDeployment.cachedTendermint) } : {}),
       packet_state: packetStateToManifest(normalizedDeployment.packetState),
-      ...(normalizedDeployment.deploymentMode ? { deploymentMode: normalizedDeployment.deploymentMode } : {}),
-      ...(normalizedDeployment.migration ? { migration: normalizedDeployment.migration } : {}),
+      migration: normalizedDeployment.migration,
       consensus_history_format: normalizedDeployment.consensusHistoryFormat,
       deployment_id: buildDeploymentId(normalizedCardano, normalizedDeployment.hostStateNFT),
       deployed_at: normalizedDeployment.deployedAt,
@@ -1024,8 +1019,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   const bridgeManifest: BridgeManifest = {
     schema_version: requireNonNegativeInteger(manifestAny.schema_version, 'schema_version'),
     packet_state: packetStateToManifest(packetStateFromManifest(manifestAny.packet_state)),
-    deploymentMode: checkedDeploymentMode(manifestAny.deploymentMode, manifestAny.migration),
-    ...(manifestAny.migration !== undefined ? { migration: requireMigrationConfig(manifestAny.migration) } : {}),
+    migration: requireMigrationConfig(manifestAny.migration),
     ...(manifestAny.cached_tendermint ? { cached_tendermint: cachedTendermintToManifest(cachedTendermintFromManifest(manifestAny.cached_tendermint)) } : {}),
     consensus_history_format: consensusHistoryFormat,
     deployment_id: requireNonEmptyString(manifestAny.deployment_id, 'deployment_id'),
@@ -1120,8 +1114,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       ...(bridgeManifest.cached_tendermint ? { cachedTendermint: cachedTendermintFromManifest(bridgeManifest.cached_tendermint) } : {}),
       packetState: packetStateFromManifest(bridgeManifest.packet_state),
       deployedAt: bridgeManifest.deployed_at,
-      ...(bridgeManifest.deploymentMode ? { deploymentMode: bridgeManifest.deploymentMode } : {}),
-      ...(bridgeManifest.migration ? { migration: bridgeManifest.migration } : {}),
+      migration: bridgeManifest.migration,
       consensusHistoryFormat,
       ...(bridgeManifest.history ? { history: bridgeManifest.history } : {}),
       ics20PacketCodec: bridgeManifest.ics20_packet_codec,

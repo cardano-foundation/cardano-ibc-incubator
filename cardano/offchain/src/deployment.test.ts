@@ -198,7 +198,6 @@ Deno.test("fully applied production HostState with backup fits the reference pub
   } as unknown as LucidEvolution;
   const plan = await loadDeploymentPlan(lucid, {
     ...DEPLOYMENT_PLAN_FIXTURE,
-    backupOperatorKeyHash: "55".repeat(28),
     benchmarkVoucherEnabled: false,
   });
   const [report] = buildReferenceValidatorSizeReport(
@@ -214,7 +213,7 @@ Deno.test("fully applied production HostState with backup fits the reference pub
   );
 });
 
-Deno.test("fully applied production transfer module fits the reference publication guard", async () => {
+Deno.test("production transfer module requires dedicated funding and fits the script limit", async () => {
   const lucid = {
     config: () => ({ network: "Preview" }),
   } as unknown as LucidEvolution;
@@ -231,9 +230,10 @@ Deno.test("fully applied production transfer module fits the reference publicati
   );
   assertEquals(
     report.exceedsEstimatedSingleTxBudget,
-    false,
+    true,
     JSON.stringify(report),
   );
+  assertEquals(report.intrinsicallyOversized, false);
 });
 
 Deno.test("fully applied multitx client reserves 200 bytes for its signed publication", async () => {
