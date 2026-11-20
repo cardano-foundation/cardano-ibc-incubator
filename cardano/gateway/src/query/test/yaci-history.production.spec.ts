@@ -1,5 +1,6 @@
 import { restProvider, restGateway } from '../../test-config/rest-provider';
 import { restBlockFixture } from '../../test-config/rest-block';
+import { YaciRestHistory } from '../../shared/helpers/yaci-rest-history';
 import { YaciRestClient, YaciRestHistoryChangedError } from '../../shared/helpers/yaci-rest';
 
 describe('Yaci production estimates', () => {
@@ -38,6 +39,28 @@ describe('Yaci production estimates', () => {
       { pool_id: 'pool-a', completed_epochs_bitmap: 17, produced_current_epoch: true },
       { pool_id: 'pool-b', completed_epochs_bitmap: 0, produced_current_epoch: true },
     ]);
+  });
+
+  it('starts every epoch read while the first epoch is still pending', async () => {
+    const { service, block } = setup();
+    let releaseFirst!: () => void;
+    const first = new Promise<void>(resolve => { releaseFirst = resolve; });
+    let allStarted!: () => void;
+    const started = new Promise<void>(resolve => { allStarted = resolve; });
+    const epochs = jest.spyOn(YaciRestHistory.prototype, 'epochBlocks').mockImplementation(async epoch => {
+      if (epochs.mock.calls.length === 6) allStarted();
+      if (epoch === 2) await first;
+      return [];
+    });
+    const pending = service.findObservedPoolProductionAtBlock(block);
+    try {
+      await started;
+      expect(epochs.mock.calls.map(([epoch]) => epoch)).toEqual([2, 3, 4, 5, 6, 7]);
+      expect(epochs.mock.calls.every(([, height]) => height === block.height)).toBe(true);
+    } finally {
+      releaseFirst();
+      await pending;
+    }
   });
 
   it('rejects an anchor that differs from the requested block', async () => {
