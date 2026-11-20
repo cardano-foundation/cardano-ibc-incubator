@@ -2900,6 +2900,6 @@
   "cardano": {
     "chain_id": "cardano-preview",
     "network_magic": 2,
-    "network": "Preview"
+    "network": "preview"
   }
 }
