@@ -1,86 +1,142 @@
 {
   "schemaVersion": 1,
   "build": {
-    "sourceCommit": "32cc32c0f5a68a8bcadef1ee53e903c34fbb990a",
-    "hermesCommit": "db90623ed1cdb8710df0af0f108c81db78d457a4",
+    "sourceCommit": "78ce6edf7fd724990e301ddcd53dbe74db537a1d",
+    "hermesCommit": "69fcc96409478ab4de0ae76949742a414377ac7a",
     "aikenVersion": "v1.1.24",
     "traceLevel": "silent",
-    "blueprintSha256": "7a5d0339f204b4899594e214bb709976f8af812c3a79426b907fd18c5503255e",
+    "blueprintSha256": "67eb158b52cdc1400132b3038acbd32640b029ac9f9f70a44e278ed66d97081c",
     "network": "preview",
     "networkMagic": 2,
-    "gatewaySourceCommit": "3bc6a99878bda0cab72ad6f35033afb04759386a",
-    "gatewayImage": "sha256:955133aab4c5da326115c94873ae809255b2539a877ee627a791d38fa003dbe5",
-    "mainCommit": "32cc32c0f5a68a8bcadef1ee53e903c34fbb990a",
-    "gatewayFixPullRequest": "https://github.com/cardano-foundation/cardano-ibc-incubator/pull/1008"
+    "gatewaySourceCommit": "77a4769e9e721fa4ace673684710775d2f07c114",
+    "gatewayImage": "sha256:a9fa2bcaf9f64c30c15c3995d8917a30b4ec76dffed8e954a40555480c3a72c0",
+    "gatewayFixPullRequest": "https://github.com/cardano-foundation/cardano-ibc-incubator/pull/1066",
+    "hermesFixPullRequest": "https://github.com/cardano-foundation/hermes-relayer/pull/76",
+    "gatewayHistoryRuntimeCommit": "74ed1a5037d5c433a6ba84bb881b549ba0bcaa01",
+    "gatewayHistoryFixPullRequest": "https://github.com/cardano-foundation/cardano-ibc-incubator/pull/1070"
   },
-  "deploymentId": "cardano-preview:34bc905ba9499aaeb83edcee7afa91ad0c605cd681ab8b49a3c5be0e.6962635f686f73745f7374617465",
-  "deployedAt": "2026-11-11T01:56:24.154Z",
+  "deploymentId": "cardano-preview:a2a006b72295460ff23fa72c2e1c5bb076f8f4cfb4e2f3942d8e5a77.6962635f686f73745f7374617465",
+  "deployedAt": "2026-11-20T20:45:35.326Z",
   "history": {
     "format": "cardano-history-v1",
     "start": {
-      "slot": 127643158,
-      "block_hash": "c77525c2d7e54fc6ca2350cc13f11b26326047c374e4b06adc977dcebb296f20",
-      "block_height": 4842869
+      "slot": 128390462,
+      "block_hash": "3a64ad644eb0d60a358280e8c2de765f177b9818610d0df947a9f1fd097194bf",
+      "block_height": 4870744
     },
     "host_state_nft_mint": {
-      "tx_hash": "35ea28b59e85b02d971c7e6726fb6e4f036554a1f8a4e147275d94bdd44153ae",
+      "tx_hash": "e8921358c0cea696d5603991300144d4f45d30514ebd36f86fb710c503161239",
       "output_index": 2
     }
   },
   "referenceScripts": {
     "verifiedAgainstRebuiltBlueprint": true,
     "count": 52,
-    "manifestReferenceCount": 49,
-    "verifiedAt": "2026-11-11T02:46:19.232724+00:00"
-  },
-  "bootstrap": {
-    "canonicalDeploymentTransactions": 76,
-    "traceRegistryOutputs": 17,
-    "deploymentId": "cardano-preview:34bc905ba9499aaeb83edcee7afa91ad0c605cd681ab8b49a3c5be0e.6962635f686f73745f7374617465",
-    "historyVerified": true,
-    "root": "6795a9cd87b454c6861c68da1c4879a24b01aa620b674d916ff55c221b545a0d",
-    "hostState": {
-      "txHash": "97d496ae555a9fa238e0e24d0f38edea65601e5e2e1dc27319df1ea212665c61",
-      "outputIndex": 0
-    },
-    "portCount": 3,
-    "stateCounts": {
-      "clients": 1,
-      "connections": 1,
-      "channels": 0
-    },
-    "verifiedAt": "2026-11-11T03:08:05.486Z"
+    "manifestReferenceCount": 50,
+    "verifiedAt": "2026-11-20T20:46:52.627352+00:00"
   },
   "costSummary": {
-    "transactionCount": 76,
-    "totalFeesLovelace": "49981774",
-    "totalReferenceScriptOutputLovelace": "2452769280",
-    "largestSignedTransactionBytes": 16204
+    "transactionCount": 77,
+    "totalFeesLovelace": "51280914",
+    "totalReferenceScriptOutputLovelace": "2499028510"
   },
-  "topology": {
+  "scope": "Fresh governed v6 Cardano Preview deployment. Connection verification is pending.",
+  "clientCreation": {
     "cardano": {
-      "chainId": "cardano-preview",
       "clientId": "07-tendermint-0",
-      "connectionId": "connection-0",
-      "connectionState": "OPEN"
+      "txHash": "d6f58de65704276c036e799f45d07fd5e04f7d044820b032be52e36216fca7c7",
+      "blockHeight": 4877086
     },
     "injective": {
-      "chainId": "injective-888",
-      "clientId": "08-cardano-probabilistic-531",
-      "connectionId": "connection-436",
-      "connectionState": "OPEN",
-      "storageVersion": 2,
+      "clientId": "08-cardano-probabilistic-539",
+      "bootstrapAnchorHeight": 4877139,
       "bootstrapPending": false,
       "epochUsability": {
-        "status": "usable",
-        "epoch": 1478,
-        "generation": 1,
-        "revision": 888,
-        "height": 148016290,
-        "timestamp": 1794366544318649805
+        "client_id": "08-cardano-probabilistic-539",
+        "client_state": {
+          "@type": "/ibc.lightclients.probabilistic.v1.ClientState",
+          "chain_id": "cardano-preview",
+          "latest_height": {
+            "revision_number": "0",
+            "revision_height": "4877139"
+          },
+          "frozen_height": null,
+          "current_epoch": "1487",
+          "trusting_period": "172800s",
+          "upgrade_path": [],
+          "host_state_nft_policy_id": "oqAGtyKVRg/yP6csLhxbsHb49M+04vOULY5adw==",
+          "host_state_nft_token_name": "aWJjX2hvc3Rfc3RhdGU=",
+          "epoch_stake_distribution": [],
+          "epoch_nonce": "WB+JOoHF2wkeIGJ6irt4ZSQXh7LpdydX01mI4JTrC90=",
+          "slots_per_kes_period": "129600",
+          "current_epoch_start_slot": "128476800",
+          "current_epoch_end_slot_exclusive": "128563200",
+          "system_start_unix_ns": "1666656000000000000",
+          "slot_length_ns": "1000000000",
+          "epoch_contexts": [],
+          "latest_checkpoint_height": {
+            "revision_number": "0",
+            "revision_height": "4877139"
+          },
+          "latest_checkpoint_block_hash": "14192754c8424973b685ba6fc8ec970a4d74727e3b890c81f5e67538b371bcb3",
+          "latest_checkpoint_epoch": "1487",
+          "max_kes_evolutions": "62",
+          "latest_checkpoint_operational_certificate_counters": [],
+          "operational_certificate_counter_history_start_height": {
+            "revision_number": "0",
+            "revision_height": "4877139"
+          },
+          "active_slot_coefficient_numerator": "1",
+          "active_slot_coefficient_denominator": "20",
+          "max_clock_drift": "10s",
+          "latest_checkpoint_slot": "128554428",
+          "latest_checkpoint_timestamp": "1795210428000000000",
+          "packet_lane_policy_id": "xq2I+DVip9ziFxMtFK/RSzkHooMJTuwI8P69Qg==",
+          "epoch_context_challenges": [
+            {
+              "epoch": "1487",
+              "usable_after_unix_ns": "1795213610999467787"
+            }
+          ],
+          "latest_checkpoint_nonce_state": {
+            "epoch_nonce": "WB+JOoHF2wkeIGJ6irt4ZSQXh7LpdydX01mI4JTrC90=",
+            "evolving_nonce": "KNVfYQ+ge36n/KKi3hjM/kVb8tNdZQZ7sVR2MlGODm4=",
+            "candidate_nonce": "DomQsUsqkxGMJWvufBeOLp0lspzUnqnHVElSomo+iho=",
+            "last_applied_block_nonce": "yBpbHt1AvzLTs+08TdVZVoIgCQEhXDbmRdodw3VktL4=",
+            "last_epoch_block_nonce": "ic9ttbp/ouhaS/cxBJECTZxPQBnUQVcJnzWrnRUZgBU="
+          },
+          "randomness_stabilisation_window_slots": "34560",
+          "latest_checkpoint_pool_registry": null,
+          "latest_checkpoint_settlement_credit": null,
+          "latest_checkpoint_pool_production": null,
+          "storage_version": 2,
+          "verification_generation": "1",
+          "checkpoint_reference": "28JbHVwSN2Em4oskq02TYJHnAbkhC7HIRGc/pJz2wGY=",
+          "storage_namespace": "Uqf3u/pDJKZvR9TWCz+xfYn9JhkzJ5Li+rLrMN4yDhU=",
+          "bootstrap_objects": null,
+          "bootstrap_pending": false,
+          "mithril_epoch": "1487",
+          "mithril_aggregate_verification_key": "7b226d745f636f6d6d69746d656e74223a7b22726f6f74223a5b31342c3136342c3131312c3230302c37312c3234302c32342c3234362c3138302c3133372c3137342c34332c3232332c342c3131302c33332c3138362c3137352c3132342c35372c3234342c302c3136382c3134312c3139302c3233342c3133362c32342c35362c3131352c31352c3232375d2c226e725f6c6561766573223a31372c22686173686572223a6e756c6c7d2c22746f74616c5f7374616b65223a3433393937363236323632343134327d",
+          "mithril_protocol_parameters_hash": "2237c07202bb267dbb920c08a64e00db967551c5a53956cd378f252992c4367d"
+        },
+        "progress": {
+          "status": "usable",
+          "epoch": 1487,
+          "generation": 1,
+          "revision": 888,
+          "height": 149554870,
+          "timestamp": 1795213644008192508
+        }
       }
-    },
-    "verifiedAt": "2026-11-11T03:09:02.285292+00:00"
+    }
   },
-  "scope": "Fresh Cardano Preview bridge deployment and completed ICS-03 connection to Injective testnet."
+  "connectionHandshake": {
+    "state": "cardano-init-confirmed",
+    "cardanoOpenInit": {
+      "txHash": "f07af8c2b9e2924a4dcb593fdcbc25c36a2249e237c1c9bc3d4c4d8dd7f5453f",
+      "blockHeight": 4877291,
+      "acceptedProofHeight": 4877295
+    },
+    "cardanoConnectionId": "connection-0"
+  }
 }
