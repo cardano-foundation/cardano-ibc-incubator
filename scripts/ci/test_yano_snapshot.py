@@ -121,11 +121,11 @@ class SnapshotCacheTests(unittest.TestCase):
         genesis.parent.mkdir(parents=True)
         genesis.write_text(json.dumps({"systemStart": "2024-01-01T00:00:00Z"}))
         start = 1704067200
-        with patch.object(snapshot.time, "time", return_value=start + 3599):
+        with patch.object(snapshot.time, "time", return_value=start + 1799):
             snapshot.validate_fixture_time(fixture)
-        # The failing CI snapshot was 113 minutes old. Adding the transaction
-        # TTL crossed Yano's 120-minute Plutus time-translation horizon.
-        for age in [-1, 3600, 113 * 60]:
+        # The failing CI snapshot was 51 minutes old. Its ten-minute shutdown
+        # TTL crossed the restored ledger's one-hour forecast horizon.
+        for age in [-1, 1800, 51 * 60, 3600, 113 * 60]:
             with self.subTest(age=age), patch.object(snapshot.time, "time", return_value=start + age), \
                     patch.object(snapshot, "validate_fixture"), patch.object(snapshot, "node") as node:
                 with self.assertRaisesRegex(ValueError, "safe restore lifetime"):

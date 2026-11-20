@@ -22,9 +22,10 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = 4
-# Leave one hour for the suite and transaction TTLs inside Yano's two-hour
-# devnet forecast horizon. Restoring RocksDB does not rewind the wall clock.
-MAX_RESTORE_AGE_SECONDS = 3600
+# The restored epoch-zero ledger forecasts only to slot 18000 (one hour
+# with 200 ms slots). Leave 30 minutes for the suite and transaction TTLs.
+# Restoring RocksDB does not rewind the wall clock.
+MAX_RESTORE_AGE_SECONDS = 1800
 
 
 def digest(path):
