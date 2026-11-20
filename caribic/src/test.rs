@@ -1309,9 +1309,9 @@ pub async fn run_integration_tests(
             // Use a large enough amount that fee noise cannot mask the balance delta.
             let amount: u64 = 1_000_000;
 
-            let voucher_policy_id = read_handler_json_value(
+            let voucher_policy_id = read_deployment_manifest_value(
                 project_root,
-                &["validators", "mintVoucher", "scriptHash"],
+                &["validators", "mint_voucher", "script_hash"],
             )?;
 
             let counterparty_balance_before =
@@ -1614,9 +1614,9 @@ pub async fn run_integration_tests(
                 // Sending half of the freshly minted Test 10 amount keeps this test deterministic.
                 let amount: u64 = 500_000;
 
-                let voucher_policy_id = read_handler_json_value(
+                let voucher_policy_id = read_deployment_manifest_value(
                     project_root,
-                    &["validators", "mintVoucher", "scriptHash"],
+                    &["validators", "mint_voucher", "script_hash"],
                 )?;
                 let voucher_denom_path = format!("transfer/{}/{}", cardano_channel_id, denom);
 
@@ -1865,7 +1865,7 @@ pub async fn run_integration_tests(
             )?;
 
             // Use the deployed native mock asset for deterministic round-trip assertions.
-            let base_denom = read_handler_json_value(project_root, &["tokens", "mock"])?;
+            let base_denom = read_deployment_manifest_value(project_root, &["tokens", "mock"])?;
             let amount: u64 = 20_000_000;
 
             let counterparty_balances_before = query_counterparty_balances(&counterparty_address)?;
@@ -2598,7 +2598,7 @@ fn wait_for_gateway_proof_ready_blocking(
 /// Query the current ibc_state_root from the Handler UTXO
 fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
     // Read deployment info to get the HostState NFT policy ID (STT architecture)
-    let deployment_path = project_root.join("cardano/offchain/deployments/handler.json");
+    let deployment_path = project_root.join("cardano/offchain/deployments/bridge-manifest.json");
 
     if !deployment_path.exists() {
         return Err("Deployment file not found. Please run 'caribic start bridge' first.".into());
@@ -2607,10 +2607,10 @@ fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::
     let deployment_json = std::fs::read_to_string(&deployment_path)?;
     let deployment: serde_json::Value = serde_json::from_str(&deployment_json)?;
 
-    // Use hostStateNFT for STT architecture
-    let host_state_nft_policy = deployment["hostStateNFT"]["policyId"]
+    // Use host_state_nft for STT architecture
+    let host_state_nft_policy = deployment["host_state_nft"]["policy_id"]
         .as_str()
-        .ok_or("hostStateNFT.policyId not found in deployment")?;
+        .ok_or("host_state_nft.policy_id not found in deployment")?;
 
     verbose(&format!(
         "   HostState NFT policy: {}",
@@ -2618,10 +2618,10 @@ fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::
     ));
 
     // Query the HostState UTXO using cardano-cli inside the Docker container
-    // Get hostStateStt address from deployment
-    let host_state_address = deployment["validators"]["hostStateStt"]["address"]
+    // Get host_state_stt address from deployment
+    let host_state_address = deployment["validators"]["host_state_stt"]["address"]
         .as_str()
-        .ok_or("validators.hostStateStt.address not found in deployment")?;
+        .ok_or("validators.host_state_stt.address not found in deployment")?;
 
     verbose(&format!("   HostState address: {}", host_state_address));
 
@@ -2653,10 +2653,10 @@ fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::
     let utxo_json = String::from_utf8(output.stdout)?;
     verbose(&format!("   Raw UTXO output: {}", utxo_json));
 
-    // Parse UTXO JSON to find the HostState UTXO (the one with the hostStateNFT)
+    // Parse UTXO JSON to find the HostState UTXO (the one with the host_state_nft)
     let utxos: serde_json::Value = serde_json::from_str(&utxo_json)?;
 
-    // Find UTXO with hostStateNFT
+    // Find UTXO with host_state_nft
     let mut host_state_datum: Option<&serde_json::Value> = None;
 
     for (_utxo_ref, utxo_data) in utxos.as_object().ok_or("Invalid UTXO JSON")? {
@@ -2675,11 +2675,11 @@ fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::
 
     let host_state_utxo = host_state_datum.ok_or(
         "HostState UTXO not found or has no datum.\n\n\
-         This can happen when the deployment config (handler.json) is out of sync\n\
+         This can happen when the deployment config (bridge-manifest.json) is out of sync\n\
          with the on-chain state. Common causes:\n\
          - The devnet was regenerated but contracts weren't redeployed\n\
          - A previous deployment failed partway through\n\
-         - The handler.json is from a different devnet instance\n\n\
+         - The bridge-manifest.json is from a different devnet instance\n\n\
          Fix: Run 'caribic start --clean' to reset and redeploy everything.",
     )?;
 
@@ -3191,11 +3191,11 @@ fn create_test_channel(
     Ok(channel_id)
 }
 
-fn read_handler_json_value(
+fn read_deployment_manifest_value(
     project_root: &Path,
     json_path: &[&str],
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let deployment_path = project_root.join("cardano/offchain/deployments/handler.json");
+    let deployment_path = project_root.join("cardano/offchain/deployments/bridge-manifest.json");
     let deployment_json = std::fs::read_to_string(&deployment_path).map_err(|e| {
         format!(
             "Failed to read deployment config at {}: {}",
@@ -3347,9 +3347,9 @@ fn cardano_enterprise_address_from_payment_credential(
     // and then reconstructs an enterprise address from it. For tests, we need to query that
     // same address to validate voucher minting/burning.
     //
-    // We pick the network id from the deployed on-chain addresses (handler.json), so this
+    // We pick the network id from the deployed on-chain addresses (bridge-manifest.json), so this
     // stays correct if the devnet uses mainnet-style addresses.
-    let deployment_path = project_root.join("cardano/offchain/deployments/handler.json");
+    let deployment_path = project_root.join("cardano/offchain/deployments/bridge-manifest.json");
     let deployment_json = std::fs::read_to_string(&deployment_path).map_err(|e| {
         format!(
             "Failed to read deployment config at {}: {}",
@@ -3358,9 +3358,9 @@ fn cardano_enterprise_address_from_payment_credential(
         )
     })?;
     let deployment: serde_json::Value = serde_json::from_str(&deployment_json)?;
-    let host_state_address = deployment["validators"]["hostStateStt"]["address"]
+    let host_state_address = deployment["validators"]["host_state_stt"]["address"]
         .as_str()
-        .ok_or("validators.hostStateStt.address not found in deployment")?;
+        .ok_or("validators.host_state_stt.address not found in deployment")?;
 
     let (network_id, hrp) = if host_state_address.starts_with("addr_test") {
         (0u8, "addr_test")

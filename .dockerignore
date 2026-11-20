@@ -26,10 +26,8 @@
 
 !manifests/
 !manifests/preprod/
-!manifests/preprod/cardano-preprod-handler.json
 !manifests/preprod/cardano-preprod-bridge-manifest.json
 !manifests/preview/
-!manifests/preview/cardano-preview-handler.json
 !manifests/preview/cardano-preview-bridge-manifest.json
 
 # Local ibc-go compatibility-chain images copy only the Cardano light-client

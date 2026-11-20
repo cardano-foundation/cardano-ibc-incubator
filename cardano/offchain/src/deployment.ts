@@ -63,7 +63,6 @@ import {
 import {
   completeAndSignTx,
   DeploymentTemplate,
-  formatTimestamp,
   generateIdentifierTokenName,
   generatePortTokenName,
   getLiveWalletUtxos,
@@ -1217,10 +1216,9 @@ export const createDeployment = async (
         network,
       },
       "./deployments",
-      formatTimestamp(Date.parse(deployedAt)),
     );
     console.log(
-      "Deployment artifacts and public bridge manifest saved to ./deployments",
+      "Bridge manifest saved to ./deployments",
     );
   }
 

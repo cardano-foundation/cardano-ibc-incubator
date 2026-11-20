@@ -13,9 +13,9 @@ extract_first_injective_address() {
 }
 
 get_mock_token_denom() {
-  local handler_file="$1"
-  [ -f "$handler_file" ] || return 1
-  jq -r '.tokens.mock // empty' "$handler_file" 2>/dev/null | head -n 1
+  local manifest_file="$1"
+  [ -f "$manifest_file" ] || return 1
+  jq -r '.tokens.mock // empty' "$manifest_file" 2>/dev/null | head -n 1
 }
 
 current_max_commitment_seq() {
@@ -127,12 +127,12 @@ CARDANO_RECEIVER="${CARDANO_RECEIVER:-247570b8ba7dc725e9ff37e9757b8148b4d5a12595
 INJECTIVE_LOCAL_VALIDATOR_KEY="${INJECTIVE_LOCAL_VALIDATOR_KEY:-validator}"
 SENT_AMOUNT_NUM="${CARIBIC_TOKEN_TRANSFER_AMOUNT:-12345}"
 INJECTIVE_RETURN_AMOUNT="${INJECTIVE_RETURN_AMOUNT:-1000000000000000000}"
-HANDLER_JSON="${HANDLER_JSON:-$repo_root/cardano/offchain/deployments/handler.json}"
-SENT_DENOM="$(get_mock_token_denom "$HANDLER_JSON" || true)"
+BRIDGE_MANIFEST="${BRIDGE_MANIFEST:-$repo_root/cardano/offchain/deployments/bridge-manifest.json}"
+SENT_DENOM="$(get_mock_token_denom "$BRIDGE_MANIFEST" || true)"
 
 check_string_empty "$CARDANO_INJECTIVE_CHANNEL_ID" "CARDANO_INJECTIVE_CHANNEL_ID is required."
 check_string_empty "$INJECTIVE_CARDANO_CHANNEL_ID" "INJECTIVE_CARDANO_CHANNEL_ID is required."
-check_string_empty "$SENT_DENOM" "Could not resolve mock token denom from handler.json."
+check_string_empty "$SENT_DENOM" "Could not resolve mock token denom from bridge-manifest.json."
 
 INJECTIVE_RECEIVER="$(printf '%s' "${INJECTIVE_RECEIVER:-}" | tr -d '\r' | tail -n 1)"
 if [ -z "$INJECTIVE_RECEIVER" ]; then

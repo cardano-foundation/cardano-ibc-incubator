@@ -63,19 +63,11 @@ pub fn run_denom_registry_benchmark(
     let profile = config::cardano_network_profile(active_network);
     let gateway_dir = project_root_path.join("cardano/gateway");
     let offchain_dir = project_root_path.join("cardano/offchain");
-    let normalized_handler_json_path = normalize_existing_path(
-        project_root_path.join("cardano/offchain/deployments/handler.json"),
-    )?;
     let normalized_bridge_manifest_path = normalize_future_path(
         project_root_path.join("cardano/offchain/deployments/bridge-manifest.json"),
     )?;
 
-    ensure_bridge_manifest_exists(
-        &gateway_dir,
-        &normalized_handler_json_path,
-        &normalized_bridge_manifest_path,
-        &profile,
-    )?;
+    ensure_bridge_manifest_exists(&normalized_bridge_manifest_path)?;
 
     let initial_summary =
         query_registry_summary(&gateway_dir, &normalized_bridge_manifest_path, &profile)?;
@@ -108,7 +100,7 @@ pub fn run_denom_registry_benchmark(
 
     run_fast_benchmark_inserts(
         &offchain_dir,
-        &normalized_handler_json_path,
+        &normalized_bridge_manifest_path,
         target_bucket,
         inserts,
     )?;
@@ -192,7 +184,7 @@ fn query_registry_summary(
 
 fn run_fast_benchmark_inserts(
     offchain_dir: &Path,
-    handler_json_path: &str,
+    deployment_manifest_path: &str,
     bucket: u8,
     inserts: usize,
 ) -> Result<(), String> {
@@ -211,7 +203,7 @@ fn run_fast_benchmark_inserts(
         .arg("--inserts")
         .arg(inserts.to_string())
         .current_dir(offchain_dir)
-        .env("HANDLER_JSON_PATH", handler_json_path)
+        .env("BRIDGE_MANIFEST_PATH", deployment_manifest_path)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -275,27 +267,12 @@ fn normalize_future_path(path: impl AsRef<Path>) -> Result<String, String> {
         .to_string())
 }
 
-fn ensure_bridge_manifest_exists(
-    _gateway_dir: &Path,
-    handler_json_path: &str,
-    bridge_manifest_path: &str,
-    _profile: &config::CardanoNetworkProfile,
-) -> Result<(), String> {
+fn ensure_bridge_manifest_exists(bridge_manifest_path: &str) -> Result<(), String> {
     if Path::new(bridge_manifest_path).exists() {
         return Ok(());
     }
-
-    let handler_path = PathBuf::from(handler_json_path);
-    if !handler_path.exists() {
-        return Err(format!(
-            "Bridge manifest is missing at {} and handler.json is also missing at {}. Re-run the local bridge deployment on feat/cardano-onchain-trace-registry to recreate both artifacts, then retry.",
-            bridge_manifest_path,
-            handler_path.display()
-        ));
-    }
-
     Err(format!(
-        "Bridge manifest is missing at {}. Local devnet deployments are ephemeral, so the benchmark will not synthesize a new manifest from an existing handler.json. Re-run the local bridge deployment on feat/cardano-onchain-trace-registry so startup regenerates both artifacts, then retry.",
+        "Bridge manifest is missing at {}. Run the local bridge deployment before benchmarking.",
         bridge_manifest_path
     ))
 }

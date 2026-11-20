@@ -1,3 +1,4 @@
+import { deploymentFromManifest } from "../../../cardano/offchain/src/deployment-artifacts.ts";
 /** Fund, observe or cancel one actual intent without sending a packet. */
 import { Data, fromText, getAddressDetails } from "@lucid-evolution/lucid";
 import { join, resolve } from "@std/path";
@@ -24,14 +25,14 @@ if (!runtime.startsWith(join(root, ".deployment-smoke") + "/")) {
   throw new Error("Explicit owned runtime required");
 }
 const providers = ownedRuntimeProviders(runtime, true);
-const handler = JSON.parse(
-  await Deno.readTextFile(join(runtime, "handler.json")),
-);
+const manifest = deploymentFromManifest(JSON.parse(
+  await Deno.readTextFile(join(runtime, "bridge-manifest.json")),
+));
 const population = JSON.parse(
   await Deno.readTextFile(join(runtime, "wallet-population.json")),
 );
 if (
-  !handler.packetState || population.genesisSha256 !== providers.genesisSha256
+  !manifest.packetState || population.genesisSha256 !== providers.genesisSha256
 ) {
   throw new Error("Owned packet-lane population required");
 }
@@ -56,7 +57,7 @@ const owner = getAddressDetails(address).paymentCredential!;
 const receiptFile = join(runtime, "channel-migration-funded-intent.json");
 const outbox = join(runtime, "channel-migration-intent-outbox");
 const submit = migrationSubmitter(lucid, outbox);
-const guard = handler.packetState.guard.address;
+const guard = manifest.packetState.guard.address;
 const asset = population.units[0];
 const amount = 17n;
 const encode = (value: unknown) =>
@@ -67,10 +68,10 @@ const encode = (value: unknown) =>
 
 if (action === "fund") {
   const host = {
-    policy_id: handler.hostStateNFT.policyId,
-    name: handler.hostStateNFT.name,
+    policy_id: manifest.hostStateNFT.policyId,
+    name: manifest.hostStateNFT.name,
   };
-  const channelUnit = handler.validators.mintChannelStt.scriptHash +
+  const channelUnit = manifest.validators.mintChannelStt.scriptHash +
     await generateTokenName(host, fromText("channel"), 0n);
   const channel = await lucid.utxoByUnit(channelUnit);
   const transaction = await submit({
@@ -187,7 +188,7 @@ if (action === "fund") {
   };
   if (action === "cancel") {
     const [guardReference] = await lucid.utxosByOutRef([
-      handler.packetState.guard.refUtxo,
+      manifest.packetState.guard.refUtxo,
     ]);
     if (!guardReference?.scriptRef) {
       throw new Error("Published guard reference is unavailable");

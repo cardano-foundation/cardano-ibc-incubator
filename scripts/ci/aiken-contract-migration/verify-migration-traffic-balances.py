@@ -54,7 +54,7 @@ def cosmos_address_bytes(address):
     return bytes(decoded)
 
 
-def verify(snapshot, handler, population, channels, phase, generation, genesis_sha):
+def verify(snapshot, manifest, population, channels, phase, generation, genesis_sha):
     require(snapshot['format'] == 'migration-rehearsal-population-v1', 'Snapshot format')
     require(re.fullmatch('[a-f0-9]{64}', genesis_sha) is not None, 'Genesis hash format')
     require(snapshot['genesisSha256'] == population['genesisSha256'] == genesis_sha, 'Genesis provenance')
@@ -62,15 +62,15 @@ def verify(snapshot, handler, population, channels, phase, generation, genesis_s
             all(re.fullmatch(r'channel-\d+', c) for c in channels), 'Distinct counterparty routes required')
     registry = snapshot['registry']
     require(registry['phase'] == 'Ready', 'Registry must be active')
-    require(int(registry['current']['generation']) == int(handler['migration']['generation']) == generation,
+    require(int(registry['current']['generation']) == int(manifest['migration']['generation']) == generation,
             'Generation provenance')
-    require(registry['host_policy'] == handler['hostStateNFT']['policyId'], 'Host identity')
-    require(registry['token']['policy_id'] + registry['token']['name'] == handler['migration']['registryUnit'],
+    require(registry['host_policy'] == manifest['host_state_nft']['policy_id'], 'Host identity')
+    require(registry['token']['policy_id'] + registry['token']['name'] == manifest['migration']['registryUnit'],
             'Registry identity')
-    require(registry['current']['compatibility'] == handler['migration']['compatibility'], 'Compatibility identity')
-    for role, key in [('channel', 'mintChannelStt'), ('client', 'mintClientStt'),
-                      ('connection', 'mintConnectionStt'), ('escrow', 'mintTransferEscrowShard')]:
-        require(registry['identity'][role + '_policy'] == handler['validators'][key]['scriptHash'], role + ' identity')
+    require(registry['current']['compatibility'] == manifest['migration']['compatibility'], 'Compatibility identity')
+    for role, key in [('channel', 'mint_channel_stt'), ('client', 'mint_client_stt'),
+                      ('connection', 'mint_connection_stt'), ('escrow', 'mint_transfer_escrow_shard')]:
+        require(registry['identity'][role + '_policy'] == manifest['validators'][key]['script_hash'], role + ' identity')
     counterparty = snapshot['counterparty']
     require(counterparty['chain'] == 'migration-462-1' and counterparty['address'] == COSMOS_ACCOUNT
             and re.fullmatch('[1-9][0-9]*', str(counterparty['height'])), 'Counterparty provenance')
@@ -83,18 +83,18 @@ def verify(snapshot, handler, population, channels, phase, generation, genesis_s
         require(int(obj['utxo']['assets'].get(obj['unit'], 0)) == 1, 'Missing unique object token')
     asset_a, asset_b = population['units']
     require(asset_a != asset_b and population['mintedPerUnit'] == '1000000', 'Fixture asset identity')
-    policy = handler['validators']['mintVoucher']['scriptHash']
+    policy = manifest['validators']['mint_voucher']['script_hash']
     def voucher(channel):
         return policy + '0014df10' + hashlib.blake2b(f'transfer/{channel}/stake'.encode(), digest_size=28).hexdigest()
     primary_unit, secondary_unit = voucher('channel-0'), voucher('channel-1')
     def cosmos_denom(channel, unit):
         return 'ibc/' + hashlib.sha256(f'transfer/{channel}/{unit}'.encode()).hexdigest().upper()
     cosmos_a, cosmos_b = cosmos_denom(channels[0], asset_a), cosmos_denom(channels[1], asset_b)
-    infrastructure = {handler['tokens']['mock'], handler['validators']['verifyProof']['scriptHash']}
-    infrastructure.update(v['scriptHash'] for v in handler['validators']['spendChannel']['refValidator'].values())
-    # Staged client verification tokens, if present, are explicitly named by the handler.
-    client = handler['validators']['spendClient']
-    infrastructure.update(v['scriptHash'] for v in client.get('refValidator', {}).values())
+    infrastructure = {manifest['tokens']['mock'], manifest['validators']['verify_proof']['script_hash']}
+    infrastructure.update(v['script_hash'] for v in manifest['validators']['spend_channel']['ref_validator'].values())
+    # Staged client verification tokens, if present, are explicitly named by the manifest.
+    client = manifest['validators']['spend_client']
+    infrastructure.update(v['script_hash'] for v in client.get('ref_validator', {}).values())
 
     seen = {(o['utxo']['txHash'], o['utxo']['outputIndex']) for o in objects}
 
@@ -170,14 +170,14 @@ def verify(snapshot, handler, population, channels, phase, generation, genesis_s
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--snapshot', type=Path, required=True)
-    p.add_argument('--handler', type=Path, required=True)
+    p.add_argument('--manifest', type=Path, required=True)
     p.add_argument('--wallet-population', type=Path, required=True)
     p.add_argument('--cosmos-channels', nargs=2, required=True)
     p.add_argument('--phase', choices=['populated', 'settled', 'settled-v3'], required=True)
     p.add_argument('--generation', type=int, required=True)
     p.add_argument('--genesis-sha256', required=True)
     args = p.parse_args()
-    documents = [json.loads(path.read_text()) for path in (args.snapshot, args.handler, args.wallet_population)]
+    documents = [json.loads(path.read_text()) for path in (args.snapshot, args.manifest, args.wallet_population)]
     print(json.dumps(verify(*documents, args.cosmos_channels, args.phase, args.generation, args.genesis_sha256)))
 
 

@@ -11,9 +11,6 @@ export function loadBridgeConfigFromEnv(
   fs: JsonFileReader,
 ): LoadedBridgeConfig {
   const bridgeManifestPath = env.BRIDGE_MANIFEST_PATH;
-  if (env.HANDLER_JSON_PATH) {
-    throw new Error('HANDLER_JSON_PATH is no longer supported. Export a public manifest with npm run export:bridge-manifest -- <handler-json-path> <output-path> and set BRIDGE_MANIFEST_PATH');
-  }
   if (!bridgeManifestPath) throw new Error('BRIDGE_MANIFEST_PATH is required');
 
   const supportedOperationalProfile = (loaded: LoadedBridgeConfig): LoadedBridgeConfig => {

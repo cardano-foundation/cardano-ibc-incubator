@@ -942,7 +942,7 @@ escrow_reader() {
 
 query_cardano_escrow() {
   local snapshot
-  snapshot="$(escrow_reader snapshot "$HANDLER_JSON" "$CARDANO_COSMOS_CHANNEL_ID" "$CARDANO_SEND_DENOM")" || return $?
+  snapshot="$(escrow_reader snapshot "$BRIDGE_MANIFEST" "$CARDANO_COSMOS_CHANNEL_ID" "$CARDANO_SEND_DENOM")" || return $?
   jq -Sce '
     if type == "object"
       and (.output | type == "string" and length > 0)
@@ -981,7 +981,7 @@ HERMES_BIN="${HERMES_BIN:-$repo_root/relayer/target/release/hermes}"
 DOCKER_BIN="${DOCKER_BIN:-docker}"
 COSMOS_COMPOSE_FILE="${COSMOS_COMPOSE_FILE:-$repo_root/chains/cosmos/docker-compose.yml}"
 DIRECT_TOKEN_TRANSFER_SCRIPT="${DIRECT_TOKEN_TRANSFER_SCRIPT:-$script_dir/run_direct_token_transfer.sh}"
-HANDLER_JSON="${HANDLER_JSON:-$repo_root/cardano/offchain/deployments/handler.json}"
+BRIDGE_MANIFEST="${BRIDGE_MANIFEST:-$repo_root/cardano/offchain/deployments/bridge-manifest.json}"
 DENO_BIN="${DENO_BIN:-deno}"
 ESCROW_READER_SCRIPT="${ESCROW_READER_SCRIPT:-$repo_root/cardano/offchain/scripts/recovery-escrow.ts}"
 
@@ -1025,10 +1025,10 @@ require_positive_integer "$PACKET_TIMEOUT_SECONDS" "RECOVERY_PACKET_TIMEOUT_SECO
 [[ -f "$DIRECT_TOKEN_TRANSFER_SCRIPT" ]] || fail "Direct token-transfer script not found at $DIRECT_TOKEN_TRANSFER_SCRIPT."
 command -v "$DENO_BIN" >/dev/null 2>&1 || fail "Deno executable '$DENO_BIN' was not found."
 [[ -f "$ESCROW_READER_SCRIPT" ]] || fail "Escrow reader not found at $ESCROW_READER_SCRIPT."
-[[ -f "$HANDLER_JSON" ]] || fail "Cardano handler deployment not found at $HANDLER_JSON."
+[[ -f "$BRIDGE_MANIFEST" ]] || fail "Cardano manifest deployment not found at $BRIDGE_MANIFEST."
 if [[ -z "$CARDANO_SEND_DENOM" ]]; then
-  CARDANO_SEND_DENOM="$(jq -er '.tokens.mock | select(type == "string" and length > 0)' "$HANDLER_JSON")" ||
-    fail "Could not resolve the Cardano mock token denomination from $HANDLER_JSON."
+  CARDANO_SEND_DENOM="$(jq -er '.tokens.mock | select(type == "string" and length > 0)' "$BRIDGE_MANIFEST")" ||
+    fail "Could not resolve the Cardano mock token denomination from $BRIDGE_MANIFEST."
 fi
 if [[ -z "${SIMD_BIN:-}" ]]; then
   command -v "$DOCKER_BIN" >/dev/null 2>&1 || fail "Docker executable '$DOCKER_BIN' was not found."

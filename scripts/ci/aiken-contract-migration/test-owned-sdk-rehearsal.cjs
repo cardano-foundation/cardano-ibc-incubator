@@ -13,7 +13,7 @@ function fixture() {
     artifactResult: { project: 'cardano-deployment-test-abc123', networkRuntime: '/owned/runtime', artifacts: '/owned/artifacts' },
     genesis, actualGenesis: genesis,
     ports: { 'devkit:1337': '127.0.0.1:2637', 'devkit:1442': '127.0.0.1:2742', 'cosmos:26657': '127.0.0.1:28757', 'cosmos:1317': '127.0.0.1:1527' },
-    population: { genesisSha256 }, baseline: { migration, hostStateNFT: { policyId: 'ef'.repeat(28), name: '02' } },
+    population: { genesisSha256 }, baseline: { migration, host_state_nft: { policy_id: 'ef'.repeat(28), token_name: '02' } },
     manifest: { cardano: { network_magic: 42, chain_id: 'cardano-devnet' }, migration: { ...migration, generation: '3' }, host_state_nft: { policy_id: 'ef'.repeat(28), token_name: '02' }, deployment_id: `cardano-devnet:${'ef'.repeat(28)}.02` },
     snapshot: { genesisSha256, registry: { current: { generation: '3', compatibility: migration.compatibility }, phase: 'Ready', host_policy: 'ef'.repeat(28), token: { policy_id: 'ab'.repeat(28), name: '01' } } },
   };

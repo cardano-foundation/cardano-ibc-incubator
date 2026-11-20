@@ -22,13 +22,13 @@ NODES = ['devkit', 'producer-2', 'producer-3', 'producer-4', 'producer-5']
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ['runtime', 'artifacts-dir', 'handler', 'plan']:
+    for name in ['runtime', 'artifacts-dir', 'manifest', 'plan']:
         parser.add_argument('--' + name, type=Path, required=True)
     args = parser.parse_args()
-    runtime, artifacts, handler, plan = [p.resolve() for p in
-                                         [args.runtime, args.artifacts_dir, args.handler, args.plan]]
+    runtime, artifacts, manifest, plan = [p.resolve() for p in
+                                         [args.runtime, args.artifacts_dir, args.manifest, args.plan]]
     if any(not p.is_relative_to(ROOT / '.deployment-smoke') or not p.exists()
-           for p in [runtime, artifacts, handler, plan]):
+           for p in [runtime, artifacts, manifest, plan]):
         parser.error('Explicit existing disposable artifacts required')
     result = json.loads((runtime / 'result.json').read_text())
     project = result['project']
@@ -38,7 +38,7 @@ def main():
     genesis = (runtime / 'runtime/genesis-shelley.json').read_bytes()
     if json.loads(genesis)['networkMagic'] != 42:
         parser.error('Only the owned magic-42 devnet is supported')
-    source = json.loads(handler.read_text())
+    source = json.loads(manifest.read_text())
     generation = int(source['migration']['generation']) + 1
     directory = artifacts / f'v{generation}-handover'
     directory.mkdir(exist_ok=True)
@@ -74,7 +74,7 @@ def main():
     def control(action, *extra):
         logfile = directory / ('rollback-cli-' + uuid.uuid4().hex + '.log')
         argv = ['python3', str(ROOT / 'scripts/ci/aiken-contract-migration/migration-control.py'), '--runtime', str(runtime),
-                '--artifacts-dir', str(artifacts), '--handler', str(handler), '--executor', 'migration',
+                '--artifacts-dir', str(artifacts), '--manifest', str(manifest), '--executor', 'migration',
                 '--', action, *extra]
         with logfile.open('x') as output:
             completed = subprocess.run(argv, cwd=ROOT, stdout=output, stderr=subprocess.STDOUT, timeout=900)

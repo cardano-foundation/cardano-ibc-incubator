@@ -271,9 +271,8 @@ export type BridgeManifest = {
     mint_voucher: BridgeManifestValidator;
     mint_transfer_escrow_shard: BridgeManifestValidator;
     mint_port: BridgeManifestValidator;
-    // The runtime only needs the target script address for the immutable
-    // CIP-68 metadata output. We intentionally do not expose ref_utxo or
-    // script_hash here because they are not consumed after deployment.
+    // Runtime discovery needs only the immutable CIP-68 output address.
+    // The complete manifest also retains deployment metadata for maintenance.
     voucher_metadata?: BridgeManifestVoucherMetadata;
   };
   modules: {
@@ -904,7 +903,7 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
   };
 }
 
-export function normalizeHandlerJsonDeploymentConfig(
+export function normalizeDeploymentConfig(
   deployment: unknown,
   cardano: BridgeManifestCardanoIdentity,
 ): LoadedBridgeConfig {
@@ -996,7 +995,7 @@ export function normalizeHandlerJsonDeploymentConfig(
   };
 }
 
-export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeConfig {
+function normalizePublicBridgeManifestConfig(manifest: unknown): LoadedBridgeConfig {
   const manifestAny = requireObject(manifest, 'bridgeManifest');
   const cardano = requireCardanoIdentity(
     requireObject(manifestAny.cardano, 'cardano') as unknown as BridgeManifestCardanoIdentity,
@@ -1193,4 +1192,103 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
 
 export function bridgeManifestsEqual(left: BridgeManifest, right: BridgeManifest): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+// The manifest is the only persisted deployment document. Runtime consumers use
+// validated discovery fields. Maintenance also retains applied scripts, complete
+// reference outputs, the migration baseline and the backup nominee in that same
+// document. These are public chain facts, not signing keys.
+const deploymentFieldNames: Record<string, string> = {
+  deployedAt: 'deployed_at',
+  consensusHistoryFormat: 'consensus_history_format',
+  ics20PacketCodec: 'ics20_packet_codec',
+  hostStateNFT: 'host_state_nft',
+  heartbeatSchedule: 'heartbeat_schedule',
+  epochOriginMs: 'epoch_origin_ms',
+  epochLengthMs: 'epoch_length_ms',
+  cachedTendermint: 'cached_tendermint',
+  packetState: 'packet_state',
+  receiptStorage: 'receipt_storage',
+  laneCount: 'lane_count',
+  acknowledgementBatchSize: 'acknowledgement_batch_size',
+  configToken: 'config_token',
+  backupOperatorKeyHash: 'backup_operator_key_hash',
+  clientRegistrations: 'client_registrations',
+  scriptHash: 'script_hash',
+  refUtxo: 'ref_utxo',
+  refValidator: 'ref_validator',
+  txHash: 'tx_hash',
+  outputIndex: 'output_index',
+  policyId: 'policy_id',
+  name: 'token_name',
+  traceRegistry: 'trace_registry',
+  shardPolicyId: 'shard_policy_id',
+  hostStateStt: 'host_state_stt',
+  updateClient: 'update_client',
+  recoverClient: 'recover_client',
+  spendClient: 'spend_client',
+  spendConnection: 'spend_connection',
+  spendChannel: 'spend_channel',
+  spendTendermintUpdateSession: 'spend_tendermint_update_session',
+  mintTendermintUpdateSession: 'mint_tendermint_update_session',
+  spendMockModule: 'spend_mock_module',
+  spendTraceRegistry: 'spend_trace_registry',
+  spendTransferModule: 'spend_transfer_module',
+  mintIdentifier: 'mint_identifier',
+  verifyProof: 'verify_proof',
+  verifyMembership: 'verify_membership',
+  mintClientStt: 'mint_client_stt',
+  mintConnectionStt: 'mint_connection_stt',
+  mintChannelStt: 'mint_channel_stt',
+  mintVoucher: 'mint_voucher',
+  mintTransferEscrowShard: 'mint_transfer_escrow_shard',
+  mintPort: 'mint_port',
+  voucherMetadata: 'voucher_metadata',
+  mintTraceRegistryBenchmarkVoucher: 'mint_trace_registry_benchmark_voucher',
+};
+
+function deploymentFields(value: unknown, toManifest: boolean): unknown {
+  if (Array.isArray(value)) return value.map((entry) => deploymentFields(entry, toManifest));
+  if (!value || typeof value !== 'object') return value;
+  const names = toManifest
+    ? deploymentFieldNames
+    : Object.fromEntries(Object.entries(deploymentFieldNames).map(([key, name]) => [name, key]));
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => [
+      names[key] ?? key,
+      // These embedded schemas have their own stable field names.
+      ['migration', 'history', 'tokens', 'clientRegistrations', 'client_registrations'].includes(key)
+        ? entry
+        : deploymentFields(entry, toManifest),
+    ]),
+  );
+}
+
+function withDeploymentMetadata<T>(source: unknown, validated: T): T {
+  if (!validated || typeof validated !== 'object' || Array.isArray(validated)) return validated;
+  const original =
+    source && typeof source === 'object' && !Array.isArray(source) ? (source as Record<string, unknown>) : {};
+  return Object.fromEntries([
+    ...Object.entries(original),
+    ...Object.entries(validated).map(([key, value]) => [key, withDeploymentMetadata(original[key], value)]),
+  ]) as T;
+}
+
+export function createBridgeManifest(deployment: unknown, cardano: BridgeManifestCardanoIdentity): BridgeManifest {
+  const validated = normalizeDeploymentConfig(deployment, cardano).bridgeManifest;
+  const manifest = withDeploymentMetadata(deploymentFields(deployment, true), validated);
+  normalizePublicBridgeManifestConfig(manifest);
+  return manifest;
+}
+
+export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeConfig {
+  const validated = normalizePublicBridgeManifestConfig(manifest);
+  const bridgeManifest = withDeploymentMetadata(manifest, validated.bridgeManifest) as BridgeManifest;
+  const { schema_version: _schema, deployment_id: _id, cardano: _cardano, ...fields } = bridgeManifest;
+  return {
+    // Discovery responses stay compact. Applied scripts and the migration plan
+    // remain in the persisted manifest and the decoded operational deployment.
+    bridgeManifest: validated.bridgeManifest,
+    deployment: withDeploymentMetadata(deploymentFields(fields, false), validated.deployment),
+  };
 }

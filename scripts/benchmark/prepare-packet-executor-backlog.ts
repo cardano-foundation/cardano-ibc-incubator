@@ -1,3 +1,4 @@
+import { deploymentFromManifest } from "../../cardano/offchain/src/deployment-artifacts.ts";
 /** Fund requests with public fixture keys on an explicitly owned magic-42 devnet. */
 import { fromText, walletFromSeed } from "@lucid-evolution/lucid";
 import { buildOperationalLucid } from "../../cardano/offchain/scripts/shutdown-deployment.ts";
@@ -81,29 +82,29 @@ if (Deno.args[1] === "wallets") {
     throw new Error("Retain receipts inside the owned runtime");
   }
   await requireNewReceipt(receiptPath);
-  const handler = JSON.parse(
-    await Deno.readTextFile(runtime + "/handler.json"),
-  );
+  const manifest = deploymentFromManifest(JSON.parse(
+    await Deno.readTextFile(runtime + "/bridge-manifest.json"),
+  ));
   lucid.selectWallet.fromSeed(userSeed);
   const timing = await migrationTiming(lucid, Deno.env.get("OGMIOS_URL")!);
   let tx = lucid.newTx().validFrom(timing.validFrom).validTo(timing.validTo);
   for (const channel of channels) {
     const name = await generateTokenName(
       {
-        policy_id: handler.hostStateNFT.policyId,
-        name: handler.hostStateNFT.name,
+        policy_id: manifest.hostStateNFT.policyId,
+        name: manifest.hostStateNFT.name,
       },
       fromText("channel"),
       BigInt(channel.slice(8)),
     );
     const authenticated = await lucid.utxoByUnit(
-      handler.validators.mintChannelStt.scriptHash + name,
+      manifest.validators.mintChannelStt.scriptHash + name,
     );
     for (let i = 0; i < perChannel; i++) {
       tx = tx.compose(
         await buildTransferIntent(lucid, {
           channel: authenticated,
-          guardAddress: handler.packetState.guard.address,
+          guardAddress: manifest.packetState.guard.address,
         }, {
           amount: 2_000_000n,
           receiver: "cosmos1rnr5jrt4exl0samwj0yegv99jeskl0hsge5zwt",
@@ -116,7 +117,7 @@ if (Deno.args[1] === "wallets") {
     .withWallet().complete();
   const hash = await signed.submit();
   await lucid.awaitTx(hash);
-  const outputs = (await lucid.utxosAt(handler.packetState.guard.address))
+  const outputs = (await lucid.utxosAt(manifest.packetState.guard.address))
     .filter((u) => u.txHash === hash);
   if (outputs.length !== channels.length * perChannel) {
     throw new Error("Backlog is not fully indexed");
