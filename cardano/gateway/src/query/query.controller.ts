@@ -86,7 +86,7 @@ import { ChannelService } from './services/channel.service';
 import { PacketService } from './services/packet.service';
 import { DenomTraceService } from './services/denom-trace.service';
 import { BridgeManifestService } from './services/bridge-manifest.service';
-import { getQueryHeightFromMetadata } from './helpers/query-height';
+import { getIncludeProofFromMetadata, getQueryHeightFromMetadata } from './helpers/query-height';
 
 @Controller()
 export class QueryController {
@@ -102,6 +102,7 @@ export class QueryController {
   @GrpcMethod('Query', 'ClientState')
   async queryClientState(request: QueryClientStateRequest, metadata?: Metadata): Promise<QueryClientStateResponse> {
     const response: QueryClientStateResponse = await this.queryService.queryClientState(request, {
+      includeProof: getIncludeProofFromMetadata(metadata),
       queryHeight: getQueryHeightFromMetadata(metadata),
     });
     return response;
@@ -123,6 +124,7 @@ export class QueryController {
     metadata?: Metadata,
   ): Promise<QueryConsensusStateResponse> {
     const response: QueryConsensusStateResponse = await this.queryService.queryConsensusState(data, {
+      includeProof: getIncludeProofFromMetadata(metadata),
       queryHeight: getQueryHeightFromMetadata(metadata),
     });
     return response;
@@ -181,6 +183,7 @@ export class QueryController {
   @GrpcMethod('Query', 'Connection')
   async queryConnection(request: QueryConnectionRequest, metadata?: Metadata): Promise<QueryConnectionResponse> {
     const response: QueryConnectionResponse = await this.connectionService.queryConnection(request, {
+      includeProof: getIncludeProofFromMetadata(metadata),
       queryHeight: getQueryHeightFromMetadata(metadata),
     });
     return response as unknown as QueryConnectionResponse;

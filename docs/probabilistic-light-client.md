@@ -559,3 +559,5 @@ This schedule requires the matching deployed HostState scripts and timing metada
 Disabling automatic submission removes recurring heartbeat transactions from the default schedule. Counterparty checkpoint gas, Cardano-side client updates, infrastructure and setup remain separate costs. Manual or explicitly enabled heartbeats still incur their transaction fees.
 
 The protected permissionless heartbeat clock was introduced in wire version 5. Historical five-field control datums remain readable by Gateway. Counterparty light clients treat the control field opaquely, so their HostState root decoding does not change.
+
+State-only Gateway queries may set `x-cardano-include-proof: false` on `ClientState`, `ConsensusState` and `Connection`. These reads retain accepted-height selection and canonical-anchor rechecks but return an empty proof. Consensus states stored only in the private history still require authentication against the selected public tree. Omitting the metadata preserves proof generation.
