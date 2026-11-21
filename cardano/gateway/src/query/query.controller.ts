@@ -1,6 +1,6 @@
 import { Controller } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
-import { Metadata } from '@grpc/grpc-js';
+import { Metadata, ServerUnaryCall } from '@grpc/grpc-js';
 import {
   QueryClientStateResponse,
   QueryClientStateRequest,
@@ -149,9 +149,18 @@ export class QueryController {
   }
 
   @GrpcMethod('Query', 'LatestHeight')
-  async LatestHeight(data: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
-    const response: QueryLatestHeightResponse = await this.queryService.latestHeight(data);
-    return response;
+  async LatestHeight(
+    data: QueryLatestHeightRequest, metadata?: Metadata,
+    call?: ServerUnaryCall<QueryLatestHeightRequest, QueryLatestHeightResponse>,
+  ): Promise<QueryLatestHeightResponse> {
+    if (metadata?.get('x-cardano-include-timestamp')[0] === 'true') {
+      const status = await this.queryService.latestAcceptedStatus();
+      const responseMetadata = new Metadata();
+      responseMetadata.set('x-cardano-block-timestamp-ns', status.timestampUnixNs.toString());
+      call?.sendMetadata(responseMetadata);
+      return { height: status.height };
+    }
+    return this.queryService.latestHeight(data);
   }
 
   @GrpcMethod('Query', 'NewClient')

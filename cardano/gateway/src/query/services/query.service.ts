@@ -1,3 +1,4 @@
+import { acceptedStatus } from './accepted-status';
 import { applyCachedPowers, cacheRecord, decodeCacheAdmission, decodeCachedUpdate, reconstructCachedHeader, validatorCacheRoots, validatorCacheToken, type CacheLeaf } from '@cardano-ibc/tx-builder-runtime/tendermintCache';
 import { bootstrapSettlementCredit } from './settlement-credit';
 import { encodeInitialClient, initialClientPlan } from './client-initialization';
@@ -878,6 +879,10 @@ export class QueryService {
 
   async latestHeight(_request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
     return this.latestCertifiedHeight();
+  }
+
+  async latestAcceptedStatus() {
+    return acceptedStatus(this.historyService, this.logger);
   }
 
   async latestCertifiedHeight(): Promise<QueryLatestHeightResponse> {

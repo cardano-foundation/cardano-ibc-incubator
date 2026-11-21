@@ -559,3 +559,5 @@ This schedule requires the matching deployed HostState scripts and timing metada
 Disabling automatic submission removes recurring heartbeat transactions from the default schedule. Counterparty checkpoint gas, Cardano-side client updates, infrastructure and setup remain separate costs. Manual or explicitly enabled heartbeats still incur their transaction fees.
 
 The protected permissionless heartbeat clock was introduced in wire version 5. Historical five-field control datums remain readable by Gateway. Counterparty light clients treat the control field opaquely, so their HostState root decoding does not change.
+
+For application status, `LatestHeight` accepts `x-cardano-include-timestamp: true`. Its response metadata contains `x-cardano-block-timestamp-ns`, the ledger timestamp of the exact accepted block returned in `height`. The Gateway rechecks the canonical anchor and final stability descendant before returning both. Relayers must reject missing or invalid timestamps rather than use their local clock. This avoids constructing a second stability header solely to obtain the timestamp.
