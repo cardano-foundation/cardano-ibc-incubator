@@ -150,7 +150,8 @@ export class QueryController {
 
   @GrpcMethod('Query', 'LatestHeight')
   async LatestHeight(
-    data: QueryLatestHeightRequest, metadata?: Metadata,
+    data: QueryLatestHeightRequest,
+    metadata?: Metadata,
     call?: ServerUnaryCall<QueryLatestHeightRequest, QueryLatestHeightResponse>,
   ): Promise<QueryLatestHeightResponse> {
     if (metadata?.get('x-cardano-include-timestamp')[0] === 'true') {
