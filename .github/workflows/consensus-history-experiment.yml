@@ -1,0 +1,44 @@
+name: Private History Experiment
+
+on:
+  pull_request:
+    paths:
+      - 'tests/consensus-history-accumulator/**'
+      - '.github/workflows/consensus-history-experiment.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.6
+      - uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+      - name: Check experiment source
+        run: |
+          deno fmt --check tests/consensus-history-accumulator/*.ts
+          deno lint tests/consensus-history-accumulator/*.ts
+          aiken fmt --check tests/consensus-history-accumulator/onchain/experimental_history.ak
+      - uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.24
+      - name: Compare complete signed updates in isolated builds
+        run: python3 tests/consensus-history-accumulator/run.py --output "$RUNNER_TEMP/history-experiment"
+      - name: Retain signed transactions and compiler evidence
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: private-history-experiment
+          path: |
+            ${{ runner.temp }}/history-experiment
+            !${{ runner.temp }}/history-experiment/**/node_modules/**
+            !${{ runner.temp }}/history-experiment/**/build/**
+          retention-days: 90
