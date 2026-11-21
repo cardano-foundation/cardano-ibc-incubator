@@ -649,15 +649,16 @@ export class QueryService {
       : await this.historyService.findLatestBlock();
     if (!anchorBlock) throw new GrpcNotFoundException('Initial Cardano block is not indexed');
     const anchorHeight = BigInt(anchorBlock.height);
-    // Finding the instance's HostState at this height enforces its creation boundary.
-    const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(anchorHeight);
-    if (!hostStateUtxo?.datum) throw new GrpcNotFoundException('HostState UTxO does not exist at the initial height');
     const sequence = request.initialization_sequence ?? 0;
     if (!Number.isSafeInteger(sequence) || sequence < 0 || sequence > 4096)
       throw new GrpcInvalidArgumentException('Invalid client initialization sequence');
     const deployment = this.configService.get('deployment');
     const identity = `${cardanoChainId}:${deployment.hostStateNFT.policyId}.${deployment.hostStateNFT.name}:${anchorBlock.hash}:${this.configService.get<number>('cardanoClientTrustingPeriodSeconds') ?? 172_800}:${this.configService.get<number>('cardanoClientMaxClockDriftSeconds') ?? 10}:${this.configService.get<string>('cardanoRandomnessStabilisationWindowSlots')}`;
     const plan = await initialClientPlan(identity, async () => {
+      // Authenticate the instance's creation boundary when preparing the plan.
+      // Cached imports already bind that evidence to this canonical block hash.
+      const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(anchorHeight);
+      if (!hostStateUtxo?.datum) throw new GrpcNotFoundException('HostState UTxO does not exist at the initial height');
       // A client starts only from a stake table Mithril certified.
       const mithrilEndpoint = this.configService.get<string>('mithrilEndpoint');
       if (!mithrilEndpoint)

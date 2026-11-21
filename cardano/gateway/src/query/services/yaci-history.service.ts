@@ -596,12 +596,14 @@ export class YaciHistoryService implements HistoryService {
     return source.snapshot(block.height, async (anchor) => {
       if (anchor.hash !== block.hash)
         throw new StaleIbcTreeStateError('Observed production anchor changed');
-      const rows: Array<{ epoch: number; slot_leader: string }> = [];
-      for (let epoch = Math.max(0, block.epochNo - 5); epoch <= block.epochNo; epoch++) {
-        for (const row of await source.epochBlocks(epoch, anchor.number)) {
-          if (row.number <= anchor.number) rows.push(row);
-        }
-      }
+      const epochs = Array.from(
+        { length: Math.min(6, block.epochNo + 1) },
+        (_, index) => Math.max(0, block.epochNo - 5) + index,
+      );
+      // The six epochs are independent. Each read and the enclosing snapshot
+      // still verify the same canonical anchor before using the observations.
+      const observations = await Promise.all(epochs.map(epoch => source.epochBlocks(epoch, anchor.number)));
+      const rows = observations.flat().filter(row => row.number <= anchor.number);
       const pools = new Map<string, { pool_id: string; completed_epochs_bitmap: number; produced_current_epoch: boolean }>();
       for (const row of rows) {
         if (!row.slot_leader) continue;

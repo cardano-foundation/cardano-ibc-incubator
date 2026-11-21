@@ -217,6 +217,7 @@ it('resumes a 4000-row initialization and exposes each bounded import through co
   const records = [Buffer.from(QueryNewClientResponse.encode(initial).finish()).toString('base64')];
   const restarted = create();
   history.findEpochContextAtBlock.mockRejectedValue(new Error('The original node point is no longer available'));
+  history.findHostStateUtxoAtOrBeforeBlockNo.mockRejectedValue(new Error('Do not reread prepared HostState history'));
   for (let sequence = 1; sequence <= 4096; sequence++) {
     const request = QueryNewClientRequest.fromPartial({
       height: BigInt(block.height),
@@ -241,9 +242,21 @@ it('resumes a 4000-row initialization and exposes each bounded import through co
     (ClientState.decode(initial.client_state!.value).current_epoch - 1n).toString(),
   );
   expect(history.findEpochContextAtBlock).toHaveBeenCalledTimes(1);
+  expect(history.findHostStateUtxoAtOrBeforeBlockNo).toHaveBeenCalledTimes(1);
   if (process.env.CLIENT_INITIALIZATION_FIXTURE)
     writeFileSync(process.env.CLIENT_INITIALIZATION_FIXTURE, JSON.stringify(records));
 }, 60_000);
+
+it('does not reuse a prepared plan when the canonical block changes', async () => {
+  const { service, history, block } = await setup();
+  await service.queryNewClient(QueryNewClientRequest.fromPartial({ height: 0n }));
+  history.findBlockByHeight.mockResolvedValue({ ...block, hash: 'ab'.repeat(32) });
+  history.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue(undefined);
+  await expect(service.queryNewClient(QueryNewClientRequest.fromPartial({
+    height: BigInt(block.height), initialization_sequence: 1,
+  }))).rejects.toThrow('HostState UTxO does not exist');
+  expect(history.findHostStateUtxoAtOrBeforeBlockNo).toHaveBeenCalledTimes(2);
+});
 
 it('refuses to prepare a client without a Mithril aggregator', async () => {
   const { service, history } = await setup('Preview', 13, false);
