@@ -2238,16 +2238,18 @@ export class QueryService {
     );
 
     const newEpochContext = stabilityEvidence.nextEpochContext
-      ? this.toStabilityEpochContext(
+      ? await this.loadStabilityEpochContext(
           Number(stabilityEvidence.anchorEpoch) + 1,
           stabilityEvidence.nextEpochContext.stakeDistribution,
           stabilityEvidence.nextEpochContext.verificationContext,
+          stabilityEvidence.anchorBlock,
         )
       : stabilityEvidence.anchorEpoch !== stabilityEvidence.trustedEpoch
-        ? this.toStabilityEpochContext(
+        ? await this.loadStabilityEpochContext(
             Number(stabilityEvidence.anchorEpoch),
             stabilityEvidence.epochStakeDistribution,
             stabilityEvidence.epochVerificationContext,
+            stabilityEvidence.anchorBlock,
           )
         : undefined;
     if (newEpochContext && mithrilAnchored) {
@@ -2446,6 +2448,28 @@ export class QueryService {
       systemStartUnixNs,
       slotLengthNs,
     };
+  }
+
+  private async loadStabilityEpochContext(
+    epoch: number,
+    stakeDistribution: Parameters<QueryService['toStabilityEpochContext']>[1],
+    verificationContext: Parameters<QueryService['toStabilityEpochContext']>[2],
+    referenceBlock: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>,
+  ): Promise<ProbabilisticEpochContext> {
+    // Producer evidence only fills observed pools. A rollover serializes the
+    // entire table, including pools that did not produce any observed block.
+    const missing = stakeDistribution.filter((entry) => entry.firstRegistrationSlot == null);
+    const resolved = missing.length
+      ? await this.historyService.findFirstPoolRegistrationSlots(missing.map((entry) => entry.poolId), referenceBlock)
+      : new Map<string, bigint>();
+    return this.toStabilityEpochContext(
+      epoch,
+      stakeDistribution.map((entry) => ({
+        ...entry,
+        firstRegistrationSlot: entry.firstRegistrationSlot ?? resolved.get(entry.poolId),
+      })),
+      verificationContext,
+    );
   }
 
   private toStabilityEpochContext(
