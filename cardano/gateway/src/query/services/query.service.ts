@@ -1321,8 +1321,11 @@ export class QueryService {
     };
     if (options.includeProof === false) {
       await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
-      return { consensus_state: consensusStateAny, proof: new Uint8Array(),
-        proof_height: { revision_number: 0n, revision_height: proofContext.proofHeight } };
+      return {
+        consensus_state: consensusStateAny,
+        proof: new Uint8Array(),
+        proof_height: { revision_number: 0n, revision_height: proofContext.proofHeight },
+      };
     }
     // Generate ICS-23 proof from the IBC state tree.
     const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${record.height.revisionNumber}-${record.height.revisionHeight}`;
