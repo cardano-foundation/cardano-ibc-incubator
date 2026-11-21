@@ -1,3 +1,4 @@
+import { resolveStateQueryContext, assertStateQueryContext } from './proof-context';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConnectionDatum, decodeConnectionDatum } from 'src/shared/types/connection/connection-datum';
@@ -39,7 +40,11 @@ import {
 import { IbcTreeStateStore } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
-import { assertProofContextHostState, resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from './proof-context';
+import {
+  assertProofContextHostState,
+  resolveProofContextForQuery,
+  resolveProofHeightForCurrentRoot,
+} from './proof-context';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ProofQueryOptions } from '../helpers/query-height';
 
@@ -260,9 +265,19 @@ export class ConnectionService {
       );
 
       const connTokenUnit = mintConnScriptHash + connectionTokenName;
-      const proofContext = await this.getProofContext('queryConnection', options.queryHeight);
+      const proofContext =
+        options.includeProof === false ? undefined : await this.getProofContext('queryConnection', options.queryHeight);
+      const stateContext =
+        proofContext ??
+        (await resolveStateQueryContext({
+          logger: this.logger,
+          lucidService: this.lucidService,
+          historyService: this.historyService,
+          context: 'queryConnection',
+          requestedHeight: options.queryHeight,
+        }));
       const lookupStartedAt = Date.now();
-      const utxo = await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(connTokenUnit, proofContext.proofHeight);
+      const utxo = await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(connTokenUnit, stateContext.proofHeight);
       this.logger.debug(
         `[queryConnection] loaded connection UTxO ${utxo.txHash}#${utxo.outputIndex} in ${Date.now() - lookupStartedAt}ms`,
       );
@@ -277,19 +292,23 @@ export class ConnectionService {
       // is authentic by reconstructing the Merkle root accepted by the active Cardano client.
       // Even if Gateway is compromised, it cannot forge valid proofs.
       const ibcPath = `connections/${CONNECTION_ID_PREFIX}-${connectionId}`;
-      await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
-      const tree = proofContext.tree;
-      let connectionProof: Buffer;
-      try {
-        const existenceProof = tree.generateProof(ibcPath);
-        connectionProof = serializeExistenceProof(existenceProof);
+      let connectionProof: Buffer = Buffer.alloc(0);
+      if (proofContext) {
+        await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+        const tree = proofContext.tree;
+        try {
+          const existenceProof = tree.generateProof(ibcPath);
+          connectionProof = serializeExistenceProof(existenceProof);
 
-        this.logger.log(
-          `Generated ICS-23 proof for connection ${connectionId}, proof size: ${connectionProof.length} bytes`,
-        );
-      } catch (error) {
-        this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
-        throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
+          this.logger.log(
+            `Generated ICS-23 proof for connection ${connectionId}, proof size: ${connectionProof.length} bytes`,
+          );
+        } catch (error) {
+          this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
+          throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
+        }
+      } else {
+        await assertStateQueryContext(stateContext, this.historyService);
       }
 
       const response: QueryConnectionResponse = {
@@ -314,7 +333,7 @@ export class ConnectionService {
         proof: connectionProof, // ICS-23 Merkle proof
         proof_height: {
           revision_number: 0,
-          revision_height: proofContext.proofHeight,
+          revision_height: stateContext.proofHeight,
         },
       } as unknown as QueryConnectionResponse;
       return response;

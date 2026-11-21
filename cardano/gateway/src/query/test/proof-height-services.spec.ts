@@ -334,6 +334,36 @@ describe('proof-bearing services with captured query heights', () => {
   });
   afterEach(() => stabilitySpies.forEach((spy) => spy.mockRestore()));
 
+  it.each([true, false])('serves connection state with includeProof=%s', async (includeProof) => {
+    const deps = makeDeps();
+    (decodeConnectionDatum as jest.Mock).mockResolvedValue({ state: {
+      client_id: toHex('07-tendermint-0'), versions: [], state: 'Init', delay_period: 0n,
+      counterparty: { client_id: toHex('client-1'), connection_id: '', prefix: { key_prefix: '00' } },
+    } });
+    const service = new ConnectionService(deps.logger, deps.configService, deps.lucidService,
+      {} as KupoService, deps.historyService, deps.ibcTreeCacheService as any, deps.treeStore);
+    const response = await service.queryConnection({ connection_id: 'connection-0' },
+      { queryHeight: HISTORICAL_HEIGHT, includeProof });
+    expect(response.connection?.client_id).toBe('07-tendermint-0');
+    expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
+    if (includeProof) expect(deps.historicalTree.generateProof).toHaveBeenCalled();
+    else {
+      expect(response.proof).toHaveLength(0);
+      expect((deps.ibcTreeCacheService as any).load).not.toHaveBeenCalled();
+      expect(deps.historicalTree.generateProof).not.toHaveBeenCalled();
+    }
+  });
+
+  it('rejects a rollback during a state-only client read', async () => {
+    const deps = makeDeps();
+    deps.mocks.historyService.findBlockByHeight.mockResolvedValue({ hash: 'replaced' } as never);
+    const service = new QueryService(deps.logger, deps.configService, deps.lucidService,
+      {} as KupoService, deps.historyService, {} as MiniProtocalsService, {} as DenomTraceService,
+      deps.ibcTreeCacheService as any, deps.treeStore, createPacketStateMock() as any);
+    await expect(service.queryClientState({ client_id: '07-tendermint-0' },
+      { queryHeight: HISTORICAL_HEIGHT, includeProof: false })).rejects.toThrow('Canonical anchor changed');
+  });
+
   it('serves channel proofs from the cached tree at the requested height', async () => {
     const deps = makeDeps();
     const service = new ChannelService(
@@ -583,7 +613,7 @@ describe('proof-bearing services with captured query heights', () => {
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
 
-  it('serves client state proofs from the cached tree at the requested height', async () => {
+  it.each([true, false])('serves client state at the requested height with includeProof=%s', async (includeProof) => {
     const deps = makeDeps();
     const service = new QueryService(
       deps.logger,
@@ -599,18 +629,23 @@ describe('proof-bearing services with captured query heights', () => {
     );
 
     const response = await service.queryClientState({ client_id: '07-tendermint-0' } as any, {
-      queryHeight: HISTORICAL_HEIGHT,
+      queryHeight: HISTORICAL_HEIGHT, includeProof,
     });
 
     expect(deps.mocks.historyService.findUtxoByUnitAtOrBeforeBlockNo).toHaveBeenCalledWith(
       CLIENT_TOKEN_UNIT,
       HISTORICAL_HEIGHT,
     );
-    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('clients/07-tendermint-0/clientState');
+    if (includeProof) expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('clients/07-tendermint-0/clientState');
+    else {
+      expect(deps.historicalTree.generateProof).not.toHaveBeenCalled();
+      expect((deps.ibcTreeCacheService as any).load).not.toHaveBeenCalled();
+      expect(response.proof).toHaveLength(0);
+    }
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
 
-  it('serves consensus state proofs from the cached tree at the requested height', async () => {
+  it.each([true, false])('serves consensus state at the requested height with includeProof=%s', async (includeProof) => {
     const deps = makeDeps();
     const service = new QueryService(
       deps.logger,
@@ -632,12 +667,33 @@ describe('proof-bearing services with captured query heights', () => {
         revision_height: 77n,
         latest_height: false,
       } as any,
-      { queryHeight: HISTORICAL_HEIGHT },
+      { queryHeight: HISTORICAL_HEIGHT, includeProof },
     );
 
     expect(normalizeConsensusStateFromDatum).toHaveBeenCalledWith(expect.any(Map), 77n);
-    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('clients/07-tendermint-0/consensusStates/0-77');
+    if (includeProof) expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('clients/07-tendermint-0/consensusStates/0-77');
+    else {
+      expect(deps.historicalTree.generateProof).not.toHaveBeenCalled();
+      expect((deps.ibcTreeCacheService as any).load).not.toHaveBeenCalled();
+      expect(response.proof).toHaveLength(0);
+    }
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
+  });
+
+  it('authenticates archived consensus values without generating an unwanted proof', async () => {
+    const deps = makeDeps();
+    const datum = await (decodeClientDatum as jest.Mock)();
+    (decodeClientDatum as jest.Mock).mockResolvedValue({ ...datum, state: { ...datum.state, consensusStates: new Map() } });
+    const service = new QueryService(deps.logger, deps.configService, deps.lucidService,
+      {} as KupoService, deps.historyService, {} as MiniProtocalsService, {} as DenomTraceService,
+      deps.ibcTreeCacheService as any, deps.treeStore, createPacketStateMock() as any);
+    const response = await service.queryConsensusState({ client_id: '07-tendermint-0',
+      revision_number: 0n, revision_height: 77n, latest_height: false },
+      { queryHeight: HISTORICAL_HEIGHT, includeProof: false });
+    expect(response.consensus_state).toBeDefined();
+    expect(response.proof).toHaveLength(0);
+    expect(deps.historicalTree.get).toHaveBeenCalledWith('clients/07-tendermint-0/consensusStates/0-77');
+    expect(deps.historicalTree.generateProof).not.toHaveBeenCalled();
   });
 
   it.each([449n, 9_007_199_254_740_993n])(

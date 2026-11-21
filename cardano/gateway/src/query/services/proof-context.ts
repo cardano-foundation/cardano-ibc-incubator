@@ -207,7 +207,9 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
       }
       const descendant = await historyService.findBlockByHeight(BigInt(anchor.lastDescendant.height));
       if (descendant?.hash !== anchor.lastDescendant.hash) {
-        throw new StaleIbcTreeStateError('Canonical stability descendants changed while resolving the current proof height');
+        throw new StaleIbcTreeStateError(
+          'Canonical stability descendants changed while resolving the current proof height',
+        );
       }
       return { proofHeight: height, anchorBlockHash: anchor.anchorBlockHash };
     } catch (error) {
@@ -230,4 +232,25 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
   throw new GrpcInternalException(
     `Current HostState root is not yet stability-accepted for proof generation (${context})${detail}`,
   );
+}
+
+// State-only reads pin the same accepted canonical height without loading a tree.
+export async function resolveStateQueryContext(deps: ProofContextDeps & { requestedHeight?: bigint }) {
+  if (!deps.requestedHeight) return resolveProofAnchorForCurrentRoot(deps);
+  const evidence = await loadStakeWeightedStabilityEvidenceByHeight({
+    historyService: deps.historyService,
+    height: deps.requestedHeight,
+    logger: deps.logger,
+  });
+  return { proofHeight: deps.requestedHeight, anchorBlockHash: evidence.anchorBlock.hash };
+}
+
+export async function assertStateQueryContext(
+  context: { proofHeight: bigint; anchorBlockHash?: string },
+  historyService: HistoryService,
+): Promise<void> {
+  const block = await historyService.findBlockByHeight(context.proofHeight);
+  if (!context.anchorBlockHash || block?.hash !== context.anchorBlockHash) {
+    throw new StaleIbcTreeStateError('Canonical anchor changed during state-only query');
+  }
 }

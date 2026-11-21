@@ -1,4 +1,14 @@
-import { applyCachedPowers, cacheRecord, decodeCacheAdmission, decodeCachedUpdate, reconstructCachedHeader, validatorCacheRoots, validatorCacheToken, type CacheLeaf } from '@cardano-ibc/tx-builder-runtime/tendermintCache';
+import { resolveStateQueryContext, assertStateQueryContext } from './proof-context';
+import {
+  applyCachedPowers,
+  cacheRecord,
+  decodeCacheAdmission,
+  decodeCachedUpdate,
+  reconstructCachedHeader,
+  validatorCacheRoots,
+  validatorCacheToken,
+  type CacheLeaf,
+} from '@cardano-ibc/tx-builder-runtime/tendermintCache';
 import { bootstrapSettlementCredit } from './settlement-credit';
 import { encodeInitialClient, initialClientPlan } from './client-initialization';
 import { withAuthenticatedPoolBindings } from './pool-registry-checkpoint';
@@ -159,10 +169,7 @@ import {
   MithrilStakeMismatchError,
   requireMithrilStakeAgreement,
 } from './mithril-certified-stake';
-import {
-  loadStakeWeightedStabilityHeaderEvidence,
-  StakeWeightedStabilityHeaderEvidence,
-} from './stability-evidence';
+import { loadStakeWeightedStabilityHeaderEvidence, StakeWeightedStabilityHeaderEvidence } from './stability-evidence';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ProofQueryOptions } from '../helpers/query-height';
 import { BoundedCache } from '../../shared/helpers/bounded-cache';
@@ -535,33 +542,57 @@ export class QueryService {
     return reconstructStagedTendermintHeader(completeSession, sessionRedeemers);
   }
 
-  private async recoverCachedTendermintHeader(clientUtxo: UtxoDto, clientDatum: ClientDatum, redeemers: ParsedTxRedeemer[]): Promise<TendermintHeader | null> {
+  private async recoverCachedTendermintHeader(
+    clientUtxo: UtxoDto,
+    clientDatum: ClientDatum,
+    redeemers: ParsedTxRedeemer[],
+  ): Promise<TendermintHeader | null> {
     const deployment = this.configService.get('deployment');
     const config = deployment.cachedTendermint;
     if (!config) return null;
     const client = clientDatum.token;
     const token = validatorCacheToken(client, config.validators.cacheMint.scriptHash);
     const candidate = redeemers.some((r) => {
-      try { return r.type === REDEEMER_TYPE.SPEND && decodeCachedUpdate(r.data)?.cacheToken.name === token.name; }
-      catch { return false; }
+      try {
+        return r.type === REDEEMER_TYPE.SPEND && decodeCachedUpdate(r.data)?.cacheToken.name === token.name;
+      } catch {
+        return false;
+      }
     });
     if (!candidate) return null;
-    if (client.policyId !== deployment.validators.mintClientStt.scriptHash || clientUtxo.assetsPolicy !== client.policyId || clientUtxo.assetsName !== client.name) throw new Error('Cached event does not identify the canonical client NFT');
+    if (
+      client.policyId !== deployment.validators.mintClientStt.scriptHash ||
+      clientUtxo.assetsPolicy !== client.policyId ||
+      clientUtxo.assetsName !== client.name
+    )
+      throw new Error('Cached event does not identify the canonical client NFT');
     const [inputs, history] = await Promise.all([
       this.getCanonicalTransactionInputs(clientUtxo.txHash),
       this.historyService.findUtxosByPolicyIdAndPrefixTokenName(client.policyId, client.name),
     ]);
-    const index = this.findInputIndexForToken(inputs, history, clientUtxo.address || deployment.validators.spendClient.address, client);
+    const index = this.findInputIndexForToken(
+      inputs,
+      history,
+      clientUtxo.address || deployment.validators.spendClient.address,
+      client,
+    );
     if (index === null) return null;
     const raw = redeemers.find((r) => r.type === REDEEMER_TYPE.SPEND && r.index === BigInt(index));
     const witness = raw ? decodeCachedUpdate(raw.data) : undefined;
     if (!witness) return null;
-    if (witness.cacheToken.policyId !== token.policyId || witness.cacheToken.name !== token.name) throw new Error('Cached event uses another client cache');
+    if (witness.cacheToken.policyId !== token.policyId || witness.cacheToken.name !== token.name)
+      throw new Error('Cached event uses another client cache');
     const input = inputs[index];
-    const previous = history.find((row) => row.txHash === input.txHash && Number(row.outputIndex) === Number(input.outputIndex));
+    const previous = history.find(
+      (row) => row.txHash === input.txHash && Number(row.outputIndex) === Number(input.outputIndex),
+    );
     if (!previous?.datum) throw new Error('Missing cached event client input datum');
     const previousDatum = await decodeClientDatum(previous.datum, this.lucidService.LucidImporter);
-    const trusted = [...previousDatum.state.consensusStates].find(([h]) => h.revisionNumber === witness.trustedHeight.revisionNumber && h.revisionHeight === witness.trustedHeight.revisionHeight)?.[1];
+    const trusted = [...previousDatum.state.consensusStates].find(
+      ([h]) =>
+        h.revisionNumber === witness.trustedHeight.revisionNumber &&
+        h.revisionHeight === witness.trustedHeight.revisionHeight,
+    )?.[1];
     if (!trusted) throw new Error('Missing cached event trusted checkpoint');
     let sources: Map<string, UtxoDto[]> | undefined;
     const memo = new Map<string, CacheLeaf[]>();
@@ -574,12 +605,21 @@ export class QueryService {
       try {
         if (!sources) {
           sources = new Map();
-          const cacheHistory = await this.historyService.findUtxosByPolicyIdAndPrefixTokenName(token.policyId, token.name);
+          const cacheHistory = await this.historyService.findUtxosByPolicyIdAndPrefixTokenName(
+            token.policyId,
+            token.name,
+          );
           // A root's first appearance must disclose its full set, a power
           // transition from an earlier root, or a completed staged receipt.
           // Later cache hits contain no new set data and need no replay.
           for (const row of cacheHistory) {
-            if (!row.datum || row.address !== config.validators.cacheSpend.address || row.assetsPolicy !== token.policyId || row.assetsName !== token.name) continue;
+            if (
+              !row.datum ||
+              row.address !== config.validators.cacheSpend.address ||
+              row.assetsPolicy !== token.policyId ||
+              row.assetsName !== token.name
+            )
+              continue;
             for (const hash of validatorCacheRoots(row.datum, client, token.policyId)) {
               const current = sources.get(hash);
               if (!current || Number(row.blockNo) < Number(current[0].blockNo)) sources.set(hash, [row]);
@@ -594,26 +634,42 @@ export class QueryService {
               const admission = r.type === REDEEMER_TYPE.MINT ? decodeCacheAdmission(r.data) : [];
               const transition = r.type === REDEEMER_TYPE.SPEND ? decodeCachedUpdate(r.data) : undefined;
               const full = transition?.set?.kind === 'full' ? [transition.set.target, transition.set.trusted] : [];
-              for (const set of [...admission, ...full]) if (cacheRecord(set).root === root) { memo.set(root, set); return set; }
-              if (transition?.set?.kind === 'powers' && transition.signedHeader.header.validatorsHash === root && transition.set.oldRoot !== root) {
+              for (const set of [...admission, ...full])
+                if (cacheRecord(set).root === root) {
+                  memo.set(root, set);
+                  return set;
+                }
+              if (
+                transition?.set?.kind === 'powers' &&
+                transition.signedHeader.header.validatorsHash === root &&
+                transition.set.oldRoot !== root
+              ) {
                 const set = applyCachedPowers(transition, await resolve(transition.set.oldRoot));
                 memo.set(root, set);
                 return set;
               }
-            } catch { /* Other scripts in the same transaction need not use this witness ABI. */ }
+            } catch {
+              /* Other scripts in the same transaction need not use this witness ABI. */
+            }
           }
           const clientOutput = history.find((output) => output.txHash === row.txHash && output.datum);
           if (clientOutput?.datum) {
             const datum = await decodeClientDatum(clientOutput.datum, this.lucidService.LucidImporter);
             const staged = await this.recoverStagedTendermintHeader(clientOutput, datum, evidence);
-            if (staged) for (const validators of [staged.validatorSet.validators, staged.trustedValidators.validators]) {
-              const set = validators.map((v, index) => ({ index, pubkey: v.pubkey, power: v.votingPower }));
-              if (cacheRecord(set).root === root) { memo.set(root, set); return set; }
-            }
+            if (staged)
+              for (const validators of [staged.validatorSet.validators, staged.trustedValidators.validators]) {
+                const set = validators.map((v, index) => ({ index, pubkey: v.pubkey, power: v.votingPower }));
+                if (cacheRecord(set).root === root) {
+                  memo.set(root, set);
+                  return set;
+                }
+              }
           }
         }
         throw new Error(`Incomplete validator cache history for root ${root}`);
-      } finally { active.delete(root); }
+      } finally {
+        active.delete(root);
+      }
     };
     return reconstructCachedHeader(witness, trusted.next_validators_hash, resolve);
   }
@@ -678,8 +734,13 @@ export class QueryService {
       const bindings = new Map(poolRegistry.effective.map((binding) => [binding.pool_id, binding]));
       const epochStakeDistribution = certifiedStake.map((row) => {
         const binding = bindings.get(row.poolId);
-        if (!binding) throw new GrpcFailedPreconditionException(`Pool ${row.poolId} has no authenticated effective registration`);
-        return { ...row, vrfKeyHash: Buffer.from(binding.vrf_key_hash).toString('hex'), firstRegistrationSlot: binding.first_registration_slot };
+        if (!binding)
+          throw new GrpcFailedPreconditionException(`Pool ${row.poolId} has no authenticated effective registration`);
+        return {
+          ...row,
+          vrfKeyHash: Buffer.from(binding.vrf_key_hash).toString('hex'),
+          firstRegistrationSlot: binding.first_registration_slot,
+        };
       });
       const stabilityEvidence = {
         anchorBlock,
@@ -1091,6 +1152,26 @@ export class QueryService {
    * - When a query height is provided, the Gateway serves the state and proof from the cached tree
    *   whose root matches the HostState visible at or before that Cardano block height.
    */
+  private async getStateQueryClientDatum(clientId: string, height: bigint) {
+    const result = await this.getClientDatum(clientId, height);
+    const token = result[0].token;
+    const expected = this.lucidService.getClientAuthTokenUnit(BigInt(clientId));
+    if ((token.policyId + token.name).toLowerCase() !== expected.toLowerCase()) {
+      throw new GrpcFailedPreconditionException('Client datum does not match its authentication token');
+    }
+    return result;
+  }
+
+  private stateQueryContext(context: string, requestedHeight?: bigint) {
+    return resolveStateQueryContext({
+      logger: this.logger,
+      lucidService: this.lucidService,
+      historyService: this.historyService,
+      context,
+      requestedHeight,
+    });
+  }
+
   async queryClientState(
     request: QueryClientStateRequest,
     options: ProofQueryOptions = {},
@@ -1098,6 +1179,19 @@ export class QueryService {
     this.logger.log(request.client_id, 'queryClientState');
     const { client_id: clientId } = validQueryClientStateParam(request);
 
+    if (options.includeProof === false) {
+      const context = await this.stateQueryContext('queryClientState', options.queryHeight);
+      const [datum] = await this.getStateQueryClientDatum(clientId, context.proofHeight);
+      await assertStateQueryContext(context, this.historyService);
+      return {
+        client_state: {
+          type_url: '/ibc.lightclients.tendermint.v1.ClientState',
+          value: ClientStateTendermint.encode(normalizeClientStateFromDatum(datum.state.clientState)).finish(),
+        },
+        proof: new Uint8Array(),
+        proof_height: { revision_number: 0n, revision_height: context.proofHeight },
+      };
+    }
     const startedAt = Date.now();
     const proofContext = await this.getProofContext('queryClientState', options.queryHeight);
     const [clientDatum, spendClientUTXO] = await this.getClientDatum(clientId, proofContext.proofHeight);
@@ -1165,6 +1259,33 @@ export class QueryService {
       'queryConsensusState',
     );
     const { client_id: clientId } = validQueryConsensusStateParam(request);
+    if (options.includeProof === false) {
+      const context = await this.stateQueryContext('queryConsensusState', options.queryHeight);
+      const [datum] = await this.getStateQueryClientDatum(clientId, context.proofHeight);
+      const height = request.latest_height
+        ? datum.state.clientState.latestHeight
+        : {
+            revisionNumber: request.revision_number,
+            revisionHeight: request.revision_height,
+          };
+      const entry = [...datum.state.consensusStates.entries()].find(
+        ([key]) => consensusHeightKey(key) === consensusHeightKey(height),
+      );
+      if (entry) {
+        const value = normalizeConsensusStateFromDatum(new Map([entry]), height.revisionHeight);
+        if (!value) throw new GrpcInternalException('Unable to encode consensus state');
+        await assertStateQueryContext(context, this.historyService);
+        return {
+          consensus_state: {
+            type_url: '/ibc.lightclients.tendermint.v1.ConsensusState',
+            value: ConsensusStateTendermint.encode(value).finish(),
+          },
+          proof: new Uint8Array(),
+          proof_height: { revision_number: 0n, revision_height: context.proofHeight },
+        };
+      }
+      // Archived records still require authentication against the selected tree.
+    }
     const proofContext = await this.getProofContext('queryConsensusState', options.queryHeight);
     const requestedHeight: Height | 'latest' = request.latest_height
       ? 'latest'
@@ -1198,6 +1319,11 @@ export class QueryService {
       type_url: '/ibc.lightclients.tendermint.v1.ConsensusState',
       value: ConsensusStateTendermint.encode(consensusStateTendermint).finish(),
     };
+    if (options.includeProof === false) {
+      await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+      return { consensus_state: consensusStateAny, proof: new Uint8Array(),
+        proof_height: { revision_number: 0n, revision_height: proofContext.proofHeight } };
+    }
     // Generate ICS-23 proof from the IBC state tree.
     const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${record.height.revisionNumber}-${record.height.revisionHeight}`;
 
@@ -1219,7 +1345,7 @@ export class QueryService {
 
     const response = {
       consensus_state: consensusStateAny,
-      proof: consensusProof, // ICS-23 Merkle proof
+      proof: consensusProof,
       proof_height: {
         revision_number: 0,
         revision_height: proofContext.proofHeight,
@@ -1685,7 +1811,9 @@ export class QueryService {
 
           const redeemers = await this.getTransactionRedeemers(clientUtxo.txHash);
           let stagedHeader = await this.recoverCachedTendermintHeader(clientUtxo, clientDatum, redeemers);
-          const stagedRedeemer = stagedHeader ? null : await this.findStagedClientRedeemer(clientUtxo, clientDatum, redeemers);
+          const stagedRedeemer = stagedHeader
+            ? null
+            : await this.findStagedClientRedeemer(clientUtxo, clientDatum, redeemers);
           let spendClientRedeemerData: SpendClientRedeemer | undefined;
           if (stagedRedeemer === 'UpgradeClient') {
             spendClientRedeemerData = 'UpgradeClient';
@@ -2195,8 +2323,10 @@ export class QueryService {
 
       if (candidateDistance === 1n) {
         throw new GrpcFailedPreconditionException(
-          gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_ACCEPTED,
-            `The minimum observation after height ${trustedHeight.toString()} exceeds the supported workload: ${capacityError}`),
+          gatewayGrpcError(
+            GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_ACCEPTED,
+            `The minimum observation after height ${trustedHeight.toString()} exceeds the supported workload: ${capacityError}`,
+          ),
         );
       }
       candidateDistance -= 1n;
@@ -2314,7 +2444,9 @@ export class QueryService {
       return;
     }
     if (!agreed) {
-      this.logger.warn(`Mithril has not certified the epoch ${context.epoch} stake table, so it enters the challenge period`);
+      this.logger.warn(
+        `Mithril has not certified the epoch ${context.epoch} stake table, so it enters the challenge period`,
+      );
     }
   }
 
@@ -2325,8 +2457,6 @@ export class QueryService {
     }
     return Math.min(value, 96);
   }
-
-
 
   private stabilityHeaderCapacityError(header: ProbabilisticHeader): string | undefined {
     if (header.bridge_blocks.length > 96 || 1 + header.bridge_blocks.length + header.descendant_blocks.length > 128) {
@@ -2461,7 +2591,10 @@ export class QueryService {
     // entire table, including pools that did not produce any observed block.
     const missing = stakeDistribution.filter((entry) => entry.firstRegistrationSlot == null);
     const resolved = missing.length
-      ? await this.historyService.findFirstPoolRegistrationSlots(missing.map((entry) => entry.poolId), referenceBlock)
+      ? await this.historyService.findFirstPoolRegistrationSlots(
+          missing.map((entry) => entry.poolId),
+          referenceBlock,
+        )
       : new Map<string, bigint>();
     return this.toStabilityEpochContext(
       epoch,
@@ -2524,8 +2657,6 @@ export class QueryService {
       epoch_end_slot_exclusive: verificationContext.currentEpochEndSlotExclusive,
     };
   }
-
-
 
   private toStabilityOperationalCertificateCounters(counters: Map<string, bigint>): OperationalCertificateCounter[] {
     if (!(counters instanceof Map)) {

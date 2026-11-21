@@ -3,6 +3,7 @@ import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 
 export type ProofQueryOptions = {
   queryHeight?: bigint;
+  includeProof?: boolean;
 };
 
 const QUERY_HEIGHT_METADATA_KEY = 'x-cosmos-block-height';
@@ -23,4 +24,14 @@ export function getQueryHeightFromMetadata(metadata?: Metadata): bigint | undefi
 
   const height = BigInt(value);
   return height === 0n ? undefined : height;
+}
+
+// Existing callers receive proofs unless they explicitly opt out.
+export function getIncludeProofFromMetadata(metadata?: Metadata): boolean {
+  const values = metadata?.get('x-cardano-include-proof') ?? [];
+  if (!values.length) return true;
+  if (values.length !== 1 || !['true', 'false'].includes(values[0].toString())) {
+    throw new GrpcInvalidArgumentException('Invalid x-cardano-include-proof metadata');
+  }
+  return values[0].toString() === 'true';
 }
