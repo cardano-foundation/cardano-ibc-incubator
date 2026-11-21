@@ -1,4 +1,5 @@
 import { acceptedStatus } from './accepted-status';
+import { resolveStateQueryContext, assertStateQueryContext } from './proof-context';
 import {
   applyCachedPowers,
   cacheRecord,
@@ -1156,6 +1157,26 @@ export class QueryService {
    * - When a query height is provided, the Gateway serves the state and proof from the cached tree
    *   whose root matches the HostState visible at or before that Cardano block height.
    */
+  private async getStateQueryClientDatum(clientId: string, height: bigint) {
+    const result = await this.getClientDatum(clientId, height);
+    const token = result[0].token;
+    const expected = this.lucidService.getClientAuthTokenUnit(BigInt(clientId));
+    if ((token.policyId + token.name).toLowerCase() !== expected.toLowerCase()) {
+      throw new GrpcFailedPreconditionException('Client datum does not match its authentication token');
+    }
+    return result;
+  }
+
+  private stateQueryContext(context: string, requestedHeight?: bigint) {
+    return resolveStateQueryContext({
+      logger: this.logger,
+      lucidService: this.lucidService,
+      historyService: this.historyService,
+      context,
+      requestedHeight,
+    });
+  }
+
   async queryClientState(
     request: QueryClientStateRequest,
     options: ProofQueryOptions = {},
@@ -1163,6 +1184,19 @@ export class QueryService {
     this.logger.log(request.client_id, 'queryClientState');
     const { client_id: clientId } = validQueryClientStateParam(request);
 
+    if (options.includeProof === false) {
+      const context = await this.stateQueryContext('queryClientState', options.queryHeight);
+      const [datum] = await this.getStateQueryClientDatum(clientId, context.proofHeight);
+      await assertStateQueryContext(context, this.historyService);
+      return {
+        client_state: {
+          type_url: '/ibc.lightclients.tendermint.v1.ClientState',
+          value: ClientStateTendermint.encode(normalizeClientStateFromDatum(datum.state.clientState)).finish(),
+        },
+        proof: new Uint8Array(),
+        proof_height: { revision_number: 0n, revision_height: context.proofHeight },
+      };
+    }
     const startedAt = Date.now();
     const proofContext = await this.getProofContext('queryClientState', options.queryHeight);
     const [clientDatum, spendClientUTXO] = await this.getClientDatum(clientId, proofContext.proofHeight);
@@ -1230,6 +1264,33 @@ export class QueryService {
       'queryConsensusState',
     );
     const { client_id: clientId } = validQueryConsensusStateParam(request);
+    if (options.includeProof === false) {
+      const context = await this.stateQueryContext('queryConsensusState', options.queryHeight);
+      const [datum] = await this.getStateQueryClientDatum(clientId, context.proofHeight);
+      const height = request.latest_height
+        ? datum.state.clientState.latestHeight
+        : {
+            revisionNumber: request.revision_number,
+            revisionHeight: request.revision_height,
+          };
+      const entry = [...datum.state.consensusStates.entries()].find(
+        ([key]) => consensusHeightKey(key) === consensusHeightKey(height),
+      );
+      if (entry) {
+        const value = normalizeConsensusStateFromDatum(new Map([entry]), height.revisionHeight);
+        if (!value) throw new GrpcInternalException('Unable to encode consensus state');
+        await assertStateQueryContext(context, this.historyService);
+        return {
+          consensus_state: {
+            type_url: '/ibc.lightclients.tendermint.v1.ConsensusState',
+            value: ConsensusStateTendermint.encode(value).finish(),
+          },
+          proof: new Uint8Array(),
+          proof_height: { revision_number: 0n, revision_height: context.proofHeight },
+        };
+      }
+      // Archived records still require authentication against the selected tree.
+    }
     const proofContext = await this.getProofContext('queryConsensusState', options.queryHeight);
     const requestedHeight: Height | 'latest' = request.latest_height
       ? 'latest'
@@ -1263,6 +1324,14 @@ export class QueryService {
       type_url: '/ibc.lightclients.tendermint.v1.ConsensusState',
       value: ConsensusStateTendermint.encode(consensusStateTendermint).finish(),
     };
+    if (options.includeProof === false) {
+      await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
+      return {
+        consensus_state: consensusStateAny,
+        proof: new Uint8Array(),
+        proof_height: { revision_number: 0n, revision_height: proofContext.proofHeight },
+      };
+    }
     // Generate ICS-23 proof from the IBC state tree.
     const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${record.height.revisionNumber}-${record.height.revisionHeight}`;
 
@@ -1284,7 +1353,7 @@ export class QueryService {
 
     const response = {
       consensus_state: consensusStateAny,
-      proof: consensusProof, // ICS-23 Merkle proof
+      proof: consensusProof,
       proof_height: {
         revision_number: 0,
         revision_height: proofContext.proofHeight,
