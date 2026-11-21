@@ -118,6 +118,7 @@ type BlockfrostRequestHeaders = {
 
 const NANOSECONDS_PER_SECOND = 1_000_000_000n;
 const POOL_REGISTRATION_LOOKUP_BATCH_SIZE = 5;
+const BLOCK_RANGE_LOOKUP_BATCH_SIZE = 5;
 const EPOCH_PARAMS_LOOKUP_TIMEOUT_MS = 10_000;
 const EPOCH_PARAMS_LOOKUP_MAX_ATTEMPTS = 3;
 const EPOCH_PARAMS_RETRY_BASE_DELAY_MS = 250;
@@ -464,12 +465,18 @@ export class YaciHistoryService implements HistoryService {
       const blocks: HistoryBlock[] = [];
       let previous = await source.api.block(trustedHeight);
       if (!previous) throw new Error('Trusted Cardano block is unavailable');
-      for (let height = trustedHeight + 1n; height <= anchorHeight; height++) {
-        const next = await source.api.block(height);
-        if (!next || next.previous_block !== previous.hash)
-          throw new Error('Yaci REST block range is incomplete or changed');
-        if (height < anchorHeight) blocks.push(this.mapRestBlock(next));
-        previous = next;
+      // Fetch bounded batches, then validate in height order even if responses arrive out of order.
+      for (let start = trustedHeight + 1n; start <= anchorHeight; start += BigInt(BLOCK_RANGE_LOOKUP_BATCH_SIZE)) {
+        const heights: bigint[] = [];
+        for (let height = start; height <= anchorHeight && heights.length < BLOCK_RANGE_LOOKUP_BATCH_SIZE; height++)
+          heights.push(height);
+        const batch = await Promise.all(heights.map((height) => source.api.block(height)));
+        for (const [index, next] of batch.entries()) {
+          if (!next || next.previous_block !== previous.hash)
+            throw new Error('Yaci REST block range is incomplete or changed');
+          if (heights[index] < anchorHeight) blocks.push(this.mapRestBlock(next));
+          previous = next;
+        }
       }
       return blocks;
     });
