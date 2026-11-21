@@ -81,6 +81,7 @@ let historyServiceMock: {
   findDescendantBlocks: jest.Mock;
   findObservedPoolProductionAtBlock: jest.Mock;
   findEpochContextAtBlock: jest.Mock;
+  findFirstPoolRegistrationSlots: jest.Mock;
   findOperationalCertificateCountersAtBlock: jest.Mock;
   findBridgeBlocks: jest.Mock;
   findHostStateUtxoAtOrBeforeBlockNo: jest.Mock;
@@ -121,6 +122,7 @@ beforeEach(() => {
   } as unknown as ConfigService;
 
   historyServiceMock = {
+    findFirstPoolRegistrationSlots: jest.fn().mockResolvedValue(new Map()),
     findObservedPoolProductionAtBlock: jest.fn().mockImplementation(async (point) => ({ epoch: BigInt(point.epochNo), pools: ['pool-a', 'pool-b', 'pool-c', 'pool-d', 'pool-e'].map((pool_id) => ({ pool_id, completed_epochs_bitmap: 1, produced_current_epoch: false })) })),
     findLatestBlock: jest.fn().mockResolvedValue({
       height: 105,
@@ -315,7 +317,9 @@ describe('QueryService stability anchor contract', () => {
 
 
 
-  it.each([null, undefined])('rejects an epoch rollover with an unobserved pool whose registration slot is %s', async (missing) => {
+  it.each([
+    [null, false], [undefined, false], [null, true], [undefined, true],
+  ])('resolves missing rollover pool age %s when available=%s', async (missing, available) => {
     const table = await historyServiceMock.findEpochContextAtBlock();
     table.stakeDistribution.push({
       ...table.stakeDistribution[0],
@@ -340,9 +344,17 @@ describe('QueryService stability anchor contract', () => {
     );
     historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
 
-    await expect(service.queryIBCHeader({ height: 100n, trusted_height: 99n } as any)).rejects.toThrow(
-      'First registration slot unavailable for pool pool-f in epoch 7',
-    );
+    if (available) historyServiceMock.findFirstPoolRegistrationSlots.mockResolvedValue(new Map([['pool-f', 1n]]));
+    const query = service.queryIBCHeader({ height: 100n, trusted_height: 99n } as any);
+    if (available) {
+      const response = await query;
+      const header = ProbabilisticHeader.decode(response.header!.value);
+      expect(header.new_epoch_context!.stake_distribution.find((entry) => entry.pool_id === 'pool-f')!.first_registration_slot).toBe(1n);
+    } else {
+      await expect(query).rejects.toThrow('First registration slot unavailable for pool pool-f in epoch 7');
+    }
+    expect(historyServiceMock.findFirstPoolRegistrationSlots).toHaveBeenCalledWith(['pool-f'], anchor);
+    expect(table.stakeDistribution.at(-1).firstRegistrationSlot).toBe(missing);
   });
 
 
