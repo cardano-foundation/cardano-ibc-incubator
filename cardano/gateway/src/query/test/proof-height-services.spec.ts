@@ -660,81 +660,80 @@ describe('proof-bearing services with captured query heights', () => {
     },
   );
 
-  it.each([449n, 9_007_199_254_740_993n])(
-    'looks up a consensus height %s received over protobuf without losing precision',
-    async (height) => {
-      const options = createGrpcOptions({}).options;
-      const definition = loadSync(options.protoPath!, options.loader);
-      const method = (definition['ibc.core.client.v1.Query'] as ServiceDefinition).ConsensusState;
-      const request = method.requestDeserialize(
-        method.requestSerialize({
-          client_id: '07-tendermint-0',
-          revision_number: '1',
-          revision_height: height.toString(),
-          latest_height: false,
-        }),
-      ) as Parameters<QueryService['queryConsensusState']>[0];
-      expect(typeof request.revision_height).toBe('object');
-      expect(request.revision_height.toString()).toBe(height.toString());
-      const datum = new Map([
-        [
-          { revisionNumber: 1n, revisionHeight: height },
-          {
-            timestamp: 1_000_000_001n,
-            root: { hash: 'ab'.repeat(32) },
-            next_validators_hash: 'cd'.repeat(32),
-          },
-        ],
-      ]);
-      (decodeClientDatum as jest.Mock).mockResolvedValue({
-        token: { policyId: CLIENT_POLICY_ID, name: CLIENT_TOKEN_NAME },
-        state: {
-          clientState: { latestHeight: { revisionNumber: 1n, revisionHeight: height } },
-          consensusStates: datum,
-        },
-      });
-      (normalizeConsensusStateFromDatum as jest.Mock).mockImplementation(
-        jest.requireActual('@shared/helpers/consensus-state').normalizeConsensusStateFromDatum,
-      );
-      const deps = makeDeps();
-      deps.mocks.lucidService.consensusHistoryRecords.mockResolvedValue([
+  it.each(
+    [449n, 9_007_199_254_740_993n].flatMap((height) => [true, false].map((includeProof) => ({ height, includeProof }))),
+  )('looks up protobuf consensus height $height with includeProof=$includeProof', async ({ height, includeProof }) => {
+    const options = createGrpcOptions({}).options;
+    const definition = loadSync(options.protoPath!, options.loader);
+    const method = (definition['ibc.core.client.v1.Query'] as ServiceDefinition).ConsensusState;
+    const request = method.requestDeserialize(
+      method.requestSerialize({
+        client_id: '07-tendermint-0',
+        revision_number: '1',
+        revision_height: height.toString(),
+        latest_height: false,
+      }),
+    ) as Parameters<QueryService['queryConsensusState']>[0];
+    expect(typeof request.revision_height).toBe('object');
+    expect(request.revision_height.toString()).toBe(height.toString());
+    const datum = new Map([
+      [
+        { revisionNumber: 1n, revisionHeight: height },
         {
-          datum: {
-            clientToken: { policyId: CLIENT_POLICY_ID, name: CLIENT_TOKEN_NAME },
-            height: { revisionNumber: 1n, revisionHeight: height },
-            consensusState: datum.values().next().value!,
-            processedTime: 2_000n,
-            processedHeight: 20n,
-          },
-          consensusValue: CONSENSUS_VALUE,
-          archived: false,
+          timestamp: 1_000_000_001n,
+          root: { hash: 'ab'.repeat(32) },
+          next_validators_hash: 'cd'.repeat(32),
         },
-      ]);
-      deps.historicalTree.get.mockImplementation((path) =>
-        path === `clients/07-tendermint-0/consensusStates/1-${height}`
-          ? Buffer.from(CONSENSUS_VALUE, 'hex')
-          : undefined,
-      );
-      const service = new QueryService(
-        deps.logger,
-        deps.configService,
-        deps.lucidService,
-        {} as KupoService,
-        deps.historyService,
-        {} as MiniProtocalsService,
-        {} as DenomTraceService,
-        deps.ibcTreeCacheService as any,
-        deps.treeStore,
-        createPacketStateMock() as any,
-      );
-      const response = await service.queryConsensusState(request, { queryHeight: HISTORICAL_HEIGHT });
-      expect(ConsensusState.decode(response.consensus_state!.value).timestamp).toEqual({ seconds: 1n, nanos: 1 });
+      ],
+    ]);
+    (decodeClientDatum as jest.Mock).mockResolvedValue({
+      token: { policyId: CLIENT_POLICY_ID, name: CLIENT_TOKEN_NAME },
+      state: {
+        clientState: { latestHeight: { revisionNumber: 1n, revisionHeight: height } },
+        consensusStates: datum,
+      },
+    });
+    (normalizeConsensusStateFromDatum as jest.Mock).mockImplementation(
+      jest.requireActual('@shared/helpers/consensus-state').normalizeConsensusStateFromDatum,
+    );
+    const deps = makeDeps();
+    deps.mocks.lucidService.consensusHistoryRecords.mockResolvedValue([
+      {
+        datum: {
+          clientToken: { policyId: CLIENT_POLICY_ID, name: CLIENT_TOKEN_NAME },
+          height: { revisionNumber: 1n, revisionHeight: height },
+          consensusState: datum.values().next().value!,
+          processedTime: 2_000n,
+          processedHeight: 20n,
+        },
+        consensusValue: CONSENSUS_VALUE,
+        archived: false,
+      },
+    ]);
+    deps.historicalTree.get.mockImplementation((path) =>
+      path === `clients/07-tendermint-0/consensusStates/1-${height}` ? Buffer.from(CONSENSUS_VALUE, 'hex') : undefined,
+    );
+    const service = new QueryService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      {} as KupoService,
+      deps.historyService,
+      {} as MiniProtocalsService,
+      {} as DenomTraceService,
+      deps.ibcTreeCacheService as any,
+      deps.treeStore,
+      createPacketStateMock() as any,
+    );
+    const response = await service.queryConsensusState(request, { queryHeight: HISTORICAL_HEIGHT, includeProof });
+    expect(ConsensusState.decode(response.consensus_state!.value).timestamp).toEqual({ seconds: 1n, nanos: 1 });
+    if (includeProof)
       expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
         `clients/07-tendermint-0/consensusStates/1-${height}`,
       );
-      expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
-    },
-  );
+    else expect(response.proof).toHaveLength(0);
+    expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
+  });
 
   const latestQueries = [
     {
