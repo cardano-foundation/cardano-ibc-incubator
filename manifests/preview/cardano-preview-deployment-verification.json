@@ -8,12 +8,14 @@
     "blueprintSha256": "67eb158b52cdc1400132b3038acbd32640b029ac9f9f70a44e278ed66d97081c",
     "network": "preview",
     "networkMagic": 2,
-    "gatewaySourceCommit": "77a4769e9e721fa4ace673684710775d2f07c114",
-    "gatewayImage": "sha256:a9fa2bcaf9f64c30c15c3995d8917a30b4ec76dffed8e954a40555480c3a72c0",
+    "gatewaySourceCommit": "cce18ac8b35d183fb236974be791e3b8c7109bf3",
+    "gatewayImage": "sha256:7f9bdf31dd280cae1317fd1c2ad0765406519d36b08bd22e58f21ce02494af5e",
     "gatewayFixPullRequest": "https://github.com/cardano-foundation/cardano-ibc-incubator/pull/1066",
     "hermesFixPullRequest": "https://github.com/cardano-foundation/hermes-relayer/pull/76",
     "gatewayHistoryRuntimeCommit": "74ed1a5037d5c433a6ba84bb881b549ba0bcaa01",
-    "gatewayHistoryFixPullRequest": "https://github.com/cardano-foundation/cardano-ibc-incubator/pull/1070"
+    "gatewayHistoryFixPullRequest": "https://github.com/cardano-foundation/cardano-ibc-incubator/pull/1070",
+    "gatewayEpochRegistrationFixPullRequest": "https://github.com/cardano-foundation/cardano-ibc-incubator/pull/1073",
+    "hermesSubmoduleCommit": "6c4f0e720ba879f4c31c3a58313d3deb931d9471"
   },
   "deploymentId": "cardano-preview:a2a006b72295460ff23fa72c2e1c5bb076f8f4cfb4e2f3942d8e5a77.6962635f686f73745f7374617465",
   "deployedAt": "2026-11-20T20:45:35.326Z",
@@ -137,6 +139,20 @@
       "blockHeight": 4877291,
       "acceptedProofHeight": 4877295
     },
-    "cardanoConnectionId": "connection-0"
+    "cardanoConnectionId": "connection-0",
+    "catchUpProgress": {
+      "checkedAt": "2026-11-21T01:52:32.196084+00:00",
+      "targetProofHeight": 4877660,
+      "latestCheckpointHeight": 4877291,
+      "latestProofHeight": 4877194,
+      "status": "in-progress"
+    }
+  },
+  "epochRolloverHeaderVerification": {
+    "height": 4877463,
+    "trustedHeight": 4877462,
+    "elapsedMs": 416345,
+    "type": "/ibc.lightclients.probabilistic.v1.ProbabilisticHeader",
+    "issue": "https://github.com/cardano-foundation/cardano-ibc-incubator/issues/1072"
   }
 }
