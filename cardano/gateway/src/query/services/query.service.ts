@@ -1,3 +1,4 @@
+import { acceptedStatus } from './accepted-status';
 import { resolveStateQueryContext, assertStateQueryContext } from './proof-context';
 import {
   applyCachedPowers,
@@ -939,6 +940,10 @@ export class QueryService {
 
   async latestHeight(_request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
     return this.latestCertifiedHeight();
+  }
+
+  async latestAcceptedStatus() {
+    return acceptedStatus(this.historyService, this.logger);
   }
 
   async latestCertifiedHeight(): Promise<QueryLatestHeightResponse> {
