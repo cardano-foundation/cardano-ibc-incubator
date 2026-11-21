@@ -1277,7 +1277,7 @@ export class QueryService {
         ([key]) => consensusHeightKey(key) === consensusHeightKey(height),
       );
       if (entry) {
-        const value = normalizeConsensusStateFromDatum(new Map([entry]), height.revisionHeight);
+        const value = normalizeConsensusStateFromDatum(new Map([entry]), entry[0].revisionHeight);
         if (!value) throw new GrpcInternalException('Unable to encode consensus state');
         await assertStateQueryContext(context, this.historyService);
         return {

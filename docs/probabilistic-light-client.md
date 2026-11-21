@@ -562,3 +562,5 @@ The protected permissionless heartbeat clock was introduced in wire version 5. H
 
 For application status, `LatestHeight` accepts `x-cardano-include-timestamp: true`. Its response metadata contains `x-cardano-block-timestamp-ns`, the ledger timestamp of the exact accepted block returned in `height`. The Gateway rechecks the canonical anchor and final stability descendant before returning both. Relayers must reject missing or invalid timestamps rather than use their local clock. This avoids constructing a second stability header solely to obtain the timestamp.
 State-only Gateway queries may set `x-cardano-include-proof: false` on `ClientState`, `ConsensusState` and `Connection`. These reads retain accepted-height selection and canonical-anchor rechecks but return an empty proof. Consensus states stored only in the private history still require authentication against the selected public tree. Omitting the metadata preserves proof generation.
+
+Consensus-state lookups compare the full revision height. State-only responses normalize the matched datum entry using its bigint height so protobuf integer wrappers never change lookup semantics or lose precision.
