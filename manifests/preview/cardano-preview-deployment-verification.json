@@ -15,7 +15,9 @@
     "gatewayHistoryRuntimeCommit": "74ed1a5037d5c433a6ba84bb881b549ba0bcaa01",
     "gatewayHistoryFixPullRequest": "https://github.com/cardano-foundation/cardano-ibc-incubator/pull/1070",
     "gatewayEpochRegistrationFixPullRequest": "https://github.com/cardano-foundation/cardano-ibc-incubator/pull/1073",
-    "hermesSubmoduleCommit": "6c4f0e720ba879f4c31c3a58313d3deb931d9471"
+    "hermesSubmoduleCommit": "788716b072f4c911e529d4ead39df74129ee928f",
+    "hermesProductionFixCommit": "5525e305c88d946d9fcd7b52c6e5f2c5c3fffa96",
+    "hermesProductionFixPullRequest": "https://github.com/cardano-foundation/hermes-relayer/pull/77"
   },
   "deploymentId": "cardano-preview:a2a006b72295460ff23fa72c2e1c5bb076f8f4cfb4e2f3942d8e5a77.6962635f686f73745f7374617465",
   "deployedAt": "2026-11-20T20:45:35.326Z",
@@ -141,11 +143,10 @@
     },
     "cardanoConnectionId": "connection-0",
     "catchUpProgress": {
-      "checkedAt": "2026-11-21T01:52:32.196084+00:00",
       "targetProofHeight": 4877660,
-      "latestCheckpointHeight": 4877291,
-      "latestProofHeight": 4877194,
-      "status": "in-progress"
+      "latestCheckpointHeight": 4877660,
+      "latestProofHeight": 4877660,
+      "status": "client-update-confirmed-connection-pending"
     }
   },
   "epochRolloverHeaderVerification": {
