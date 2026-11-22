@@ -611,6 +611,7 @@ describe('proof-bearing services with captured query heights', () => {
       CLIENT_TOKEN_UNIT,
       HISTORICAL_HEIGHT,
     );
+    expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo).toHaveBeenCalledTimes(includeProof ? 2 : 0);
     if (includeProof)
       expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('clients/07-tendermint-0/clientState');
     else {
@@ -649,6 +650,7 @@ describe('proof-bearing services with captured query heights', () => {
       );
 
       expect(normalizeConsensusStateFromDatum).toHaveBeenCalledWith(expect.any(Map), 77n);
+      expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo).toHaveBeenCalledTimes(includeProof ? 2 : 0);
       if (includeProof)
         expect(deps.historicalTree.generateProof).toHaveBeenCalledWith('clients/07-tendermint-0/consensusStates/0-77');
       else {

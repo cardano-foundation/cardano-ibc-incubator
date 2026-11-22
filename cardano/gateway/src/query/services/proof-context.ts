@@ -55,6 +55,14 @@ export async function assertProofContextHostState(
   if (datum.state.ibc_state_root.toLowerCase() !== root.toLowerCase()) {
     throw new StaleIbcTreeStateError(`HostState root at proof height ${proofHeight} does not match the captured tree`);
   }
+  await assertProofContextAnchor(proofContext, historyService);
+}
+
+async function assertProofContextAnchor(
+  proofContext: Pick<ProofQueryContext, 'proofHeight' | 'anchorBlockHash'>,
+  historyService: HistoryService,
+): Promise<void> {
+  const { proofHeight } = proofContext;
   if (proofContext.anchorBlockHash !== undefined) {
     const canonical = await historyService.findBlockByHeight(proofHeight);
     if (canonical?.hash !== proofContext.anchorBlockHash) {
@@ -160,11 +168,10 @@ export async function resolveProofContextForQuery({
       deps.logger.warn(`Could not cache reconstructed historical IBC tree: ${error.message}`);
     }
   }
-  await assertProofContextHostState(
-    { proofHeight: requestedHeight, root, hostState, anchorBlockHash },
-    deps.historyService,
-    deps.lucidService,
-  );
+  // The initial history read already supplies this height's HostState and root.
+  // Recheck the canonical anchor here. Callers still re-read and validate the
+  // HostState output and datum immediately before serving their proof.
+  await assertProofContextAnchor({ proofHeight: requestedHeight, anchorBlockHash }, deps.historyService);
 
   return {
     historical: true,
