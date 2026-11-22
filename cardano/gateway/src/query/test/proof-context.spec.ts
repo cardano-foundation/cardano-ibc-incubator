@@ -4,7 +4,7 @@ import { BridgeMigrationInProgressError } from '@cardano-ibc/tx-builder-runtime/
 import { GrpcFailedPreconditionException } from '../../exception/grpc_exceptions';
 import { ICS23MerkleTree } from '../../shared/helpers/ics23-merkle-tree';
 import { ibcTreeCacheIdForRoot } from '../../shared/services/ibc-tree-cache.service';
-import { resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from '../services/proof-context';
+import { assertProofContextHostState, resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from '../services/proof-context';
 import {
   IbcTreeStateStore,
   StaleIbcTreeStateError,
@@ -316,6 +316,48 @@ describe('resolveProofContextForQuery', () => {
     deps.mocks.ibcTreeCacheService.load.mockResolvedValue({ tree: context.tree, root: context.root });
     await historical(deps);
     expect(deps.mocks.historyService.rebuildIbcStateTreeAtBlock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([true, false])('reuses construction evidence but refreshes HostState before serving (cached=%s)', async (warm) => {
+    const tree = makeTree('fixed-height');
+    const deps = makeDeps(tree, warm ? { tree, root: tree.getRoot() } : undefined);
+    const context = await historical(deps);
+    const constructionReads = warm ? 1 : 2;
+    expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo).toHaveBeenCalledTimes(constructionReads);
+    expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo).toHaveBeenCalledWith(123n);
+    const proof = context.tree.generateProof('clients/fixed-height/clientState');
+    expect(proof).toEqual(tree.generateProof('clients/fixed-height/clientState'));
+    await assertProofContextHostState(context, deps.historyService, deps.lucidService);
+    expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo).toHaveBeenCalledTimes(constructionReads + 1);
+    expect(deps.mocks.historyService.findBlockByHeight.mock.calls.at(-1)).toEqual([123n]);
+  });
+
+  it.each(['output', 'root', 'anchor', 'missing-datum'])('rejects changed %s evidence at the final check', async (change) => {
+    const tree = makeTree('fixed-height');
+    const deps = makeDeps(tree, { tree, root: tree.getRoot() });
+    const context = await historical(deps);
+    if (change === 'output')
+      deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
+        txHash: 'replacement', outputIndex: 1, datum: 'same-root',
+      });
+    if (change === 'root')
+      deps.mocks.lucidService.decodeDatum.mockResolvedValue({ state: { ibc_state_root: makeTree('changed').getRoot() } });
+    if (change === 'anchor')
+      deps.mocks.historyService.findBlockByHeight.mockResolvedValue({ height: 123, hash: 'replacement' });
+    if (change === 'missing-datum')
+      deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
+        txHash: 'historical-host-state', outputIndex: 0,
+      });
+    await expect(assertProofContextHostState(context, deps.historyService, deps.lucidService)).rejects.toThrow();
+  });
+
+  it('does not reuse HostState across separate queries at the same height', async () => {
+    const tree = makeTree('fixed-height');
+    const deps = makeDeps(tree, { tree, root: tree.getRoot() });
+    await historical(deps);
+    deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo.mockRejectedValue(new Error('history unavailable'));
+    await expect(historical(deps)).rejects.toThrow('history unavailable');
+    expect(deps.mocks.historyService.findHostStateUtxoAtOrBeforeBlockNo).toHaveBeenCalledTimes(2);
   });
 
   it('fails on incomplete history without caching or using the current tree', async () => {
