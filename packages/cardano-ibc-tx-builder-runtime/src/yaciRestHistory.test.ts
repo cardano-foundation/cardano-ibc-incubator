@@ -19,6 +19,47 @@ const anchor = {
 };
 const page = { blocks: [{ ...anchor, number: 101, slot: 1001 }, anchor] };
 
+test("a failed range read is classified as changed history when its anchor rolled back", async () => {
+  let reads = 0;
+  const api = {
+    block: async () => ++reads === 1 ? anchor : null,
+  } as unknown as YaciRestClient;
+  await assert.rejects(
+    new YaciRestHistory(api).snapshot("latest", async () => {
+      throw new Error("Yaci REST block range is incomplete or changed");
+    }),
+    YaciRestHistoryChangedError,
+  );
+  assert.equal(reads, 2);
+});
+
+test("a failed range read keeps its original error when the anchor remains canonical", async () => {
+  const api = { block: async () => anchor } as unknown as YaciRestClient;
+  const missing = new Error("Missing retained block");
+  await assert.rejects(
+    new YaciRestHistory(api).snapshot("latest", async () => { throw missing; }),
+    (error) => error === missing,
+  );
+});
+
+test("an aborted snapshot does not make another canonicality request", async () => {
+  const controller = new AbortController();
+  let reads = 0;
+  const api = {
+    signal: controller.signal,
+    block: async () => { reads++; return anchor; },
+  } as unknown as YaciRestClient;
+  const aborted = new Error("Request cancelled");
+  await assert.rejects(
+    new YaciRestHistory(api).snapshot("latest", async () => {
+      controller.abort(aborted);
+      throw new Error("Interrupted read");
+    }),
+    (error) => error === aborted,
+  );
+  assert.equal(reads, 1);
+});
+
 test("epoch history uses its requested anchor even when the latest tip changes", async () => {
   const requested: unknown[] = [];
   const api = {

@@ -124,7 +124,16 @@ export class YaciRestHistory {
     const block = await this.api.block(at);
     if (!block) throw new Error(`Yaci does not retain required block ${at}`);
     try {
-      const result = await read(block);
+      let result: T;
+      try {
+        result = await read(block);
+      } catch (error) {
+        // A rollback can break an intermediate range read before its final
+        // canonicality check. Classify it only if this anchor actually changed.
+        this.api.signal?.throwIfAborted();
+        await this.assertCanonical(block);
+        throw error;
+      }
       this.api.signal?.throwIfAborted();
       await this.assertCanonical(block);
       return result;

@@ -2,6 +2,7 @@ import { Metadata } from '@grpc/grpc-js';
 import { acceptedStatus } from '../services/accepted-status';
 import * as settled from '../services/settled-proof-height';
 import { QueryController } from '../query.controller';
+import { YaciRestHistoryChangedError } from '../../shared/helpers/yaci-rest';
 
 describe('accepted application status', () => {
   afterEach(() => jest.restoreAllMocks());
@@ -26,13 +27,33 @@ describe('accepted application status', () => {
     expect(h.findBlockByHeight.mock.calls).toEqual([[123n], [147n]]);
   });
   it.each([123n, 147n])('rejects a canonical change at %s', async (changed) => {
-    anchor();
+    const selected = anchor();
     const h = history();
     h.findBlockByHeight.mockImplementation(async (height) => ({
       hash: height === changed ? 'replaced' : height === 123n ? 'anchor' : 'descendant',
       timestampUnixNs: 1n,
     }));
     await expect(acceptedStatus(h as any, {} as any)).rejects.toThrow('Canonical chain changed');
+    expect(selected).toHaveBeenCalledTimes(3);
+  });
+  it('selects a fresh anchor after a range read interrupted by rollback', async () => {
+    const selected = anchor().mockRejectedValueOnce(new YaciRestHistoryChangedError('Rolled back during range read'));
+    const h = history();
+    expect(await acceptedStatus(h as any, {} as any)).toEqual({ height: 123n, timestampUnixNs: 1795210428123456789n });
+    expect(selected).toHaveBeenCalledTimes(2);
+    expect(h.findBlockByHeight.mock.calls).toEqual([[123n], [147n]]);
+  });
+  it('bounds retries when history keeps changing', async () => {
+    const changed = new YaciRestHistoryChangedError('History changed');
+    const selected = anchor().mockRejectedValue(changed);
+    await expect(acceptedStatus(history() as any, {} as any)).rejects.toBe(changed);
+    expect(selected).toHaveBeenCalledTimes(3);
+  });
+  it('does not retry a permanently incomplete range', async () => {
+    const missing = new Error('Yaci REST block range is incomplete or changed');
+    const selected = anchor().mockRejectedValue(missing);
+    await expect(acceptedStatus(history() as any, {} as any)).rejects.toBe(missing);
+    expect(selected).toHaveBeenCalledTimes(1);
   });
   it('rejects an unavailable timestamp', async () => {
     anchor();
