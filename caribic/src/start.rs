@@ -29,6 +29,9 @@ use zeroize::Zeroizing;
 
 const GATEWAY_HTTP_READINESS_ATTEMPTS: u32 = 4;
 const GATEWAY_HTTP_READINESS_RETRY_INTERVAL_MILLIS: u64 = 5000;
+const GATEWAY_READINESS_PROOF_TIMEOUT_DEFAULT_MS: u64 = 25_000;
+// The Gateway deadline bounds only its proof evaluation, not the whole HTTP response.
+const GATEWAY_HTTP_READINESS_HEADROOM_SECONDS: u64 = 15;
 const IBC_SWAP_DAPP_SERVICE: &str = "ibc-swap-client";
 const IBC_SWAP_DAPP_DEFAULT_HOST_PORT: u16 = 3000;
 const IBC_SWAP_DAPP_READINESS_ATTEMPTS: u32 = 60;
@@ -2159,6 +2162,9 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
                 .into(),
         );
     }
+    if let Some(error) = health_config.gateway_readiness_proof_timeout_error() {
+        return Err(error.into());
+    }
     let history_wait_seconds = crate::setup::read_gateway_env_value(
         &gateway_dir.join(".env"),
         "BRIDGE_HISTORY_SYNC_TIMEOUT_SECONDS",
@@ -2173,8 +2179,11 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     let mut last_gateway_status = "Gateway readiness checks have not completed yet".to_string();
 
     verbose(&format!(
-        "Gateway readiness polling configured with max_retries={} interval_ms={}",
-        max_retries, interval_ms
+        "Gateway readiness polling configured with max_retries={} interval_ms={} gateway_readiness_proof_timeout_ms={} http_deadline_s={}",
+        max_retries,
+        interval_ms,
+        gateway_readiness_proof_timeout_ms(),
+        gateway_http_readiness_deadline().as_secs()
     ));
 
     for i in 0..max_retries {
@@ -3121,11 +3130,43 @@ fn summarize_text(body: &str) -> String {
     }
 }
 
+pub(crate) fn resolve_gateway_readiness_proof_timeout_ms(configured: u64) -> u64 {
+    if configured == 0 || configured > config::GATEWAY_READINESS_PROOF_TIMEOUT_MAX_MS {
+        crate::logger::warn(&format!(
+            "Ignoring invalid health.gateway_readiness_proof_timeout_ms={}; using the Gateway default of {}ms",
+            configured, GATEWAY_READINESS_PROOF_TIMEOUT_DEFAULT_MS
+        ));
+        return GATEWAY_READINESS_PROOF_TIMEOUT_DEFAULT_MS;
+    }
+    configured
+}
+
+/// caribic writes this budget to `GATEWAY_READINESS_PROOF_TIMEOUT_MS` when it prepares
+/// the Gateway, so the same value bounds the Gateway check and this wait.
+pub(crate) fn gateway_readiness_proof_timeout_ms() -> u64 {
+    resolve_gateway_readiness_proof_timeout_ms(
+        config::get_config()
+            .health
+            .gateway_readiness_proof_timeout_ms,
+    )
+}
+
+pub(crate) fn gateway_http_readiness_deadline_for_ms(timeout_ms: u64) -> Duration {
+    Duration::from_secs(timeout_ms.div_ceil(1_000) + GATEWAY_HTTP_READINESS_HEADROOM_SECONDS)
+}
+
+/// Deadline for `GET /health/ready`: the Gateway's own proof budget plus headroom for
+/// the HostState lookup and response serialization around it.
+pub(crate) fn gateway_http_readiness_deadline() -> Duration {
+    gateway_http_readiness_deadline_for_ms(gateway_readiness_proof_timeout_ms())
+}
+
 fn check_gateway_http_readiness_once() -> (bool, String) {
     check_gateway_http_readiness_at("http://127.0.0.1:8000/health/ready")
 }
 
 fn check_gateway_http_readiness_at(url: &str) -> (bool, String) {
+    let deadline_seconds = gateway_http_readiness_deadline().as_secs().to_string();
     let output = Command::new("curl")
         .args([
             "-sS",
@@ -3134,7 +3175,7 @@ fn check_gateway_http_readiness_at(url: &str) -> (bool, String) {
             "--connect-timeout",
             "5",
             "--max-time",
-            "30",
+            deadline_seconds.as_str(),
             "-w",
             "\n%{http_code}",
             url,
@@ -3162,7 +3203,9 @@ fn check_gateway_http_readiness_at(url: &str) -> (bool, String) {
         return (
             false,
             format!(
-                "Gateway proof readiness endpoint unreachable: {}",
+                "Gateway proof readiness endpoint did not answer within {}s (health.gateway_readiness_proof_timeout_ms={}ms): {}",
+                deadline_seconds,
+                gateway_readiness_proof_timeout_ms(),
                 summarize_gateway_readiness_body(stderr.as_ref())
             ),
         );
@@ -3384,10 +3427,11 @@ fn parse_pid_and_command(line: &str) -> Option<(u32, String)> {
 mod tests {
     use super::{
         cardano_network_switch_blockers, demeter_endpoint_requires_header_key,
-        hermes_signing_sources, ibc_swap_dapp_url_for, inject_bridge_manifest_path,
-        inject_hermes_signing_sources, local_offchain_environment, normalize_ibc_swap_base_path,
-        ogmios_http_url, persist_optional_hermes_api_key, public_cardano_services,
-        redact_endpoint_in_message, redact_external_endpoint, require_bridge_manifest_path,
+        gateway_http_readiness_deadline_for_ms, hermes_signing_sources, ibc_swap_dapp_url_for,
+        inject_bridge_manifest_path, inject_hermes_signing_sources, local_offchain_environment,
+        normalize_ibc_swap_base_path, ogmios_http_url, persist_optional_hermes_api_key,
+        public_cardano_services, redact_endpoint_in_message, redact_external_endpoint,
+        require_bridge_manifest_path, resolve_gateway_readiness_proof_timeout_ms,
         resolve_hermes_signing_endpoint_auth, snapshot_hermes_bridge_manifest,
         write_owner_only_file, DemeterSigningAuthentication, HermesSigningSources,
     };
@@ -3415,6 +3459,25 @@ mod tests {
         super::publish_deployed_manifest(&root, &source).unwrap();
         assert_eq!(std::fs::read(&source).unwrap(), bytes);
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn keeps_a_configured_gateway_readiness_budget_within_the_gateway_range() {
+        assert_eq!(resolve_gateway_readiness_proof_timeout_ms(25_000), 25_000);
+        assert_eq!(resolve_gateway_readiness_proof_timeout_ms(120_000), 120_000);
+        assert_eq!(resolve_gateway_readiness_proof_timeout_ms(300_000), 300_000);
+        assert_eq!(resolve_gateway_readiness_proof_timeout_ms(0), 25_000);
+        assert_eq!(resolve_gateway_readiness_proof_timeout_ms(300_001), 25_000);
+    }
+
+    #[test]
+    fn readiness_http_deadline_outlives_the_gateway_proof_budget() {
+        assert_eq!(gateway_http_readiness_deadline_for_ms(25_000).as_secs(), 40);
+        assert_eq!(
+            gateway_http_readiness_deadline_for_ms(120_000).as_secs(),
+            135
+        );
+        assert_eq!(gateway_http_readiness_deadline_for_ms(1).as_secs(), 16);
     }
 
     fn all_services_enabled() -> Services {

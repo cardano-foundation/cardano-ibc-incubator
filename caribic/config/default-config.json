@@ -8,7 +8,8 @@
   },
   "health": {
     "gateway_max_retries": 60,
-    "gateway_retry_interval_ms": 1000
+    "gateway_retry_interval_ms": 1000,
+    "gateway_readiness_proof_timeout_ms": 25000
   },
   "cardano": {
     "services": {

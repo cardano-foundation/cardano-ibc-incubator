@@ -21,6 +21,7 @@ const YACI_SYNC_START_SLOT_KEY: &str = "YACI_SYNC_START_SLOT";
 const YACI_SYNC_START_BLOCKHASH_KEY: &str = "YACI_SYNC_START_BLOCKHASH";
 const YACI_SYNC_START_BLOCK_NO_KEY: &str = "YACI_SYNC_START_BLOCK_NO";
 pub(crate) const CARDANO_RUNTIME_NETWORK_KEY: &str = "CARDANO_RUNTIME_NETWORK";
+const GATEWAY_READINESS_PROOF_TIMEOUT_KEY: &str = "GATEWAY_READINESS_PROOF_TIMEOUT_MS";
 const CARDANO_KUPO_MODE_KEY: &str = "CARDANO_KUPO_MODE";
 const PREPROD_KUPO_MODE_KEY: &str = "PREPROD_KUPO_MODE";
 
@@ -1343,6 +1344,18 @@ fn write_gateway_env_for_network(
     for (key, value) in shared_gateway_network_defaults {
         set_or_append_env_var(&gateway_env, key, value)?;
     }
+
+    // The Gateway proof-readiness budget comes from caribic configuration, so the
+    // Gateway deadline and caribic's waiting deadline cannot drift apart.
+    let health = &config::get_config().health;
+    if let Some(error) = health.gateway_readiness_proof_timeout_error() {
+        return Err(error.into());
+    }
+    set_or_append_env_var(
+        &gateway_env,
+        GATEWAY_READINESS_PROOF_TIMEOUT_KEY,
+        &health.gateway_readiness_proof_timeout_ms.to_string(),
+    )?;
 
     match network {
         config::CoreCardanoNetwork::Local => {

@@ -11,7 +11,7 @@ Packet trees adapt the existing incremental SQLite tree to share immutable nodes
 
 The cache defaults to in-memory SQLite. Set `PACKET_LANE_HISTORY_DB` to a file in an existing writable directory to retain nodes and checkpoints across restarts. Use a local cache file per Gateway. Saved checkpoints are checked against canonical blocks and their original lane outputs before reuse. The cache is disposable and can be rebuilt from Yaci history. Retained versions consume disk space as history grows.
 
-The `/health/ready` proof check defaults to 25 seconds. For slower hosted providers, set `GATEWAY_READINESS_PROOF_TIMEOUT_MS` to a positive integer up to `300000`, for example `120000` for two minutes. This bounds the proof evaluation after the live HostState lookup, not the entire HTTP request. A timeout returns HTTP 503 with reason `proof_check_timeout`. It leaves stability unconfirmed and does not mean that the stability thresholds failed. Increasing this deadline does not change proof acceptance rules.
+The `/health/ready` proof check defaults to 25 seconds. For slower hosted providers, set `GATEWAY_READINESS_PROOF_TIMEOUT_MS` to a positive integer up to `300000`, for example `120000` for two minutes. This bounds the proof evaluation after the live HostState lookup, not the entire HTTP request. A timeout returns HTTP 503 with reason `proof_check_timeout`. It leaves stability unconfirmed and does not mean that the stability thresholds failed. Increasing this deadline does not change proof acceptance rules. Under `caribic`, this key is managed from its `health.gateway_readiness_proof_timeout_ms` configuration, which also bounds how long caribic waits for `/health/ready`.
 
 ## Published Container Image
 
