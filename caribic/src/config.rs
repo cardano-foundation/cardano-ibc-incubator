@@ -7,6 +7,8 @@ use std::process;
 use std::sync::Mutex;
 
 const CARDANO_RUNTIME_NETWORK_MARKER: &str = ".caribic-network";
+/// Gateway bound for `GATEWAY_READINESS_PROOF_TIMEOUT_MS`.
+pub const GATEWAY_READINESS_PROOF_TIMEOUT_MAX_MS: u64 = 300_000;
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 pub enum CoreCardanoNetwork {
@@ -88,6 +90,28 @@ pub struct CardanoChain {
 pub struct Health {
     pub gateway_max_retries: u32,
     pub gateway_retry_interval_ms: u64,
+    /// Gateway proof-evaluation budget for `/health/ready`. caribic writes this to
+    /// `GATEWAY_READINESS_PROOF_TIMEOUT_MS` and waits that long for the endpoint.
+    #[serde(default = "default_gateway_readiness_proof_timeout_ms")]
+    pub gateway_readiness_proof_timeout_ms: u64,
+}
+
+fn default_gateway_readiness_proof_timeout_ms() -> u64 {
+    25_000
+}
+
+impl Health {
+    pub fn gateway_readiness_proof_timeout_error(&self) -> Option<String> {
+        if self.gateway_readiness_proof_timeout_ms == 0
+            || self.gateway_readiness_proof_timeout_ms > GATEWAY_READINESS_PROOF_TIMEOUT_MAX_MS
+        {
+            return Some(format!(
+                "Invalid config: health.gateway_readiness_proof_timeout_ms must be between 1 and {} in ~/.caribic/config.json",
+                GATEWAY_READINESS_PROOF_TIMEOUT_MAX_MS
+            ));
+        }
+        None
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -298,5 +322,43 @@ pub fn active_core_cardano_network(project_root_path: &Path) -> CoreCardanoNetwo
             CoreCardanoNetwork::parse(Some(contents.trim())).unwrap_or(CoreCardanoNetwork::Local)
         }
         Err(_) => CoreCardanoNetwork::Local,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Config, GATEWAY_READINESS_PROOF_TIMEOUT_MAX_MS};
+
+    fn health_from(json: &str) -> super::Health {
+        serde_json::from_str::<Config>(json)
+            .expect("test configuration")
+            .health
+    }
+
+    #[test]
+    fn older_configurations_keep_the_gateway_readiness_default() {
+        let health = health_from(
+            r#"{"project_root":"../..","chains":{"cardano":{"chain_id":"cardano-devnet","message_port_id":"transfer"}},"health":{"gateway_max_retries":60,"gateway_retry_interval_ms":1000},"cardano":{"services":{"db_sync":false,"yaci":true,"postgres":true},"bootstrap_addresses":[]}}"#,
+        );
+        assert_eq!(health.gateway_readiness_proof_timeout_ms, 25_000);
+        assert_eq!(health.gateway_readiness_proof_timeout_error(), None);
+    }
+
+    #[test]
+    fn configured_gateway_readiness_budget_is_validated() {
+        let health = health_from(
+            r#"{"project_root":"../..","chains":{"cardano":{"chain_id":"cardano-devnet","message_port_id":"transfer"}},"health":{"gateway_max_retries":60,"gateway_retry_interval_ms":1000,"gateway_readiness_proof_timeout_ms":120000},"cardano":{"services":{"db_sync":false,"yaci":true,"postgres":true},"bootstrap_addresses":[]}}"#,
+        );
+        assert_eq!(health.gateway_readiness_proof_timeout_ms, 120_000);
+        assert_eq!(health.gateway_readiness_proof_timeout_error(), None);
+
+        for invalid in [0, GATEWAY_READINESS_PROOF_TIMEOUT_MAX_MS + 1] {
+            let health = super::Health {
+                gateway_max_retries: 60,
+                gateway_retry_interval_ms: 1000,
+                gateway_readiness_proof_timeout_ms: invalid,
+            };
+            assert!(health.gateway_readiness_proof_timeout_error().is_some());
+        }
     }
 }

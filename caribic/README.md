@@ -203,7 +203,8 @@ The shipped Gateway health-check defaults are:
 {
   "health": {
     "gateway_max_retries": 60,
-    "gateway_retry_interval_ms": 1000
+    "gateway_retry_interval_ms": 1000,
+    "gateway_readiness_proof_timeout_ms": 25000
   }
 }
 ```
@@ -211,6 +212,14 @@ The shipped Gateway health-check defaults are:
 These values are read directly from the selected config file (default: `caribic/config/default-config.json`).
 If the default config file is missing, caribic fails fast at startup.
 If a required key is missing or set to `0`, caribic now fails fast with an explicit config error.
+
+`health.gateway_readiness_proof_timeout_ms` is the single source of truth for Gateway proof
+readiness. caribic writes it to `GATEWAY_READINESS_PROOF_TIMEOUT_MS` in `cardano/gateway/.env`
+when it prepares the Gateway, and waits that long plus 15 seconds of headroom for every
+`GET /health/ready` poll in `caribic start`, `caribic health-check` and the test flows. A slow
+history provider therefore only needs this one config change. The key may be omitted, which keeps
+the Gateway default of `25000`; values outside `1..300000` fail fast. `verbose` mode prints the
+resolved budget and deadline.
 
 ## `caribic test`
 

@@ -155,6 +155,12 @@ try {
       `${basePath}/transfer`,
     );
   }
+
+  assert.doesNotMatch(
+    serverOutput,
+    /unhandledRejection|libsodium was not correctly initialized/,
+    `Standalone server reported an unhandled rejection while booting:\n${serverOutput}`,
+  );
 } finally {
   server.kill('SIGTERM');
 }

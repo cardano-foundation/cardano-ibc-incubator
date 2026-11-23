@@ -104,7 +104,6 @@ fn query_current_cardano_epoch_nonce(
 
 async fn refresh_gateway_epoch_nonce_for_stability(
     project_root: &Path,
-    http_client: &reqwest::Client,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let current_epoch_nonce = query_current_cardano_epoch_nonce(project_root)?;
     let gateway_env_path = project_root.join("cardano/gateway/.env");
@@ -167,8 +166,13 @@ async fn refresh_gateway_epoch_nonce_for_stability(
         .into());
     }
 
+    let readiness_client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(crate::start::gateway_http_readiness_deadline())
+        .build()
+        .map_err(|error| format!("Failed to build Gateway readiness client: {}", error))?;
     let gateway_healthy = wait_for_service_health(
-        http_client,
+        &readiness_client,
         "http://127.0.0.1:8000/health/ready",
         30,
         Duration::from_secs(2),
@@ -2387,7 +2391,7 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
     }
 
     if cardano_running && gateway_running {
-        refresh_gateway_epoch_nonce_for_stability(project_root, &http_client).await?;
+        refresh_gateway_epoch_nonce_for_stability(project_root).await?;
     }
 
     if !missing_services.is_empty() {
@@ -2565,12 +2569,15 @@ fn wait_for_gateway_proof_ready_blocking(
     attempts: usize,
     delay: Duration,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    let deadline_seconds = crate::start::gateway_http_readiness_deadline()
+        .as_secs()
+        .to_string();
     for attempt in 1..=attempts {
         let output = Command::new("curl")
             .args([
                 "-sS",
                 "--max-time",
-                "5",
+                deadline_seconds.as_str(),
                 "http://127.0.0.1:8000/health/ready",
             ])
             .output();

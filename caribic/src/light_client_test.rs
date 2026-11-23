@@ -405,9 +405,17 @@ fn recreate_gateway(project_root_path: &Path) -> Result<(), String> {
         .compose_ok(&["up", "-d", "--force-recreate", "app"])
         .map_err(|error| format!("Could not recreate Gateway: {error}"))?;
 
+    let deadline_seconds = start::gateway_http_readiness_deadline()
+        .as_secs()
+        .to_string();
     for _ in 0..90 {
         let ready = Command::new("curl")
-            .args(["-fsS", GATEWAY_READY_URL])
+            .args([
+                "-fsS",
+                "--max-time",
+                deadline_seconds.as_str(),
+                GATEWAY_READY_URL,
+            ])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
