@@ -564,3 +564,5 @@ For application status, `LatestHeight` accepts `x-cardano-include-timestamp: tru
 State-only Gateway queries may set `x-cardano-include-proof: false` on `ClientState`, `ConsensusState` and `Connection`. These reads retain accepted-height selection and canonical-anchor rechecks but return an empty proof. Consensus states stored only in the private history still require authentication against the selected public tree. Omitting the metadata preserves proof generation.
 
 Consensus-state lookups compare the full revision height. State-only responses normalize the matched datum entry using its bigint height so protobuf integer wrappers never change lookup semantics or lose precision.
+
+When rolling out these query optimizations, deploy Gateway timestamp support before the updated Hermes binary. Hermes rejects an absent accepted-block timestamp instead of falling back to a local clock or a second header query.
