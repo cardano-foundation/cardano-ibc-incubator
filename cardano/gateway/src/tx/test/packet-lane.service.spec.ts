@@ -1,3 +1,5 @@
+import { ogmiosRequest } from '../../shared/helpers/ogmios';
+jest.mock('../../shared/helpers/ogmios', () => ({ ogmiosRequest: jest.fn() }));
 import { PacketInputsBusyError } from '../tx-input-reservations';
 import { PacketLaneService } from '../packet-lane.service';
 import { MsgAcknowledgement } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
@@ -474,6 +476,37 @@ describe('default funded packet batches', () => {
       expect((await service.batch({ ...request, intent_tx_hash: '' })).intent_tx_hashes).toEqual(['valid']);
     } finally {
       clock.mockRestore();
+    }
+  });
+});
+
+
+describe('packet transaction validity', () => {
+  it('leaves inclusion time after an old tip and a slow build without using the host clock', async () => {
+    const tip = 1_000_000;
+    const wallClock = jest.spyOn(Date, 'now').mockReturnValue(tip + 60_000);
+    (ogmiosRequest as jest.Mock).mockResolvedValue({ slot: tip / 1000, id: "tip" });
+    const tx = { validFrom: jest.fn().mockReturnThis(), validTo: jest.fn().mockReturnThis() };
+    const complete = jest.fn(async (options) => {
+      wallClock.mockReturnValue(tip + 60_000 + 71_000);
+      options.validity.apply(tx);
+      return { unsignedTxBytes: new Uint8Array([1]) };
+    });
+    const runner = { runChain: jest.fn(async (options) => ({ value: await options.build({
+      availableInputs: (inputs: unknown[]) => inputs, complete,
+    }) })) };
+    const config = { getOrThrow: (key: string) => key === 'cardanoNetwork' ? 'Preview' : 'http://ogmios' };
+    const lucid = { LucidImporter: { SLOT_CONFIG_NETWORK: { Preview: { zeroTime: 0, zeroSlot: 0, slotLength: 1000 } } } };
+    const service = new PacketLaneService(config as any, lucid as any, runner as any, {} as any, {} as any, {} as any);
+    try {
+      await (service as any).complete('signer', 'packetBatch', async () => tx);
+      const expiresAt = tx.validTo.mock.calls[0][0];
+      expect(tx.validFrom).toHaveBeenCalledWith(tip);
+      expect(expiresAt - Date.now()).toBeGreaterThanOrEqual(120_000);
+      expect(runner.runChain.mock.calls[0][0].reservation.expiresAt).toBe(expiresAt);
+    } finally {
+      wallClock.mockRestore();
+      jest.resetAllMocks();
     }
   });
 });

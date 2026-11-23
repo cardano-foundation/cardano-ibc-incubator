@@ -54,9 +54,11 @@ import type { ConnectionDatum } from '../shared/types/connection/connection-datu
 import { LucidService } from '../shared/modules/lucid/lucid.service';
 import { parseClientSequence, parseConnectionSequence } from '../shared/helpers/sequence';
 import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
-import { TRANSACTION_TIME_TO_LIVE } from '../config/constant.config';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { validateAndFormatSendPacketParams } from './helper/packet.validate';
+
+// Allow time for remote construction, independent evaluation and block inclusion.
+const PACKET_TRANSACTION_TIME_TO_LIVE = 300_000;
 
 export type BuildPacketBatchRequest = {
   signer: string; port_id: string; channel_id: string; intent_tx_hash?: string;
@@ -187,7 +189,7 @@ export class PacketLaneService {
     const window = await computeLedgerAnchoredValidityWindow(
       this.config.getOrThrow('ogmiosEndpoint'),
       clock,
-      TRANSACTION_TIME_TO_LIVE,
+      PACKET_TRANSACTION_TIME_TO_LIVE,
     );
     // Build and complete under the same wallet lock. Concurrent admissions must
     // never inherit another request's wallet selection.
