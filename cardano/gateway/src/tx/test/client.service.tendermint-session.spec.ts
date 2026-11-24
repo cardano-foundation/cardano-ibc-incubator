@@ -1995,8 +1995,16 @@ describe('automatic cached update selection', () => {
     const h = makeHarness();
     h.lucidService.lucid.config = () => ({ provider: { getProtocolParameters: async () => ({ maxTxSize: 16384, maxTxExMem: 16500000, maxTxExSteps: 10000000000 }) } });
     h.lucidService.queryLedgerStateUtxosAtAddresses.mockResolvedValue([clientUtxo()]);
+    h.computeValidityWindow.mockImplementation(async (_backdate: number, ttl: number = 120_000) => ({
+      currentSlot: 1,
+      currentLedgerTime: TEST_CURRENT_LEDGER_TIME_MS,
+      validFromTime: TEST_VALID_FROM_TIME_MS,
+      validToSlot: (TEST_CURRENT_LEDGER_TIME_MS + ttl) / TEST_SLOT_CONFIG.slotLength,
+      validToTime: TEST_CURRENT_LEDGER_TIME_MS + ttl,
+      slotConfig: TEST_SLOT_CONFIG,
+    }));
     const window = await (h.service as any).computeTxValidityWindow();
-    const run = () => (h.service as any).updateClientWithCache(UPDATE_MESSAGE, updateOperator(), window, { revisionNumber: 0n, revisionHeight: 11n });
+    const run = (operator = updateOperator()) => (h.service as any).updateClientWithCache(UPDATE_MESSAGE, operator, window, { revisionNumber: 0n, revisionHeight: 11n });
     return { ...h, run };
   }
 
@@ -2005,7 +2013,7 @@ describe('automatic cached update selection', () => {
     jest.spyOn(CacheRouting, 'evaluatedUnsignedUpdateBudget').mockReturnValue({ fits: true } as any);
     const response = await h.run();
     expect(response.unsigned_tx.type_url).toBe('');
-    expect(h.buildFinal).toHaveBeenCalledWith(expect.objectContaining({ txValidTo: BigInt(TEST_CURRENT_LEDGER_TIME_MS + 120000) * 1000000n }), undefined, true, 0);
+    expect(h.buildFinal).toHaveBeenCalledWith(expect.objectContaining({ txValidTo: BigInt(TEST_CURRENT_LEDGER_TIME_MS + 300000) * 1000000n }), undefined, true, 0);
     expect(h.lucidService.createUnsignedTendermintSessionTransaction).not.toHaveBeenCalled();
     expect(h.pendingUpdates.peek('default-final')).toBeDefined();
   });
@@ -2017,7 +2025,7 @@ describe('automatic cached update selection', () => {
       (h.service as any).computeTxValidityWindow.mockResolvedValue({
         currentLedgerTime: later,
         validFromTime: later - 5_000,
-        validToTime: later + 120_000,
+        validToTime: later + 300_000,
         validToSlot: 0,
         slotConfig: { zeroTime: 0, zeroSlot: 0, slotLength: 1000 },
       });
@@ -2027,12 +2035,40 @@ describe('automatic cached update selection', () => {
     await h.run();
     expect(h.buildFinal).toHaveBeenCalledWith(expect.objectContaining({
       txValidFrom: BigInt(later - 5_000) * 1000000n,
-      txValidTo: BigInt(later + 120_000) * 1000000n,
+      txValidTo: BigInt(later + 300_000) * 1000000n,
     }), undefined, true, 0);
     const builder = createTxBuilder('validity-check');
     h.runnerSpy.mock.calls[0][0].validity.apply(builder);
     expect(builder.validFrom).toHaveBeenCalledWith(later - 5_000);
-    expect(builder.validTo).toHaveBeenCalledWith(later + 120_000);
+    expect(builder.validTo).toHaveBeenCalledWith(later + 300_000);
+  });
+
+  it('retains submission time when completion takes longer than the old two-minute window', async () => {
+    const h = await harness();
+    let completionTime = TEST_CURRENT_LEDGER_TIME_MS;
+    h.buildFinal.mockImplementationOnce(async () => {
+      completionTime += 150_000;
+      return { unsignedTx: createTxBuilder('slow-direct'), pendingTreeUpdate: { expectedNewRoot: 'ff'.repeat(32), commit: jest.fn() } };
+    });
+    jest.spyOn(CacheRouting, 'evaluatedUnsignedUpdateBudget').mockReturnValue({ fits: true } as any);
+    await h.run();
+    const upperBoundMs = Number(h.buildFinal.mock.calls[0][0].txValidTo / 1_000_000n);
+    expect(upperBoundMs - completionTime).toBeGreaterThanOrEqual(120_000);
+  });
+
+  it('caps the longer cached window before trusted-state expiry', async () => {
+    const h = await harness();
+    const operator = updateOperator();
+    operator.clientDatum = {
+      ...CLIENT_DATUM,
+      state: { ...CLIENT_DATUM.state, clientState: { ...CLIENT_DATUM.state.clientState, trustingPeriod: 200_000_000_000n } },
+    };
+    jest.spyOn(CacheRouting, 'evaluatedUnsignedUpdateBudget').mockReturnValue({ fits: true } as any);
+    await h.run(operator);
+    expect(h.buildFinal.mock.calls[0][0].txValidTo).toBe(195_000_000_000n);
+    const builder = createTxBuilder('trust-capped');
+    h.runnerSpy.mock.calls[0][0].validity.apply(builder);
+    expect(builder.validTo).toHaveBeenCalledWith(195_000);
   });
 
   it('falls back without recording rejected transaction state when the reserve does not fit', async () => {

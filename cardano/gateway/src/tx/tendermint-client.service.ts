@@ -99,6 +99,9 @@ export const TENDERMINT_UPDATE_CHAIN_TIME_TO_LIVE = 9 * 60 * 1000;
 // conservative IBC processed time. Preview can go over a minute between
 // blocks, so leave several block opportunities after building and signing.
 const TENDERMINT_FINALIZATION_TIME_TO_LIVE = 3 * 60 * 1000;
+// Direct updates still need remote completion, independent evaluation and block inclusion.
+// Keep this below the staged forecast budget and cap it at the client trust deadline.
+const TENDERMINT_CACHED_UPDATE_TIME_TO_LIVE = 5 * 60 * 1000;
 
 type StagedTendermintSession = {
   utxo: UTxO;
@@ -588,10 +591,10 @@ export class TendermintClientService {
     // Anchor the direct transaction after that lookup so its submission time remains usable.
     window = await this.computeTxValidityWindow(
       this.tendermintUpdateSafeBackdateMs(operator.clientDatum),
-      TRANSACTION_TIME_TO_LIVE,
+      TENDERMINT_CACHED_UPDATE_TIME_TO_LIVE,
     );
     const validTo = capTendermintStagedValidTo({
-      proposedValidToMs: Math.min(window.validToTime, window.currentLedgerTime + TRANSACTION_TIME_TO_LIVE),
+      proposedValidToMs: Math.min(window.validToTime, window.currentLedgerTime + TENDERMINT_CACHED_UPDATE_TIME_TO_LIVE),
       currentLedgerTimeMs: window.currentLedgerTime,
       trustedHeight: operator.header.trustedHeight,
       clientDatum: operator.clientDatum,
