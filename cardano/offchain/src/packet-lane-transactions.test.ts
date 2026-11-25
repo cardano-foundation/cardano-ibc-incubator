@@ -911,6 +911,129 @@ Deno.test("two ready acknowledgements share fees with reconciled balances and ex
   }));
 });
 
+Deno.test("a return before acknowledgement releases zero balances identically in single and batched completions", async () => {
+  const f = await packetLaneFixture();
+  const { intents } = await f.admit(2);
+  let wallet = await f.wallet();
+  const sent = await buildPacketSendBatch(
+    wallet,
+    f.deployment,
+    intents,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await (await signMeasured(wallet, sent.tx, "sends awaiting return")).submit();
+  f.emulator.awaitBlock();
+  // A full native return on the first send's lane zeroes its balance while
+  // that send's commitment is still outstanding.
+  const sequence = (sent.packets[0].fields[0] as bigint) +
+    BigInt(f.deployment.laneCount);
+  const receiver =
+    getAddressDetails(await wallet.wallet().address()).paymentCredential!.hash;
+  const timeout = BigInt(f.emulator.now() + 3_600_000) * 1_000_000n;
+  const payload = fromText(
+    JSON.stringify({
+      denom: `transfer/channel-7/${fromText("lovelace")}`,
+      amount: "2000000",
+      sender: "cosmos1sender",
+      receiver,
+      memo: "",
+    }),
+  );
+  const packet = record(
+    sequence,
+    fromText("transfer"),
+    fromText("channel-7"),
+    fromText("transfer"),
+    fromText("channel-0"),
+    payload,
+    record(0n, 0n),
+    timeout,
+  );
+  const proof = await membershipProof(
+    fromText(
+      `commitments/ports/transfer/channels/channel-7/sequences/${sequence}`,
+    ),
+    await sha256(
+      timeout.toString(16).padStart(16, "0") + "00".repeat(16) +
+        await sha256(payload),
+    ),
+  );
+  // Keep the fixture checkpoint that authenticates both acknowledgements.
+  const acknowledged = f.deployment.client.datum;
+  const height = record(1n, 19n);
+  checkpoint(f, height, proof.root);
+  const received = await buildPacketReceive(
+    wallet,
+    f.deployment,
+    packet,
+    height,
+    proof.proof,
+    selectPacketLiquidity(
+      await wallet.utxosAt(f.deployment.batchAddress),
+      f.deployment,
+      "transfer",
+      "channel-0",
+      fromText("lovelace"),
+      2_000_000n,
+      sequence,
+    ),
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await (await signMeasured(wallet, received.tx, "return before settlement"))
+    .submit();
+  f.emulator.awaitBlock();
+  f.deployment.client.datum = acknowledged;
+  const laneDatums = async () =>
+    (await wallet.utxosAt(f.deployment.guardAddress))
+      .map((input) => Data.from(input.datum!) as Constr<Data>)
+      .filter((datum) => datum.fields.length === 12);
+  const zeroed = (datum: Constr<Data>) =>
+    [...(datum.fields[11] as Map<string, bigint>).values()].includes(0n);
+  const pending = (await laneDatums()).filter(zeroed);
+  assertEquals(pending.length, 1);
+  assertEquals((pending[0].fields[6] as Map<Data, Data>).size, 1);
+  const requests = sent.packets.map((packet) => {
+    const proof = f.proofs.get(packet.fields[0] as bigint)!;
+    return { packet, proofHeight: proof.height, proof: proof.proof };
+  });
+  const restore = snapshot(f);
+  for (const request of requests) {
+    wallet = await f.wallet();
+    const built = await buildPacketAcknowledgement(
+      wallet,
+      f.deployment,
+      request.packet,
+      request.proofHeight,
+      request.proof,
+      f.emulator.now(),
+      f.emulator.now() + 60_000,
+    );
+    await (await signMeasured(wallet, built.tx, "settling acknowledgement"))
+      .submit();
+    f.emulator.awaitBlock();
+  }
+  const single = await laneDatums();
+  assert(!single.some(zeroed));
+  restore();
+  wallet = await f.wallet();
+  const combined = await buildPacketAcknowledgementBatch(
+    wallet,
+    f.deployment,
+    requests,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await (await signMeasured(wallet, combined.tx, "settling acknowledgements"))
+    .submit();
+  f.emulator.awaitBlock();
+  assertEquals(
+    (await laneDatums()).map(encode).sort(),
+    single.map(encode).sort(),
+  );
+});
+
 Deno.test("same-lane sends use sequential witnesses and stale packet completions rebuild safely", async () => {
   const f = await packetLaneFixture(1);
   const { intents } = await f.admit(2);
