@@ -575,6 +575,17 @@ describe('ApiController (modern)', () => {
     expect(response).toEqual({ assets: [], pagination: { next_key: '', total: '0' } });
   });
 
+  it('rejects page keys that the query parser did not read as a single string', async () => {
+    const repeatedKey = ['a', 'b'] as unknown as string;
+
+    await expect(controller.listCardanoIbcAssets(repeatedKey)).rejects.toThrow('"key" must be a base64 string');
+    await expect(controller.getChannels(repeatedKey, 0, 50, true, false)).rejects.toThrow(
+      '"key" must be a base64 string',
+    );
+    expect(denomTraceServiceMock.findAll).not.toHaveBeenCalled();
+    expect(channelServiceMock.queryChannels).not.toHaveBeenCalled();
+  });
+
   it('delegates local Osmosis swap options to LocalOsmosisSwapPlannerService', async () => {
     swapPlannerServiceMock.getSwapOptions.mockResolvedValue({
       from_chain_id: 'cardano-devnet',

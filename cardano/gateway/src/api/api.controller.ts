@@ -69,6 +69,14 @@ type ParsedCardanoAssetId = {
 const CARDANO_POLICY_ID_HEX_LENGTH = 56;
 const LOVELACE_PACKET_DENOM_HEX = Buffer.from(LOVELACE, 'utf8').toString('hex');
 
+// Repeated or bracketed query parameters parse to arrays or objects, so check a
+// page key is a string before it is decoded.
+function pageKeyParam(key: unknown): string | undefined {
+  if (key === undefined) return undefined;
+  if (typeof key !== 'string') throw new BadRequestException('"key" must be a base64 string');
+  return key;
+}
+
 @Controller('api')
 @UseFilters(new GrpcExceptionFilter())
 export class ApiController {
@@ -94,7 +102,7 @@ export class ApiController {
   ) {
     const pageRequestDto = {
       pagination: {
-        key: key,
+        key: pageKeyParam(key),
         offset: offset,
         limit: limit,
         count_total: countTotal,
@@ -391,7 +399,7 @@ export class ApiController {
     @Query('reverse', new ParseBoolPipe({ optional: true })) reverse?: boolean,
   ): Promise<{ assets: ApiCardanoAssetDenomTrace[]; pagination: { next_key: string; total: string } }> {
     const { traces, pagination } = await this.denomTraceService.findAll(
-      PageRequest.fromJSON({ key, offset, limit, count_total: countTotal, reverse }),
+      PageRequest.fromJSON({ key: pageKeyParam(key), offset, limit, count_total: countTotal, reverse }),
     );
     return {
       assets: traces.map((trace) =>
