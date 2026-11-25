@@ -37,3 +37,33 @@ describe('Ogmios connection timeout with a real WebSocket transport', () => {
     }
   });
 });
+
+
+describe('Ogmios ledger quantities over WebSocket', () => {
+  it('preserves large numeric token quantities without rounding', async () => {
+    const { WebSocketServer } = await import('ws');
+    const { queryLedgerStateUtxosAtAddresses } = await import('./ogmios-utxo');
+    const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing bound WebSocket port');
+    const policy = 'ab'.repeat(28);
+    server.on('connection', (socket) => {
+      socket.on('message', (raw) => {
+        const request = JSON.parse(raw.toString());
+        socket.send(`{"jsonrpc":"2.0","id":${JSON.stringify(request.id)},"result":[{"transaction":{"id":"${'cd'.repeat(32)}"},"index":2,"address":"addr_test1wallet","value":{"ada":{"lovelace":3000000},"${policy}":{"0102":1000000000000000001}},"datum":"d87980"}]}`);
+      });
+    });
+    try {
+      await expect(queryLedgerStateUtxosAtAddresses(`ws://127.0.0.1:${address.port}`, ['addr_test1wallet']))
+        .resolves.toEqual([{
+          txHash: 'cd'.repeat(32), outputIndex: 2, address: 'addr_test1wallet',
+          assets: { lovelace: 3000000n, [policy + '0102']: 1000000000000000001n },
+          datum: 'd87980',
+        }]);
+    } finally {
+      for (const socket of server.clients) socket.terminate();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});

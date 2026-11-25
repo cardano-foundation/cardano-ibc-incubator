@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { safeJSON } from '@cardano-ogmios/client';
 import { bech32 } from 'bech32';
 import { resolveManagedOgmiosWsEndpoint, resolveManagedOgmiosWsOptions } from './managed-cardano-endpoints';
 
@@ -480,7 +481,7 @@ const createOgmiosSession = async (ogmiosUrl: string): Promise<{ client: WebSock
 
         const handleMessage = (raw: WebSocket.RawData) => {
           try {
-            const payload = JSON.parse(raw.toString());
+            const payload = safeJSON.parse(raw.toString());
             if (payload?.id !== requestId) {
               return;
             }
@@ -494,7 +495,7 @@ const createOgmiosSession = async (ogmiosUrl: string): Promise<{ client: WebSock
               const errorMessage = [payload.error.message, payload.error.data]
                 .filter((part) => typeof part === 'string' && part.trim().length > 0)
                 .join(' ');
-              reject(new Error(errorMessage || JSON.stringify(payload.error)));
+              reject(new Error(errorMessage || safeJSON.stringify(payload.error)));
               return;
             }
             resolve(payload.result as T);
