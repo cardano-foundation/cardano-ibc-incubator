@@ -538,7 +538,7 @@ export async function checkShutdownDrain(
         height,
         proof.proof,
         [liquidity],
-        "rejected",
+        fromHex(errorAck),
         now,
         now + 60_000,
       )

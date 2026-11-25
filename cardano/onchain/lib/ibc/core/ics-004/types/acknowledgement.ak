@@ -55,6 +55,17 @@ test test_marshal_json_error() {
   marshal_json(ack) == #"7b226572726f72223a226572726f72227d"
 }
 
+// Counterparty escapes such as Go's \u003c stay in the committed bytes.
+test test_marshal_json_escaped_error() {
+  let ack =
+    Acknowledgement {
+      response: AcknowledgementError {
+        err: "invalid receiver \\u003cbob\\u003e",
+      },
+    }
+  marshal_json(ack) == #"7b226572726f72223a22696e76616c6964207265636569766572205c7530303363626f625c7530303365227d"
+}
+
 test test_marshal_json_result() {
   let ack =
     Acknowledgement {

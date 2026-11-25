@@ -513,7 +513,7 @@ export async function checkPacketFundsCase(sample: FundsCase) {
           height,
           proof.proof,
           funds,
-          "rejected",
+          new TextEncoder().encode('{"error":"rejected"}'),
           f.emulator.now(),
           f.emulator.now() + 60_000,
         )

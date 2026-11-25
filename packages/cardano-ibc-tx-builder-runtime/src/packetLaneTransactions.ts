@@ -393,11 +393,9 @@ async function packetProof(
         await sha256(String(packet.fields[5])),
     )
     : await sha256(
-      fromText(
-        op.index === 6
-          ? `{"error":"${toText(String(op.fields[2]))}"}`
-          : '{"result":"AQ=="}',
-      ),
+      op.index === 6
+        ? fromText('{"error":"') + String(op.fields[2]) + fromText('"}')
+        : fromText('{"result":"AQ=="}'),
     );
   return variant(0, ...common, proof, path, value);
 }
@@ -930,12 +928,11 @@ async function buildPacketCompletion(
       );
     }
     if (rejection !== undefined) {
-      if (!rejection) throw new Error("Empty rejection acknowledgement");
       operation = variant(
         6,
         packet,
         fields,
-        fromText(JSON.stringify(rejection).slice(1, -1)),
+        rejection,
         proofHeight,
         0n,
         update,
@@ -1477,14 +1474,38 @@ export async function buildPacketReceive(
   };
 }
 
-export const buildPacketRejection = (
+/** Hex contents of a compact `{"<key>":"…"}` acknowledgement, still escaped.
+ * Validators hash them back into this envelope, so the counterparty's escapes
+ * (Go writes `<` as `\u003c`) must not be decoded and re-encoded. */
+export function acknowledgementField(
+  acknowledgement: Uint8Array,
+  key: "result" | "error",
+): string {
+  const hex = toHex(acknowledgement);
+  const prefix = fromText(`{"${key}":"`);
+  const suffix = fromText('"}');
+  const field = hex.slice(prefix.length, hex.length - suffix.length);
+  if (field && hex.startsWith(prefix) && hex.endsWith(suffix)) {
+    try {
+      // A single string token has no unescaped quote or control character.
+      JSON.parse(`"${toText(field)}"`);
+      return field;
+    } catch {
+      // Reported below.
+    }
+  }
+  throw new Error(`Acknowledgement must be compact {"${key}":"..."} JSON`);
+}
+
+/** Takes the counterparty's acknowledgement bytes, whose hash the proof binds. */
+export const buildPacketRejection = async (
   lucid: LucidEvolution,
   deployment: PacketLaneDeployment,
   packet: Constr<Data>,
   proofHeight: Constr<Data>,
   proof: Constr<Data>,
   liquidity: UTxO[],
-  rejection: string,
+  acknowledgement: Uint8Array,
   validFrom: number,
   validTo: number,
 ) =>
@@ -1497,7 +1518,7 @@ export const buildPacketRejection = (
     validFrom,
     validTo,
     liquidity,
-    rejection,
+    acknowledgementField(acknowledgement, "error"),
   );
 
 export function voucherTokenName(denom: string) {

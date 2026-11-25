@@ -15,6 +15,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Inject, Inj
 import { ConfigService } from '@nestjs/config';
 import type { Constr, Data, Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import {
+  acknowledgementField,
   buildLiquidityRetirement,
   FragmentedPacketLiquidityError,
   buildTransferIntent,
@@ -643,6 +644,9 @@ export class PacketLaneService {
       kind === 'acknowledge'
         ? JSON.parse(Buffer.from((request as MsgAcknowledgement).acknowledgement).toString('utf8'))
         : undefined;
+    // The refund carries these exact bytes, escapes included, because the proof
+    // commits to them. Reject other encodings before selecting liquidity.
+    if (ack?.error) acknowledgementField((request as MsgAcknowledgement).acknowledgement, 'error');
     const prefix = `${p.source_port}/${p.source_channel}/`;
     const denom = incoming && data.denom.startsWith(prefix) ? data.denom.slice(prefix.length) : data.denom;
     const voucherDenom =
@@ -692,7 +696,7 @@ export class PacketLaneService {
           height,
           proof,
           liquidity,
-          ack.error,
+          (request as MsgAcknowledgement).acknowledgement,
           from,
           to,
         );

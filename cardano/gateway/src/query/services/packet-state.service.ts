@@ -281,10 +281,17 @@ export class PacketStateService {
           ];
         }
         if (operation.index === 1 || operation.index === 6) {
+          // Rebuild the proven bytes; a text round trip could alter the error.
           const ack =
-            operation.index === 1 ? '{"result":"AQ=="}' : '{"error":"' + toText(String(operation.fields[2])) + '"}';
-          attributes.packet_ack = ack;
-          attributes.packet_ack_hex = Buffer.from(ack).toString('hex');
+            operation.index === 1
+              ? Buffer.from('{"result":"AQ=="}')
+              : Buffer.concat([
+                  Buffer.from('{"error":"'),
+                  Buffer.from(String(operation.fields[2]), 'hex'),
+                  Buffer.from('"}'),
+                ]);
+          attributes.packet_ack = ack.toString('utf8');
+          attributes.packet_ack_hex = ack.toString('hex');
         }
         return [
           make(

@@ -1836,11 +1836,49 @@ Deno.test("an authenticated error acknowledgement refunds principal and retires 
     height,
     proof.proof,
     inputs,
-    rejection,
+    new TextEncoder().encode(JSON.stringify({ error: rejection })),
     f.emulator.now(),
     f.emulator.now() + 60_000,
   );
   await (await signMeasured(wallet, refund.tx, "error acknowledgement refund"))
+    .submit();
+  f.emulator.awaitBlock();
+  assertEquals((await wallet.utxosAt(f.deployment.batchAddress)).length, 0);
+});
+
+Deno.test("an escaped error acknowledgement refunds against its committed bytes", async () => {
+  const f = await packetLaneFixture();
+  const { intents } = await f.admit(1);
+  const wallet = await f.wallet();
+  const batch = await buildPacketSendBatch(
+    wallet,
+    f.deployment,
+    intents,
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await (await signMeasured(wallet, batch.tx, "rejected deposit")).submit();
+  f.emulator.awaitBlock();
+  // ibc-go acknowledgements come from Go's encoding/json, which escapes < and >.
+  const acknowledgement = '{"error":"invalid receiver \\u003cbob\\u003e"}';
+  const proof = await membershipProof(
+    fromText("acks/ports/transfer/channels/channel-7/sequences/1"),
+    await sha256(fromText(acknowledgement)),
+  );
+  const height = record(1n, 19n);
+  checkpoint(f, height, proof.root);
+  const refund = await buildPacketRejection(
+    wallet,
+    f.deployment,
+    batch.packets[0],
+    height,
+    proof.proof,
+    await wallet.utxosAt(f.deployment.batchAddress),
+    new TextEncoder().encode(acknowledgement),
+    f.emulator.now(),
+    f.emulator.now() + 60_000,
+  );
+  await (await signMeasured(wallet, refund.tx, "escaped error refund"))
     .submit();
   f.emulator.awaitBlock();
   assertEquals((await wallet.utxosAt(f.deployment.batchAddress)).length, 0);
@@ -2251,7 +2289,7 @@ for (const firstSeen of [false, true]) {
         refundHeight,
         rejected.proof,
         [],
-        err,
+        new TextEncoder().encode(JSON.stringify({ error: err })),
         f.emulator.now(),
         f.emulator.now() + 60_000,
       );
