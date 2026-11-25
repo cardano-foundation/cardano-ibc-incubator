@@ -810,10 +810,12 @@ export async function buildPacketSendBatch(
   };
 }
 
+/** Shared lane transition for single and batched packet completions. */
 async function packetCompletionLane(
   lucid: LucidEvolution,
   deployment: PacketLaneDeployment,
   packet: Constr<Data>,
+  refund = false,
 ) {
   const { port, channelId } = channelIdentity(deployment);
   const sequence = packet.fields[0] as bigint;
@@ -830,6 +832,23 @@ async function packetCompletionLane(
   tree.set(key, "");
   if (!(datum.fields[6] as Map<bigint, string>).delete(sequence)) {
     throw new Error("Packet commitment is absent");
+  }
+  if (refund) {
+    const data = JSON.parse(toText(String(packet.fields[5])));
+    addLaneBalance(
+      datum,
+      data.denom,
+      BigInt(data.amount) *
+        (data.denom.startsWith(`${port}/${channelId}/`) ? 1n : -1n),
+    );
+  }
+  // A settled lane releases zero balances that pending sends kept reserved.
+  if ((datum.fields[6] as Map<Data, Data>).size === 0) {
+    datum.fields[11] = new Map(
+      [...datum.fields[11] as Map<string, bigint>].filter(([, amount]) =>
+        amount !== 0n
+      ),
+    );
   }
   datum.fields[4] = (datum.fields[4] as bigint) + 1n;
   datum.fields[5] = await tree.getRoot();
@@ -857,27 +876,12 @@ async function buildPacketCompletion(
     lucid,
     deployment,
     packet,
+    Boolean(liquidity),
   );
   let operation = variant(1, packet, proofHeight, 0n, update);
   const mint: Record<string, bigint> = {
     [deployment.batchPolicy + fromText("acknowledge")]: 1n,
   };
-  if (liquidity) {
-    const data = JSON.parse(toText(String(packet.fields[5])));
-    addLaneBalance(
-      datum,
-      data.denom,
-      BigInt(data.amount) *
-        (data.denom.startsWith(`${port}/${channelId}/`) ? 1n : -1n),
-    );
-  }
-  if ((datum.fields[6] as Map<Data, Data>).size === 0) {
-    datum.fields[11] = new Map(
-      [...datum.fields[11] as Map<string, bigint>].filter(([, amount]) =>
-        amount !== 0n
-      ),
-    );
-  }
   let tx = lucid.newTx().readFrom([
     deployment.channel,
     deployment.connection,
