@@ -201,7 +201,7 @@ export async function checkVoucherDrain(
         at,
         proof.proof,
         [],
-        "rejected",
+        new TextEncoder().encode('{"error":"rejected"}'),
         emulator.now(),
         emulator.now() + 60_000,
       );

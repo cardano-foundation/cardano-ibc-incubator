@@ -23,6 +23,7 @@ import {
   Order as ChannelOrder,
   orderFromJSON,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
+import { acknowledgementField } from '@cardano-ibc/tx-builder-runtime/packetLaneTransactions';
 import { Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import { RpcException } from '@nestjs/microservices';
 import { deleteKeySortMap, deleteSortMap, insertSortMapWithNumberKey, prependToMap } from '@shared/helpers/helper';
@@ -654,12 +655,17 @@ export class PacketService {
     return null;
   }
 
-  private normalizeAcknowledgementResponse(acknowledgementResponse: unknown): AcknowledgementResponse {
+  private normalizeAcknowledgementResponse(
+    acknowledgementResponse: unknown,
+    acknowledgement: Uint8Array,
+  ): AcknowledgementResponse {
+    // The channel validator compares marshal_json(callback) with the proven
+    // bytes, so the callback keeps the counterparty's still-escaped value.
     const acknowledgementResult = this.extractAcknowledgementResult(acknowledgementResponse);
     if (acknowledgementResult) {
       return {
         AcknowledgementResult: {
-          result: convertString2Hex(acknowledgementResult),
+          result: acknowledgementField(acknowledgement, 'result'),
         },
       };
     }
@@ -668,7 +674,7 @@ export class PacketService {
     if (acknowledgementError) {
       return {
         AcknowledgementError: {
-          err: convertString2Hex(acknowledgementError),
+          err: acknowledgementField(acknowledgement, 'error'),
         },
       };
     }
@@ -2151,7 +2157,10 @@ export class PacketService {
         ASYNC_ICQ_HOST_PORT,
       );
       const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
-      const normalizedAcknowledgementResponse = this.normalizeAcknowledgementResponse(acknowledgementResponse);
+      const normalizedAcknowledgementResponse = this.normalizeAcknowledgementResponse(
+        acknowledgementResponse,
+        Buffer.from(ackPacketOperator.acknowledgement, 'hex'),
+      );
       const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
         createModuleAckRedeemer(channelId, normalizedAcknowledgementResponse),
         'iBCModuleRedeemer',
