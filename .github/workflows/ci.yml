@@ -379,6 +379,9 @@ jobs:
         with:
           node-version: 22
 
+      - name: Test repo invariants
+        run: node --test scripts/ci/check-repo-invariants.test.mjs
+
       - name: Check repo invariants
         run: node scripts/ci/check-repo-invariants.mjs
 

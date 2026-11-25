@@ -1,21 +1,38 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { basename, join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
-const failures = [];
 
-function fail(message) {
-  failures.push(message);
-}
+// Committed bridge manifests are identified by location rather than content,
+// so a document missing its identifying fields cannot escape validation.
+const bridgeManifestPath = /^manifests\/(preprod|preview|mainnet|devnet)\/cardano-\1-bridge-manifest\.json$/;
+const requiredBridgeManifests = ['manifests/preview/cardano-preview-bridge-manifest.json'];
+
+const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
+const isNonNegativeInteger = (value) => Number.isInteger(value) && value >= 0;
+
+// Identity fields the runtime parser requires before a manifest is usable
+// (packages/cardano-ibc-tx-builder-runtime/src/bridgeManifest.ts).
+const bridgeManifestFields = [
+  ['schema_version', isNonNegativeInteger, 'a non-negative integer'],
+  ['deployment_id', isNonEmptyString, 'a non-empty string'],
+  ['cardano', isObject, 'an object'],
+  ['cardano.chain_id', isNonEmptyString, 'a non-empty string'],
+  ['cardano.network_magic', isNonNegativeInteger, 'a non-negative integer'],
+  ['cardano.network', isNonEmptyString, 'a non-empty string'],
+  ['validators', isObject, 'an object'],
+  ['host_state_nft', isObject, 'an object'],
+];
 
 function readText(path) {
   return readFileSync(join(repoRoot, path), 'utf8');
 }
 
-function checkRelayerSubmodule() {
+function checkRelayerSubmodule(fail) {
   const gitmodules = readText('.gitmodules');
   const relayerBlock = gitmodules.match(/\[submodule "relayer"\][\s\S]*?(?=\n\[|$)/);
   if (!relayerBlock) {
@@ -44,28 +61,6 @@ function checkRelayerSubmodule() {
   }
 }
 
-function* walk(dir) {
-  for (const entry of readdirSync(dir)) {
-    if (
-      entry === '.git' ||
-      entry === 'node_modules' ||
-      entry === 'target' ||
-      entry === 'dist' ||
-      entry === 'build'
-    ) {
-      continue;
-    }
-
-    const fullPath = join(dir, entry);
-    const stats = statSync(fullPath);
-    if (stats.isDirectory()) {
-      yield* walk(fullPath);
-    } else {
-      yield fullPath;
-    }
-  }
-}
-
 function isManifestCandidate(path) {
   const name = basename(path).toLowerCase();
   return (
@@ -75,7 +70,7 @@ function isManifestCandidate(path) {
 }
 
 function isBridgeManifest(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  if (!isObject(value)) {
     return false;
   }
 
@@ -90,9 +85,38 @@ function isBridgeManifest(value) {
   );
 }
 
-function checkBridgeManifest(path, manifest) {
-  const relativePath = relative(repoRoot, path);
-  const normalizedPath = relativePath.toLowerCase();
+// Returns undefined after reporting why the file could not be read or parsed.
+function readJson(root, path, fail) {
+  let text;
+  try {
+    text = readFileSync(join(root, path), 'utf8');
+  } catch (error) {
+    fail(`${path}: could not be read (${error.message})`);
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    fail(`${path}: invalid JSON (${error.message})`);
+    return undefined;
+  }
+}
+
+function checkBridgeManifestFields(path, manifest, fail) {
+  let valid = true;
+  for (const [field, isValid, expected] of bridgeManifestFields) {
+    const value = field.split('.').reduce((parent, key) => (isObject(parent) ? parent[key] : undefined), manifest);
+    if (!isValid(value)) {
+      fail(`${path}: ${field} must be ${expected}`);
+      valid = false;
+    }
+  }
+  return valid;
+}
+
+function checkBridgeManifest(path, manifest, fail) {
+  const normalizedPath = path.toLowerCase();
   const identity = manifest.cardano && typeof manifest.cardano === 'object'
     ? manifest.cardano
     : manifest;
@@ -101,7 +125,7 @@ function checkBridgeManifest(path, manifest) {
   const networkMagic = Number(identity.network_magic ?? identity.networkMagic);
 
   if (!Number.isInteger(networkMagic)) {
-    fail(`${relativePath}: network_magic must be an integer`);
+    fail(`${path}: network_magic must be an integer`);
     return;
   }
 
@@ -117,54 +141,73 @@ function checkBridgeManifest(path, manifest) {
   }
 
   if (networkMagic !== expectedByPath.magic) {
-    fail(`${relativePath}: ${expectedByPath.marker} manifests must use network_magic ${expectedByPath.magic}, found ${networkMagic}`);
+    fail(`${path}: ${expectedByPath.marker} manifests must use network_magic ${expectedByPath.magic}, found ${networkMagic}`);
   }
 
   if (expectedByPath.marker !== 'devnet' && network !== expectedByPath.network) {
-    fail(`${relativePath}: expected network ${expectedByPath.network}, found ${network || 'missing'}`);
+    fail(`${path}: expected network ${expectedByPath.network}, found ${network || 'missing'}`);
   }
 
   if (expectedByPath.marker === 'preprod' && /devnet/i.test(chainId)) {
-    fail(`${relativePath}: preprod manifest chain_id must not contain devnet (${chainId})`);
+    fail(`${path}: preprod manifest chain_id must not contain devnet (${chainId})`);
   }
 }
 
-function checkBridgeManifests() {
-  for (const root of ['cardano', 'chains', 'manifests']) {
-    const rootPath = join(repoRoot, root);
-    try {
-      for (const path of walk(rootPath)) {
-        if (!path.endsWith('.json') || !isManifestCandidate(path)) {
-          continue;
-        }
+// Only committed files are inspected, so local deployment output is ignored
+// and a listed file that cannot be read fails the check.
+export function checkBridgeManifests(root) {
+  const failures = [];
+  const fail = (message) => failures.push(message);
+  const paths = execFileSync('git', ['ls-files', '-z', '--', 'cardano', 'chains', 'manifests'], {
+    cwd: root,
+    encoding: 'utf8',
+  }).split('\0').filter(Boolean);
 
-        const text = readFileSync(path, 'utf8');
-        let parsed;
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          continue;
-        }
-
-        if (isBridgeManifest(parsed)) {
-          checkBridgeManifest(path, parsed);
-        }
-      }
-    } catch {
-      continue;
+  for (const required of requiredBridgeManifests) {
+    if (!paths.includes(required)) {
+      fail(`${required}: required bridge manifest is not committed`);
     }
   }
-}
 
-checkRelayerSubmodule();
-checkBridgeManifests();
+  for (const path of paths) {
+    if (bridgeManifestPath.test(path)) {
+      const manifest = readJson(root, path, fail);
+      if (manifest !== undefined && checkBridgeManifestFields(path, manifest, fail)) {
+        checkBridgeManifest(path, manifest, fail);
+      }
+      continue;
+    }
 
-if (failures.length > 0) {
-  console.error('Repository invariant check failed:');
-  for (const failure of failures) {
-    console.error(`- ${failure}`);
+    if (path.startsWith('manifests/') && basename(path).toLowerCase().includes('bridge-manifest')) {
+      fail(`${path}: bridge manifests must be named manifests/<network>/cardano-<network>-bridge-manifest.json`);
+      continue;
+    }
+
+    if (!path.endsWith('.json') || !isManifestCandidate(path)) {
+      continue;
+    }
+
+    const parsed = readJson(root, path, fail);
+    if (parsed !== undefined && isBridgeManifest(parsed)) {
+      checkBridgeManifest(path, parsed, fail);
+    }
   }
-  process.exit(1);
+
+  return failures;
 }
 
-console.log('Repository invariants passed.');
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const failures = [];
+  checkRelayerSubmodule((message) => failures.push(message));
+  failures.push(...checkBridgeManifests(repoRoot));
+
+  if (failures.length > 0) {
+    console.error('Repository invariant check failed:');
+    for (const failure of failures) {
+      console.error(`- ${failure}`);
+    }
+    process.exit(1);
+  }
+
+  console.log('Repository invariants passed.');
+}
