@@ -26,6 +26,8 @@ import { hashSHA256 } from '../../shared/helpers/hex';
 import { decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
 import * as stabilityEvidence from '../services/stability-evidence';
+import { validChannelIdentifiers } from '../helpers/channel.validate';
+import { GrpcInvalidArgumentException, GrpcNotFoundException } from '../../exception/grpc_exceptions';
 
 jest.mock('../../shared/types/channel/channel-datum', () => ({
   decodeChannelDatum: jest.fn(),
@@ -350,7 +352,7 @@ describe('proof-bearing services with captured query heights', () => {
       deps.treeStore,
     );
 
-    const response = await service.queryChannel({ channel_id: 'channel-0' } as any, {
+    const response = await service.queryChannel({ port_id: 'mock', channel_id: 'channel-0' } as any, {
       queryHeight: HISTORICAL_HEIGHT,
     });
 
@@ -751,7 +753,7 @@ describe('proof-bearing services with captured query heights', () => {
           deps.historyService,
           deps.ibcTreeCacheService as any,
           deps.treeStore,
-        ).queryChannel({ channel_id: 'channel-0' } as any),
+        ).queryChannel({ port_id: 'mock', channel_id: 'channel-0' } as any),
     },
     {
       name: 'connection',
@@ -1015,7 +1017,7 @@ describe('proof-bearing services with captured query heights', () => {
           deps.ibcTreeCacheService as any,
           deps.treeStore,
         );
-        const pending = service.queryChannel({ channel_id: 'channel-0' } as any, {
+        const pending = service.queryChannel({ port_id: 'mock', channel_id: 'channel-0' } as any, {
           queryHeight: historical ? HISTORICAL_HEIGHT : undefined,
         });
         await started;
@@ -1124,6 +1126,103 @@ describe('channel upgrade queries with captured query heights', () => {
     await expect(service.queryUpgrade({ port_id: 'mock', channel_id: 'channel-0' } as any)).rejects.toThrow(
       /absence contradicts the captured commitment/,
     );
+  });
+});
+
+describe('channel-scoped queries bound to the requested port', () => {
+  beforeEach(() => {
+    resetProofServiceMocks();
+    acceptLatestHostState();
+  });
+  afterEach(() => stabilitySpies.forEach((spy) => spy.mockRestore()));
+
+  const channelService = (deps: ReturnType<typeof makeDeps>) =>
+    new ChannelService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      {} as KupoService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+      deps.treeStore,
+    );
+  const packetService = (deps: ReturnType<typeof makeDeps>) =>
+    new PacketService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+      deps.treeStore,
+      createPacketStateMock() as any,
+    );
+  type Ids = { port_id: string; channel_id: string };
+  const queries: Array<[string, (deps: ReturnType<typeof makeDeps>, ids: Ids) => Promise<unknown>]> = [
+    ['queryChannel', (deps, ids) => channelService(deps).queryChannel(ids as any)],
+    ['queryUpgrade', (deps, ids) => channelService(deps).queryUpgrade(ids as any)],
+    ['queryUpgradeError', (deps, ids) => channelService(deps).queryUpgradeError(ids as any)],
+    [
+      'queryPacketAcknowledgement',
+      (deps, ids) => packetService(deps).queryPacketAcknowledgement({ ...ids, sequence: 7n } as any),
+    ],
+    ['queryPacketAcknowledgements', (deps, ids) => packetService(deps).queryPacketAcknowledgements(ids as any)],
+    [
+      'queryPacketCommitment',
+      (deps, ids) => packetService(deps).queryPacketCommitment({ ...ids, sequence: 7n } as any),
+    ],
+    ['queryPacketCommitments', (deps, ids) => packetService(deps).queryPacketCommitments(ids as any)],
+    ['queryPacketReceipt', (deps, ids) => packetService(deps).queryPacketReceipt({ ...ids, sequence: 7n } as any)],
+    [
+      'queryUnreceivedPackets',
+      (deps, ids) => packetService(deps).queryUnreceivedPackets({ ...ids, packet_commitment_sequences: [8n] } as any),
+    ],
+    [
+      'queryUnreceivedAcks',
+      (deps, ids) => packetService(deps).queryUnreceivedAcks({ ...ids, packet_ack_sequences: [7n] } as any),
+    ],
+    [
+      'queryProofUnreceivedPackets',
+      (deps, ids) =>
+        packetService(deps).queryProofUnreceivedPackets({ ...ids, sequence: 8n, revision_height: 0n } as any),
+    ],
+    ['queryNextSequenceReceive', (deps, ids) => packetService(deps).queryNextSequenceReceive(ids as any)],
+    ['QueryNextSequenceAck', (deps, ids) => packetService(deps).QueryNextSequenceAck(ids as any)],
+  ];
+
+  it.each(queries)('reports a channel bound to another port as not found for %s', async (_name, run) => {
+    const deps = makeDeps();
+    await expect(run(deps, { port_id: 'unrelated-port', channel_id: 'channel-0' })).rejects.toBeInstanceOf(
+      GrpcNotFoundException,
+    );
+    for (const tree of [deps.capturedTree, deps.historicalTree]) {
+      expect(tree.generateProof).not.toHaveBeenCalled();
+      expect(tree.generateNonExistenceProof).not.toHaveBeenCalled();
+    }
+    expect(deps.mocks.historyService.findUtxosByPolicyIdAndPrefixTokenName).not.toHaveBeenCalled();
+  });
+
+  const invalidIds: Array<[string, Ids]> = [
+    ['empty port', { port_id: '', channel_id: 'channel-0' }],
+    ['1-character port', { port_id: 'a', channel_id: 'channel-0' }],
+    ['port with "/"', { port_id: 'bad/port', channel_id: 'channel-0' }],
+    ['129-character port', { port_id: 'p'.repeat(129), channel_id: 'channel-0' }],
+    ['channel-channel-0', { port_id: 'mock', channel_id: 'channel-channel-0' }],
+    ['channel-01', { port_id: 'mock', channel_id: 'channel-01' }],
+  ];
+  it.each(queries.flatMap(([name, run]) => invalidIds.map(([label, ids]) => [name, label, ids, run] as const)))(
+    'rejects invalid identifiers before any history lookup for %s (%s)',
+    async (_name, _label, ids, run) => {
+      const deps = makeDeps();
+      await expect(run(deps, { ...ids })).rejects.toBeInstanceOf(GrpcInvalidArgumentException);
+      expect(deps.mocks.treeStore.getAlignedSnapshot).not.toHaveBeenCalled();
+      expect(deps.mocks.historyService.findUtxoByUnitAtOrBeforeBlockNo).not.toHaveBeenCalled();
+    },
+  );
+
+  it('accepts boundary-length ports and the full on-chain port alphabet', () => {
+    expect(validChannelIdentifiers({ port_id: 'ab', channel_id: 'channel-0' })).toBe('0');
+    expect(validChannelIdentifiers({ port_id: 'p'.repeat(128), channel_id: 'channel-10' })).toBe('10');
+    expect(validChannelIdentifiers({ port_id: 'a.b_c+d-e#f[g]h<i>Z9', channel_id: 'channel-7' })).toBe('7');
   });
 });
 

@@ -31,7 +31,7 @@ function validateChannelOrdering(ordering: ChannelOrder): Order {
   }
 }
 
-function validateIdentifierSequence(identifier: string, prefix: string, field: string): string {
+export function validateIdentifierSequence(identifier: string, prefix: string, field: string): string {
   const prefixWithSeparator = `${prefix}-`;
   const sequence = identifier?.startsWith(prefixWithSeparator) ? identifier.slice(prefixWithSeparator.length) : '';
   if (!/^(0|[1-9][0-9]*)$/.test(sequence)) {

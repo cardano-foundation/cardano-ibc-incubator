@@ -13,17 +13,30 @@ import {
   QueryNextSequenceReceiveRequest,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
 import { validPagination } from './helper';
-import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import { GrpcInvalidArgumentException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
+import { convertHex2String } from '../../shared/helpers/hex';
+import { validateIdentifierSequence } from '../../tx/helper/channel.validate';
+
+// ICS-024 port identifier rule, as enforced on-chain by `port_identifier_validator`.
+const PORT_ID_PATTERN = /^[A-Za-z0-9._+#[\]<>-]{2,128}$/;
+
+/** Validates the requested port/channel pair and returns the channel sequence. */
+export function validChannelIdentifiers(request: { port_id: string; channel_id: string }): string {
+  if (!PORT_ID_PATTERN.test(request.port_id ?? ''))
+    throw new GrpcInvalidArgumentException(
+      'Invalid argument: "port_id" must be 2-128 letters, digits, or characters from ._+-#[]<>',
+    );
+  return validateIdentifierSequence(request.channel_id, CHANNEL_ID_PREFIX, 'channel_id');
+}
+
+/** Channel tokens are keyed by sequence alone, so a channel bound to another port is not found. */
+export function assertChannelBoundToPort(storedPortHex: string, portId: string, channelSequence: string): void {
+  if (convertHex2String(storedPortHex) !== portId)
+    throw new GrpcNotFoundException(`${CHANNEL_ID_PREFIX}-${channelSequence} is not bound to port ${portId}`);
+}
 
 export function validQueryChannelParam(request: QueryChannelRequest): QueryChannelRequest {
-  if (!request.channel_id) throw new GrpcInvalidArgumentException('Invalid argument: "channel_id" must be provided');
-  // validate prefix channel id
-  if (!request.channel_id.startsWith(`${CHANNEL_ID_PREFIX}-`))
-    throw new GrpcInvalidArgumentException(
-      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
-    );
-
-  request.channel_id = request.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
+  request.channel_id = validChannelIdentifiers(request);
 
   return request;
 }
@@ -45,17 +58,9 @@ export function validQueryConnectionChannelsParam(
 export function validQueryPacketAcknowledgementParam(
   request: QueryPacketAcknowledgementRequest,
 ): QueryPacketAcknowledgementRequest {
-  if (!request.channel_id) throw new GrpcInvalidArgumentException('Invalid argument: "channel_id" must be provided');
-  // validate prefix channel id
-  if (!request.channel_id.startsWith(`${CHANNEL_ID_PREFIX}-`))
-    throw new GrpcInvalidArgumentException(
-      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
-    );
-
-  if (!request.port_id) throw new GrpcInvalidArgumentException('Invalid argument: "port_id" must be provided');
+  request.channel_id = validChannelIdentifiers(request);
   if (request.sequence < 0)
     throw new GrpcInvalidArgumentException('Invalid argument: "sequence" must be greater than 0');
-  request.channel_id = request.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
 
   return request;
 }
@@ -63,31 +68,16 @@ export function validQueryPacketAcknowledgementParam(
 export function validQueryPacketAcknowledgementsParam(
   request: QueryPacketAcknowledgementsRequest,
 ): QueryPacketAcknowledgementsRequest {
-  if (!request.channel_id) throw new GrpcInvalidArgumentException('Invalid argument: "channel_id" must be provided');
-  // validate prefix channel id
-  if (!request.channel_id.startsWith(`${CHANNEL_ID_PREFIX}-`))
-    throw new GrpcInvalidArgumentException(
-      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
-    );
-
-  if (!request.port_id) throw new GrpcInvalidArgumentException('Invalid argument: "port_id" must be provided');
-  request.channel_id = request.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
+  request.channel_id = validChannelIdentifiers(request);
   request.pagination = validPagination(request.pagination);
 
   return request;
 }
 
 export function validQueryPacketCommitmentParam(request: QueryPacketCommitmentRequest): QueryPacketCommitmentRequest {
-  if (!request.channel_id) throw new GrpcInvalidArgumentException('Invalid argument: "channel_id" must be provided');
-  // validate prefix channel id
-  if (!request.channel_id.startsWith(`${CHANNEL_ID_PREFIX}-`))
-    throw new GrpcInvalidArgumentException(
-      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
-    );
-  if (!request.port_id) throw new GrpcInvalidArgumentException('Invalid argument: "port_id" must be provided');
+  request.channel_id = validChannelIdentifiers(request);
   if (request.sequence < 0)
     throw new GrpcInvalidArgumentException('Invalid argument: "sequence" must be greater than 0');
-  request.channel_id = request.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
 
   return request;
 }
@@ -95,50 +85,27 @@ export function validQueryPacketCommitmentParam(request: QueryPacketCommitmentRe
 export function validQueryPacketCommitmentsParam(
   request: QueryPacketCommitmentsRequest,
 ): QueryPacketCommitmentsRequest {
-  if (!request.channel_id) throw new GrpcInvalidArgumentException('Invalid argument: "channel_id" must be provided');
-  // validate prefix channel id
-  if (!request.channel_id.startsWith(`${CHANNEL_ID_PREFIX}-`))
-    throw new GrpcInvalidArgumentException(
-      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
-    );
-  if (!request.port_id) throw new GrpcInvalidArgumentException('Invalid argument: "port_id" must be provided');
-
-  request.channel_id = request.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
+  request.channel_id = validChannelIdentifiers(request);
   request.pagination = validPagination(request.pagination);
 
   return request;
 }
 
 export function validQueryPacketReceiptParam(request: QueryPacketReceiptRequest): QueryPacketReceiptRequest {
-  if (!request.channel_id) throw new GrpcInvalidArgumentException('Invalid argument: "channel_id" must be provided');
-  // validate prefix channel id
-  if (!request.channel_id.startsWith(`${CHANNEL_ID_PREFIX}-`))
-    throw new GrpcInvalidArgumentException(
-      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
-    );
-  if (!request.port_id) throw new GrpcInvalidArgumentException('Invalid argument: "port_id" must be provided');
+  request.channel_id = validChannelIdentifiers(request);
   if (request.sequence < 0)
     throw new GrpcInvalidArgumentException('Invalid argument: "sequence" must be greater than 0');
-  request.channel_id = request.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
 
   return request;
 }
 export function validQueryProofUnreceivedPacketsParam(
   request: QueryProofUnreceivedPacketsRequest,
 ): QueryProofUnreceivedPacketsRequest {
-  if (!request.channel_id) throw new GrpcInvalidArgumentException('Invalid argument: "channel_id" must be provided');
-  // validate prefix channel id
-  if (!request.channel_id.startsWith(`${CHANNEL_ID_PREFIX}-`))
-    throw new GrpcInvalidArgumentException(
-      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
-    );
-  if (!request.port_id) throw new GrpcInvalidArgumentException('Invalid argument: "port_id" must be provided');
+  request.channel_id = validChannelIdentifiers(request);
   if (request.sequence < 0)
     throw new GrpcInvalidArgumentException('Invalid argument: "sequence" must be greater than 0');
   if (request.revision_height < 0)
     throw new GrpcInvalidArgumentException('Invalid argument: "revision_height" must be greater than 0');
-
-  request.channel_id = request.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
 
   return request;
 }
@@ -146,52 +113,28 @@ export function validQueryProofUnreceivedPacketsParam(
 export function validQueryUnreceivedPacketsParam(
   request: QueryUnreceivedPacketsRequest,
 ): QueryUnreceivedPacketsRequest {
-  if (!request.channel_id) throw new GrpcInvalidArgumentException('Invalid argument: "channel_id" must be provided');
-  // validate prefix channel id
-  if (!request.channel_id.startsWith(`${CHANNEL_ID_PREFIX}-`))
-    throw new GrpcInvalidArgumentException(
-      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
-    );
-  if (!request.port_id) throw new GrpcInvalidArgumentException('Invalid argument: "port_id" must be provided');
+  request.channel_id = validChannelIdentifiers(request);
   if (!request.packet_commitment_sequences)
     throw new GrpcInvalidArgumentException('Invalid argument: "packet_commitment_sequences" must be provided');
   if (!request.packet_commitment_sequences?.length)
     throw new GrpcInvalidArgumentException('Invalid argument: "packet_commitment_sequences" must not empty');
 
-  request.channel_id = request.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
-
   return request;
 }
 
 export function validQueryUnreceivedAcksParam(request: QueryUnreceivedAcksRequest): QueryUnreceivedAcksRequest {
-  if (!request.channel_id) throw new GrpcInvalidArgumentException('Invalid argument: "channel_id" must be provided');
-  // validate prefix channel id
-  if (!request.channel_id.startsWith(`${CHANNEL_ID_PREFIX}-`))
-    throw new GrpcInvalidArgumentException(
-      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
-    );
-  if (!request.port_id) throw new GrpcInvalidArgumentException('Invalid argument: "port_id" must be provided');
+  request.channel_id = validChannelIdentifiers(request);
   if (!request.packet_ack_sequences)
     throw new GrpcInvalidArgumentException('Invalid argument: "packet_ack_sequences" must be provided');
   if (!request.packet_ack_sequences?.length)
     throw new GrpcInvalidArgumentException('Invalid argument: "packet_ack_sequences" must not empty');
-
-  request.channel_id = request.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
 
   return request;
 }
 export function validQueryNextSequenceReceiveParam(
   request: QueryNextSequenceReceiveRequest,
 ): QueryNextSequenceReceiveRequest {
-  if (!request.channel_id) throw new GrpcInvalidArgumentException('Invalid argument: "channel_id" must be provided');
-  // validate prefix channel id
-  if (!request.channel_id.startsWith(`${CHANNEL_ID_PREFIX}-`))
-    throw new GrpcInvalidArgumentException(
-      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
-    );
-  if (!request.port_id) throw new GrpcInvalidArgumentException('Invalid argument: "port_id" must be provided');
-
-  request.channel_id = request.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
+  request.channel_id = validChannelIdentifiers(request);
 
   return request;
 }
