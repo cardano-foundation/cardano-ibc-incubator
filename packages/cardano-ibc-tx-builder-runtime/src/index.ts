@@ -388,7 +388,6 @@ type BuilderContext = {
 };
 
 type OgmiosPoint = { slot: number; id: string };
-type SlotConfig = { zeroTime: number; zeroSlot: number; slotLength: number };
 type LucidModule = typeof import('@lucid-evolution/lucid');
 const LUCID_NETWORKS = ['Mainnet', 'Preprod', 'Preview', 'Custom'] as const;
 
@@ -1355,7 +1354,7 @@ export async function retryWithBackoff<T>(
   throw new Error('Kupmios protocol parameters fetch failed');
 }
 
-async function createLucidRuntime(
+export async function createLucidRuntime(
   kupoEndpoint: string,
   ogmiosEndpoint: string,
   cardanoNetwork: Network,
@@ -1373,24 +1372,21 @@ async function createLucidRuntime(
   // Do not retry with operator-supplied UTxOs or a local evaluator on failure.
   provider.evaluateTx = (transaction) => evaluateOnLedger(transaction);
   const protocolParameters = sanitizeProtocolParameters(await timed(logger, '[context]', 'fetch protocol parameters', () => retryWithBackoff(() => queryProtocolParametersCompat(ogmiosEndpoint, headers?.ogmiosHeader, fetchImpl))));
-  const chainZeroTime = await timed(logger, '[context]', 'query system start', () =>
-    querySystemStart(ogmiosEndpoint, headers?.ogmiosHeader),
-  );
+  const slotConfig = cardanoNetwork === 'Custom'
+    ? {
+        zeroTime: await timed(logger, '[context]', 'query system start', () =>
+          querySystemStart(ogmiosEndpoint, headers?.ogmiosHeader),
+        ),
+        zeroSlot: 0,
+        slotLength: 1000,
+      }
+    : undefined;
   const lucid = await timed(logger, '[context]', 'create lucid runtime', () =>
     Lucid.Lucid(provider, cardanoNetwork, {
       presetProtocolParameters: protocolParameters,
-      slotConfig: cardanoNetwork === 'Custom'
-        ? { zeroTime: chainZeroTime, zeroSlot: 0, slotLength: 1000 }
-        : undefined,
-    } as any),
+      slotConfig,
+    }),
   );
-
-  const slotConfig = Lucid.SLOT_CONFIG_NETWORK?.[cardanoNetwork] as SlotConfig | undefined;
-  if (!slotConfig) {
-    throw new Error(`Lucid does not expose a slot configuration for Cardano network ${cardanoNetwork}`);
-  }
-  slotConfig.zeroTime = chainZeroTime;
-  slotConfig.slotLength = 1000;
 
   return {
     lucidImporter: Lucid,
@@ -1417,12 +1413,14 @@ function utxoRef(utxo: Pick<UTxO, 'txHash' | 'outputIndex'>): string {
   return `${utxo.txHash}#${utxo.outputIndex}`;
 }
 
-async function computeTxValidityWindow(context: BuilderContext) {
+export async function computeTxValidityWindow(
+  context: Pick<BuilderContext, 'lucid' | 'ogmiosEndpoint' | 'kupmiosHeaders' | 'cardanoNetwork'>,
+) {
   const tip = await queryNetworkTipPoint(context.ogmiosEndpoint, context.kupmiosHeaders?.ogmiosHeader);
   const currentSlot = tip === 'origin' ? 0 : tip.slot;
   const ttlSlots = Math.max(1, Math.ceil(TRANSACTION_TIME_TO_LIVE / 1000));
   const validToSlot = currentSlot + ttlSlots;
-  const slotConfig = context.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[context.cardanoNetwork] as SlotConfig | undefined;
+  const slotConfig = context.lucid.config().slotConfig;
   if (!slotConfig || slotConfig.slotLength <= 0) {
     throw new Error(`Invalid Cardano slot configuration for network ${context.cardanoNetwork}`);
   }
