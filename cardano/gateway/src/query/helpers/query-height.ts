@@ -1,5 +1,10 @@
 import { Metadata } from '@grpc/grpc-js';
-import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import {
+  GATEWAY_GRPC_ERROR_CODE,
+  gatewayGrpcError,
+  GrpcInvalidArgumentException,
+  GrpcUnavailableException,
+} from '~@/exception/grpc_exceptions';
 
 export type ProofQueryOptions = {
   queryHeight?: bigint;
@@ -34,4 +39,20 @@ export function getIncludeProofFromMetadata(metadata?: Metadata): boolean {
     throw new GrpcInvalidArgumentException('Invalid x-cardano-include-proof metadata');
   }
   return values[0].toString() === 'true';
+}
+
+// Listings label current state with this height. Fail as UNAVAILABLE rather
+// than substitute a height the history service never accepted.
+export async function requireAcceptedQueryHeight(resolveHeight: () => Promise<bigint>): Promise<bigint> {
+  let cause: string;
+  try {
+    const height = await resolveHeight();
+    if (height > 0n) return height;
+    cause = `resolved height ${height}`;
+  } catch (error) {
+    cause = error instanceof Error ? error.message : String(error);
+  }
+  throw new GrpcUnavailableException(
+    gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.QUERY_HEIGHT_UNAVAILABLE, `Accepted query height unavailable: ${cause}`),
+  );
 }
