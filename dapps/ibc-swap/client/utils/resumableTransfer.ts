@@ -84,29 +84,53 @@ export const readResumableTransfer = (): ResumableTransferRecord | null => {
   };
 };
 
+export type PersistResumableTransferResult = {
+  stored: boolean;
+  urlUpdated: boolean;
+};
+
+// Storage can be full or blocked; that must never fail a submitted transfer.
+const tryBrowserUpdate = (update: () => void): boolean => {
+  try {
+    update();
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export const persistResumableTransfer = (
   record: ResumableTransferRecord,
-): void => {
-  if (!canUseBrowserStorage()) return;
-  window.localStorage.setItem(
-    RESUMABLE_TRANSFER_STORAGE_KEY,
-    JSON.stringify(record),
+): PersistResumableTransferResult => {
+  if (!canUseBrowserStorage()) return { stored: false, urlUpdated: false };
+  const stored = tryBrowserUpdate(() =>
+    window.localStorage.setItem(
+      RESUMABLE_TRANSFER_STORAGE_KEY,
+      JSON.stringify(record),
+    ),
   );
 
   // Keep the source tx in the URL so a hard refresh can resume polling.
-  const url = new URL(window.location.href);
-  url.searchParams.set('sourceTxHash', record.sourceTxHash);
-  url.searchParams.set('sourceChainId', record.sourceChainId);
-  url.searchParams.set('destinationChainId', record.destinationChainId);
-  window.history.replaceState(null, '', url.toString());
+  const urlUpdated = tryBrowserUpdate(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('sourceTxHash', record.sourceTxHash);
+    url.searchParams.set('sourceChainId', record.sourceChainId);
+    url.searchParams.set('destinationChainId', record.destinationChainId);
+    window.history.replaceState(null, '', url.toString());
+  });
+  return { stored, urlUpdated };
 };
 
 export const clearResumableTransfer = (): void => {
   if (!canUseBrowserStorage()) return;
-  window.localStorage.removeItem(RESUMABLE_TRANSFER_STORAGE_KEY);
-  const url = new URL(window.location.href);
-  url.searchParams.delete('sourceTxHash');
-  url.searchParams.delete('sourceChainId');
-  url.searchParams.delete('destinationChainId');
-  window.history.replaceState(null, '', url.toString());
+  tryBrowserUpdate(() =>
+    window.localStorage.removeItem(RESUMABLE_TRANSFER_STORAGE_KEY),
+  );
+  tryBrowserUpdate(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('sourceTxHash');
+    url.searchParams.delete('sourceChainId');
+    url.searchParams.delete('destinationChainId');
+    window.history.replaceState(null, '', url.toString());
+  });
 };
