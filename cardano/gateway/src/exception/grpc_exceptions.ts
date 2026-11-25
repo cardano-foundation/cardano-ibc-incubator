@@ -13,6 +13,7 @@ export const GATEWAY_GRPC_ERROR_CODE = {
   HEIGHT_NOT_ACCEPTED: 'HEIGHT_NOT_ACCEPTED',
   HISTORY_NOT_READY: 'HISTORY_NOT_READY',
   INVALID_TRUSTED_HEIGHT: 'INVALID_TRUSTED_HEIGHT',
+  QUERY_HEIGHT_UNAVAILABLE: 'QUERY_HEIGHT_UNAVAILABLE',
 } as const;
 
 type GatewayGrpcErrorCode = (typeof GATEWAY_GRPC_ERROR_CODE)[keyof typeof GATEWAY_GRPC_ERROR_CODE];
@@ -61,5 +62,11 @@ export class GrpcInvalidArgumentException extends RpcException {
 export class GrpcNotFoundException extends RpcException {
   constructor(error: string | object) {
     super(errorObject(error, status.NOT_FOUND));
+  }
+}
+
+export class GrpcUnavailableException extends RpcException {
+  constructor(error: string | object) {
+    super(errorObject(error, status.UNAVAILABLE));
   }
 }

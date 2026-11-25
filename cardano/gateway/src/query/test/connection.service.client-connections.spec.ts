@@ -1,13 +1,24 @@
 import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
+import { status } from '@grpc/grpc-js';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { QueryClientConnectionsResponse } from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/query';
-import { GrpcInvalidArgumentException, GrpcNotFoundException } from '../../exception/grpc_exceptions';
+import {
+  GATEWAY_GRPC_ERROR_CODE,
+  GrpcInvalidArgumentException,
+  GrpcNotFoundException,
+  GrpcUnavailableException,
+} from '../../exception/grpc_exceptions';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ConnectionService } from '../services/connection.service';
 import { HistoryService } from '../services/history.service';
+import { resolveProofHeightForCurrentRoot } from '../services/proof-context';
+
+jest.mock('../services/proof-context', () => ({
+  resolveProofHeightForCurrentRoot: jest.fn(),
+}));
 
 describe('ConnectionService ClientConnections query', () => {
   const proofHeight = {
@@ -23,6 +34,19 @@ describe('ConnectionService ClientConnections query', () => {
   const lucidService = {
     getClientAuthTokenUnit: jest.fn((clientSequence: bigint) => `client-token-${clientSequence}`),
     findUtxoByUnit: jest.fn().mockResolvedValue({ datum: 'client-datum' }),
+    generateTokenName: jest.fn(() => 'connection-token-prefix'),
+  };
+  const configService = {
+    get: jest.fn(() => ({
+      hostStateNFT: { policyId: 'host-policy', name: 'host-name' },
+      validators: {
+        mintConnectionStt: { scriptHash: 'connection-policy' },
+        spendConnection: { address: 'addr_test1connection' },
+      },
+    })),
+  };
+  const kupoService = {
+    queryUtxosAtAddressByPolicyAndTokenPrefix: jest.fn().mockResolvedValue([]),
   };
 
   let service: ConnectionService;
@@ -34,9 +58,9 @@ describe('ConnectionService ClientConnections query', () => {
 
     service = new ConnectionService(
       logger,
-      {} as ConfigService,
+      configService as unknown as ConfigService,
       lucidService as unknown as LucidService,
-      {} as KupoService,
+      kupoService as unknown as KupoService,
       {} as HistoryService,
       {} as IbcTreeCacheService,
       createTestTreeStore(),
@@ -114,4 +138,24 @@ describe('ConnectionService ClientConnections query', () => {
     expect(lucidService.getClientAuthTokenUnit).toHaveBeenCalledWith(9n);
     expect(queryConnections).not.toHaveBeenCalled();
   });
+
+  it('rejects connection listings as unavailable when the height lookup fails', async () => {
+    (resolveProofHeightForCurrentRoot as jest.Mock).mockRejectedValue(new Error('history service offline'));
+
+    await expectQueryHeightUnavailable(
+      service.queryConnections({
+        pagination: { key: new Uint8Array(), offset: 0n, limit: 50n, count_total: false, reverse: false },
+      }),
+    );
+    await expectQueryHeightUnavailable(service.queryClientConnections({ client_id: '07-tendermint-3' }));
+  });
 });
+
+async function expectQueryHeightUnavailable(promise: Promise<unknown>) {
+  const error = await promise.catch((caught: unknown) => caught);
+  expect(error).toBeInstanceOf(GrpcUnavailableException);
+  const payload = (error as GrpcUnavailableException).getError() as { code: number; message: string };
+  expect(payload.code).toBe(status.UNAVAILABLE);
+  expect(payload.message).toContain(GATEWAY_GRPC_ERROR_CODE.QUERY_HEIGHT_UNAVAILABLE);
+  expect(payload.message).toContain('history service offline');
+}

@@ -1,6 +1,11 @@
 import { createTestTreeStore } from '../../shared/testing/ibc-tree-test-store';
+import { status } from '@grpc/grpc-js';
 import { Logger } from '@nestjs/common';
-import { QueryChannelsRequest } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
+import {
+  QueryChannelsRequest,
+  QueryConnectionChannelsRequest,
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
+import { GATEWAY_GRPC_ERROR_CODE, GrpcUnavailableException } from '../../exception/grpc_exceptions';
 import { ChannelService } from '../services/channel.service';
 import { decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { resolveProofHeightForCurrentRoot } from '../services/proof-context';
@@ -140,4 +145,28 @@ describe('ChannelService channel listings', () => {
     expect(response.height.revision_number).toBe(0n);
     expect(response.height.revision_height).toBe(4992646n);
   });
+
+  it.each([
+    ['the height lookup fails', () => Promise.reject(new Error('history service offline')), 'history service offline'],
+    ['the height lookup resolves zero', () => Promise.resolve(0n), 'resolved height 0'],
+  ])('rejects channel listings as unavailable when %s', async (_description, resolveHeight, cause) => {
+    (resolveProofHeightForCurrentRoot as jest.Mock).mockImplementation(resolveHeight);
+    const service = createService();
+    const connectionChannelsRequest = QueryConnectionChannelsRequest.fromJSON({
+      connection: 'connection-9',
+      pagination: request.pagination,
+    });
+
+    await expectQueryHeightUnavailable(service.queryChannels(request), cause);
+    await expectQueryHeightUnavailable(service.queryConnectionChannels(connectionChannelsRequest), cause);
+  });
 });
+
+async function expectQueryHeightUnavailable(promise: Promise<unknown>, cause: string) {
+  const error = await promise.catch((caught: unknown) => caught);
+  expect(error).toBeInstanceOf(GrpcUnavailableException);
+  const payload = (error as GrpcUnavailableException).getError() as { code: number; message: string };
+  expect(payload.code).toBe(status.UNAVAILABLE);
+  expect(payload.message).toContain(GATEWAY_GRPC_ERROR_CODE.QUERY_HEIGHT_UNAVAILABLE);
+  expect(payload.message).toContain(cause);
+}

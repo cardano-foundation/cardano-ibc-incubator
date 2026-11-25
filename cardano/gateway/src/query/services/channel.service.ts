@@ -56,7 +56,7 @@ import {
   resolveProofHeightForCurrentRoot,
 } from './proof-context';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
-import { ProofQueryOptions } from '../helpers/query-height';
+import { ProofQueryOptions, requireAcceptedQueryHeight } from '../helpers/query-height';
 
 type CardanoChannelHealthResponse = {
   port_id: string;
@@ -107,12 +107,7 @@ export class ChannelService {
   }
 
   private async getQueryHeight(): Promise<bigint> {
-    try {
-      const height = await this.getProofHeight();
-      return height > 0n ? height : 1n;
-    } catch {
-      return 1n;
-    }
+    return requireAcceptedQueryHeight(() => this.getProofHeight());
   }
 
   private async getProofContext(context: string, requestedHeight?: bigint) {

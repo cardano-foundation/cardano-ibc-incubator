@@ -46,7 +46,7 @@ import {
   resolveProofHeightForCurrentRoot,
 } from './proof-context';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
-import { ProofQueryOptions } from '../helpers/query-height';
+import { ProofQueryOptions, requireAcceptedQueryHeight } from '../helpers/query-height';
 
 @Injectable()
 export class ConnectionService {
@@ -61,21 +61,14 @@ export class ConnectionService {
   ) {}
 
   private async getQueryHeight(): Promise<bigint> {
-    try {
-      const height = await resolveProofHeightForCurrentRoot({
+    return requireAcceptedQueryHeight(() =>
+      resolveProofHeightForCurrentRoot({
         logger: this.logger,
         lucidService: this.lucidService,
         historyService: this.historyService,
         context: 'queryConnection',
-      });
-      return height > 0n ? height : 1n;
-    } catch {
-      // Ignore and fall through.
-    }
-
-    {
-      return 1n;
-    }
+      }),
+    );
   }
 
   private async getProofContext(context: string, requestedHeight?: bigint) {
