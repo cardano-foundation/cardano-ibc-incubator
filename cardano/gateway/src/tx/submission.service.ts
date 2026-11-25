@@ -27,11 +27,19 @@ type ConfirmedHostStateEvidence = {
   outputIndex: number;
 };
 
+// A completed observation has verified the transaction body and finalized any
+// pending update; its inclusion block is rechecked before the response is reused.
+type CompletedObservation = {
+  response: ObserveTxResponse;
+  blockNo: number;
+  blockHash: string;
+};
+
 @Injectable()
 export class SubmissionService {
   private readonly logger = new Logger(SubmissionService.name);
   private readonly observationInFlight = new Map<string, Promise<ObserveTxResponse>>();
-  private readonly completedObservations = new Map<string, ObserveTxResponse>();
+  private readonly completedObservations = new Map<string, CompletedObservation>();
   private treeCacheWrite: Promise<void> = Promise.resolve();
 
   constructor(
@@ -120,28 +128,30 @@ export class SubmissionService {
       );
     }
 
-    const completed = this.completedObservations.get(txHash);
-    if (completed) return completed;
-
     const existing = this.observationInFlight.get(txHash);
     if (existing) return existing;
+
+    const completed = this.completedObservations.get(txHash);
+    if (completed) return this.trackObservation(txHash, this.revalidateCompletedObservation(txHash, completed));
 
     const pending = this.ibcTreePendingUpdatesService.peek(txHash);
     if (!pending) {
       if (request.allow_untracked === true) {
-        const observation = await this.observeUntrackedTransaction(txHash);
-        this.cacheCompletedObservation(txHash, observation);
-        return observation;
+        return this.trackObservation(txHash, this.observeUntrackedTransaction(txHash));
       }
       throw new GrpcInternalException(
         `Missing exact pending IBC update for tx ${txHash}; refusing to observe a transaction the Gateway did not build`,
       );
     }
 
-    const observation = this.observeTransactionOnce(txHash, pending)
-      .then((response) => {
-        this.cacheCompletedObservation(txHash, response);
-        return response;
+    return this.trackObservation(txHash, this.observeTransactionOnce(txHash, pending));
+  }
+
+  private trackObservation(txHash: string, completion: Promise<CompletedObservation>): Promise<ObserveTxResponse> {
+    const observation = completion
+      .then((completed) => {
+        this.cacheCompletedObservation(txHash, completed);
+        return completed.response;
       })
       .catch((error) => {
         this.logger.error(`observeTransaction error for ${txHash}: ${error?.message ?? error}`, error?.stack);
@@ -156,18 +166,29 @@ export class SubmissionService {
     return observation;
   }
 
-  private async observeUntrackedTransaction(txHash: string): Promise<ObserveTxResponse> {
+  private async revalidateCompletedObservation(
+    txHash: string,
+    completed: CompletedObservation,
+  ): Promise<CompletedObservation> {
+    const block = await this.historyService.findBlockByHeight(BigInt(completed.blockNo));
+    if (block?.hash === completed.blockHash) return completed;
+
+    // The pending update was consumed by the first observation, so a rollback
+    // only re-resolves inclusion of the same verified transaction body.
+    this.logger.warn(`Observed tx ${txHash} left canonical block ${completed.blockNo}; re-resolving inclusion`);
+    const evidence = await this.waitForIndexedTransactionEvidence(txHash);
+    this.verifyObservedTransactionEvidence(txHash, evidence);
+    return this.completedObservation(txHash, evidence, completed.response.events);
+  }
+
+  private async observeUntrackedTransaction(txHash: string): Promise<CompletedObservation> {
     const evidence = await this.waitForIndexedTransactionEvidence(txHash);
     this.verifyObservedTransactionEvidence(txHash, evidence);
     const events = await this.findIndexedIbcEvents(txHash);
-    return {
-      tx_hash: txHash,
-      height: `0-${evidence.blockNo}`,
-      events,
-    };
+    return this.completedObservation(txHash, evidence, events);
   }
 
-  private async observeTransactionOnce(txHash: string, pending: PendingTreeUpdate): Promise<ObserveTxResponse> {
+  private async observeTransactionOnce(txHash: string, pending: PendingTreeUpdate): Promise<CompletedObservation> {
     const evidence = await this.waitForIndexedTransactionEvidence(txHash);
     const confirmedBodyCborHex = this.verifyObservedTransactionEvidence(txHash, evidence);
 
@@ -177,7 +198,7 @@ export class SubmissionService {
           `Pending tree-neutral update for confirmed tx ${txHash} changed during observation`,
         );
       }
-      return { tx_hash: txHash, height: `0-${evidence.blockNo}`, events: [] };
+      return this.completedObservation(txHash, evidence, []);
     }
 
     const confirmedRoot = await this.applyExactPendingIbcTreeUpdate(
@@ -191,7 +212,20 @@ export class SubmissionService {
     let events = this.txEventsService.take(txHash) || this.txEventsService.takeByExpectedRoot(confirmedRoot) || [];
     if (events.length === 0) events = await this.findIndexedIbcEvents(txHash);
 
-    return { tx_hash: txHash, height: `0-${evidence.blockNo}`, events };
+    return this.completedObservation(txHash, evidence, events);
+  }
+
+  private completedObservation(
+    txHash: string,
+    evidence: HistoryTxEvidence,
+    events: GatewayEvent[],
+  ): CompletedObservation {
+    return {
+      response: { tx_hash: txHash, height: `0-${evidence.blockNo}`, events },
+      blockNo: evidence.blockNo,
+      // Checked by verifyObservedTransactionEvidence before any observation completes.
+      blockHash: evidence.blockHash as string,
+    };
   }
 
   private verifyObservedTransactionEvidence(txHash: string, evidence: HistoryTxEvidence): string {
@@ -202,6 +236,9 @@ export class SubmissionService {
     }
     if (!Number.isSafeInteger(evidence.blockNo) || evidence.blockNo <= 0) {
       throw new GrpcInternalException(`History returned an invalid inclusion height for transaction ${txHash}`);
+    }
+    if (typeof evidence.blockHash !== 'string' || !/^[0-9a-fA-F]{64}$/.test(evidence.blockHash)) {
+      throw new GrpcInternalException(`History returned an invalid inclusion block hash for transaction ${txHash}`);
     }
     if (!this.isNonEmptyHex(evidence.txCborHex)) {
       throw new GrpcInternalException(`History returned invalid transaction CBOR for transaction ${txHash}`);
@@ -350,12 +387,13 @@ export class SubmissionService {
     }
   }
 
-  private cacheCompletedObservation(txHash: string, response: ObserveTxResponse): void {
+  private cacheCompletedObservation(txHash: string, observation: CompletedObservation): void {
+    this.completedObservations.delete(txHash);
     if (this.completedObservations.size >= MAX_COMPLETED_OBSERVATIONS) {
       const oldest = this.completedObservations.keys().next().value;
       if (oldest) this.completedObservations.delete(oldest);
     }
-    this.completedObservations.set(txHash, response);
+    this.completedObservations.set(txHash, observation);
   }
 
   private async applyPendingIbcTreeUpdate(
