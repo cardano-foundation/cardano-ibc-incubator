@@ -381,6 +381,8 @@ const Transfer = () => {
     useState<string>('');
   const [resumeChecked, setResumeChecked] = useState(false);
   const isRestoringTransferRef = useRef(false);
+  // Set as soon as a transfer is broadcast so nothing can submit it twice.
+  const submittedTxHashRef = useRef('');
   const routePreflightGenerationRef = useRef(0);
   const routePreviewGenerationRef = useRef(0);
   const estimateGenerationRef = useRef(0);
@@ -397,6 +399,7 @@ const Transfer = () => {
     setLastTxHash('');
     setFundedIntent(undefined);
     setLastTransferSubmittedAt('');
+    submittedTxHashRef.current = '';
     clearResumableTransfer();
   };
 
@@ -488,6 +491,26 @@ const Transfer = () => {
     selectedToken,
     createdAt,
   });
+
+  const recordSubmittedTransfer = (
+    sourceTxHash: string,
+    submittedEstData: EstimateFeeType,
+  ) => {
+    const submittedAt = new Date().toISOString();
+    // Show the hash before touching browser storage, which is only a resume aid.
+    setLastTxHash(sourceTxHash);
+    setLastTransferSubmittedAt(submittedAt);
+    setIsSubmitted(true);
+    const { stored } = persistResumableTransfer(
+      buildResumableTransferRecord(sourceTxHash, submittedEstData, submittedAt),
+    );
+    if (!stored) {
+      toast.warn(
+        `Transfer submitted, but this browser could not save it. Copy the transaction hash ${sourceTxHash}; tracking may not resume after a page refresh.`,
+        { theme: 'colored', autoClose: false },
+      );
+    }
+  };
 
   const restoreResumableTransfer = (record: ResumableTransferRecord) => {
     isRestoringTransferRef.current = true;
@@ -935,23 +958,18 @@ const Transfer = () => {
         connectedCardanoWalletName,
       );
       if (txHash) {
+        submittedTxHashRef.current = txHash;
         logCardanoWalletDebug('transfer:submit:success', {
           walletName: connectedCardanoWalletName,
           elapsedMs: Date.now() - startedAt,
           txHash: shortValue(txHash),
         });
-        const submittedAt = new Date().toISOString();
-        persistResumableTransfer(
-          buildResumableTransferRecord(txHash, preparedEstData, submittedAt),
-        );
         setFundedIntent({
           hash: txHash,
           channel: preparedEstData.intentChannel!,
           signer: cardanoAddress || '',
         });
-        setLastTxHash(txHash);
-        setLastTransferSubmittedAt(submittedAt);
-        setIsSubmitted(true);
+        recordSubmittedTransfer(txHash, preparedEstData);
       }
     } catch (e: unknown) {
       logCardanoWalletError('transfer:submit:error', e, {
@@ -1003,18 +1021,15 @@ const Transfer = () => {
           '',
         );
         console.log(tx);
-        if (tx && tx.code === 0) {
-          const submittedAt = new Date().toISOString();
-          persistResumableTransfer(
-            buildResumableTransferRecord(
-              tx.transactionHash,
-              estData,
-              submittedAt,
-            ),
+        if (tx.code === 0) {
+          submittedTxHashRef.current = tx.transactionHash;
+          recordSubmittedTransfer(tx.transactionHash, estData);
+        } else {
+          const rawLog = tx.rawLog ? `: ${tx.rawLog}` : '';
+          toast.error(
+            `Transfer transaction ${tx.transactionHash} failed with code ${tx.code}${rawLog}`,
+            { theme: 'colored' },
           );
-          setLastTxHash(tx.transactionHash);
-          setLastTransferSubmittedAt(submittedAt);
-          setIsSubmitted(true);
         }
       }
       setIsProcessingTransfer(false);
@@ -1027,6 +1042,9 @@ const Transfer = () => {
   };
 
   const handleTransfer = async () => {
+    if (submittedTxHashRef.current) {
+      return;
+    }
     if (fromNetwork.networkId === CARDANO_CHAIN_ID) {
       let preparedEstData = estData;
       if (
