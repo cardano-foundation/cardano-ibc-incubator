@@ -22,7 +22,7 @@ import {
   QueryNextSequenceReceiveRequest,
   QueryNextSequenceReceiveResponse,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
-import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
+import { paginate } from '../../shared/helpers/pagination';
 import {
   ACK_RESULT,
   CHANNEL_ID_PREFIX,
@@ -31,7 +31,6 @@ import {
   REDEEMER_TYPE,
 } from '../../constant';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
-import { PaginationKeyDto } from '../dtos/pagination.dto';
 import {
   assertChannelBoundToPort,
   validQueryPacketAcknowledgementParam,
@@ -44,7 +43,6 @@ import {
   validQueryProofUnreceivedPacketsParam,
   validQueryNextSequenceReceiveParam,
 } from '../helpers/channel.validate';
-import { validPagination } from '../helpers/helper';
 import { convertHex2String, convertString2Hex, hashSHA256 } from '../../shared/helpers/hex';
 import {
   GrpcInvalidArgumentException,
@@ -352,34 +350,16 @@ export class PacketService {
       pagination: paginationReq,
     } = validQueryPacketAcknowledgementsParam(request);
     this.logger.log(`channelId = ${channelId}, portId = ${portId}`, 'QueryPacketAcknowledgements');
-    const pagination = getPaginationParams(validPagination(paginationReq));
-    const {
-      'pagination.key': key = '',
-      'pagination.limit': limit = '100',
-      'pagination.count_total': count_total = false,
-      'pagination.reverse': reverse = false,
-    } = pagination;
-    let { 'pagination.offset': offset = '0' } = pagination;
-    if (key) offset = decodePaginationKey(key);
 
     const proofContext = await this.getProofContext();
     const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     assertChannelBoundToPort(channelDatumDecoded.port, portId, channelId);
-    const packetAcknowledgementSeqs = [...channelDatumDecoded.state.packet_acknowledgement.keys()];
-
-    let nextKey = null;
-    let packetAckSeqs = reverse ? packetAcknowledgementSeqs.reverse() : packetAcknowledgementSeqs;
-    if (packetAckSeqs.length > +limit) {
-      const from = parseInt(offset);
-      const to = parseInt(offset) + parseInt(limit);
-      packetAckSeqs = packetAckSeqs.slice(from, to);
-
-      const pageKeyDto: PaginationKeyDto = {
-        offset: to,
-      };
-      nextKey = to < packetAcknowledgementSeqs.length ? generatePaginationKey(pageKeyDto) : '';
-    }
+    const { items: packetAckSeqs, pagination } = paginate(
+      [...channelDatumDecoded.state.packet_acknowledgement.keys()],
+      (sequence) => sequence.toString().padStart(20, '0'),
+      paginationReq,
+    );
 
     await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
     const queryHeight = proofContext.proofHeight;
@@ -395,10 +375,7 @@ export class PacketService {
         data: Buffer.from(channelDatumDecoded.state.packet_acknowledgement.get(seq)!, 'hex'),
       })),
       /** pagination response */
-      pagination: {
-        next_key: nextKey,
-        total: count_total ? packetAckSeqs.length : 0,
-      },
+      pagination,
       /** query block height */
       height: {
         revision_number: BigInt(0), // Cardano uses revision 0; revision_height is an accepted anchor block number.
@@ -480,34 +457,16 @@ export class PacketService {
       pagination: paginationReq,
     } = validQueryPacketCommitmentsParam(request);
     this.logger.log(`channelId = ${channelId}, portId = ${portId}`, 'QueryPacketCommitments');
-    const pagination = getPaginationParams(validPagination(paginationReq));
-    const {
-      'pagination.key': key = '',
-      'pagination.limit': limit = '100',
-      'pagination.count_total': count_total = false,
-      'pagination.reverse': reverse = false,
-    } = pagination;
-    let { 'pagination.offset': offset = '0' } = pagination;
-    if (key) offset = decodePaginationKey(key);
 
     const proofContext = await this.getProofContext();
     const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     assertChannelBoundToPort(channelDatumDecoded.port, portId, channelId);
-    const packetCommitmentSeqs = [...channelDatumDecoded.state.packet_commitment.keys()];
-
-    let nextKey = null;
-    let packetCmmSeqs = reverse ? packetCommitmentSeqs.reverse() : packetCommitmentSeqs;
-    if (packetCmmSeqs.length > +limit) {
-      const from = parseInt(offset);
-      const to = parseInt(offset) + parseInt(limit);
-      packetCmmSeqs = packetCmmSeqs.slice(from, to);
-
-      const pageKeyDto: PaginationKeyDto = {
-        offset: to,
-      };
-      nextKey = to < packetCommitmentSeqs.length ? generatePaginationKey(pageKeyDto) : '';
-    }
+    const { items: packetCmmSeqs, pagination } = paginate(
+      [...channelDatumDecoded.state.packet_commitment.keys()],
+      (sequence) => sequence.toString().padStart(20, '0'),
+      paginationReq,
+    );
 
     await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
     const queryHeight = proofContext.proofHeight;
@@ -523,10 +482,7 @@ export class PacketService {
         data: Buffer.from(channelDatumDecoded.state.packet_commitment.get(seq)!, 'hex'),
       })),
       /** pagination response */
-      pagination: {
-        next_key: nextKey,
-        total: count_total ? packetCmmSeqs.length : 0,
-      },
+      pagination,
       /** query block height */
       height: {
         revision_number: BigInt(0), // Cardano uses revision 0; revision_height is an accepted anchor block number.

@@ -2737,19 +2737,22 @@ export class QueryService {
     this.logger.log('Querying all denoms');
 
     try {
-      const pagination = request.pagination ? { offset: Number(request.pagination.offset || 0) } : undefined;
-      const denomTraces = await this.denomTraceService.findAll(pagination);
+      // QueryDenoms has always reported the total, which comes from the same registry scan.
+      const { traces, pagination } = await this.denomTraceService.findAll({
+        ...validPagination(request.pagination),
+        count_total: true,
+      });
 
       const response: QueryDenomsResponse = {
-        denoms: denomTraces.map((trace) => this.toDenom(trace.path, trace.base_denom)),
-        pagination: {
-          next_key: new Uint8Array(),
-          total: BigInt(await this.denomTraceService.getCount()),
-        },
+        denoms: traces.map((trace) => this.toDenom(trace.path, trace.base_denom)),
+        pagination,
       };
 
       return response;
     } catch (error) {
+      if (error instanceof GrpcInvalidArgumentException) {
+        throw error;
+      }
       this.logger.error(`Failed to query denoms: ${error.message}`);
       throw new GrpcInternalException(`Failed to query denoms: ${error.message}`);
     }

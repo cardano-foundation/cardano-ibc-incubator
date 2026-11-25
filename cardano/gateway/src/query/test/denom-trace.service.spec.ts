@@ -440,12 +440,52 @@ describe('DenomTraceService', () => {
       throw new Error(`unexpected unit lookup: ${unit}`);
     });
 
-    const traces = await service.findAll({ offset: 1 } as any);
+    const { traces } = await service.findAll({ offset: 1n } as any);
 
     expect(traces).toHaveLength(2);
     expect(traces[0].base_denom).toBe('uatom');
     expect(traces[1].base_denom).toBe('uosmo');
     await expect(service.getCount()).resolves.toBe(3);
+  });
+
+  it('pages registry entries with continuation keys before resolving voucher metadata', async () => {
+    const entries = Array.from({ length: 101 }, (_, index) => ({
+      voucher_hash: `0${index.toString(16).padStart(55, '0')}`,
+      full_denom: `transfer/channel-${String(index).padStart(3, '0')}/uatom`,
+    }));
+    const metadataLookups: string[] = [];
+    lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([{ bucket_index: 0n, active_shard_name: '00', archived_shard_names: [] }]);
+      }
+      if (unit === 'trace-shard-policy00') {
+        return makeShardUtxo(entries, 0);
+      }
+      metadataLookups.push(unit);
+      throw new Error(`unexpected unit lookup: ${unit}`);
+    });
+
+    const first = await service.findAll({ limit: 10n } as any);
+
+    expect(first.traces.map((trace) => trace.full_denom)).toEqual(entries.slice(0, 10).map((e) => e.full_denom));
+    expect(first.pagination.next_key.length).toBeGreaterThan(0);
+    expect(metadataLookups).toHaveLength(10);
+
+    const denoms = first.traces.map((trace) => trace.full_denom);
+    let key = first.pagination.next_key;
+    while (key.length > 0) {
+      metadataLookups.length = 0;
+      const page = await service.findAll({ key, limit: 10n } as any);
+      expect(metadataLookups).toHaveLength(page.traces.length);
+      denoms.push(...page.traces.map((trace) => trace.full_denom));
+      key = page.pagination.next_key;
+    }
+
+    expect(denoms).toEqual(entries.map((entry) => entry.full_denom));
+
+    const capped = await service.findAll({ limit: 1000n } as any);
+    expect(capped.traces).toHaveLength(100);
+    expect(capped.pagination.next_key.length).toBeGreaterThan(0);
   });
 
   it('automatically prepares a rollover at the active-shard entry limit', async () => {

@@ -1,13 +1,17 @@
 import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { TxBuilder, UTxO } from "@lucid-evolution/lucid";
-import { PaginationKeyDto } from "../dtos/pagination.dto";
+import {
+  PageRequest,
+  PageResponse,
+} from "@cardano-ibc/proto-types/build/cosmos/base/query/v1beta1/pagination";
 import { MetricsService } from "../../health/metrics.service";
 import {
   hashSha3_256,
 } from "../../shared/helpers/hex";
 import { decodeVerifiedVoucherCip68MetadataDatum } from "../../shared/helpers/cip68-voucher-metadata";
 import { splitFullDenomTrace } from "../../shared/helpers/denom-trace";
+import { paginate } from "../../shared/helpers/pagination";
 import { deriveVoucherPresentation } from "../../shared/helpers/voucher-presentation";
 import {
   buildIbcDenomHashFromFullDenom,
@@ -170,6 +174,7 @@ export type TraceRegistryBucketGrowthSimulation = {
 };
 
 const TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES = 1024;
+const MAX_DENOM_PAGE_LIMIT = 100n;
 
 /**
  * Canonical resolver for Cardano voucher reverse lookups.
@@ -442,20 +447,27 @@ export class DenomTraceService {
     }
   }
 
-  async findAll(pagination?: PaginationKeyDto): Promise<ResolvedDenomTrace[]> {
+  async findAll(
+    pagination?: PageRequest,
+  ): Promise<{ traces: ResolvedDenomTrace[]; pagination: PageResponse }> {
     const startTime = Date.now();
 
     try {
-      const traces = await Promise.all(
-        (await this.findAllOnChainEntries())
-          .map((entry) => this.materializeTrace(entry.hash, entry.fullDenom)),
+      // Page the decoded registry entries first so CIP-68 metadata is only
+      // resolved for the denoms actually returned. Full denoms are unique
+      // because each one determines its voucher hash.
+      const page = paginate(
+        await this.findAllOnChainEntries(),
+        (entry) => entry.fullDenom,
+        pagination,
+        { maxLimit: MAX_DENOM_PAGE_LIMIT },
       );
-      traces.sort((left, right) => {
-        return left.full_denom.localeCompare(right.full_denom) ||
-          left.hash.localeCompare(right.hash);
-      });
-      const offset = pagination?.offset ?? 0;
-      return traces.slice(offset, offset + 100);
+      const traces = await Promise.all(
+        page.items.map((entry) =>
+          this.materializeTrace(entry.hash, entry.fullDenom)
+        ),
+      );
+      return { traces, pagination: page.pagination };
     } catch (error) {
       this.logger.error(`Failed to find all denom traces: ${error.message}`);
       throw error;
@@ -494,8 +506,16 @@ export class DenomTraceService {
     const startTime = Date.now();
 
     try {
-      const traces = await this.findAll();
-      return traces.filter((trace) => trace.base_denom === baseDenom);
+      const entries = (await this.findAllOnChainEntries())
+        .filter((entry) =>
+          splitFullDenomTrace(entry.fullDenom).baseDenom === baseDenom
+        )
+        .sort((left, right) => left.fullDenom.localeCompare(right.fullDenom));
+      return await Promise.all(
+        entries.map((entry) =>
+          this.materializeTrace(entry.hash, entry.fullDenom)
+        ),
+      );
     } catch (error) {
       this.logger.error(
         `Failed to find denom traces by base denom ${baseDenom}: ${error.message}`,

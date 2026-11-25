@@ -15,7 +15,7 @@ jest.mock('../../shared/types/channel/channel-datum', () => ({
 }));
 
 jest.mock('../../shared/helpers/channel', () => ({
-  getChannelIdByTokenName: jest.fn(() => '8'),
+  getChannelIdByTokenName: jest.fn((tokenName: string) => (tokenName === 'channel-token-name-2' ? '2' : '8')),
 }));
 
 jest.mock('../services/proof-context', () => ({
@@ -71,6 +71,7 @@ describe('ChannelService channel listings', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (resolveProofHeightForCurrentRoot as jest.Mock).mockResolvedValue(4_992_646n);
     kupoService.queryUtxosAtAddressByPolicyAndTokenPrefix.mockResolvedValue([
       {
         datum: 'channel-datum',
@@ -129,7 +130,32 @@ describe('ChannelService channel listings', () => {
         },
       }),
     ]);
-    expect(response.pagination?.total).toBe(1);
+    expect(response.pagination?.total).toBe(1n);
+  });
+
+  it('applies offsets to channel listings that fit within the limit', async () => {
+    kupoService.queryUtxosAtAddressByPolicyAndTokenPrefix.mockResolvedValue([
+      { datum: 'channel-datum', matchedTokenNames: ['channel-token-name'] },
+      { datum: 'channel-datum', matchedTokenNames: ['channel-token-name-2'] },
+    ]);
+    const page = (offset: number) =>
+      QueryChannelsRequest.fromJSON({ pagination: { offset, limit: 100, count_total: true } }).pagination;
+    const service = createService();
+
+    const channels = await service.listCurrentChannelEnds({ pagination: page(1) });
+    expect(channels.channels.map((channel) => channel.channel_id)).toEqual(['channel-8']);
+    expect(channels.pagination).toEqual({ next_key: new Uint8Array(), total: 2n });
+    expect((await service.listCurrentChannelEnds({ pagination: page(999) })).channels).toEqual([]);
+
+    const connectionChannels = await service.queryConnectionChannels({
+      connection: 'connection-9',
+      pagination: page(1),
+    });
+    expect(connectionChannels.channels.map((channel) => channel.channel_id)).toEqual(['channel-8']);
+    expect(connectionChannels.height.revision_height).toBe(4_992_646n);
+    expect(
+      (await service.queryConnectionChannels({ connection: 'connection-9', pagination: page(999) })).channels,
+    ).toEqual([]);
   });
 
   it('keeps the proof height on the existing IBC channel query', async () => {
