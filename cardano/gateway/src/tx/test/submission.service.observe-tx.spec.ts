@@ -22,6 +22,7 @@ describe('SubmissionService ObserveTx', () => {
   let pendingUpdates: IbcTreePendingUpdatesService;
   let historyService: {
     findTransactionEvidenceByHash: jest.Mock;
+    findBlockByHeight: jest.Mock;
   };
   let txEventsService: {
     take: jest.Mock;
@@ -93,6 +94,7 @@ describe('SubmissionService ObserveTx', () => {
     };
     historyService = {
       findTransactionEvidenceByHash: jest.fn().mockResolvedValue(evidence()),
+      findBlockByHeight: jest.fn().mockResolvedValue({ hash: 'ef'.repeat(32) }),
     };
     txEventsService = {
       take: jest.fn().mockReturnValue([
@@ -274,9 +276,81 @@ describe('SubmissionService ObserveTx', () => {
 
     expect(concurrentResponse).toEqual(firstResponse);
     expect(retryResponse).toEqual(firstResponse);
+    expect(historyService.findBlockByHeight).toHaveBeenCalledTimes(1);
+    expect(historyService.findBlockByHeight).toHaveBeenCalledWith(4321n);
     expect(historyService.findTransactionEvidenceByHash).toHaveBeenCalledTimes(1);
     expect(commit).toHaveBeenCalledTimes(1);
     expect(txEventsService.take).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-resolves a cached observation after a rollback moves its transaction', async () => {
+    const commit = jest.fn().mockResolvedValue(publication());
+    pendingUpdates.register(txHash, { expectedNewRoot: confirmedRoot, commit });
+    historyService.findTransactionEvidenceByHash.mockResolvedValue({ ...evidence(), blockNo: 1234 });
+    const firstResponse = await service.observeTransaction({ tx_hash: txHash });
+    expect(firstResponse.height).toBe('0-1234');
+
+    const reorgBlockHash = '12'.repeat(32);
+    historyService.findBlockByHeight.mockImplementation(async (height: bigint) => ({
+      hash: height === 1240n ? reorgBlockHash : '00'.repeat(32),
+    }));
+    historyService.findTransactionEvidenceByHash.mockResolvedValue({
+      ...evidence(),
+      blockNo: 1240,
+      blockHash: reorgBlockHash,
+    });
+
+    await expect(service.observeTransaction({ tx_hash: txHash })).resolves.toEqual({
+      ...firstResponse,
+      height: '0-1240',
+    });
+    await expect(service.observeTransaction({ tx_hash: txHash })).resolves.toEqual({
+      ...firstResponse,
+      height: '0-1240',
+    });
+
+    expect(historyService.findBlockByHeight.mock.calls).toEqual([[1234n], [1240n]]);
+    expect(historyService.findTransactionEvidenceByHash).toHaveBeenCalledTimes(2);
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(txEventsService.take).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a rolled-back observation recoverable until its transaction is re-included', async () => {
+    const commit = jest.fn().mockResolvedValue(publication());
+    pendingUpdates.register(txHash, { expectedNewRoot: confirmedRoot, commit });
+    await expect(service.observeTransaction({ tx_hash: txHash })).resolves.toMatchObject({ height: '0-4321' });
+
+    historyService.findBlockByHeight.mockResolvedValue(null);
+    const waitForEvidence = jest
+      .spyOn(service as any, 'waitForIndexedTransactionEvidence')
+      .mockRejectedValueOnce(new Error('history evidence indexing timeout'));
+
+    await expect(service.observeTransaction({ tx_hash: txHash })).rejects.toThrow('history evidence indexing timeout');
+
+    historyService.findTransactionEvidenceByHash.mockResolvedValue({
+      ...evidence(),
+      blockNo: 4400,
+      blockHash: '56'.repeat(32),
+    });
+    await expect(service.observeTransaction({ tx_hash: txHash })).resolves.toMatchObject({
+      tx_hash: txHash,
+      height: '0-4400',
+      events: [{ type: 'send_packet', attributes: [{ key: 'packet_sequence', value: '7' }] }],
+    });
+
+    expect(waitForEvidence).toHaveBeenCalledTimes(2);
+    expect(commit).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects evidence without a canonical inclusion block hash', async () => {
+    const commit = jest.fn().mockResolvedValue(publication());
+    pendingUpdates.register(txHash, { expectedNewRoot: confirmedRoot, commit });
+    historyService.findTransactionEvidenceByHash.mockResolvedValue({ ...evidence(), blockHash: null });
+
+    await expect(service.observeTransaction({ tx_hash: txHash })).rejects.toThrow('invalid inclusion block hash');
+
+    expect(commit).not.toHaveBeenCalled();
+    expect(pendingUpdates.peek(txHash)).toBeDefined();
   });
 
   it('keeps the exact pending entry retryable when its commit callback fails', async () => {
