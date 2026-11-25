@@ -33,6 +33,7 @@ import {
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
 import {
+  assertChannelBoundToPort,
   validQueryPacketAcknowledgementParam,
   validQueryPacketAcknowledgementsParam,
   validQueryPacketCommitmentParam,
@@ -294,6 +295,7 @@ export class PacketService {
     const proofContext = await this.getProofContext(options.queryHeight);
     const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    assertChannelBoundToPort(channelDatumDecoded.port, portId, channelId);
     const packetAcknowledgement = channelDatumDecoded.state.packet_acknowledgement.get(BigInt(sequence));
     if (!packetAcknowledgement) {
       throw new GrpcNotFoundException("Not found: 'Packet Acknowledgement' not found");
@@ -363,6 +365,7 @@ export class PacketService {
     const proofContext = await this.getProofContext();
     const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    assertChannelBoundToPort(channelDatumDecoded.port, portId, channelId);
     const packetAcknowledgementSeqs = [...channelDatumDecoded.state.packet_acknowledgement.keys()];
 
     let nextKey = null;
@@ -430,6 +433,7 @@ export class PacketService {
     const proofContext = await this.getProofContext(options.queryHeight);
     const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    assertChannelBoundToPort(channelDatumDecoded.port, portId, channelId);
     const packetCommitment = channelDatumDecoded.state.packet_commitment.get(BigInt(sequence));
     if (!packetCommitment) {
       throw new GrpcNotFoundException("Not found: 'Packet Commitment' not found");
@@ -489,6 +493,7 @@ export class PacketService {
     const proofContext = await this.getProofContext();
     const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    assertChannelBoundToPort(channelDatumDecoded.port, portId, channelId);
     const packetCommitmentSeqs = [...channelDatumDecoded.state.packet_commitment.keys()];
 
     let nextKey = null;
@@ -553,6 +558,7 @@ export class PacketService {
     const proofContext = await this.getProofContext(options.queryHeight);
     const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    assertChannelBoundToPort(channelDatumDecoded.port, portId, channelId);
     const packetReceipt = channelDatumDecoded.state.packet_receipt.has(BigInt(sequence));
 
     // Generate ICS-23 proof from the IBC state tree
@@ -613,6 +619,7 @@ export class PacketService {
     const proofContext = await this.getProofContext();
     const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    assertChannelBoundToPort(channelDatumDecoded.port, portId, channelId);
     const packetReceiptSeqs = channelDatumDecoded.state.packet_receipt;
     const sequences = request.packet_commitment_sequences.filter((seq) => !packetReceiptSeqs.has(BigInt(seq)));
 
@@ -649,6 +656,7 @@ export class PacketService {
     const proofContext = await this.getProofContext();
     const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    assertChannelBoundToPort(channelDatumDecoded.port, portId, channelId);
     const packetCommitsSeqs = channelDatumDecoded.state.packet_commitment;
     const sequences = packetAcksSequences.filter((seq) => packetCommitsSeqs.has(BigInt(seq)));
 
@@ -694,11 +702,7 @@ export class PacketService {
     const proofContext = await this.getProofContext(revisionHeight);
     const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-    if (convertHex2String(channelDatumDecoded.port) !== portId) {
-      throw new GrpcInvalidArgumentException(
-        `Invalid port, found port ${channelDatumDecoded.port} instead of ${portId} in datum`,
-      );
-    }
+    assertChannelBoundToPort(channelDatumDecoded.port, portId, channelId);
     if (channelDatumDecoded.state.packet_receipt.has(sequence)) {
       throw new GrpcInvalidArgumentException(
         `Invalid sequence, sequence ${sequence} already exists in packet_receipt map`,
@@ -748,6 +752,7 @@ export class PacketService {
     const proofContext = await this.getProofContext(options.queryHeight);
     const channelUtxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+    assertChannelBoundToPort(channelDatum.port, portId, channelId);
     const nextSequenceRecv = channelDatum.state.next_sequence_recv;
 
     // Generate ICS-23 proof from the IBC state tree
@@ -788,6 +793,7 @@ export class PacketService {
     const proofContext = await this.getProofContext(options.queryHeight);
     const channelUtxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+    assertChannelBoundToPort(channelDatum.port, portId, channelId);
     const nextSequenceAck = channelDatum.state.next_sequence_ack;
 
     // Generate ICS-23 proof from the IBC state tree

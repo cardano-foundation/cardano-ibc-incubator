@@ -1,6 +1,7 @@
 import { packetLaneTokenName, sendSequencerTokenName } from '@cardano-ibc/tx-builder/dist/packet-lanes';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { RpcException } from '@nestjs/microservices';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
 import { KupoService } from '@shared/modules/kupo/kupo.service';
 import {
@@ -30,7 +31,11 @@ import {
 import { PaginationKeyDto } from '../dtos/pagination.dto';
 import { CHANNEL_ID_PREFIX, ORDER_MAPPING_CHANNEL, STATE_MAPPING_CHANNEL } from '../../constant/channel';
 import { convertHex2String } from '../../shared/helpers/hex';
-import { validQueryChannelParam, validQueryConnectionChannelsParam } from '../helpers/channel.validate';
+import {
+  assertChannelBoundToPort,
+  validQueryChannelParam,
+  validQueryConnectionChannelsParam,
+} from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
 import {
   GATEWAY_GRPC_ERROR_CODE,
@@ -349,7 +354,7 @@ export class ChannelService {
   }
 
   async queryChannel(request: QueryChannelRequest, options: ProofQueryOptions = {}): Promise<QueryChannelResponse> {
-    const { channel_id: channelId } = validQueryChannelParam(request);
+    const { channel_id: channelId, port_id: portId } = validQueryChannelParam(request);
     this.logger.log(channelId, 'queryChannel');
     try {
       const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
@@ -360,10 +365,10 @@ export class ChannelService {
         proofContext.proofHeight,
       );
       const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+      assertChannelBoundToPort(channelDatumDecoded.port, portId, channelId);
 
       // Generate ICS-23 proof from the IBC state tree
       // Channel path: channelEnds/ports/{portId}/channels/{channelId}
-      const portId = convertHex2String(channelDatumDecoded.port || 'transfer');
       const ibcPath = `channelEnds/ports/${portId}/channels/channel-${channelId}`;
       await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
       const tree = proofContext.tree;
@@ -413,6 +418,7 @@ export class ChannelService {
       return response;
     } catch (error) {
       this.logger.error(error.message, 'queryChannel');
+      if (error instanceof RpcException) throw error;
       throw new GrpcInternalException(error.message);
     }
   }
@@ -470,10 +476,8 @@ export class ChannelService {
       proofContext.proofHeight,
     );
     const datum: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-    const portId = convertHex2String(datum.port);
-    if (portId !== request.port_id) {
-      throw new GrpcNotFoundException(`${channelId} is not bound to port ${request.port_id}`);
-    }
+    assertChannelBoundToPort(datum.port, request.port_id, channelSequence);
+    const portId = request.port_id;
     await assertProofContextHostState(proofContext, this.historyService, this.lucidService);
     if (!present(datum.state)) {
       if (proofContext.tree.get(path(portId, channelId)) !== undefined) {
