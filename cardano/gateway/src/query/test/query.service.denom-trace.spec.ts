@@ -89,21 +89,31 @@ describe('QueryService denom trace queries', () => {
     expect(denomTraceServiceMock.findByIbcDenomHash).toHaveBeenCalledWith(mixedCaseHash.toLowerCase());
   });
 
-  it('returns denoms and total count for pagination', async () => {
-    denomTraceServiceMock.findAll.mockResolvedValue([
-      { path: 'transfer/channel-0', base_denom: 'stake' },
-      { path: 'transfer/channel-1', base_denom: 'token' },
-    ]);
-    denomTraceServiceMock.getCount.mockResolvedValue(42);
+  it('returns denoms with the page continuation key and total count', async () => {
+    denomTraceServiceMock.findAll.mockResolvedValue({
+      traces: [
+        { path: 'transfer/channel-0', base_denom: 'stake' },
+        { path: 'transfer/channel-1', base_denom: 'token' },
+      ],
+      pagination: { next_key: Buffer.from('next'), total: 42n },
+    });
+    const pagination = { key: new Uint8Array(), offset: 5n, limit: 2n, count_total: false, reverse: true };
 
-    const response = await service.queryDenoms({ pagination: { offset: 5n } } as any);
+    const response = await service.queryDenoms({ pagination } as any);
 
-    expect(denomTraceServiceMock.findAll).toHaveBeenCalledWith({ offset: 5 });
+    expect(denomTraceServiceMock.findAll).toHaveBeenCalledWith({ ...pagination, count_total: true });
+    expect(denomTraceServiceMock.getCount).not.toHaveBeenCalled();
     expect(response.denoms).toEqual([
       { base: 'stake', trace: [{ port_id: 'transfer', channel_id: 'channel-0' }] },
       { base: 'token', trace: [{ port_id: 'transfer', channel_id: 'channel-1' }] },
     ]);
-    expect(response.pagination?.total).toBe(42n);
+    expect(response.pagination).toEqual({ next_key: Buffer.from('next'), total: 42n });
+  });
+
+  it('keeps invalid queryDenoms pagination as an invalid argument', async () => {
+    denomTraceServiceMock.findAll.mockRejectedValue(new GrpcInvalidArgumentException('malformed pagination key'));
+
+    await expect(service.queryDenoms({} as any)).rejects.toThrow(GrpcInvalidArgumentException);
   });
 
   it('wraps unexpected queryDenoms errors as internal errors', async () => {

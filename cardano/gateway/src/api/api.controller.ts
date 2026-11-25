@@ -25,6 +25,7 @@ import { AsyncIcqAcknowledgementDto, AsyncIcqResultRequestDto } from './async-ic
 import { ChannelService } from '~@/query/services/channel.service';
 import { QueryChannelsRequest } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
 import { IdentifiedChannel } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
+import { PageRequest } from '@cardano-ibc/proto-types/build/cosmos/base/query/v1beta1/pagination';
 import { PacketService } from '~@/tx/packet.service';
 import { MsgTransfer } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import { GrpcExceptionFilter } from '~@/exception/exception.filter';
@@ -382,11 +383,25 @@ export class ApiController {
   }
 
   @Get('cardano/ibc-assets')
-  async listCardanoIbcAssets(): Promise<ApiCardanoAssetDenomTrace[]> {
-    const traces = await this.denomTraceService.findAll();
-    return traces.map((trace) =>
-      this.mapVoucherTrace(`${trace.voucher_policy_id}${trace.voucher_token_name}`.toLowerCase(), trace),
+  async listCardanoIbcAssets(
+    @Query('key') key?: string,
+    @Query('offset', new ParseIntPipe({ optional: true })) offset?: number,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Query('countTotal', new ParseBoolPipe({ optional: true })) countTotal?: boolean,
+    @Query('reverse', new ParseBoolPipe({ optional: true })) reverse?: boolean,
+  ): Promise<{ assets: ApiCardanoAssetDenomTrace[]; pagination: { next_key: string; total: string } }> {
+    const { traces, pagination } = await this.denomTraceService.findAll(
+      PageRequest.fromJSON({ key, offset, limit, count_total: countTotal, reverse }),
     );
+    return {
+      assets: traces.map((trace) =>
+        this.mapVoucherTrace(`${trace.voucher_policy_id}${trace.voucher_token_name}`.toLowerCase(), trace),
+      ),
+      pagination: {
+        next_key: Buffer.from(pagination.next_key).toString('base64'),
+        total: pagination.total.toString(),
+      },
+    };
   }
 
   @Get('cardano/channels/:channelId/health')

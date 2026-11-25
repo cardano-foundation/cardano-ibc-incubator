@@ -496,49 +496,83 @@ describe('ApiController (modern)', () => {
     expect(denomTraceServiceMock.findByHash).not.toHaveBeenCalled();
   });
 
-  it('lists persisted ibc voucher assets through the http api', async () => {
-    denomTraceServiceMock.findAll.mockResolvedValue([
-      {
-        hash: 'e'.repeat(56),
-        path: 'transfer/channel-3',
-        base_denom: 'gamm/pool/1',
-        full_denom: 'transfer/channel-3/gamm/pool/1',
-        voucher_token_name: `0014df10${'e'.repeat(56)}`,
-        voucher_reference_token_name: `000643b0${'e'.repeat(56)}`,
-        voucher_policy_id: 'f'.repeat(56),
-        ibc_denom_hash: '1'.repeat(64),
-        cip68_reference_asset_id: `${'f'.repeat(56)}${`000643b0${'e'.repeat(56)}`}`,
-        name: '1',
-        description: 'IBC voucher for transfer/channel-3/gamm/pool/1',
-        ticker: '1',
+  it('lists persisted ibc voucher assets through the http api with pagination', async () => {
+    denomTraceServiceMock.findAll.mockResolvedValue({
+      traces: [
+        {
+          hash: 'e'.repeat(56),
+          path: 'transfer/channel-3',
+          base_denom: 'gamm/pool/1',
+          full_denom: 'transfer/channel-3/gamm/pool/1',
+          voucher_token_name: `0014df10${'e'.repeat(56)}`,
+          voucher_reference_token_name: `000643b0${'e'.repeat(56)}`,
+          voucher_policy_id: 'f'.repeat(56),
+          ibc_denom_hash: '1'.repeat(64),
+          cip68_reference_asset_id: `${'f'.repeat(56)}${`000643b0${'e'.repeat(56)}`}`,
+          name: '1',
+          description: 'IBC voucher for transfer/channel-3/gamm/pool/1',
+          ticker: '1',
+        },
+      ],
+      pagination: { next_key: Buffer.from('next'), total: 3n },
+    });
+
+    const key = Buffer.from('cursor').toString('base64');
+    const response = await controller.listCardanoIbcAssets(key, 0, 1, true, true);
+
+    expect(denomTraceServiceMock.findAll).toHaveBeenCalledWith({
+      key: new Uint8Array(Buffer.from('cursor')),
+      offset: 0n,
+      limit: 1n,
+      count_total: true,
+      reverse: true,
+    });
+    expect(response).toEqual({
+      assets: [
+        {
+          asset_id: `${'f'.repeat(56)}${`0014df10${'e'.repeat(56)}`}`,
+          kind: 'ibc_voucher',
+          path: 'transfer/channel-3',
+          base_denom: 'gamm/pool/1',
+          full_denom: 'transfer/channel-3/gamm/pool/1',
+          voucher_token_name: `0014df10${'e'.repeat(56)}`,
+          cip68_reference_asset_id: `${'f'.repeat(56)}${`000643b0${'e'.repeat(56)}`}`,
+          voucher_policy_id: 'f'.repeat(56),
+          ibc_denom_hash: '1'.repeat(64),
+          display_name: '1',
+          display_symbol: '1',
+          display_description: 'IBC voucher for transfer/channel-3/gamm/pool/1',
+          description: 'IBC voucher for transfer/channel-3/gamm/pool/1',
+          ticker: '1',
+          decimals: null,
+          url: null,
+          logo: null,
+          metadata_version: null,
+        },
+      ],
+      pagination: {
+        next_key: Buffer.from('next').toString('base64'),
+        total: '3',
       },
-    ]);
+    });
+  });
+
+  it('lists ibc voucher assets with the default page when no pagination is given', async () => {
+    denomTraceServiceMock.findAll.mockResolvedValue({
+      traces: [],
+      pagination: { next_key: new Uint8Array(), total: 0n },
+    });
 
     const response = await controller.listCardanoIbcAssets();
 
-    expect(denomTraceServiceMock.findAll).toHaveBeenCalled();
-    expect(response).toEqual([
-      {
-        asset_id: `${'f'.repeat(56)}${`0014df10${'e'.repeat(56)}`}`,
-        kind: 'ibc_voucher',
-        path: 'transfer/channel-3',
-        base_denom: 'gamm/pool/1',
-        full_denom: 'transfer/channel-3/gamm/pool/1',
-        voucher_token_name: `0014df10${'e'.repeat(56)}`,
-        cip68_reference_asset_id: `${'f'.repeat(56)}${`000643b0${'e'.repeat(56)}`}`,
-        voucher_policy_id: 'f'.repeat(56),
-        ibc_denom_hash: '1'.repeat(64),
-        display_name: '1',
-        display_symbol: '1',
-        display_description: 'IBC voucher for transfer/channel-3/gamm/pool/1',
-        description: 'IBC voucher for transfer/channel-3/gamm/pool/1',
-        ticker: '1',
-        decimals: null,
-        url: null,
-        logo: null,
-        metadata_version: null,
-      },
-    ]);
+    expect(denomTraceServiceMock.findAll).toHaveBeenCalledWith({
+      key: new Uint8Array(),
+      offset: 0n,
+      limit: 0n,
+      count_total: false,
+      reverse: false,
+    });
+    expect(response).toEqual({ assets: [], pagination: { next_key: '', total: '0' } });
   });
 
   it('delegates local Osmosis swap options to LocalOsmosisSwapPlannerService', async () => {

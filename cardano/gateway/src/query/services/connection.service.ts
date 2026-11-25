@@ -19,8 +19,7 @@ import {
   QueryConnectionsRequest,
   QueryConnectionsResponse,
 } from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/query';
-import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
-import { PaginationKeyDto } from '../dtos/pagination.dto';
+import { paginate } from '../../shared/helpers/pagination';
 import { AuthToken } from '../../shared/types/auth-token';
 import {
   ConnectionEnd,
@@ -29,7 +28,6 @@ import {
   stateFromJSON,
 } from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/connection';
 import { getConnectionIdByTokenName } from '../../shared/helpers/connection';
-import { validPagination } from '../helpers/helper';
 import { convertHex2String, fromHex } from '../../shared/helpers/hex';
 import { validQueryConnectionParam } from '../helpers/connection.validate';
 import {
@@ -85,15 +83,6 @@ export class ConnectionService {
 
   async queryConnections(request: QueryConnectionsRequest): Promise<QueryConnectionsResponse> {
     this.logger.log('', 'queryConnections');
-    const pagination = getPaginationParams(validPagination(request.pagination));
-    const {
-      'pagination.key': key = '',
-      'pagination.limit': limit = '100',
-      'pagination.count_total': count_total = false,
-      'pagination.reverse': reverse = false,
-    } = pagination;
-    let { 'pagination.offset': offset = '0' } = pagination;
-    if (key) offset = decodePaginationKey(key);
 
     const deploymentConfig = this.configService.get('deployment');
     const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
@@ -156,26 +145,16 @@ export class ConnectionService {
       {},
     );
 
-    let nextKey = null;
-    let connections = reverse ? Object.values(connectionFilters).reverse() : Object.values(connectionFilters);
-    if (connections.length > +limit) {
-      const from = parseInt(offset);
-      const to = parseInt(offset) + parseInt(limit);
-      connections = connections.slice(from, to);
-
-      const pageKeyDto: PaginationKeyDto = {
-        offset: to,
-      };
-      nextKey = to < Object.values(connectionFilters).length ? generatePaginationKey(pageKeyDto) : '';
-    }
+    const { items: connections, pagination } = paginate(
+      Object.values(connectionFilters),
+      (connection) => connection.id,
+      request.pagination,
+    );
 
     const queryHeight = await this.getQueryHeight();
     const response = {
       connections: connections,
-      pagination: {
-        next_key: nextKey,
-        total: count_total ? Object.values(connectionFilters).length : 0,
-      },
+      pagination,
       height: {
         revision_number: BigInt(0), // Cardano uses revision 0; revision_height is an accepted anchor block number.
         revision_height: queryHeight,

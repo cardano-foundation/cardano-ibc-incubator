@@ -543,6 +543,30 @@ describe('proof-bearing services with captured query heights', () => {
     },
   );
 
+  it('pages packet commitments in sequence order with offsets and continuation keys', async () => {
+    const deps = makeDeps();
+    const commitments = new Map([10n, 2n, 7n].map((sequence) => [sequence, PACKET_COMMITMENT_HEX]));
+    (decodeChannelDatum as jest.Mock).mockResolvedValue(makeChannelDatum({ packet_commitment: commitments }));
+    const service = new PacketService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+      deps.treeStore,
+      createPacketStateMock() as any,
+    );
+    const request = (pagination: object) => ({ channel_id: 'channel-0', port_id: 'mock', pagination }) as any;
+
+    const first = await service.queryPacketCommitments(request({ offset: 1n, limit: 1n, count_total: true }));
+    const next = await service.queryPacketCommitments(request({ key: first.pagination?.next_key, limit: 1n }));
+
+    expect(first.commitments.map((commitment) => commitment.sequence)).toEqual(['7']);
+    expect(first.pagination?.total).toBe(3n);
+    expect(next.commitments.map((commitment) => commitment.sequence)).toEqual(['10']);
+    expect(next.pagination?.next_key).toEqual(new Uint8Array());
+  });
+
   it('serves packet receipt non-existence proofs from the cached tree at the requested height', async () => {
     const deps = makeDeps();
     (decodeChannelDatum as jest.Mock).mockResolvedValueOnce(makeChannelDatum({ packet_receipt: new Map() }));

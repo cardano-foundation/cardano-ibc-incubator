@@ -15,6 +15,15 @@ import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.servic
 import { ConnectionService } from '../services/connection.service';
 import { HistoryService } from '../services/history.service';
 import { resolveProofHeightForCurrentRoot } from '../services/proof-context';
+import { decodeConnectionDatum } from '../../shared/types/connection/connection-datum';
+
+jest.mock('../../shared/types/connection/connection-datum', () => ({
+  decodeConnectionDatum: jest.fn(),
+}));
+
+jest.mock('../../shared/helpers/connection', () => ({
+  getConnectionIdByTokenName: jest.fn((tokenName: string) => tokenName.replace('connection-token-', '')),
+}));
 
 jest.mock('../services/proof-context', () => ({
   resolveProofHeightForCurrentRoot: jest.fn(),
@@ -148,6 +157,66 @@ describe('ConnectionService ClientConnections query', () => {
       }),
     );
     await expectQueryHeightUnavailable(service.queryClientConnections({ client_id: '07-tendermint-3' }));
+  });
+});
+
+describe('ConnectionService connection listing', () => {
+  const toHex = (value: string) => Buffer.from(value, 'utf8').toString('hex');
+  const configService = {
+    get: jest.fn(() => ({
+      hostStateNFT: { policyId: 'host-policy', name: 'host-name' },
+      validators: {
+        mintConnectionStt: { scriptHash: 'connection-policy' },
+        spendConnection: { address: 'addr_test1connection' },
+      },
+    })),
+  };
+  const kupoService = {
+    queryUtxosAtAddressByPolicyAndTokenPrefix: jest.fn().mockResolvedValue([
+      { datum: 'connection-datum', matchedTokenNames: ['connection-token-7'] },
+      { datum: 'connection-datum', matchedTokenNames: ['connection-token-3'] },
+    ]),
+  };
+
+  beforeEach(() => {
+    (resolveProofHeightForCurrentRoot as jest.Mock).mockResolvedValue(4_992_646n);
+    (decodeConnectionDatum as jest.Mock).mockResolvedValue({
+      state: {
+        client_id: toHex('07-tendermint-0'),
+        versions: [],
+        state: 'Open',
+        counterparty: {
+          client_id: toHex('08-cardano-0'),
+          connection_id: toHex('connection-0'),
+          prefix: { key_prefix: toHex('ibc') },
+        },
+        delay_period: 0n,
+      },
+    });
+  });
+
+  it('applies offsets to connection listings that fit within the limit', async () => {
+    const service = new ConnectionService(
+      { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } as unknown as Logger,
+      configService as unknown as ConfigService,
+      { generateTokenName: jest.fn(() => 'connection-token-prefix') } as unknown as LucidService,
+      kupoService as unknown as KupoService,
+      {} as HistoryService,
+      {} as IbcTreeCacheService,
+      createTestTreeStore(),
+    );
+    const pagination = (offset: bigint) => ({
+      key: new Uint8Array(),
+      offset,
+      limit: 100n,
+      count_total: true,
+      reverse: false,
+    });
+
+    const page = await service.queryConnections({ pagination: pagination(1n) });
+    expect(page.connections.map((connection) => connection.id)).toEqual(['connection-7']);
+    expect(page.pagination).toEqual({ next_key: new Uint8Array(), total: 2n });
+    expect((await service.queryConnections({ pagination: pagination(999n) })).connections).toEqual([]);
   });
 });
 

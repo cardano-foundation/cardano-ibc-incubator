@@ -18,7 +18,7 @@ import {
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
 import { errorReceiptToProto, upgradeToProto } from '../../shared/helpers/channel-upgrade-proto';
 import { channelUpgradeErrorPath, channelUpgradePath } from '../../shared/helpers/channel';
-import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
+import { paginate } from '../../shared/helpers/pagination';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import {
   Channel,
@@ -28,7 +28,6 @@ import {
   orderFromJSON,
   stateFromJSON,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
-import { PaginationKeyDto } from '../dtos/pagination.dto';
 import { CHANNEL_ID_PREFIX, ORDER_MAPPING_CHANNEL, STATE_MAPPING_CHANNEL } from '../../constant/channel';
 import { convertHex2String } from '../../shared/helpers/hex';
 import {
@@ -36,7 +35,6 @@ import {
   validQueryChannelParam,
   validQueryConnectionChannelsParam,
 } from '../helpers/channel.validate';
-import { validPagination } from '../helpers/helper';
 import {
   GATEWAY_GRPC_ERROR_CODE,
   gatewayGrpcError,
@@ -244,15 +242,6 @@ export class ChannelService {
     request: QueryChannelsRequest,
   ): Promise<Pick<QueryChannelsResponse, 'channels' | 'pagination'>> {
     this.logger.log('', 'listCurrentChannelEnds');
-    const pagination = getPaginationParams(validPagination(request.pagination));
-    const {
-      'pagination.key': key = '',
-      'pagination.limit': limit = '100',
-      'pagination.count_total': count_total = false,
-      'pagination.reverse': reverse = false,
-    } = pagination;
-    let { 'pagination.offset': offset = '0' } = pagination;
-    if (key) offset = decodePaginationKey(key);
 
     const {
       policyId: mintChannelPolicyId,
@@ -311,26 +300,15 @@ export class ChannelService {
       return accumulator;
     }, {});
 
-    let nextKey = null;
-    let channels = reverse ? Object.values(channelFilters).reverse() : Object.values(channelFilters);
-    if (channels.length > +limit) {
-      const from = parseInt(offset);
-      const to = parseInt(offset) + parseInt(limit);
-      channels = channels.slice(from, to);
-
-      const pageKeyDto: PaginationKeyDto = {
-        offset: to,
-      };
-
-      nextKey = to < Object.values(channelFilters).length ? generatePaginationKey(pageKeyDto) : '';
-    }
+    const { items: channels, pagination } = paginate(
+      Object.values(channelFilters),
+      (channel) => `${channel.port_id}/${channel.channel_id}`,
+      request.pagination,
+    );
 
     return {
       channels: channels,
-      pagination: {
-        next_key: nextKey,
-        total: count_total ? Object.values(channelFilters).length : 0,
-      },
+      pagination,
     } as unknown as Pick<QueryChannelsResponse, 'channels' | 'pagination'>;
   }
 
@@ -498,15 +476,6 @@ export class ChannelService {
   async queryConnectionChannels(request: QueryConnectionChannelsRequest): Promise<QueryConnectionChannelsResponse> {
     this.logger.log('queryConnectionChannels');
     const { connection: connectionId, pagination: paginationReq } = validQueryConnectionChannelsParam(request);
-    const pagination = getPaginationParams(validPagination(paginationReq));
-    const {
-      'pagination.key': key = '',
-      'pagination.limit': limit = '100',
-      'pagination.count_total': count_total = false,
-      'pagination.reverse': reverse = false,
-    } = pagination;
-    let { 'pagination.offset': offset = '0' } = pagination;
-    if (key) offset = decodePaginationKey(key);
 
     const {
       policyId: mintChannelPolicyId,
@@ -567,27 +536,16 @@ export class ChannelService {
         return accumulator;
       }, {});
 
-    let nextKey = null;
-    let channels = reverse ? Object.values(channelFilters).reverse() : Object.values(channelFilters);
-    if (channels.length > +limit) {
-      const from = parseInt(offset);
-      const to = parseInt(offset) + parseInt(limit);
-      channels = channels.slice(from, to);
-
-      const pageKeyDto: PaginationKeyDto = {
-        offset: to,
-      };
-
-      nextKey = to < Object.values(channelFilters).length ? generatePaginationKey(pageKeyDto) : '';
-    }
+    const { items: channels, pagination } = paginate(
+      Object.values(channelFilters),
+      (channel) => `${channel.port_id}/${channel.channel_id}`,
+      paginationReq,
+    );
 
     const queryHeight = await this.getQueryHeight();
     const response = {
       channels: channels,
-      pagination: {
-        next_key: nextKey,
-        total: count_total ? Object.values(channelFilters).length : 0,
-      },
+      pagination,
       height: {
         revision_number: BigInt(0), // Cardano uses revision 0; revision_height is an accepted anchor block number.
         revision_height: queryHeight,
