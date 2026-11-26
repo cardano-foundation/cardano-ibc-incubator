@@ -1,3 +1,4 @@
+import { encodePacketCursor } from '../helpers/packet-pagination';
 import { createHash } from 'node:crypto';
 import { PacketService } from '../services/packet.service';
 
@@ -54,11 +55,11 @@ describe('default transfer packet queries', () => {
   });
 
   it('passes pagination to the index rather than listing history first', async () => {
-    entries.mockResolvedValue({ entries: new Map([[8n, 'ab']]), height, total: 1000, hasMore: true });
-    const result = await service.queryPacketAcknowledgements({ port_id: 'transfer', channel_id: 'channel-0', pagination: { key: Buffer.from('7'), limit: 1n, count_total: true } } as any);
-    expect(entries).toHaveBeenCalledWith('transfer', 'channel-0', 'acks', undefined, { offset: 7, limit: 1, reverse: undefined });
+    entries.mockResolvedValue({ entries: new Map([[8n, 'ab']]), height, total: 1000, hasMore: true, blockHash: 'ab'.repeat(32) });
+    const result = await service.queryPacketAcknowledgements({ port_id: 'transfer', channel_id: 'channel-0', pagination: { offset: 7n, limit: 1n, count_total: true } } as any);
+    expect(entries).toHaveBeenCalledWith('transfer', 'channel-0', 'acks', undefined, { offset: 7, limit: 1, reverse: false, sequences: undefined, after: undefined, blockHash: undefined });
     expect(result.acknowledgements[0].sequence).toBe(8n);
-    expect(result.pagination).toEqual({ next_key: Buffer.from('8'), total: 1000n });
+    expect(result.pagination).toEqual({ next_key: encodePacketCursor({ scope: 'acks/transfer/channel-0/*', reverse: false, sequence: '8', height: '42', blockHash: 'ab'.repeat(32) }), total: 1000n });
   });
 
   it('checks requested unreceived sequences with point lookups', async () => {

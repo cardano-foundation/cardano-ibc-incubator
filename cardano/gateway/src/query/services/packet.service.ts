@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { decodePacketCursor, encodePacketCursor } from '../helpers/packet-pagination';
 import { PacketStateService } from './packet-state.service';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -80,15 +82,27 @@ export class PacketService {
   private async lanePacketList(
     request: QueryPacketCommitmentsRequest | QueryPacketAcknowledgementsRequest,
     kind: 'commitments' | 'acks',
+    options: ProofQueryOptions = {},
   ) {
     const pagination = request.pagination;
-    const offset = pagination?.key?.length
-      ? Number(Buffer.from(pagination.key).toString('utf8'))
-      : Number(pagination?.offset ?? 0);
+    const reverse = pagination?.reverse ?? false;
+    const sequences = kind === 'acks' && 'packet_commitment_sequences' in request && request.packet_commitment_sequences?.length
+      ? request.packet_commitment_sequences.map(BigInt)
+      : undefined;
+    const filter = sequences ? createHash('sha256').update([...new Set(sequences.map(String))].sort().join(',')).digest('hex') : '*';
+    const scope = `${kind}/${request.port_id}/${request.channel_id}/${filter}`;
+    const cursor = pagination?.key?.length ? decodePacketCursor(pagination.key, scope, reverse) : undefined;
+    const offset = Number(pagination?.offset ?? 0);
     const limit = Number(pagination?.limit || 100n);
-    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 4096)
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 4096 ||
+        (cursor && offset !== 0))
       throw new GrpcInvalidArgumentException('Invalid packet pagination');
-    const { entries, height, total, hasMore } = await this.packetState.entries(request.port_id, request.channel_id, kind, undefined, { offset, limit, reverse: pagination?.reverse });
+    if (cursor && options.queryHeight !== undefined && options.queryHeight !== BigInt(cursor.height))
+      throw new GrpcInvalidArgumentException('Packet pagination snapshot height does not match requested height');
+    const { entries, height, total, hasMore, blockHash } = await this.packetState.entries(
+      request.port_id, request.channel_id, kind, cursor ? BigInt(cursor.height) : options.queryHeight,
+      { offset, limit, reverse, sequences, after: cursor ? BigInt(cursor.sequence) : undefined, blockHash: cursor?.blockHash },
+    );
     const selected = [...entries];
     return {
       packets: selected.map(([sequence, value]) => ({
@@ -100,7 +114,10 @@ export class PacketService {
       height,
       pagination: {
         next_key:
-          hasMore ? Buffer.from(String(offset + selected.length)) : new Uint8Array(),
+          hasMore && selected.length ? encodePacketCursor({
+            scope, reverse, sequence: selected[selected.length - 1][0].toString(),
+            height: height.revision_height.toString(), blockHash,
+          }) : new Uint8Array(),
         total: pagination?.count_total ? BigInt(total) : 0n,
       },
     };
@@ -338,9 +355,10 @@ export class PacketService {
 
   async queryPacketAcknowledgements(
     request: QueryPacketAcknowledgementsRequest,
+    options: ProofQueryOptions = {},
   ): Promise<QueryPacketAcknowledgementsResponse> {
     if (request.port_id === 'transfer') {
-      const { packets, ...rest } = await this.lanePacketList(request, 'acks');
+      const { packets, ...rest } = await this.lanePacketList(request, 'acks', options);
       return { acknowledgements: packets, ...rest };
     }
 
@@ -351,12 +369,13 @@ export class PacketService {
     } = validQueryPacketAcknowledgementsParam(request);
     this.logger.log(`channelId = ${channelId}, portId = ${portId}`, 'QueryPacketAcknowledgements');
 
-    const proofContext = await this.getProofContext();
+    const proofContext = await this.getProofContext(options.queryHeight);
     const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     assertChannelBoundToPort(channelDatumDecoded.port, portId, channelId);
+    const requested = new Set(request.packet_commitment_sequences?.map(BigInt) ?? []);
     const { items: packetAckSeqs, pagination } = paginate(
-      [...channelDatumDecoded.state.packet_acknowledgement.keys()],
+      [...channelDatumDecoded.state.packet_acknowledgement.keys()].filter(sequence => !requested.size || requested.has(sequence)),
       (sequence) => sequence.toString().padStart(20, '0'),
       paginationReq,
     );
@@ -445,9 +464,9 @@ export class PacketService {
     return response;
   }
 
-  async queryPacketCommitments(request: QueryPacketCommitmentsRequest): Promise<QueryPacketCommitmentsResponse> {
+  async queryPacketCommitments(request: QueryPacketCommitmentsRequest, options: ProofQueryOptions = {}): Promise<QueryPacketCommitmentsResponse> {
     if (request.port_id === 'transfer') {
-      const { packets, ...rest } = await this.lanePacketList(request, 'commitments');
+      const { packets, ...rest } = await this.lanePacketList(request, 'commitments', options);
       return { commitments: packets, ...rest };
     }
 
@@ -458,7 +477,7 @@ export class PacketService {
     } = validQueryPacketCommitmentsParam(request);
     this.logger.log(`channelId = ${channelId}, portId = ${portId}`, 'QueryPacketCommitments');
 
-    const proofContext = await this.getProofContext();
+    const proofContext = await this.getProofContext(options.queryHeight);
     const utxo = await this.getChannelUtxo(channelId, proofContext.proofHeight);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     assertChannelBoundToPort(channelDatumDecoded.port, portId, channelId);

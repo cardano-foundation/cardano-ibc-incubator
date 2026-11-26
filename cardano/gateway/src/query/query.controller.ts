@@ -243,8 +243,9 @@ export class QueryController {
   @GrpcMethod('Query', 'PacketAcknowledgements')
   async queryPacketAcknowledgements(
     request: QueryPacketAcknowledgementsRequest,
+    metadata?: Metadata,
   ): Promise<QueryPacketAcknowledgementsResponse> {
-    const response: QueryPacketAcknowledgementsResponse = await this.packetService.queryPacketAcknowledgements(request);
+    const response: QueryPacketAcknowledgementsResponse = await this.packetService.queryPacketAcknowledgements(request, { queryHeight: getQueryHeightFromMetadata(metadata) });
     return response as unknown as QueryPacketAcknowledgementsResponse;
   }
 
@@ -260,8 +261,8 @@ export class QueryController {
   }
 
   @GrpcMethod('Query', 'PacketCommitments')
-  async queryPacketCommitments(request: QueryPacketCommitmentsRequest): Promise<QueryPacketCommitmentsResponse> {
-    const response: QueryPacketCommitmentsResponse = await this.packetService.queryPacketCommitments(request);
+  async queryPacketCommitments(request: QueryPacketCommitmentsRequest, metadata?: Metadata): Promise<QueryPacketCommitmentsResponse> {
+    const response: QueryPacketCommitmentsResponse = await this.packetService.queryPacketCommitments(request, { queryHeight: getQueryHeightFromMetadata(metadata) });
     return response as unknown as QueryPacketCommitmentsResponse;
   }
 

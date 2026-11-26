@@ -15,6 +15,27 @@ import { loadStakeWeightedStabilityEvidenceByHeight } from './stability-evidence
 
 export { latestPacketProofHeight } from './settled-proof-height';
 
+type PacketEntrySelection = {
+  sequences?: readonly bigint[];
+  offset?: number;
+  limit?: number;
+  reverse?: boolean;
+  after?: bigint;
+  blockHash?: string;
+};
+
+function selectedPacketPage(entries: Map<bigint, string>, selection: PacketEntrySelection) {
+  const reverse = selection.reverse ?? false;
+  const ordered = [...entries].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+  if (reverse) ordered.reverse();
+  const after = selection.after;
+  const remaining = after === undefined ? ordered : ordered.filter(([sequence]) => reverse ? sequence < after : sequence > after);
+  const offset = selection.offset ?? 0;
+  const limit = selection.limit ?? remaining.length;
+  const page = new Map(remaining.slice(offset, offset + limit));
+  return { entries: page, total: entries.size, hasMore: offset + page.size < remaining.length };
+}
+
 function snapshotInteger(value: bigint | number): number {
   const result = Number(value);
   if (!Number.isSafeInteger(result) || result < 0) throw new Error('Snapshot integer exceeds supported exact range');
@@ -105,11 +126,12 @@ export class PacketStateService {
 
   async entries(
     port: string, channel: string, kind: 'commitments' | 'acks' | 'receipts', requested?: bigint,
-    selection: { sequences?: readonly bigint[]; offset?: number; limit?: number; reverse?: boolean } = {},
+    selection: PacketEntrySelection = {},
   ) {
     const height = await this.height(requested);
     const block = await this.history.findBlockByHeight(height);
     if (!block) throw new Error('Packet entries block missing');
+    if (selection.blockHash && selection.blockHash !== block.hash) throw new Error('Packet pagination snapshot rolled back');
     const config = this.config.getOrThrow<DeploymentConfig>('deployment').packetState;
     const count = config.laneCount;
     if (!/^channel-(0|[1-9][0-9]*)$/.test(channel)) throw new Error('Invalid packet channel ID');
@@ -134,10 +156,11 @@ export class PacketStateService {
         throw new Error('Invalid historical channel identity');
       if ((await this.history.findBlockByHeight(height))?.hash !== block.hash)
         throw new Error('Packet entries block rolled back');
-      return { height: { revision_number: 0n, revision_height: height }, entries: new Map<bigint, string>(), total: 0, hasMore: false };
+      return { height: { revision_number: 0n, revision_height: height }, entries: new Map<bigint, string>(), total: 0, hasMore: false, blockHash: block.hash };
     }
-    const result = new Map<bigint, string>();
+    let result = new Map<bigint, string>();
     let total = 0;
+    let hasMore = false;
     if (selection.sequences) {
       const groups = new Map<number, bigint[]>();
       for (const sequence of selection.sequences) {
@@ -153,17 +176,29 @@ export class PacketStateService {
           if (value) result.set(sequence, value.toString('hex'));
         }
       }
-      total = result.size;
+      const page = selectedPacketPage(result, selection);
+      result = page.entries;
+      total = page.total;
+      hasMore = page.hasMore;
     } else {
       const offset = selection.offset ?? 0, limit = selection.limit ?? 100;
       if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 4096) throw new Error('Invalid packet pagination');
       const reverse = selection.reverse ?? false;
       const trees = await Promise.all(Array.from({ length: count }, async (_, index) => (await this.lane(port, channel, index, height)).tree));
       total = trees.reduce((sum, tree) => sum + tree.count(kind), 0);
-      const boundary = offset ? PacketMerkleTree.sequenceAt(trees, kind, offset, reverse) : undefined;
+      const after = selection.after;
+      const boundary = after ?? (offset ? PacketMerkleTree.sequenceAt(trees, kind, offset, reverse) : undefined);
+      let skipped = offset;
+      if (after !== undefined) {
+        skipped = trees.reduce((sum, tree) => sum + (reverse
+          ? tree.count(kind) - tree.countBefore(kind, after)
+          : tree.countBefore(kind, after + 1n)), 0);
+      }
       if (!offset || boundary !== undefined) {
         const heads = trees.map(tree => {
-          const position = boundary === undefined ? 0 : reverse ? tree.count(kind) - tree.countBefore(kind, boundary + 1n) : tree.countBefore(kind, boundary);
+          const position = boundary === undefined ? 0 : reverse
+            ? tree.count(kind) - tree.countBefore(kind, boundary + (after === undefined ? 1n : 0n))
+            : tree.countBefore(kind, boundary + (after === undefined ? 0n : 1n));
           return { tree, position, entry: tree.entriesPage(kind, position, 1, reverse)[0] };
         });
         while (result.size < limit) {
@@ -176,11 +211,12 @@ export class PacketStateService {
           if (result.size < limit) next.entry = next.tree.entriesPage(kind, ++next.position, 1, reverse)[0];
         }
       }
+      hasMore = skipped + result.size < total;
     }
     if ((await this.history.findBlockByHeight(height))?.hash !== block.hash) throw new Error('Packet entries block rolled back');
     return {
       height: { revision_number: 0n, revision_height: height }, entries: result, total,
-      hasMore: !selection.sequences && (selection.offset ?? 0) + result.size < total,
+      hasMore, blockHash: block.hash,
     };
   }
 

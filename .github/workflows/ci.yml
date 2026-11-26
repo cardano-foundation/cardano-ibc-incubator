@@ -1812,6 +1812,18 @@ jobs:
       - name: Test
         run: cargo test --manifest-path relayer/Cargo.toml -p ibc-relayer --lib --locked -- --test-threads=1
 
+      - name: Setup Node.js for Gateway recovery contract
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Build Gateway recovery fixture dependencies
+        run: node cardano/gateway/scripts/prepare-local-deps.cjs
+
+      - name: Recover missed acknowledgements through the pinned Cardano adapter
+        working-directory: cardano/gateway
+        run: npx ts-node -r tsconfig-paths/register src/scripts/test/ack-recovery-contract.ts
+
       - name: Test authorization artifact transfer
         run: python3 -m unittest discover -s scripts/ci -p test_hermes_authorization.py
 
