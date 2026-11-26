@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 const workflow = readFileSync(new URL('../../.github/workflows/publish.yaml', import.meta.url), 'utf8');
 const build = readFileSync(new URL('../../.github/workflows/build-image.yaml', import.meta.url), 'utf8');
@@ -66,16 +67,107 @@ test('publishing fails when no matching destination is configured', () => {
   assert.notEqual(selectRegistries({ GITHUB_REF_TYPE: 'tag', REGISTRIES: '' }).status, 0);
 });
 
-test('PR callers have no package writes or public registry credentials', () => {
-  const pr = workflow.split('  pr-images:\n')[1].split('  release-images:\n')[0];
-  assert.doesNotMatch(pr, /packages:|HUB_DOCKER_COM|secrets: inherit/);
-  assert.match(pr, /permissions:\n      contents: read\n/);
-  const guard = "github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'";
-  assert.ok(pr.includes(`publish: \u0024{{ ${guard} }}`));
-  for (const line of pr.split('\n').filter((line) => line.includes('secrets.'))) {
-    assert.ok(line.includes(guard) && line.includes("|| ''"), line);
-  }
+test('branch callers have no package writes or public registry credentials', () => {
+  const branch = workflow.split('  pr-images:\n')[1].split('  release-images:\n')[0];
+  assert.doesNotMatch(branch, /packages:|HUB_DOCKER_COM|secrets: inherit/);
+  assert.match(branch, /permissions:\n      contents: read\n/);
   assert.doesNotMatch(build, /^\s+permissions:/m);
+  const condition = branch.match(/^    if: (.+)$/m)[1];
+  const publish = branch.match(/^      publish: \$\{\{ (.+) \}\}$/m)[1];
+  const secrets = Object.fromEntries([...branch.matchAll(/^      (\w+): \$\{\{ (.+secrets\..+) \}\}$/gm)]
+    .map((match) => [match[1], match[2]]));
+  assert.deepEqual(Object.keys(secrets).sort(), ['DOCKER_REGISTRIES', 'PRIVATE_DOCKER_REGISTRY_PASS', 'PRIVATE_DOCKER_REGISTRY_URL']);
+  const privateSecrets = {
+    DOCKER_REGISTRIES: 'registry.example.test/team',
+    GITLAB_DOCKER_REGISTRY_URL: 'registry.example.test',
+    GITLAB_PKG_REGISTRY_TOKEN: 'fixture-private-token',
+  };
+  const cases = [
+    ['merged main', 'push', 'refs/heads/main', '', 'maintainer', true, true],
+    ['same-repository PR', 'pull_request', 'refs/pull/1/merge', 'example/repo', 'maintainer', true, true],
+    ['fork PR', 'pull_request', 'refs/pull/1/merge', 'outsider/repo', 'maintainer', true, false],
+    ['Dependabot PR', 'pull_request', 'refs/pull/1/merge', 'example/repo', 'dependabot[bot]', true, false],
+    ['other branch', 'push', 'refs/heads/topic', '', 'maintainer', false, false],
+    ['release tag', 'push', 'refs/tags/gateway/v2.0.2', '', 'maintainer', false, false],
+  ];
+  for (const [name, event, ref, sourceRepo, actor, builds, publishes] of cases) {
+    const context = {
+      github: { event_name: event, ref, actor, repository: 'example/repo',
+        event: { pull_request: { head: { repo: { full_name: sourceRepo } } } } },
+      secrets: privateSecrets,
+    };
+    // These workflow guards use the same boolean and string operators as JavaScript.
+    assert.equal(runInNewContext(condition, context), builds, name);
+    assert.equal(runInNewContext(publish, context), publishes, name);
+    for (const [key, expression] of Object.entries(secrets)) {
+      const expected = publishes ? privateSecrets[expression.match(/secrets\.(\w+)/)[1]] : '';
+      assert.equal(runInNewContext(expression, context), expected, `${name}: ${key}`);
+    }
+  }
+});
+
+const componentStep = workflow.split('        id: select\n')[1].split('        run: |\n')[1]
+  .split('\n  pr-images:')[0].split('\n').map(line => line.replace(/^          /, '')).join('\n');
+
+for (const event of ['push', 'pull_request']) {
+  for (const change of ['gateway', 'relayer', 'workflow']) {
+    test(`${event} selects Hermes only when its pin or build inputs change: ${change}`, () => {
+      const directory = mkdtempSync(join(tmpdir(), 'image-components-'));
+      try {
+        const git = (...args) => {
+          const result = spawnSync('git', args, { cwd: directory, encoding: 'utf8' });
+          assert.equal(result.status, 0, result.stderr);
+          return result.stdout.trim();
+        };
+        const commit = () => git('-c', 'user.name=Image test', '-c', 'user.email=image@example.invalid',
+          'commit', '--allow-empty', '-qm', 'fixture');
+        git('init', '-q');
+        commit();
+        const originalPin = git('rev-parse', 'HEAD');
+        git('update-index', '--add', '--cacheinfo', `160000,${originalPin},relayer`);
+        commit();
+        const base = git('rev-parse', 'HEAD');
+        if (change === 'relayer') {
+          git('update-index', '--cacheinfo', `160000,${base},relayer`);
+        } else {
+          const path = change === 'gateway' ? 'cardano/gateway/src/test.ts' : '.github/workflows/publish.yaml';
+          mkdirSync(dirname(join(directory, path)), { recursive: true });
+          writeFileSync(join(directory, path), 'changed');
+          git('add', '--', path);
+        }
+        commit();
+        const output = join(directory, 'output');
+        const result = spawnSync('bash', ['-euo', 'pipefail', '-c', componentStep], {
+          cwd: directory, encoding: 'utf8',
+          env: { PATH: process.env.PATH, GITHUB_OUTPUT: output, GITHUB_EVENT_NAME: event,
+            REF_TYPE: 'branch', REF_NAME: 'main', DIFF_BASE_SHA: base, DIFF_HEAD_SHA: git('rev-parse', 'HEAD') },
+        });
+        assert.equal(result.status, 0, result.stderr);
+        const images = JSON.parse(readFileSync(output, 'utf8').trim().slice('images='.length));
+        assert.deepEqual(images.map(image => image.component), change === 'gateway'
+          ? ['gateway', 'swap-client'] : ['gateway', 'hermes', 'swap-client']);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    });
+  }
+}
+
+test('main pushes enable image selection even when the PR documentation job is skipped', () => {
+  assert.match(workflow, /push:\n    branches: \[main\]/);
+  const selection = workflow.split('  select-components:\n')[1].split('    needs:')[0];
+  const condition = selection.match(/if: \$\{\{ (.+) \}\}/)[1];
+  const context = {
+    cancelled: () => false, startsWith: (value, prefix) => value.startsWith(prefix),
+    github: { event_name: 'push', ref_type: 'branch', ref: 'refs/heads/main' },
+    needs: { 'image-metadata': { result: 'success' }, 'docs-update': { result: 'skipped', outputs: {} } },
+  };
+  // GitHub permits hyphens in property names. Use bracket access for this evaluation.
+  const expression = condition.replaceAll('needs.image-metadata', "needs['image-metadata']")
+    .replaceAll('needs.docs-update', "needs['docs-update']");
+  assert.equal(runInNewContext(expression, context), true);
+  context.needs['image-metadata'].result = 'failure';
+  assert.equal(runInNewContext(expression, context), false);
 });
 
 test('only tag callers receive release credentials and package writes', () => {
