@@ -12,6 +12,12 @@ const registryStep = build.split('      - name: Select registry credentials befo
   .split('\n      - name:')[0].split('        run: |\n')[1]
   .split('\n').map((line) => line.replace(/^          /, '')).join('\n');
 
+function jobCondition(job) {
+  return job.match(/^    if: (.+)$/m)[1]
+    .replace(/^\$\{\{\s*|\s*\}\}$/g, '')
+    .replace(/needs\.([a-z-]+)/g, "needs['$1']");
+}
+
 function selectRegistries(overrides = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'image-credentials-'));
   const output = join(directory, 'output');
@@ -72,7 +78,7 @@ test('branch callers have no package writes or public registry credentials', () 
   assert.doesNotMatch(branch, /packages:|HUB_DOCKER_COM|secrets: inherit/);
   assert.match(branch, /permissions:\n      contents: read\n/);
   assert.doesNotMatch(build, /^\s+permissions:/m);
-  const condition = branch.match(/^    if: (.+)$/m)[1];
+  const condition = jobCondition(branch);
   const publish = branch.match(/^      publish: \$\{\{ (.+) \}\}$/m)[1];
   const secrets = Object.fromEntries([...branch.matchAll(/^      (\w+): \$\{\{ (.+secrets\..+) \}\}$/gm)]
     .map((match) => [match[1], match[2]]));
@@ -95,6 +101,8 @@ test('branch callers have no package writes or public registry credentials', () 
       github: { event_name: event, ref, actor, repository: 'example/repo',
         event: { pull_request: { head: { repo: { full_name: sourceRepo } } } } },
       secrets: privateSecrets,
+      cancelled: () => false,
+      needs: { 'select-components': { result: 'success' } },
     };
     // These workflow guards use the same boolean and string operators as JavaScript.
     assert.equal(runInNewContext(condition, context), builds, name);
@@ -102,6 +110,31 @@ test('branch callers have no package writes or public registry credentials', () 
     for (const [key, expression] of Object.entries(secrets)) {
       const expected = publishes ? privateSecrets[expression.match(/secrets\.(\w+)/)[1]] : '';
       assert.equal(runInNewContext(expression, context), expected, `${name}: ${key}`);
+    }
+  }
+});
+
+test('publishing conditions allow skipped docs but block unsuccessful inputs and cancellation', () => {
+  for (const [name, dependency, ref, refType] of [
+    ['pr-images', 'select-components', 'refs/heads/main', 'branch'],
+    ['release-images', 'select-components', 'refs/tags/gateway/v2.0.2', 'tag'],
+    ['gateway-release', 'release-images', 'refs/tags/gateway/v2.0.2', 'tag'],
+  ]) {
+    const job = workflow.split(`  ${name}:\n`)[1].split(/\n  [a-z-]+:\n/)[0];
+    const condition = jobCondition(job);
+    // Without a status function GitHub inserts success(), which rejects skipped ancestors.
+    assert.match(condition, /!cancelled\(\)/);
+    for (const result of ['success', 'failure', 'cancelled', 'skipped']) {
+      for (const isCancelled of [false, true]) {
+        const context = {
+          github: { event_name: 'push', ref, ref_type: refType, ref_name: 'gateway/v2.0.2' },
+          needs: { 'docs-update': { result: 'skipped' }, [dependency]: { result } },
+          cancelled: () => isCancelled,
+          startsWith: (value, prefix) => value.startsWith(prefix),
+        };
+        assert.equal(runInNewContext(condition, context), result === 'success' && !isCancelled,
+          `${name}: ${result}, cancelled=${isCancelled}`);
+      }
     }
   }
 });
@@ -172,7 +205,7 @@ test('main pushes enable image selection even when the PR documentation job is s
 
 test('only tag callers receive release credentials and package writes', () => {
   const release = workflow.split('  release-images:\n')[1].split('  gateway-release:\n')[0];
-  assert.match(release, /if: github.event_name == 'push' && github.ref_type == 'tag'/);
+  assert.match(release, /github.event_name == 'push' && github.ref_type == 'tag'/);
   assert.match(release, /packages: write/);
   assert.match(release, /HUB_DOCKER_COM_PASS: \$\{\{ secrets.HUB_DOCKER_COM_PASS \}\}/);
 });

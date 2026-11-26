@@ -116,7 +116,8 @@ jobs:
     # PR builds honor the docs gate. Main builds publish the merged source.
     name: Build ${{ matrix.image.component }}
     needs: select-components
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    # Override implicit success(): docs-update is intentionally skipped on pushes.
+    if: ${{ !cancelled() && needs.select-components.result == 'success' && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
     permissions:
       contents: read
     strategy:
@@ -136,7 +137,7 @@ jobs:
   release-images:
     name: Release ${{ matrix.image.component }}
     needs: select-components
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    if: ${{ !cancelled() && needs.select-components.result == 'success' && github.event_name == 'push' && github.ref_type == 'tag' }}
     permissions:
       actions: read
       contents: read
@@ -160,7 +161,7 @@ jobs:
   gateway-release:
     name: Publish gateway GitHub Release
     needs: release-images
-    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'gateway/')
+    if: ${{ !cancelled() && needs.release-images.result == 'success' && github.ref_type == 'tag' && startsWith(github.ref_name, 'gateway/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

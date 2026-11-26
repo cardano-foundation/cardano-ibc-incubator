@@ -138,6 +138,22 @@ echo 'REGISTRIES=${{ inputs.DOCKER_REGISTRIES }}' >> "$GITHUB_OUTPUT"
         with self.assertRaisesRegex(ValueError, "IMAGE_TAG must be a version tag"):
             metadata.rehearse(action, baseline, steps, image, "2.0.2", root=self.root)
 
+    def test_publish_jobs_allow_skipped_docs_ancestor_but_require_successful_inputs(self):
+        jobs = metadata.load_yaml((metadata.ROOT / ".github/workflows/publish.yaml").read_text())["jobs"]
+        self.assertEqual(jobs["docs-update"]["if"], "${{ github.event_name == 'pull_request' }}")
+        for name, dependency in [
+            ("pr-images", "select-components"),
+            ("release-images", "select-components"),
+            ("gateway-release", "release-images"),
+        ]:
+            with self.subTest(job=name):
+                condition = jobs[name]["if"]
+                # An explicit status function prevents GitHub from adding success(),
+                # which rejects the intentionally skipped docs ancestor on pushes.
+                self.assertIn("!cancelled()", condition)
+                self.assertIn(f"needs.{dependency}.result == 'success'", condition)
+                self.assertEqual(jobs[name]["needs"], dependency)
+
     def test_workflow_requires_metadata_before_building_and_checks_versions_unconditionally(self):
         publish = metadata.load_yaml((metadata.ROOT / ".github/workflows/publish.yaml").read_text())
         self.assertIn("image-metadata", publish["jobs"]["select-components"]["needs"])
