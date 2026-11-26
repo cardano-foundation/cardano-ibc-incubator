@@ -138,3 +138,35 @@ test("distinguishes fragmented backing from a true shortfall without counting du
     });
   }
 });
+
+test("prefers exact principal over oversized deposits for timeout refunds", () => {
+  const inputs = deposits([
+    676_800_000n,
+    40_000_000n,
+    676_800_000n,
+    676_800_000n,
+  ]);
+  assert.deepEqual(select(inputs, 40_000_000n, 17n), [inputs[1]]);
+  assert.deepEqual(select([...inputs].reverse(), 40_000_000n, 17n), [
+    inputs[1],
+  ]);
+  // The caller excludes reserved deposits before selection.
+  const available = inputs.filter((input) => input !== inputs[1]);
+  assert.deepEqual(select(available, 40_000_000n, 17n), [inputs[2]]);
+});
+
+test("rotates exact matches deterministically ahead of oversized deposits", () => {
+  const inputs = deposits([40_000_000n, 676_800_000n, 40_000_000n]);
+  assert.deepEqual(select(inputs, 40_000_000n, 1n), [inputs[0]]);
+  assert.deepEqual(select(inputs, 40_000_000n, 2n), [inputs[2]]);
+  assert.deepEqual(select(inputs, 40_000_000n, 3n), [inputs[2]]);
+  assert.deepEqual(select([...inputs].reverse(), 40_000_000n, 4n), [
+    inputs[0],
+  ]);
+});
+
+test("matches principal without counting the reserve as refundable backing", () => {
+  const inputs = deposits([37_000_000n, 676_800_000n, 40_000_000n]);
+  assert.equal(inputs[0].assets.lovelace, 40_000_000n);
+  assert.deepEqual(select(inputs, 40_000_000n), [inputs[2]]);
+});

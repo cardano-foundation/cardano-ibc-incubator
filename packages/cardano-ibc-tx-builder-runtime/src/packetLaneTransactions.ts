@@ -1736,9 +1736,10 @@ export function selectPacketLiquidity(
     ? Number((sequence - 1n) % BigInt(candidates.length))
     : 0;
   const rotated = [...candidates.slice(start), ...candidates.slice(0, start)];
-  // Prefer an independent deposit that covers the payout. Rotation distributes
-  // equal choices across packets without hiding a sufficient input.
-  const sufficient = rotated.find(({ principal }) => principal >= amount);
+  // Drain exact principal first so excess backing is not carried into protocol
+  // outputs. Preserve rotation within each preference and the sufficient fallback.
+  const sufficient = rotated.find(({ principal }) => principal === amount) ??
+    rotated.find(({ principal }) => principal >= amount);
   if (sufficient) return [sufficient.input];
   // The largest five principals cover every feasible bounded selection. Stable
   // sorting keeps the packet rotation as the tie breaker.
