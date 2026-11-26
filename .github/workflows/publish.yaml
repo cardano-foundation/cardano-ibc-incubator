@@ -2,6 +2,7 @@ name: Build and publish Docker images
 
 on:
   push:
+    branches: [main]
     tags:
       - 'gateway/v*.*.*'
       - 'hermes/v*.*.*'
@@ -13,7 +14,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# PRs have read-only GitHub tokens and only private registry credentials.
+# Branch builds have read-only GitHub tokens and only private registry credentials.
 # Fork and Dependabot PRs build without publishing. Only tags receive release credentials.
 permissions:
   actions: read
@@ -53,7 +54,7 @@ jobs:
       workflow: .github/workflows/publish.yaml
 
   select-components:
-    if: ${{ !cancelled() && needs.image-metadata.result == 'success' && ((github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'pull_request' && needs.docs-update.outputs.run_jobs == 'true' && (github.base_ref != 'main' || !startsWith(github.head_ref, 'docs/')))) }}
+    if: ${{ !cancelled() && needs.image-metadata.result == 'success' && ((github.event_name == 'push' && (github.ref_type == 'tag' || github.ref == 'refs/heads/main')) || (github.event_name == 'pull_request' && needs.docs-update.outputs.run_jobs == 'true' && (github.base_ref != 'main' || !startsWith(github.head_ref, 'docs/')))) }}
     needs: [docs-update, image-metadata]
     name: Select image components
     runs-on: ubuntu-latest
@@ -62,8 +63,8 @@ jobs:
       images: ${{ steps.select.outputs.images }}
 
     steps:
-      - name: Checkout PR inputs
-        if: github.event_name == 'pull_request'
+      - name: Checkout branch inputs
+        if: github.ref_type != 'tag'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -75,8 +76,8 @@ jobs:
         env:
           REF_NAME: ${{ github.ref_name }}
           REF_TYPE: ${{ github.ref_type }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DIFF_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          DIFF_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           if [[ "${REF_TYPE}" == "tag" ]]; then
             if [[ ! "${REF_NAME}" =~ ^(gateway|hermes|swap-client)/v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
@@ -98,9 +99,9 @@ jobs:
             esac
           else
             images='[{"component":"gateway","version_directory":"cardano/gateway"},{"component":"hermes","version_directory":"relayer/crates/relayer-cli"},{"component":"swap-client","version_directory":"dapps/ibc-swap/client"}]'
-            if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]] &&
+            if [[ -n "${DIFF_BASE_SHA:-}" && -n "${DIFF_HEAD_SHA:-}" ]] &&
                git diff --quiet --ignore-submodules=none --no-ext-diff \
-                 "${PR_BASE_SHA}...${PR_HEAD_SHA}" -- \
+                 "${DIFF_BASE_SHA}...${DIFF_HEAD_SHA}" -- \
                  relayer .gitmodules docker/hermes.Dockerfile .dockerignore \
                  Earthfile .github/workflows/publish.yaml .github/workflows/build-image.yaml \
                  'scripts/ci/image-*' 'scripts/ci/release-*'; then
@@ -112,10 +113,10 @@ jobs:
           echo "images=${images}" >> "${GITHUB_OUTPUT}"
 
   pr-images:
-    # The docs-only guard in ci.yml runs only for PRs targeting main.
-    name: Build PR ${{ matrix.image.component }}
+    # PR builds honor the docs gate. Main builds publish the merged source.
+    name: Build ${{ matrix.image.component }}
     needs: select-components
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     permissions:
       contents: read
     strategy:
@@ -126,11 +127,11 @@ jobs:
     with:
       component: ${{ matrix.image.component }}
       version-directory: ${{ matrix.image.version_directory }}
-      publish: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
+      publish: ${{ (github.ref == 'refs/heads/main' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')) }}
     secrets:
-      DOCKER_REGISTRIES: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && secrets.DOCKER_REGISTRIES || '' }}
-      PRIVATE_DOCKER_REGISTRY_URL: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && secrets.GITLAB_DOCKER_REGISTRY_URL || '' }}
-      PRIVATE_DOCKER_REGISTRY_PASS: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' && secrets.GITLAB_PKG_REGISTRY_TOKEN || '' }}
+      DOCKER_REGISTRIES: ${{ (github.ref == 'refs/heads/main' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')) && secrets.DOCKER_REGISTRIES || '' }}
+      PRIVATE_DOCKER_REGISTRY_URL: ${{ (github.ref == 'refs/heads/main' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')) && secrets.GITLAB_DOCKER_REGISTRY_URL || '' }}
+      PRIVATE_DOCKER_REGISTRY_PASS: ${{ (github.ref == 'refs/heads/main' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]')) && secrets.GITLAB_PKG_REGISTRY_TOKEN || '' }}
 
   release-images:
     name: Release ${{ matrix.image.component }}

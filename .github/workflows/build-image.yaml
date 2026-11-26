@@ -57,11 +57,11 @@ jobs:
             if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
               selected="${REGISTRIES}"
             else
-              # Only the configured private host is allowed on a PR.
+              # Branch builds publish only to the configured private host.
               private_host="${PRIVATE_REGISTRY%%/*}"
               case "${private_host}" in
                 ""|ghcr.io|docker.io|hub.docker.com)
-                  echo "A private registry must be configured for PR publishing." >&2
+                  echo "A private registry must be configured for branch publishing." >&2
                   exit 1 ;;
               esac
               read -ra registries <<< "${REGISTRIES}"
