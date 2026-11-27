@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -135,4 +135,38 @@ test('all CI builds and PR packaging jobs depend on the documentation gate', () 
       assert.match(block, /if:.*needs\.docs-update\.outputs\.run_jobs == 'true'/, `${workflow}: ${name}`);
     }
   }
+});
+
+test('docs branch guard accepts PDF reports without allowing code changes or incomplete file lists', (t) => {
+  const source = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const guard = source.split('  docs-branch-guard:\n')[1].split('\n  repo-invariants:')[0]
+    .split('        run: |\n')[1].replace(/^          /gm, '');
+  const bin = mkdtempSync(join(tmpdir(), 'docs-branch-guard-'));
+  t.after(() => rmSync(bin, { recursive: true, force: true }));
+  const gh = join(bin, 'gh');
+  writeFileSync(gh, '#!/usr/bin/env bash\nprintf "%s" "$DOCS_GUARD_PATHS"\nexit "${DOCS_GUARD_API_STATUS:-0}"\n');
+  chmodSync(gh, 0o755);
+  const run = (paths, apiStatus = 0) => spawnSync('bash', ['-e', '-o', 'pipefail', '-c', guard], {
+    encoding: 'utf8',
+    env: {
+      ...process.env, PATH: `${bin}:${process.env.PATH}`, PR_NUMBER: '1141', REPOSITORY: 'example/repo',
+      DOCS_GUARD_PATHS: paths.join('\n'), DOCS_GUARD_API_STATUS: String(apiStatus),
+    },
+  });
+  for (const paths of [
+    ['docs/reports/ibc-transfer-cost-report-2026-11-25.pdf'],
+    ['README.md', 'docs/images/diagram.svg', 'docs/reports/transfer costs.pdf'],
+  ]) {
+    const result = run(paths);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  }
+  for (const paths of [
+    ['runtime/report.pdf'], ['docs/reports/report.html'],
+    ['docs/reports/report.pdf', 'scripts/ci/code.js'],
+    // Renames include the previous filename as well as the new documentation path.
+    ['docs/reports/report.pdf', 'runtime/source.js'], [],
+  ]) {
+    assert.notEqual(run(paths).status, 0, JSON.stringify(paths));
+  }
+  assert.equal(run(['docs/reports/report.pdf'], 7).status, 7);
 });
