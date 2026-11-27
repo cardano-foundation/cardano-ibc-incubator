@@ -347,7 +347,7 @@ jobs:
             case "${file}" in
               *.md|*.mdx|*.txt|*.rst|*.adoc|*.asciidoc|LICENSE|NOTICE|AUTHORS)
                 ;;
-              docs/*.png|docs/*.jpg|docs/*.jpeg|docs/*.gif|docs/*.webp|docs/*.svg)
+              docs/*.png|docs/*.jpg|docs/*.jpeg|docs/*.gif|docs/*.webp|docs/*.svg|docs/*.pdf)
                 ;;
               *)
                 non_docs_files+=("${file}")
