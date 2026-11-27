@@ -1,7 +1,7 @@
 use aiken/collection/list
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, Value, from_asset, zero}
+use cardano/assets.{PolicyId, Assets, from_asset, zero}
 use cardano/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
   ScriptPurpose, Spend, Transaction,
@@ -75,7 +75,7 @@ fn port_token_for(mock: MockData, port_id: ByteArray) -> AuthToken {
   AuthToken { policy_id: mock.port_minting_policy_id, name: port_token_name }
 }
 
-fn module_value_for_ports(mock: MockData, ports: List<ByteArray>) -> Value {
+fn module_value_for_ports(mock: MockData, ports: List<ByteArray>) -> Assets {
   list.foldl(
     ports,
     zero,
@@ -86,7 +86,7 @@ fn module_value_for_ports(mock: MockData, ports: List<ByteArray>) -> Value {
   )
 }
 
-fn validate_mint_port(mock: MockData, module_value: Value) -> Bool {
+fn validate_mint_port(mock: MockData, module_value: Assets) -> Bool {
   let redeemer: Redeemer =
     MintPortRedeemer {
       spend_module_script_hash: mock.spend_module_script_hash,

@@ -3,13 +3,13 @@ use cardano/assets
 
 // Transaction Values keep their V3 nested-map encoding. Convert once before
 // performing several native operations on the same Value.
-pub fn from_assets(value: assets.Value) -> Value {
+pub fn from_assets(value: assets.Assets) -> Value {
   let raw: Data = assets.to_dict(value)
   builtin.un_value_data(raw)
 }
 
 pub fn quantity_of(
-  value: assets.Value,
+  value: assets.Assets,
   policy: ByteArray,
   name: ByteArray,
 ) -> Int {

@@ -1,4 +1,4 @@
-use cardano/assets.{Value}
+use cardano/assets.{Assets}
 use cardano/transaction.{
   Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
 }
@@ -16,7 +16,7 @@ use ibc/utils/test_utils
 use spending_channel/chan_close_init
 use spending_channel/spending_channel_fixture.{MockData, setup}
 
-fn check_chan_close_init(mint: Value) {
+fn check_chan_close_init(mint: Assets) {
   let fake_data = setup()
 
   //========================arrange inputs=======================

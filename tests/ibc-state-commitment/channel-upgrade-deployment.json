@@ -2,12 +2,12 @@
   "schema_version": 6,
   "fixture": "DEPLOYMENT_PLAN_FIXTURE with benchmarkVoucherEnabled=false",
   "validators": {
-    "upgradeable/channel.channel.spend": "ae78ff09eb748ea4a61eb958949cd63185157cacfa1d2a848d1ae4f8",
-    "spending_channel/chan_upgrade.chan_upgrade.mint": "aaee51c0e313ced39c6f6a7cb55d10dbec8c021ab390c120e3766454",
-    "spending_channel/chan_upgrade_handshake.chan_upgrade_handshake.mint": "2ce667a87d3890eb55fc6ba175f42bb26cf9e231376501c0fffd8e85",
-    "spending_channel/chan_upgrade_finish.chan_upgrade_finish.mint": "63e2b26179ee88459db5a56532fa9a2311f6a92d782eb0328d563f2d",
-    "upgradeable/host_state.host_state.spend": "ab82c9a170e294cc0491aeb333b0c7b9c80ceeb6a682955bf9fd1c84",
-    "verifying_proof.verify_proof.mint": "b4305c1213605e3a963c10f616ab51b269d670c07eb9558545334027"
+    "upgradeable/channel.channel.spend": "33d4bf6068e3785fa89b9eb1f070ddbe9893d6b730aeb3eccd8460b4",
+    "spending_channel/chan_upgrade.chan_upgrade.mint": "9a657afdf4a803a3f414be0691b77d6f6121d12cd4d1bb611c2de16f",
+    "spending_channel/chan_upgrade_handshake.chan_upgrade_handshake.mint": "fb2648f2ad37c0e162e4cdf89bbb9e17c15d96b090a428c36b968976",
+    "spending_channel/chan_upgrade_finish.chan_upgrade_finish.mint": "bdc97d9913609c3faa2bbcf48e0ef24a8763298725586366a08c9ef5",
+    "upgradeable/host_state.host_state.spend": "330ed9e4da6ec74ed6bcc19872f40e7b44a1c6192ab64c9c5e009580",
+    "verifying_proof.verify_proof.mint": "24496601d73cca88ee6b298ce3b0c9cebf6ec24288f2c51a0b18408e"
   },
   "compiler": "aiken v1.1.24+bacbeb3",
   "build": "aiken build --deny --trace-level silent"

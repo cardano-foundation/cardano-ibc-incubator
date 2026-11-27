@@ -1,7 +1,7 @@
 use aiken/collection/list
 use aiken/primitive/bytearray
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, Value, from_asset}
+use cardano/assets.{PolicyId, Assets, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction, placeholder,
 }
@@ -140,7 +140,7 @@ fn run_boundary_append(
       active_shard_name,
       list.concat(old_entries, [expected_entry]),
     )
-  let mint: Value =
+  let mint: Assets =
     from_asset(
       test_voucher_policy_id(),
       voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),

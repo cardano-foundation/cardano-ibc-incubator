@@ -196,7 +196,7 @@ fn counterparty_upgrade() -> Upgrade {
 
 // Reference inputs ==========================================================
 
-fn reference(index: Int, value: assets.Value, data: Data) -> Input {
+fn reference(index: Int, value: assets.Assets, data: Data) -> Input {
   Input {
     output_reference: OutputReference {
       transaction_id: #"0000000000000000000000000000000000000000000000000000000000000077",

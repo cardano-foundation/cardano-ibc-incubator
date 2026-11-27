@@ -3,7 +3,7 @@ use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{VerificationKeyHash}
 use cardano/address.{Script, VerificationKey}
-use cardano/assets.{PolicyId, Value}
+use cardano/assets.{PolicyId, Assets}
 use cardano/transaction.{Input, OutputReference, Spend, Transaction}
 use ibc/apps/transfer/types/transfer_module_datum.{
   TransferModuleDatum, empty_escrow_shard_registry_root,
@@ -18,7 +18,7 @@ use ibc/core/ics_025_handler_interface/host_state_redeemer.{
 }
 use ibc/utils/validator_utils
 
-pub fn burns_only(mint: Value, policy: PolicyId) -> Bool {
+pub fn burns_only(mint: Assets, policy: PolicyId) -> Bool {
   let quantities = assets.tokens(mint, policy) |> dict.values
   !list.is_empty(quantities) && list.all(
     quantities,
@@ -150,7 +150,7 @@ pub fn reclaim(
   transaction: Transaction,
   own_ref: OutputReference,
   host_policy: PolicyId,
-  retained_value: Value,
+  retained_value: Assets,
 ) -> Bool {
   let deployer = authority(transaction, host_policy)
   expect Some(own_input) = transaction.find_input(transaction.inputs, own_ref)

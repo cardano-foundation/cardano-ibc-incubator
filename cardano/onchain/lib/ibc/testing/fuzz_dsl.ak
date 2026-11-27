@@ -1,7 +1,7 @@
 use aiken/collection/dict.{Dict}
 use aiken/collection/list
 use aiken/crypto.{DataHash}
-use cardano/assets.{Value}
+use cardano/assets.{Assets}
 use cardano/transaction.{
   Input, Output, Redeemer, ScriptPurpose, Transaction, placeholder,
 }
@@ -44,7 +44,7 @@ pub type ProtocolTxFixture {
     inputs: List<Input>,
     reference_inputs: List<Input>,
     outputs: List<Output>,
-    mint: Value,
+    mint: Assets,
     redeemers: Pairs<ScriptPurpose, Redeemer>,
     datums: Dict<DataHash, Data>,
     model_before: ModelState,
@@ -194,7 +194,7 @@ pub fn with_output(
   ProtocolTxFixture { ..fixture, outputs: [output, ..fixture.outputs] }
 }
 
-pub fn with_mint(fixture: ProtocolTxFixture, mint: Value) -> ProtocolTxFixture {
+pub fn with_mint(fixture: ProtocolTxFixture, mint: Assets) -> ProtocolTxFixture {
   ProtocolTxFixture { ..fixture, mint }
 }
 

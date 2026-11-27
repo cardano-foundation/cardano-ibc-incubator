@@ -7,7 +7,7 @@ use aiken/option
 use aiken/primitive/bytearray
 use cardano/address.{Script}
 use cardano/assets.{
-  AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of, tokens,
+  AssetName, PolicyId, Assets, ada_asset_name, ada_policy_id, quantity_of, tokens,
 }
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, Redeemer, ScriptPurpose, Spend,
@@ -471,7 +471,7 @@ pub fn registered_proof_policy(
 }
 
 pub fn validate_mint(
-  mint: Value,
+  mint: Assets,
   minting_policy_id: PolicyId,
   base_token: AuthToken,
   token_name_prefix: ByteArray,
@@ -490,7 +490,7 @@ pub fn validate_mint(
 }
 
 pub fn require_exact_marker_mint(
-  mint: Value,
+  mint: Assets,
   own_policy_id: PolicyId,
   expected_asset_name: AssetName,
   expected_quantity: Int,
@@ -503,7 +503,7 @@ pub fn require_exact_marker_mint(
 
 /// Continuing state owns its existing value. ADA may be added to fund a larger
 /// datum, but no reserve may be swept and the non-ADA inventory must stay exact.
-pub fn preserves_state_value(spent_value: Value, updated_value: Value) -> Bool {
+pub fn preserves_state_value(spent_value: Assets, updated_value: Assets) -> Bool {
   and {
     assets.lovelace_of(updated_value) >= assets.lovelace_of(spent_value),
     assets.expect_match_assets(updated_value, spent_value),

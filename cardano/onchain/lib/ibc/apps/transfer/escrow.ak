@@ -1,6 +1,6 @@
 use aiken/collection/list
 use cardano/address.{Address}
-use cardano/assets.{PolicyId, Value, quantity_of}
+use cardano/assets.{PolicyId, Assets, quantity_of}
 use cardano/transaction.{Input, Output}
 use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
@@ -184,7 +184,7 @@ fn validate_created_escrow_shard(
   address: Address,
   datum: TransferEscrowDatum,
   shard_policy_id: PolicyId,
-  mint: Value,
+  mint: Assets,
   transfer_amount: Int,
 ) -> Bool {
   // First native send creates a canonical shard and mints exactly one shard NFT.
@@ -213,8 +213,8 @@ fn validate_escrow_shard_update(
   spend: TransferModuleSpend,
   expected_datum: TransferEscrowDatum,
   shard_policy_id: PolicyId,
-  mint: Value,
-  expected_value_difference: Value,
+  mint: Assets,
+  expected_value_difference: Assets,
   transfer_amount: Int,
 ) -> Bool {
   expect EscrowShard { datum, updated_output } = spend
@@ -253,8 +253,8 @@ fn validate_matching_escrow_input_update(
   outputs: List<Output>,
   datum: TransferEscrowDatum,
   shard_policy_id: PolicyId,
-  mint: Value,
-  expected_value_difference: Value,
+  mint: Assets,
+  expected_value_difference: Assets,
   transfer_amount: Int,
 ) -> Bool {
   let updated_output =
@@ -279,9 +279,9 @@ pub fn validate_module_escrow_transition(
   outputs: List<Output>,
   datum: TransferEscrowDatum,
   shard_policy_id: PolicyId,
-  mint: Value,
+  mint: Assets,
   transfer_amount: Int,
-  expected_value_difference: Value,
+  expected_value_difference: Assets,
 ) -> Bool {
   when spend is {
     ModuleState { updated_output, datum_changed } -> {
