@@ -20,6 +20,7 @@ describe('QueryService packet event queries', () => {
   let configServiceMock: { get: jest.Mock };
   let historyServiceMock: {
     findTxByHash: jest.Mock;
+    findClientUtxosByBlockNo: jest.Mock;
     findUtxosByBlockNo: jest.Mock;
     findUtxosByPolicyIdAndPrefixTokenName: jest.Mock;
   };
@@ -65,6 +66,7 @@ describe('QueryService packet event queries', () => {
           hostStateNFT,
           packetState: { state: { scriptHash: 'lane-policy' }, laneCount: 16 },
           validators: {
+            mintConnectionStt: { scriptHash: 'connection-policy' },
             mintChannelStt: {
               scriptHash: mintChannelScriptHash,
             },
@@ -75,6 +77,7 @@ describe('QueryService packet event queries', () => {
 
     historyServiceMock = {
       findTxByHash: jest.fn(),
+      findClientUtxosByBlockNo: jest.fn().mockResolvedValue([]),
       findUtxosByBlockNo: jest.fn(),
       findUtxosByPolicyIdAndPrefixTokenName: jest.fn().mockResolvedValue([]),
     };
@@ -95,6 +98,67 @@ describe('QueryService packet event queries', () => {
       createTestTreeStore(),
       createPacketStateMock() as any,
     );
+  });
+
+  it('returns timeout events once for a confirmed transaction with multiple packet lanes', async () => {
+    historyServiceMock.findTxByHash.mockResolvedValue({ hash: 'abc123', height: 42, gas_fee: 2807028, tx_size: 5821 });
+    historyServiceMock.findUtxosByBlockNo.mockResolvedValue([
+      makeUtxo({ txHash: 'ABC123', assetsPolicy: 'lane-policy' }),
+      makeUtxo({ txHash: 'abc123', assetsPolicy: 'lane-policy', outputIndex: 1 }),
+      makeUtxo({ txHash: 'other-tx', assetsPolicy: 'lane-policy', outputIndex: 2 }),
+    ]);
+    const timeout = packetEvent(EVENT_TYPE_PACKET.TIMEOUT_PACKET);
+    const events = jest.spyOn((service as any).packetState, 'events').mockResolvedValue([timeout]);
+    jest.spyOn(service as any, '_parseEventClient').mockResolvedValue([]);
+
+    const response = await service.queryTransactionByHash({ hash: 'ABC123' });
+
+    expect(historyServiceMock.findTxByHash).toHaveBeenCalledWith('abc123');
+    expect(events).toHaveBeenCalledTimes(1);
+    expect(events).toHaveBeenCalledWith('abc123');
+    expect(response).toMatchObject({ hash: 'abc123', height: 42, gas_fee: 2807028, tx_size: 5821, events: [timeout] });
+  });
+
+  it('excludes events belonging to other transactions in the same block', async () => {
+    historyServiceMock.findTxByHash.mockResolvedValue({ hash: 'abc123', height: 42 });
+    historyServiceMock.findUtxosByBlockNo.mockResolvedValue([
+      makeUtxo({ txHash: 'other-tx', assetsPolicy: 'lane-policy' }),
+      makeUtxo({ txHash: 'other-tx', assetsPolicy: 'connection-policy' }),
+      makeUtxo({ txHash: 'other-tx' }),
+    ]);
+    historyServiceMock.findClientUtxosByBlockNo.mockResolvedValue([makeUtxo({ txHash: 'other-tx' })]);
+    const clients = jest.spyOn(service as any, '_parseEventClient').mockResolvedValue([]);
+    const channels = jest.spyOn(service as any, '_parseEventChannel');
+    const connections = jest.spyOn(service as any, '_parseEventConnection');
+    const packets = jest.spyOn((service as any).packetState, 'events');
+
+    const response = await service.queryTransactionByHash({ hash: 'abc123' });
+
+    expect(response.events).toEqual([]);
+    expect(clients).toHaveBeenCalledWith([]);
+    expect(channels).not.toHaveBeenCalled();
+    expect(connections).not.toHaveBeenCalled();
+    expect(packets).not.toHaveBeenCalled();
+  });
+
+  it('returns client updates and handshake events from the requested transaction', async () => {
+    historyServiceMock.findTxByHash.mockResolvedValue({ hash: 'abc123', height: 42 });
+    const client = makeUtxo({ txHash: 'ABC123', assetsPolicy: 'client-policy' });
+    const connection = makeUtxo({ assetsPolicy: 'connection-policy' });
+    const channel = makeUtxo();
+    historyServiceMock.findUtxosByBlockNo.mockResolvedValue([connection, channel]);
+    historyServiceMock.findClientUtxosByBlockNo.mockResolvedValue([client, makeUtxo({ txHash: 'other-tx' })]);
+    const update = { type: 'update_client', event_attribute: [] };
+    const connected = { type: 'connection_open_ack', event_attribute: [] };
+    const opened = { type: 'channel_open_ack', event_attribute: [] };
+    const clients = jest.spyOn(service as any, '_parseEventClient').mockResolvedValue([{ events: [update] }]);
+    jest.spyOn(service as any, '_parseEventConnection').mockResolvedValue({ events: [connected] });
+    jest.spyOn(service as any, '_parseEventChannel').mockResolvedValue({ events: [opened] });
+
+    const response = await service.queryTransactionByHash({ hash: 'abc123' });
+
+    expect(clients).toHaveBeenCalledWith([client]);
+    expect(response.events).toEqual([update, connected, opened]);
   });
 
   it('returns normalized packet events for a Cardano transaction hash', async () => {

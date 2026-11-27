@@ -2165,31 +2165,43 @@ export class QueryService {
     const { hash } = request;
     if (!hash) throw new GrpcInvalidArgumentException(`Invalid argument: "hash" must be provided`);
 
-    const tx = await this.historyService.findTxByHash(hash);
+    const normalizedHash = hash.toLowerCase();
+    const tx = await this.historyService.findTxByHash(normalizedHash);
     if (!tx) {
       throw new GrpcNotFoundException(`Not found: "hash" ${hash} not found`);
     }
-    this.logger.log(`found tx for hash = ${request.hash}`, 'queryTransactionByHash');
 
-    // get create_client events from tx
-    const clientUtxos = await this.historyService.findClientUtxosByBlockNo(tx.height);
-    let createClientEvent = null;
-    if (clientUtxos.length) {
-      const txsClientResults = await this._parseEventClient(clientUtxos);
-      createClientEvent = txsClientResults.find((e) => e.events[0].type === EVENT_TYPE_CLIENT.CREATE_CLIENT);
-    }
-
-    this.logger.log(
-      `create client events related to tx hash = ${request.hash} createClientEvent = ${createClientEvent}`,
-      'queryTransactionByHash',
+    const [blockUtxos, blockClientUtxos] = await Promise.all([
+      this.historyService.findUtxosByBlockNo(tx.height),
+      this.historyService.findClientUtxosByBlockNo(tx.height),
+    ]);
+    const belongsToTransaction = (utxo: UtxoDto) => utxo.txHash.toLowerCase() === normalizedHash;
+    const utxos = blockUtxos.filter(belongsToTransaction);
+    const clientResults = await this._parseEventClient(blockClientUtxos.filter(belongsToTransaction));
+    const deployment = this.configService.get('deployment');
+    const connectionPolicy = deployment.validators.mintConnectionStt.scriptHash;
+    const channelPolicy = deployment.validators.mintChannelStt.scriptHash;
+    const stateResults = await Promise.all(
+      utxos
+        .filter((utxo) => [connectionPolicy, channelPolicy].includes(utxo.assetsPolicy))
+        .map((utxo) =>
+          utxo.assetsPolicy === connectionPolicy
+            ? this._parseEventConnection(utxo, deployment.hostStateNFT, connectionPolicy)
+            : this._parseEventChannel(utxo, deployment.hostStateNFT, channelPolicy),
+        ),
     );
+    // Multiple packet lanes can change in one transaction. Reconstruct its events once.
+    const packetEvents = utxos.some((utxo) => utxo.assetsPolicy === deployment.packetState.state.scriptHash)
+      ? await this.packetState.events(normalizedHash)
+      : [];
+    const events = [...clientResults, ...stateResults].flatMap((result) => result?.events ?? []);
 
     const response: QueryTransactionByHashResponse = {
       hash: tx.hash,
       height: tx.height,
       gas_fee: tx.gas_fee,
       tx_size: tx.tx_size,
-      events: createClientEvent ? createClientEvent.events : [],
+      events: [...events, ...packetEvents],
     } as unknown as QueryTransactionByHashResponse;
     return response;
   }
