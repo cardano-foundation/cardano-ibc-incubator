@@ -1,4 +1,4 @@
-use cardano/assets.{Value}
+use cardano/assets.{Assets}
 use cardano/transaction.{
   Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
 }
@@ -35,7 +35,7 @@ use ibc/utils/validator_utils
 use spending_channel/chan_open_confirm
 use spending_channel/spending_channel_fixture.{MockData, setup}
 
-fn check_chan_open_confirm(mint: Value) {
+fn check_chan_open_confirm(mint: Assets) {
   let mock_data = setup()
 
   //========================arrange inputs=======================

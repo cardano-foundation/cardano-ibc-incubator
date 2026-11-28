@@ -1,4 +1,4 @@
-use cardano/assets.{Value}
+use cardano/assets.{Assets}
 use cardano/transaction.{Input, Output}
 
 // Checks that a state output changes by exactly `additional_value`.
@@ -6,7 +6,7 @@ use cardano/transaction.{Input, Output}
 pub fn validate_output_amount(
   locked_input: Input,
   output: Output,
-  additional_value: Value,
+  additional_value: Assets,
 ) -> Bool {
   let expected_output =
     locked_input.output.value
@@ -15,7 +15,7 @@ pub fn validate_output_amount(
   validate_output_value(output, expected_output)
 }
 
-pub fn validate_output_value(output: Output, expected_output: Value) -> Bool {
+pub fn validate_output_value(output: Output, expected_output: Assets) -> Bool {
   and {
     assets.lovelace_of(output.value) >= assets.lovelace_of(expected_output),
     assets.without_lovelace(output.value) == assets.without_lovelace(

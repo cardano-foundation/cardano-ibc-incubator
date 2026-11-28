@@ -2,7 +2,7 @@ use aiken/collection/list
 use aiken/collection/pairs
 use aiken/primitive/int
 use cardano/address.{from_verification_key}
-use cardano/assets.{PolicyId, Value, quantity_of}
+use cardano/assets.{PolicyId, Assets, quantity_of}
 use cardano/transaction.{Input, Mint, Output, Redeemer, ScriptPurpose}
 use ibc/apps/transfer/escrow as transfer_escrow
 use ibc/apps/transfer/escrow.{TransferModuleSpend}
@@ -20,7 +20,7 @@ pub fn validate_refund_packet_token(
   spent_input: Input,
   spend: TransferModuleSpend,
   shard_policy_id: PolicyId,
-  mint: Value,
+  mint: Assets,
   data: FungibleTokenPacketData,
   source_port: ByteArray,
   source_channel: ByteArray,

@@ -1,5 +1,5 @@
 use aiken/collection/pairs
-use cardano/assets.{PolicyId, Value, add, from_asset}
+use cardano/assets.{PolicyId, Assets, add, from_asset}
 use cardano/transaction.{
   Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
   Transaction,
@@ -40,17 +40,17 @@ use ibc/utils/validator_utils
 use spending_channel/acknowledge_packet
 use spending_channel/spending_channel_fixture.{MockData, setup}
 
-fn operation_marker(policy_id: PolicyId) -> Value {
+fn operation_marker(policy_id: PolicyId) -> Assets {
   from_asset(policy_id, "", 1)
 }
 
-fn operation_marker_with_junk(policy_id: PolicyId) -> Value {
+fn operation_marker_with_junk(policy_id: PolicyId) -> Assets {
   operation_marker(policy_id)
     |> add(policy_id, "junk", 1)
 }
 
 fn check_acknowledge_packet(
-  transaction_mint: Value,
+  transaction_mint: Assets,
   use_escrow_shard: Bool,
   include_callback: Bool,
   callback_packet_matches: Bool,

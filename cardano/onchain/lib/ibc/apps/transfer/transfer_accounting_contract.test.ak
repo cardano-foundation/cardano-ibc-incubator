@@ -1,7 +1,7 @@
 use aiken/collection/list
 use aiken/primitive/bytearray
 use cardano/address.{Address, from_script, from_verification_key}
-use cardano/assets.{Value, add, from_asset, quantity_of}
+use cardano/assets.{Assets, add, from_asset, quantity_of}
 use cardano/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
   ScriptPurpose,
@@ -62,7 +62,7 @@ fn sink_voucher_denom() -> ByteArray {
   "transfer/channel-9/uatom"
 }
 
-fn module_output(value: Value) -> Output {
+fn module_output(value: Assets) -> Output {
   Output {
     address: from_script("transfer-module"),
     value,
@@ -121,11 +121,11 @@ fn escrow_input(
   }
 }
 
-fn native_value(quantity: Int) -> Value {
+fn native_value(quantity: Int) -> Assets {
   from_asset(native_policy_id, native_token_name, quantity)
 }
 
-fn empty_mint() -> Value {
+fn empty_mint() -> Assets {
   from_asset("", "", 0)
 }
 
@@ -286,7 +286,7 @@ fn voucher_token_name(denom: ByteArray) -> ByteArray {
   voucher_asset_name.voucher_user_token_name(denom)
 }
 
-fn exact_voucher_mint(mint: Value, denom: ByteArray, quantity: Int) -> Bool {
+fn exact_voucher_mint(mint: Assets, denom: ByteArray, quantity: Int) -> Bool {
   let expected =
     from_asset(voucher_policy_id, voucher_token_name(denom), quantity)
   assets.match_assets(mint, expected)
@@ -297,7 +297,7 @@ fn voucher_redeemers(redeemer: Redeemer) -> List<Pair<ScriptPurpose, Redeemer>> 
 }
 
 fn voucher_send_contract(
-  mint: Value,
+  mint: Assets,
   data: FungibleTokenPacketData,
   packet: Packet,
 ) -> Bool {
@@ -321,7 +321,7 @@ fn voucher_send_contract(
 }
 
 fn voucher_refund_contract(
-  mint: Value,
+  mint: Assets,
   data: FungibleTokenPacketData,
   packet: Packet,
 ) -> Bool {
@@ -354,7 +354,7 @@ fn refund_redeemer_matches(redeemer: Redeemer, packet: Packet) -> Bool {
 }
 
 fn recv_sink_contract(
-  mint: Value,
+  mint: Assets,
   data: FungibleTokenPacketData,
   packet: Packet,
 ) -> Bool {

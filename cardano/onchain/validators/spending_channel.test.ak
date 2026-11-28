@@ -2,7 +2,7 @@ use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/interval
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, Value, add, from_asset, zero}
+use cardano/assets.{PolicyId, Assets, add, from_asset, zero}
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
   Spend, Transaction, ValidityRange,
@@ -675,7 +675,7 @@ fn run_spending_channel_transition(
 }
 
 fn send_packet_spending_channel_tx_with_witness(
-  marker_mint: Value,
+  marker_mint: Assets,
   marker_policy_id: PolicyId,
   marker_redeemer: Option<Redeemer>,
   host_state_redeemer: Redeemer,

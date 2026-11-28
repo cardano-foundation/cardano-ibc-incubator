@@ -1,6 +1,6 @@
 use aiken/interval
 use cardano/address.{Address, Script}
-use cardano/assets.{PolicyId, Value, add, from_asset}
+use cardano/assets.{PolicyId, Assets, add, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Redeemer, Spend,
   Transaction,
@@ -87,7 +87,7 @@ fn test_host_input() -> Input {
 }
 
 fn validate_final_burn_with_datum(
-  mint: Value,
+  mint: Assets,
   host_redeemer: HostStateRedeemer,
   datum: HostStateDatum,
 ) -> Bool {
@@ -113,7 +113,7 @@ fn validate_final_burn_with_datum(
   )
 }
 
-fn validate_final_burn(mint: Value, host_redeemer: HostStateRedeemer) -> Bool {
+fn validate_final_burn(mint: Assets, host_redeemer: HostStateRedeemer) -> Bool {
   validate_final_burn_with_datum(mint, host_redeemer, test_host_datum())
 }
 

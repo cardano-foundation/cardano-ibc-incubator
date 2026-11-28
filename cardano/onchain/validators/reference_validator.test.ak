@@ -1,6 +1,6 @@
 use aiken/interval
 use cardano/address.{Address, Script}
-use cardano/assets.{PolicyId, Value, from_asset, from_lovelace, zero}
+use cardano/assets.{PolicyId, Assets, from_asset, from_lovelace, zero}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Redeemer, Spend,
   Transaction, placeholder,
@@ -157,7 +157,7 @@ fn test_registration() -> ModuleRegistration {
 
 fn terminal_transaction(
   host_redeemer: HostStateRedeemer,
-  mint: Value,
+  mint: Assets,
   outputs: List<Output>,
 ) -> Transaction {
   let spend_redeemer: Redeemer = host_redeemer

@@ -2,7 +2,7 @@ use aiken/collection/dict
 use aiken/collection/list
 use aiken/crypto
 use aiken/primitive/bytearray
-use cardano/assets.{AssetName, PolicyId, Value, tokens}
+use cardano/assets.{AssetName, PolicyId, Assets, tokens}
 use cardano/transaction.{Output}
 use ibc/native_value
 
@@ -33,7 +33,7 @@ pub fn contains_only_auth_tokens(
   native_value.match(value, expected_value)
 }
 
-pub fn mint_auth_token(mint: Value, token: AuthToken) -> Bool {
+pub fn mint_auth_token(mint: Assets, token: AuthToken) -> Bool {
   let minted_tokens = mint |> tokens(token.policy_id)
 
   minted_tokens == dict.singleton(token.name, 1)

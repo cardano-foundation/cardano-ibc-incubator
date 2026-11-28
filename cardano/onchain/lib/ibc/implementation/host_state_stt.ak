@@ -7,7 +7,7 @@ use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/primitive/bytearray
 use cardano/address
-use cardano/assets.{AssetName, PolicyId, Value}
+use cardano/assets.{AssetName, PolicyId, Assets}
 use cardano/transaction.{
   InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend,
 }
@@ -68,7 +68,7 @@ pub fn validate_transfer_finalization_authorization(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
   inputs: List<Input>,
-  mint: Value,
+  mint: Assets,
   valid_from: Int,
 ) -> Bool {
   expect Some(registration) =
@@ -146,7 +146,7 @@ fn authenticate_state_thread(
 fn authenticate_created_state_thread(
   output: Output,
   token: AuthToken,
-  mint: Value,
+  mint: Assets,
   nft_policy: PolicyId,
   policy_id: PolicyId,
   prefix: ByteArray,
@@ -228,7 +228,7 @@ pub fn validate_create_client_root(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
   outputs: List<Output>,
-  mint: Value,
+  mint: Assets,
   client_registry: Data,
   client_policy_id: PolicyId,
   client_state_siblings: List<ByteArray>,
@@ -327,7 +327,7 @@ pub fn validate_update_client_root(
   new_datum: HostStateDatum,
   inputs: List<Input>,
   outputs: List<Output>,
-  mint: assets.Value,
+  mint: assets.Assets,
   client_registry: Data,
   client_policy_id: PolicyId,
   client_state_siblings: List<ByteArray>,
@@ -412,7 +412,7 @@ pub fn validate_create_connection_root(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
   outputs: List<Output>,
-  mint: Value,
+  mint: Assets,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
   connection_policy_id: PolicyId,
   connection_siblings: List<ByteArray>,
@@ -476,7 +476,7 @@ pub fn validate_create_channel_root(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
   outputs: List<Output>,
-  mint: Value,
+  mint: Assets,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
   channel_policy_id: PolicyId,
   channel_siblings: List<ByteArray>,

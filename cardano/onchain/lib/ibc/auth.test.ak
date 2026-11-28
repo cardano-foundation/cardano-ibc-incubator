@@ -1,6 +1,6 @@
 use aiken/collection/list
 use cardano/address.{from_script}
-use cardano/assets.{Value, add, from_asset, zero}
+use cardano/assets.{Assets, add, from_asset, zero}
 use cardano/transaction.{NoDatum, Output}
 use ibc/auth.{AuthToken}
 
@@ -201,7 +201,7 @@ test test_extract_token_sequence_fail() fail {
 }
 
 //===================================mint_auth_token==================================
-fn setup_mint_auth_token() -> (AuthToken, Value) {
+fn setup_mint_auth_token() -> (AuthToken, Assets) {
   let token = AuthToken { policy_id: "mock policy_id", name: "mock name" }
 
   let mint = from_asset(token.policy_id, token.name, 1)

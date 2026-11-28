@@ -1,7 +1,7 @@
 use aiken/collection/list
 use aiken/fuzz
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, Value, add, from_asset}
+use cardano/assets.{PolicyId, Assets, add, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction, placeholder,
 }
@@ -149,7 +149,7 @@ type TestRolloverFixture {
   archived_output: Output,
   new_active_output: Output,
   updated_directory_output: Output,
-  mint: Value,
+  mint: Assets,
 }
 
 fn state_value_trace_rollover(directory: Bool, output_lovelace: Int) -> Bool {
@@ -418,7 +418,7 @@ fn test_rollover_shard_transaction(
   archived_output: Output,
   new_active_output: Output,
   updated_directory_output: Output,
-  mint: Value,
+  mint: Assets,
 ) -> Transaction {
   let TestRolloverFixture { spent_shard_input, spent_directory_input, .. } =
     fixture
@@ -438,7 +438,7 @@ fn test_rollover_directory_transaction(
   archived_output: Output,
   new_active_output: Output,
   updated_directory_output: Output,
-  mint: Value,
+  mint: Assets,
 ) -> Transaction {
   let TestRolloverFixture { spent_directory_input, .. } = fixture
 

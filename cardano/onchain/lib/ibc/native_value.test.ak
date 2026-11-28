@@ -10,7 +10,7 @@ use ibc/native_value
 
 const policy = #"11111111111111111111111111111111111111111111111111111111"
 
-fn value(quantities: List<Int>) -> assets.Value {
+fn value(quantities: List<Int>) -> assets.Assets {
   quantities
     |> list.indexed_map(
         fn(index, quantity) {

@@ -1,4 +1,4 @@
-use cardano/assets.{Value}
+use cardano/assets.{Assets}
 use cardano/transaction.{
   Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
 }
@@ -33,7 +33,7 @@ use ibc/utils/validator_utils
 use spending_channel/chan_close_confirm
 use spending_channel/spending_channel_fixture.{MockData, setup}
 
-fn check_chan_close_confirm(module_redeemer: Redeemer, mint: Value) {
+fn check_chan_close_confirm(module_redeemer: Redeemer, mint: Assets) {
   check_close_confirm_sequences(module_redeemer, mint, 0, 0, 0)
 }
 
@@ -41,7 +41,7 @@ fn check_chan_close_confirm(module_redeemer: Redeemer, mint: Value) {
 /// one in the verified counterparty channel.
 fn check_close_confirm_sequences(
   module_redeemer: Redeemer,
-  mint: Value,
+  mint: Assets,
   own: Int,
   claimed: Int,
   proven: Int,
@@ -287,7 +287,7 @@ test chan_close_confirm_rejects_unproven_counterparty_upgrade_sequence() fail {
   )
 }
 
-fn check_close_confirm_marker(mint: Value) {
+fn check_close_confirm_marker(mint: Assets) {
   let mock_data = setup()
   let callback: Redeemer =
     Callback(OnChanCloseConfirm { channel_id: mock_data.channel_id })

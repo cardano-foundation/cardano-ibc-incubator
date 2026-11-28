@@ -1,6 +1,6 @@
 use aiken/fuzz
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, Value, add, from_asset}
+use cardano/assets.{PolicyId, Assets, add, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
 }
@@ -176,7 +176,7 @@ type TestInsertFixture {
   directory_input: Input,
   archived_shard_reference_input: Input,
   updated_output: Output,
-  valid_mint: Value,
+  valid_mint: Assets,
 }
 
 fn state_value_trace_append(output_lovelace: Int) -> Bool {
@@ -287,7 +287,7 @@ fn test_insert_transaction(
   spent_input: Input,
   reference_inputs: List<Input>,
   updated_output: Output,
-  mint: Value,
+  mint: Assets,
 ) -> Transaction {
   Transaction {
     ..placeholder,

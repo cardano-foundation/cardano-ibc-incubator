@@ -52,7 +52,7 @@ fn acknowledgement() -> BatchOperation {
   }
 }
 
-fn dispatch(op: BatchOperation, mint: assets.Value) -> Bool {
+fn dispatch(op: BatchOperation, mint: assets.Assets) -> Bool {
   packet_lane_batch.packet_lane_batch.mint(
     channel_policy,
     policies,

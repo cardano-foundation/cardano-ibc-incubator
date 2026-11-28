@@ -2,10 +2,45 @@ package probabilisticcore
 
 import (
 	"bytes"
+	"encoding/hex"
+	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
 )
+
+func TestStdlibV4DeployedHostStateDatum(t *testing.T) {
+	// Captured from the upgraded contracts on a fresh local Yano devnet.
+	// The expected root was read independently with Lucid's PlutusData decoder.
+	encoded, err := os.ReadFile("../../tests/ibc-state-commitment/stdlib-v4-host-state.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		DatumCBOR    string `json:"datum_cbor"`
+		NFTPolicyID  string `json:"nft_policy_id"`
+		IBCStateRoot string `json:"ibc_state_root"`
+	}
+	if err := json.Unmarshal(encoded, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	decode := func(value string) []byte {
+		t.Helper()
+		decoded, err := hex.DecodeString(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return decoded
+	}
+	got, err := ExtractIbcStateRootFromHostStateDatum(decode(fixture.DatumCBOR), decode(fixture.NFTPolicyID))
+	if err != nil {
+		t.Fatalf("decode the deployed stdlib v4 HostState datum: %v", err)
+	}
+	if !bytes.Equal(got, decode(fixture.IBCStateRoot)) {
+		t.Fatalf("Go and Lucid decoded different roots: got %x want %s", got, fixture.IBCStateRoot)
+	}
+}
 
 func TestExtractIbcStateRootFromFourFieldHostStateDatum(t *testing.T) {
 	root := bytes.Repeat([]byte{0x42}, 32)

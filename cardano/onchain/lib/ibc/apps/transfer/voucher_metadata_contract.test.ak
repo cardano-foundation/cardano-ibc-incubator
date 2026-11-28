@@ -2,7 +2,7 @@ use aiken/builtin
 use aiken/crypto
 use aiken/primitive/bytearray
 use aiken/primitive/string
-use cardano/assets.{AssetName, PolicyId, Value, add, from_asset}
+use cardano/assets.{AssetName, PolicyId, Assets, add, from_asset}
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_metadata
 use ibc/testing/fuzz_dsl
@@ -117,7 +117,7 @@ fn valid_first_mint_metadata(
   }
 }
 
-fn existing_mapping_mint_is_valid(mint: Value) -> Bool {
+fn existing_mapping_mint_is_valid(mint: Assets) -> Bool {
   let expected =
     from_asset(voucher_policy_id, user_token_name(), transfer_amount)
   assets.match_assets(mint, expected)

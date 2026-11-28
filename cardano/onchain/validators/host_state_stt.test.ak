@@ -11,7 +11,7 @@ use aiken/primitive/int
 use aiken/primitive/string
 use cardano/address as fixture_address
 use cardano/address.{Address, Credential, Script, VerificationKey}
-use cardano/assets.{PolicyId, Value, add, from_asset, quantity_of, zero}
+use cardano/assets.{PolicyId, Assets, add, from_asset, quantity_of, zero}
 use cardano/transaction as fixture_transaction
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Redeemer, Spend,
@@ -1750,7 +1750,7 @@ test prop_host_update_connection_accepts_exact_root(seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
-fn create_connection_thread(token: AuthToken, mint: Value) -> Bool {
+fn create_connection_thread(token: AuthToken, mint: Assets) -> Bool {
   let siblings = full_empty_siblings()
   let datum =
     ConnectionDatum {
@@ -4462,7 +4462,7 @@ fn test_shutdown_host_input(grace_period_end: Int) -> Input {
 }
 
 fn validate_test_finalize_shutdown(
-  mint: Value,
+  mint: Assets,
   outputs: List<Output>,
   valid_from: Int,
   grace_period_end: Int,
@@ -4477,7 +4477,7 @@ fn validate_test_finalize_shutdown(
 
 fn validate_test_finalize_shutdown_with_input(
   host_input: Input,
-  mint: Value,
+  mint: Assets,
   outputs: List<Output>,
   valid_from: Int,
 ) -> Bool {
@@ -5289,7 +5289,7 @@ test root_updates_remain_allowed_during_shutdown() {
   )
 }
 
-fn state_value_heartbeat(input_extra: Value, output_extra: Value) -> Bool {
+fn state_value_heartbeat(input_extra: Assets, output_extra: Assets) -> Bool {
   let old_state = test_host_state(#"11", 1000)
   let new_state =
     HostState {
